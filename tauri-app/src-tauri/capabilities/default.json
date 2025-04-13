@@ -13,7 +13,7 @@
           "name": "../../../../api/.venv/bin/python",
           "sidecar": true,
           "args": [
-            "../../../../api/start_api.py",
+            "../../../../api/main.py",
             "--port",
             {
               "validator": "\\d+"

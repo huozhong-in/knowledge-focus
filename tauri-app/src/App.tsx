@@ -11,12 +11,12 @@ function App() {
   // API服务状态
   const [apiStatus, setApiStatus] = useState({
     running: false,
-    port: 8000,
+    port: 60000,
     host: "127.0.0.1",
-    url: "http://127.0.0.1:8000"
+    url: "http://127.0.0.1:60000"
   });
   const [apiLogs, setApiLogs] = useState<string[]>([]);
-  const [customPort, setCustomPort] = useState("8000");
+  const [customPort, setCustomPort] = useState("60000");
   const [customHost, setCustomHost] = useState("127.0.0.1");
 
   async function greet() {

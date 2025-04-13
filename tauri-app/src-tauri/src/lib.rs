@@ -38,8 +38,7 @@ async fn start_api_service(
     host: Option<String>
 ) -> Result<HashMap<String, serde_json::Value>, String> {
     let mut api_state = state.0.lock().unwrap();
-    
-    // 如果进程已经在运行，则返回当前状态
+
     if api_state.process_child.is_some() {
         let mut response = HashMap::new();
         response.insert("running".into(), serde_json::Value::Bool(true));
@@ -49,69 +48,49 @@ async fn start_api_service(
         response.insert("message".into(), serde_json::Value::String("API服务已在运行中".into()));
         return Ok(response);
     }
-    
-    // 设置端口和主机
-    let port = port.unwrap_or(8000);
-    let host = host.unwrap_or_else(|| "127.0.0.1".to_string());
-    
-    // 更新状态
+
+    let port = port.unwrap_or(api_state.port);
+    let host = host.unwrap_or_else(|| api_state.host.clone());
+
     api_state.port = port;
     api_state.host = host.clone();
-    
-    // 使用sidecar启动API服务，这里只使用文件名而非路径
+
     let sidecar = app.shell().sidecar("../../../../api/.venv/bin/python")
         .map_err(|e| format!("无法找到sidecar: {}", e))?;
-    
-    // 添加参数
-    let command = sidecar.args(&[
-        "../../api/start_api.py",
-        "--port", &port.to_string(),
-        "--host", &host
-    ]);
-    
-    // 启动进程
+
+    let command = sidecar.args(&["../../api/main.py", "--port", &port.to_string(), "--host", &host]);
+
     let (mut rx, child) = command.spawn()
         .map_err(|e| format!("启动API服务失败: {}", e))?;
-    
-    // 保存子进程
+
     api_state.process_child = Some(child);
 
-    // 获取窗口引用用于发送事件
     let window = app.get_webview_window("main").unwrap();
-    
-    // 在后台处理API服务的输出
+
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
                     let line_str = String::from_utf8_lossy(&line);
-                    println!("API: {}", line_str);
-                    // 发送日志到前端
+                    println!("Python API: {}", line_str);
                     let _ = window.emit("api-log", Some(line_str.to_string()));
                 }
                 CommandEvent::Stderr(line) => {
                     let line_str = String::from_utf8_lossy(&line);
-                    eprintln!("API错误: {}", line_str);
-                    // 发送错误日志到前端
+                    eprintln!("Python API: {}", line_str);
                     let _ = window.emit("api-error", Some(line_str.to_string()));
                 }
                 CommandEvent::Error(err) => {
                     eprintln!("进程错误: {}", err);
-                    // 发送错误信息到前端
                     let _ = window.emit("api-process-error", Some(err.to_string()));
-                    
-                    // 更新状态
                     if let Ok(mut state) = app_handle.state::<ApiState>().0.lock() {
                         state.process_child = None;
                     }
                 }
                 CommandEvent::Terminated(status) => {
                     println!("API进程已终止，状态码: {}", status.code.unwrap_or(-1));
-                    // 发送终止事件到前端
                     let _ = window.emit("api-terminated", Some(status.code));
-                    
-                    // 更新状态
                     if let Ok(mut state) = app_handle.state::<ApiState>().0.lock() {
                         state.process_child = None;
                     }
@@ -120,15 +99,14 @@ async fn start_api_service(
             }
         }
     });
-    
-    // 返回成功信息
+
     let mut response = HashMap::new();
     response.insert("running".into(), serde_json::Value::Bool(true));
     response.insert("port".into(), serde_json::Value::Number(port.into()));
     response.insert("host".into(), serde_json::Value::String(host));
     response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
     response.insert("message".into(), serde_json::Value::String("API服务已启动".into()));
-    
+
     Ok(response)
 }
 
@@ -165,7 +143,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
             process_child: None,
-            port: 8000,
+            port: 60000,
             host: "127.0.0.1".to_string(),
         }))))
         .invoke_handler(tauri::generate_handler![

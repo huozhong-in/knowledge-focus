@@ -15,7 +15,7 @@ def read_item(item_id: int, q: str = None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8000, help="API服务监听端口")
+    parser.add_argument("--port", type=int, default=60000, help="API服务监听端口")
     parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
     args = parser.parse_args()
     
