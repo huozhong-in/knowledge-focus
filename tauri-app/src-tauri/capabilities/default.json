@@ -27,44 +27,7 @@
           ]
         },
         {
-          "name": "./venv/bin/python",
-          "sidecar": true,
-          "args": [
-            {
-              "validator": ".*"
-            },
-            "--port",
-            {
-              "validator": "\\d+"
-            },
-            "--host",
-            {
-              "validator": "[\\w\\.]+"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "../../../../api/.venv/bin/python",
-          "sidecar": true,
-          "args": [
-            "../../../../api/start_api.py",
-            "--port",
-            {
-              "validator": "\\d+"
-            },
-            "--host",
-            {
-              "validator": "[\\w\\.]+"
-            }
-          ]
-        },
-        {
-          "name": "./venv/bin/python",
+          "name": "venv/bin/python",
           "sidecar": true,
           "args": [
             {
