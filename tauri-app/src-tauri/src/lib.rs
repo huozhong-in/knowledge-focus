@@ -1,0 +1,179 @@
+// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use std::sync::{Arc, Mutex};
+use tauri::Manager;
+use tauri::Emitter;
+use tauri_plugin_shell::{ShellExt, process::{CommandEvent}};
+use std::collections::HashMap;
+
+// 存储API进程的状态
+struct ApiProcessState {
+    process_child: Option<tauri_plugin_shell::process::CommandChild>,
+    port: u16,
+    host: String,
+}
+
+// API状态包装为线程安全类型
+struct ApiState(Arc<Mutex<ApiProcessState>>);
+
+// 获取API状态的命令
+#[tauri::command]
+fn get_api_status(state: tauri::State<ApiState>) -> Result<HashMap<String, serde_json::Value>, String> {
+    let api_state = state.0.lock().unwrap();
+    let mut response = HashMap::new();
+    
+    response.insert("running".into(), serde_json::Value::Bool(api_state.process_child.is_some()));
+    response.insert("port".into(), serde_json::Value::Number(api_state.port.into()));
+    response.insert("host".into(), serde_json::Value::String(api_state.host.clone()));
+    response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
+    
+    Ok(response)
+}
+
+// 启动API服务的命令
+#[tauri::command]
+async fn start_api_service(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ApiState>,
+    port: Option<u16>,
+    host: Option<String>
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    let mut api_state = state.0.lock().unwrap();
+    
+    // 如果进程已经在运行，则返回当前状态
+    if api_state.process_child.is_some() {
+        let mut response = HashMap::new();
+        response.insert("running".into(), serde_json::Value::Bool(true));
+        response.insert("port".into(), serde_json::Value::Number(api_state.port.into()));
+        response.insert("host".into(), serde_json::Value::String(api_state.host.clone()));
+        response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
+        response.insert("message".into(), serde_json::Value::String("API服务已在运行中".into()));
+        return Ok(response);
+    }
+    
+    // 设置端口和主机
+    let port = port.unwrap_or(8000);
+    let host = host.unwrap_or_else(|| "127.0.0.1".to_string());
+    
+    // 更新状态
+    api_state.port = port;
+    api_state.host = host.clone();
+    
+    // 使用sidecar启动API服务，这里只使用文件名而非路径
+    let sidecar = app.shell().sidecar("../../../../api/.venv/bin/python")
+        .map_err(|e| format!("无法找到sidecar: {}", e))?;
+    
+    // 添加参数
+    let command = sidecar.args(&[
+        "../../api/start_api.py",
+        "--port", &port.to_string(),
+        "--host", &host
+    ]);
+    
+    // 启动进程
+    let (mut rx, child) = command.spawn()
+        .map_err(|e| format!("启动API服务失败: {}", e))?;
+    
+    // 保存子进程
+    api_state.process_child = Some(child);
+
+    // 获取窗口引用用于发送事件
+    let window = app.get_webview_window("main").unwrap();
+    
+    // 在后台处理API服务的输出
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(line) => {
+                    let line_str = String::from_utf8_lossy(&line);
+                    println!("API: {}", line_str);
+                    // 发送日志到前端
+                    let _ = window.emit("api-log", Some(line_str.to_string()));
+                }
+                CommandEvent::Stderr(line) => {
+                    let line_str = String::from_utf8_lossy(&line);
+                    eprintln!("API错误: {}", line_str);
+                    // 发送错误日志到前端
+                    let _ = window.emit("api-error", Some(line_str.to_string()));
+                }
+                CommandEvent::Error(err) => {
+                    eprintln!("进程错误: {}", err);
+                    // 发送错误信息到前端
+                    let _ = window.emit("api-process-error", Some(err.to_string()));
+                    
+                    // 更新状态
+                    if let Ok(mut state) = app_handle.state::<ApiState>().0.lock() {
+                        state.process_child = None;
+                    }
+                }
+                CommandEvent::Terminated(status) => {
+                    println!("API进程已终止，状态码: {}", status.code.unwrap_or(-1));
+                    // 发送终止事件到前端
+                    let _ = window.emit("api-terminated", Some(status.code));
+                    
+                    // 更新状态
+                    if let Ok(mut state) = app_handle.state::<ApiState>().0.lock() {
+                        state.process_child = None;
+                    }
+                }
+                _ => {}
+            }
+        }
+    });
+    
+    // 返回成功信息
+    let mut response = HashMap::new();
+    response.insert("running".into(), serde_json::Value::Bool(true));
+    response.insert("port".into(), serde_json::Value::Number(port.into()));
+    response.insert("host".into(), serde_json::Value::String(host));
+    response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
+    response.insert("message".into(), serde_json::Value::String("API服务已启动".into()));
+    
+    Ok(response)
+}
+
+// 停止API服务的命令
+#[tauri::command]
+fn stop_api_service(state: tauri::State<ApiState>) -> Result<HashMap<String, serde_json::Value>, String> {
+    let mut api_state = state.0.lock().unwrap();
+    
+    if let Some(child) = api_state.process_child.take() {
+        match child.kill() {
+            Ok(_) => {
+                let mut response = HashMap::new();
+                response.insert("message".into(), serde_json::Value::String("API服务已停止".into()));
+                Ok(response)
+            },
+            Err(e) => Err(format!("无法停止API服务: {}", e))
+        }
+    } else {
+        let mut response = HashMap::new();
+        response.insert("message".into(), serde_json::Value::String("API服务未运行".into()));
+        Ok(response)
+    }
+}
+
+#[tauri::command]
+fn greet(name: &str) -> String {
+    format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_shell::init())
+        .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
+            process_child: None,
+            port: 8000,
+            host: "127.0.0.1".to_string(),
+        }))))
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            start_api_service,
+            stop_api_service,
+            get_api_status
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
