@@ -6,6 +6,8 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "core:path:default",
+    "core:resources:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
@@ -13,7 +15,24 @@
           "name": "../../../../api/.venv/bin/python",
           "sidecar": true,
           "args": [
-            "../../../../api/main.py",
+            "../../api/main.py",
+            "--port",
+            {
+              "validator": "\\d+"
+            },
+            "--host",
+            {
+              "validator": "[\\w\\.]+"
+            }
+          ]
+        },
+        {
+          "name": "./venv/bin/python",
+          "sidecar": true,
+          "args": [
+            {
+              "validator": ".*"
+            },
             "--port",
             {
               "validator": "\\d+"
@@ -34,6 +53,23 @@
           "sidecar": true,
           "args": [
             "../../../../api/start_api.py",
+            "--port",
+            {
+              "validator": "\\d+"
+            },
+            "--host",
+            {
+              "validator": "[\\w\\.]+"
+            }
+          ]
+        },
+        {
+          "name": "./venv/bin/python",
+          "sidecar": true,
+          "args": [
+            {
+              "validator": ".*"
+            },
             "--port",
             {
               "validator": "\\d+"

@@ -4,6 +4,7 @@ use tauri::Manager;
 use tauri::Emitter;
 use tauri_plugin_shell::{ShellExt, process::{CommandEvent}};
 use std::collections::HashMap;
+use tauri::path::BaseDirectory;
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -55,10 +56,35 @@ async fn start_api_service(
     api_state.port = port;
     api_state.host = host.clone();
 
-    let sidecar = app.shell().sidecar("../../../../api/.venv/bin/python")
+    // 根据开发/生产环境选择不同的Python路径
+    let python_path = if cfg!(debug_assertions) {
+        // 开发环境
+        "../../../../api/.venv/bin/python"
+    } else {
+        // 生产环境 - 使用venv目录中的Python
+        "./venv/bin/python"
+    };
+
+    let sidecar = app.shell().sidecar(python_path)
         .map_err(|e| format!("无法找到sidecar: {}", e))?;
 
-    let command = sidecar.args(&["../../api/main.py", "--port", &port.to_string(), "--host", &host]);
+    // 使用Tauri的资源路径API处理脚本路径
+    let script_path = if cfg!(debug_assertions) {
+        // 开发环境 - 直接使用相对路径
+        "../../api/main.py".to_string()
+    } else {
+        // 生产环境 - 使用资源路径API
+        let resource_path = app.path()
+            .resolve("api/main.py", BaseDirectory::Resource)
+            .map_err(|e| format!("无法解析资源路径: {}", e))?;
+        
+        resource_path.to_string_lossy().to_string()
+    };
+
+    println!("Python路径: {}", python_path);
+    println!("脚本路径: {}", script_path);
+
+    let command = sidecar.args(&[&script_path, "--port", &port.to_string(), "--host", &host]);
 
     let (mut rx, child) = command.spawn()
         .map_err(|e| format!("启动API服务失败: {}", e))?;

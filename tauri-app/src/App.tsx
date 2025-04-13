@@ -69,7 +69,7 @@ function App() {
     
     // 监听API错误事件
     const unlistenError = listen<string>("api-error", (event) => {
-      setApiLogs(prev => [...prev, `错误: ${event.payload}`].slice(-50));
+      setApiLogs(prev => [...prev, `INFO: ${event.payload}`].slice(-50));
     });
     
     // 监听API进程错误事件
