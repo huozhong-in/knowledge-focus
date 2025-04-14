@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-app",
+  "productName": "KnowledgeFocus",
   "version": "0.1.0",
-  "identifier": "tauri-app.huozhong.in",
+  "identifier": "knowledge-focus.huozhong.in",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-app",
-        "width": 800,
-        "height": 600
+        "title": "KnowledgeFocus",
+        "width": 1024,
+        "height": 768,
+        "minWidth": 1024,
+        "minHeight": 768,
+        "decorations": false,
+        "transparent": true
       }
     ],
     "security": {
@@ -45,8 +49,8 @@
           "y": 170
         },
         "windowSize": {
-          "height": 400,
-          "width": 660
+          "height": 768,
+          "width": 1024
         }
       },
       "files": {

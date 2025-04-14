@@ -95,7 +95,7 @@ function App() {
 
   return (
     <main className="container">
-      <h1>Knowledge Focus</h1>
+      <h1>KnowledgeFocus</h1>
 
       <div className="row">
         <a href="https://vitejs.dev" target="_blank">
