@@ -7,8 +7,9 @@ use tauri::Manager;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-  };
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, 
+    WindowEvent,
+};
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -210,10 +211,27 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+#[tauri::command]
+fn set_activation_policy_accessory(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+}
+
+#[tauri::command]
+fn set_activation_policy_regular(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            // app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
             TrayIconBuilder::new()
@@ -237,6 +255,17 @@ pub fn run() {
                         ..
                     } => {
                         let app = tray.app_handle();
+                        #[cfg(target_os = "macos")]
+                        {
+                            let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+                            app.show().unwrap();
+                            // 确保应用程序被激活
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        #[cfg(not(target_os = "macos"))]
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();
                             let _ = window.set_focus();
@@ -276,8 +305,29 @@ pub fn run() {
             greet,
             start_api_service,
             stop_api_service,
-            get_api_status
+            get_api_status,
+            set_activation_policy_accessory,
+            set_activation_policy_regular
         ])
+        .on_window_event(|window, event| match event {
+            WindowEvent::CloseRequested { api, .. } => {
+                #[cfg(target_os = "macos")]
+                {
+                    // Prevent the default window close behavior
+                    api.prevent_close();
+                    // Hide the window
+                    window.hide().unwrap();
+                    let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    // On other OS, default behavior is usually fine (exit/hide based on config),
+                    // but explicitly exiting might be desired if default is hide.
+                    window.app_handle().exit(0);
+                }
+            }
+            _ => {}
+        })
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");    
+        .expect("error while running tauri application");
 }

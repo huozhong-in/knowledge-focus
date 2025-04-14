@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
+import { Window } from '@tauri-apps/api/window';
 import "./App.css";
 
 function App() {
@@ -60,6 +61,10 @@ function App() {
 
   // 组件加载时检查API状态
   useEffect(() => {
+    const unlisten = Window.getCurrent().onCloseRequested(async () => {
+      await invoke('set_activation_policy_accessory');
+    });
+
     checkApiStatus();
     
     // 监听API日志事件
@@ -90,6 +95,7 @@ function App() {
       unlistenError.then(fn => fn());
       unlistenProcessError.then(fn => fn());
       unlistenTerminated.then(fn => fn());
+      unlisten.then(fn => fn());
     };
   }, []);
 

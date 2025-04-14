@@ -1,8 +1,8 @@
 [package]
-name = "tauri-app"
+name = "KnowledgeFocus"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "专注于建设开放及可扩展的生成式AI企业知识库系统，是下一代数据资产服务化的支撑平台。"
+authors = ["huozhong.in"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
