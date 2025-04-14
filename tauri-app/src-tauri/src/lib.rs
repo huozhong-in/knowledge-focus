@@ -5,6 +5,10 @@ use tauri::path::BaseDirectory;
 use tauri::Emitter;
 use tauri::Manager;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+  };
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -209,6 +213,50 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&quit_i])?;
+            TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .show_menu_on_left_click(false) // Changed to false for right-click menu
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => {
+                      println!("quit menu item was clicked");
+                      app.exit(0);
+                    }
+                    _ => {
+                      println!("menu item {:?} not handled", event.id);
+                    }
+                  })
+                .on_tray_icon_event(|tray, event| match event {
+                    // Left click shows and focuses the main window
+                    TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } => {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    // Right click shows the menu (handled automatically because show_menu_on_left_click is false)
+                    TrayIconEvent::Click {
+                        button: MouseButton::Right,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } => {
+                        // Menu is shown automatically
+                    }
+                    _ => {
+                        // Other events are ignored
+                    }
+                  })
+                .build(app)?;
+            Ok(())
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             println!("另一个实例已尝试启动，参数: {:?}，工作目录: {}", args, cwd);
             // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
@@ -231,5 +279,5 @@ pub fn run() {
             get_api_status
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .expect("error while running tauri application");    
 }
