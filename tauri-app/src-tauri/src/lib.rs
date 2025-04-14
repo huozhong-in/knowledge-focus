@@ -1,10 +1,10 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use std::sync::{Arc, Mutex};
-use tauri::Manager;
-use tauri::Emitter;
-use tauri_plugin_shell::{ShellExt, process::{CommandEvent}};
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
+use tauri::Emitter;
+use tauri::Manager;
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -18,15 +18,29 @@ struct ApiState(Arc<Mutex<ApiProcessState>>);
 
 // 获取API状态的命令
 #[tauri::command]
-fn get_api_status(state: tauri::State<ApiState>) -> Result<HashMap<String, serde_json::Value>, String> {
+fn get_api_status(
+    state: tauri::State<ApiState>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
     let api_state = state.0.lock().unwrap();
     let mut response = HashMap::new();
-    
-    response.insert("running".into(), serde_json::Value::Bool(api_state.process_child.is_some()));
-    response.insert("port".into(), serde_json::Value::Number(api_state.port.into()));
-    response.insert("host".into(), serde_json::Value::String(api_state.host.clone()));
-    response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
-    
+
+    response.insert(
+        "running".into(),
+        serde_json::Value::Bool(api_state.process_child.is_some()),
+    );
+    response.insert(
+        "port".into(),
+        serde_json::Value::Number(api_state.port.into()),
+    );
+    response.insert(
+        "host".into(),
+        serde_json::Value::String(api_state.host.clone()),
+    );
+    response.insert(
+        "url".into(),
+        serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)),
+    );
+
     Ok(response)
 }
 
@@ -36,17 +50,29 @@ async fn start_api_service(
     app: tauri::AppHandle,
     state: tauri::State<'_, ApiState>,
     port: Option<u16>,
-    host: Option<String>
+    host: Option<String>,
 ) -> Result<HashMap<String, serde_json::Value>, String> {
     let mut api_state = state.0.lock().unwrap();
 
     if api_state.process_child.is_some() {
         let mut response = HashMap::new();
         response.insert("running".into(), serde_json::Value::Bool(true));
-        response.insert("port".into(), serde_json::Value::Number(api_state.port.into()));
-        response.insert("host".into(), serde_json::Value::String(api_state.host.clone()));
-        response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
-        response.insert("message".into(), serde_json::Value::String("API服务已在运行中".into()));
+        response.insert(
+            "port".into(),
+            serde_json::Value::Number(api_state.port.into()),
+        );
+        response.insert(
+            "host".into(),
+            serde_json::Value::String(api_state.host.clone()),
+        );
+        response.insert(
+            "url".into(),
+            serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)),
+        );
+        response.insert(
+            "message".into(),
+            serde_json::Value::String("API服务已在运行中".into()),
+        );
         return Ok(response);
     }
 
@@ -65,7 +91,9 @@ async fn start_api_service(
         "./venv/bin/python"
     };
 
-    let sidecar = app.shell().sidecar(python_path)
+    let sidecar = app
+        .shell()
+        .sidecar(python_path)
         .map_err(|e| format!("无法找到sidecar: {}", e))?;
 
     // 使用Tauri的资源路径API处理脚本路径
@@ -74,10 +102,11 @@ async fn start_api_service(
         "../../api/main.py".to_string()
     } else {
         // 生产环境 - 使用资源路径API
-        let resource_path = app.path()
+        let resource_path = app
+            .path()
             .resolve("api/main.py", BaseDirectory::Resource)
             .map_err(|e| format!("无法解析资源路径: {}", e))?;
-        
+
         resource_path.to_string_lossy().to_string()
     };
 
@@ -86,7 +115,8 @@ async fn start_api_service(
 
     let command = sidecar.args(&[&script_path, "--port", &port.to_string(), "--host", &host]);
 
-    let (mut rx, child) = command.spawn()
+    let (mut rx, child) = command
+        .spawn()
         .map_err(|e| format!("启动API服务失败: {}", e))?;
 
     api_state.process_child = Some(child);
@@ -130,29 +160,43 @@ async fn start_api_service(
     response.insert("running".into(), serde_json::Value::Bool(true));
     response.insert("port".into(), serde_json::Value::Number(port.into()));
     response.insert("host".into(), serde_json::Value::String(host));
-    response.insert("url".into(), serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)));
-    response.insert("message".into(), serde_json::Value::String("API服务已启动".into()));
+    response.insert(
+        "url".into(),
+        serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)),
+    );
+    response.insert(
+        "message".into(),
+        serde_json::Value::String("API服务已启动".into()),
+    );
 
     Ok(response)
 }
 
 // 停止API服务的命令
 #[tauri::command]
-fn stop_api_service(state: tauri::State<ApiState>) -> Result<HashMap<String, serde_json::Value>, String> {
+fn stop_api_service(
+    state: tauri::State<ApiState>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
     let mut api_state = state.0.lock().unwrap();
-    
+
     if let Some(child) = api_state.process_child.take() {
         match child.kill() {
             Ok(_) => {
                 let mut response = HashMap::new();
-                response.insert("message".into(), serde_json::Value::String("API服务已停止".into()));
+                response.insert(
+                    "message".into(),
+                    serde_json::Value::String("API服务已停止".into()),
+                );
                 Ok(response)
-            },
-            Err(e) => Err(format!("无法停止API服务: {}", e))
+            }
+            Err(e) => Err(format!("无法停止API服务: {}", e)),
         }
     } else {
         let mut response = HashMap::new();
-        response.insert("message".into(), serde_json::Value::String("API服务未运行".into()));
+        response.insert(
+            "message".into(),
+            serde_json::Value::String("API服务未运行".into()),
+        );
         Ok(response)
     }
 }
@@ -165,6 +209,14 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            println!("另一个实例已尝试启动，参数: {:?}，工作目录: {}", args, cwd);
+            // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
+            if let Some(window) = app.get_webview_window("main") {
+                window.show().unwrap();
+                window.set_focus().unwrap();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
