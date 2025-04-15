@@ -4,6 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { Window } from '@tauri-apps/api/window';
 import "./App.css";
+import { TrayIcon } from '@tauri-apps/api/tray';
+import { resourceDir } from '@tauri-apps/api/path';
+import { join } from '@tauri-apps/api/path';
 
 function App() {
   const [greetMsg, setGreetMsg] = useState("");
@@ -20,6 +23,31 @@ function App() {
   const [customPort, setCustomPort] = useState("60000");
   const [customHost, setCustomHost] = useState("127.0.0.1");
 
+  async function setTrayIcon() {
+    let newIconPath;
+    
+    if (import.meta.env.MODE === 'development') {
+      console.log("当前环境: 开发");
+      // 在开发环境中，使用项目目录下的图标
+      newIconPath = await join(await resourceDir(), '../../../mac-tray-icon.png');
+    } else {
+      // 在生产环境中，使用打包后的资源目录
+      newIconPath = await join(await resourceDir(), 'mac-tray-icon.png');
+    }
+    
+    console.log("图标路径:", newIconPath);
+    
+    if (newIconPath) {
+      const tray = await TrayIcon.getById("1");
+      if (!tray) {
+        console.error("托盘图标未找到");
+        return;
+      }
+      tray.setIcon(newIconPath);
+      tray.setTooltip("Knowledge Focus");
+    }
+  }
+  
   async function greet() {
     setGreetMsg(await invoke("greet", { name }));
   }
@@ -64,7 +92,7 @@ function App() {
     const unlisten = Window.getCurrent().onCloseRequested(async () => {
       await invoke('set_activation_policy_accessory');
     });
-
+    setTrayIcon();
     checkApiStatus();
     
     // 监听API日志事件

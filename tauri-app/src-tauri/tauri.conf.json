@@ -53,7 +53,8 @@
       },
       "files": {
         "MacOS/venv": "../../api/.venv",
-        "Resources/api/main.py": "../../api/main.py"
+        "Resources/api/main.py": "../../api/main.py",
+        "Resources/mac-tray-icon.png": "../mac-tray-icon.png"
       },
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.13"

@@ -8,7 +8,7 @@ use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, 
-    WindowEvent,
+    WindowEvent
 };
 
 // 存储API进程的状态
@@ -234,8 +234,8 @@ pub fn run() {
             // app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
-            TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+            let tray_icon = TrayIconBuilder::new()
+                // .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false) // Changed to false for right-click menu
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -282,8 +282,12 @@ pub fn run() {
                     _ => {
                         // Other events are ignored
                     }
-                  })
-                .build(app)?;
+                  }).build(app)?;
+            let home_dir_path = app.path().home_dir().expect("failed to get home dir");
+            let path = app.path().resolve("knowledge-focus", BaseDirectory::Config)?;
+            println!("home dir path: {:?}", home_dir_path);
+            println!("path: {:?}", path);
+            println!("Tray Icon ID: {:?}", tray_icon.id());
             Ok(())
         })
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {

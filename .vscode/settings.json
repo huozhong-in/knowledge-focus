@@ -1,0 +1,7 @@
+{
+    "rust-analyzer.workspace.symbol.search.scope": "workspace",
+    "rust-analyzer.linkedProjects": [
+
+        "${workspaceFolder}/tauri-app/src-tauri/Cargo.toml",
+    ]
+}
