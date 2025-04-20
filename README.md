@@ -1,3 +1,7 @@
+---
+marp: true
+---
+
 # KnowledgeFocus
 Focus on building an open and extensible AI knowledge base system. Suitable for individual use, small teams, and even larger enterprises. Its excellent openness allows for easy integration into existing workflows.
 
@@ -14,11 +18,15 @@ Focus on building an open and extensible AI knowledge base system. Suitable for 
 
 ## 2. 安装依赖
 
+`cd api`
+
 `pip install fastapi uvicorn`
 
-## 3. 运行tauri应用
+## 3. 给tauri app安装依赖并进行开发
 
 `cd tauri-app`
+
+`bun install`
 
 `bun tauri dev`
 

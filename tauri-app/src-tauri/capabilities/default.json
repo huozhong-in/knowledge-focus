@@ -8,6 +8,8 @@
     "opener:default",
     "core:path:default",
     "core:resources:default",
+    "core:window:allow-start-dragging",
+    "store:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [

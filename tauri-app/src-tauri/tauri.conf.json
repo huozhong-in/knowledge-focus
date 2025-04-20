@@ -14,9 +14,10 @@
       {
         "title": "KnowledgeFocus",
         "width": 1024,
-        "height": 768,
+        "height": 650,
         "minWidth": 1024,
-        "minHeight": 768
+        "minHeight": 650,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -47,7 +48,7 @@
           "y": 170
         },
         "windowSize": {
-          "height": 768,
+          "height": 650,
           "width": 1024
         }
       },

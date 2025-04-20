@@ -3,15 +3,10 @@ import reactLogo from "./assets/react.svg";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { Window } from '@tauri-apps/api/window';
-import "./App.css";
-import { TrayIcon } from '@tauri-apps/api/tray';
-import { resourceDir } from '@tauri-apps/api/path';
-import { join } from '@tauri-apps/api/path';
+import "./index.css";
+import { Button } from "@/components/ui/button"
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
-  
+function App() {  
   // API服务状态
   const [apiStatus, setApiStatus] = useState({
     running: false,
@@ -22,35 +17,6 @@ function App() {
   const [apiLogs, setApiLogs] = useState<string[]>([]);
   const [customPort, setCustomPort] = useState("60000");
   const [customHost, setCustomHost] = useState("127.0.0.1");
-
-  async function setTrayIcon() {
-    let newIconPath;
-    
-    if (import.meta.env.MODE === 'development') {
-      console.log("当前环境: 开发");
-      // 在开发环境中，使用项目目录下的图标
-      newIconPath = await join(await resourceDir(), '../../../mac-tray-icon.png');
-    } else {
-      // 在生产环境中，使用打包后的资源目录
-      newIconPath = await join(await resourceDir(), 'mac-tray-icon.png');
-    }
-    
-    console.log("图标路径:", newIconPath);
-    
-    if (newIconPath) {
-      const tray = await TrayIcon.getById("1");
-      if (!tray) {
-        console.error("托盘图标未找到");
-        return;
-      }
-      tray.setIcon(newIconPath);
-      tray.setTooltip("Knowledge Focus");
-    }
-  }
-  
-  async function greet() {
-    setGreetMsg(await invoke("greet", { name }));
-  }
 
   // 获取API状态
   async function checkApiStatus() {
@@ -92,7 +58,6 @@ function App() {
     const unlisten = Window.getCurrent().onCloseRequested(async () => {
       await invoke('set_activation_policy_accessory');
     });
-    setTrayIcon();
     checkApiStatus();
     
     // 监听API日志事件
@@ -130,106 +95,91 @@ function App() {
   return (
     <main className="container">
       <h1>KnowledgeFocus</h1>
-
-      <div className="row">
-        <a href="https://vitejs.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://reactjs.org" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-
-      {/* API服务控制面板 */}
-      <div className="api-control-panel">
-        <h2>Python FastAPI 服务控制</h2>
+      <div className="flex flex-col items-center justify-center min-h-svh">
         
-        <div className="status-info">
-          <p>状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
-          {apiStatus.running && (
-            <p>
-              API地址: <a href={apiStatus.url} target="_blank">{apiStatus.url}</a>
-            </p>
-          )}
+        <div className="row">
+          <a href="https://vitejs.dev" target="_blank">
+            <img src="/vite.svg" className="logo vite" alt="Vite logo" />
+          </a>
+          <a href="https://tauri.app" target="_blank">
+            <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
+          </a>
+          <a href="https://reactjs.org" target="_blank">
+            <img src={reactLogo} className="logo react" alt="React logo" />
+          </a>
         </div>
-        
-        <div className="api-controls">
-          <div className="control-inputs">
-            <div className="input-group">
-              <label htmlFor="api-host">主机:</label>
-              <input
-                id="api-host"
-                value={customHost}
-                onChange={(e) => setCustomHost(e.target.value)}
-                disabled={apiStatus.running}
-                placeholder="主机地址"
-              />
+
+        {/* API服务控制面板 */}
+        <div className="api-control-panel">
+          <h2>Python FastAPI 服务控制</h2>
+          
+          <div className="status-info">
+            <p>状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
+            {apiStatus.running && (
+              <p>
+                API地址: <a href={apiStatus.url} target="_blank">{apiStatus.url}</a>
+              </p>
+            )}
+          </div>
+
+          <div className="api-controls">
+            <div className="control-inputs">
+              <div className="input-group">
+                <label htmlFor="api-host">主机:</label>
+                <input
+                  id="api-host"
+                  value={customHost}
+                  onChange={(e) => setCustomHost(e.target.value)}
+                  disabled={apiStatus.running}
+                  placeholder="主机地址"
+                />
+              </div>
+              
+              <div className="input-group">
+                <label htmlFor="api-port">端口:</label>
+                <input
+                  id="api-port"
+                  value={customPort}
+                  onChange={(e) => setCustomPort(e.target.value)}
+                  disabled={apiStatus.running}
+                  placeholder="端口"
+                />
+              </div>
             </div>
             
-            <div className="input-group">
-              <label htmlFor="api-port">端口:</label>
-              <input
-                id="api-port"
-                value={customPort}
-                onChange={(e) => setCustomPort(e.target.value)}
+            <div className="control-buttons">
+              <Button 
+                onClick={startApiService}
                 disabled={apiStatus.running}
-                placeholder="端口"
-              />
+              >
+                启动API服务
+              </Button>
+              
+              <Button 
+                onClick={stopApiService}
+                disabled={!apiStatus.running}
+              >
+                停止API服务
+              </Button>
             </div>
           </div>
           
-          <div className="control-buttons">
-            <button 
-              onClick={startApiService}
-              disabled={apiStatus.running}
-            >
-              启动API服务
-            </button>
-            
-            <button 
-              onClick={stopApiService}
-              disabled={!apiStatus.running}
-            >
-              停止API服务
-            </button>
+          <div className="api-logs">
+            <h3>API日志</h3>
+            <div className="logs-container">
+              {apiLogs.length === 0 ? (
+                <p className="no-logs">暂无日志</p>
+              ) : (
+                apiLogs.map((log, index) => (
+                  <div key={index} className="log-line">{log}</div>
+                ))
+              )}
+            </div>
           </div>
         </div>
-        
-        <div className="api-logs">
-          <h3>API日志</h3>
-          <div className="logs-container">
-            {apiLogs.length === 0 ? (
-              <p className="no-logs">暂无日志</p>
-            ) : (
-              apiLogs.map((log, index) => (
-                <div key={index} className="log-line">{log}</div>
-              ))
-            )}
-          </div>
-        </div>
+
+        <div className="divider"></div>
       </div>
-
-      <div className="divider"></div>
-
-      {/* 原始示例部分 */}
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
     </main>
   );
 }

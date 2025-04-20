@@ -4,12 +4,12 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::Emitter;
 use tauri::Manager;
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent}, 
-    WindowEvent
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    WindowEvent,
 };
+use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -230,6 +230,8 @@ fn set_activation_policy_regular(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
             // app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -240,13 +242,13 @@ pub fn run() {
                 .show_menu_on_left_click(false) // Changed to false for right-click menu
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
-                      println!("quit menu item was clicked");
-                      app.exit(0);
+                        println!("quit menu item was clicked");
+                        app.exit(0);
                     }
                     _ => {
-                      println!("menu item {:?} not handled", event.id);
+                        println!("menu item {:?} not handled", event.id);
                     }
-                  })
+                })
                 .on_tray_icon_event(|tray, event| match event {
                     // Left click shows and focuses the main window
                     TrayIconEvent::Click {
@@ -282,9 +284,12 @@ pub fn run() {
                     _ => {
                         // Other events are ignored
                     }
-                  }).build(app)?;
+                })
+                .build(app)?;
             let home_dir_path = app.path().home_dir().expect("failed to get home dir");
-            let path = app.path().resolve("knowledge-focus", BaseDirectory::Config)?;
+            let path = app
+                .path()
+                .resolve("knowledge-focus", BaseDirectory::Config)?;
             println!("home dir path: {:?}", home_dir_path);
             println!("path: {:?}", path);
             println!("Tray Icon ID: {:?}", tray_icon.id());
@@ -321,7 +326,9 @@ pub fn run() {
                     api.prevent_close();
                     // Hide the window
                     window.hide().unwrap();
-                    let _ = window.app_handle().set_activation_policy(tauri::ActivationPolicy::Accessory);
+                    let _ = window
+                        .app_handle()
+                        .set_activation_policy(tauri::ActivationPolicy::Accessory);
                 }
                 #[cfg(not(target_os = "macos"))]
                 {
