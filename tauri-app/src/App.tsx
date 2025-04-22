@@ -93,64 +93,68 @@ function App() {
   }, []);
 
   return (
-    <main className="container">
-      <h1>KnowledgeFocus</h1>
-      <div className="flex flex-col items-center justify-center min-h-svh">
+    <main className="container mx-auto p-3">
+      <h1 className="text-xl font-bold text-center mb-3">KnowledgeFocus</h1>
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
         
-        <div className="row">
-          <a href="https://vitejs.dev" target="_blank">
-            <img src="/vite.svg" className="logo vite" alt="Vite logo" />
+        <div className="flex gap-6 items-center mb-4">
+          <a href="https://vitejs.dev" target="_blank" className="hover:opacity-80 transition-opacity">
+            <img src="/vite.svg" className="w-12 h-12" alt="Vite logo" />
           </a>
-          <a href="https://tauri.app" target="_blank">
-            <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
+          <a href="https://tauri.app" target="_blank" className="hover:opacity-80 transition-opacity">
+            <img src="/tauri.svg" className="w-12 h-12" alt="Tauri logo" />
           </a>
-          <a href="https://reactjs.org" target="_blank">
-            <img src={reactLogo} className="logo react" alt="React logo" />
+          <a href="https://reactjs.org" target="_blank" className="hover:opacity-80 transition-opacity">
+            <img src={reactLogo} className="w-12 h-12" alt="React logo" />
           </a>
         </div>
 
         {/* API服务控制面板 */}
-        <div className="api-control-panel">
-          <h2>Python FastAPI 服务控制</h2>
+        <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4">
+          <h2 className="text-lg font-semibold mb-3">Python FastAPI 服务控制</h2>
           
-          <div className="status-info">
-            <p>状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
+          <div className="mb-4 p-3 bg-muted/30 rounded-md">
+            <p className="mb-1">状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
             {apiStatus.running && (
               <p>
-                API地址: <a href={apiStatus.url} target="_blank">{apiStatus.url}</a>
+                API地址: <a href={apiStatus.url} target="_blank" className="text-primary hover:underline">{apiStatus.url}</a>
               </p>
             )}
           </div>
 
-          <div className="api-controls">
-            <div className="control-inputs">
-              <div className="input-group">
-                <label htmlFor="api-host">主机:</label>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label htmlFor="api-host" className="block text-sm font-medium">主机:</label>
                 <input
                   id="api-host"
                   value={customHost}
                   onChange={(e) => setCustomHost(e.target.value)}
                   disabled={apiStatus.running}
                   placeholder="主机地址"
+                  className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
                 />
               </div>
               
-              <div className="input-group">
-                <label htmlFor="api-port">端口:</label>
+              <div className="space-y-1">
+                <label htmlFor="api-port" className="block text-sm font-medium">端口:</label>
                 <input
                   id="api-port"
                   value={customPort}
                   onChange={(e) => setCustomPort(e.target.value)}
                   disabled={apiStatus.running}
                   placeholder="端口"
+                  className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
                 />
               </div>
             </div>
             
-            <div className="control-buttons">
+            <div className="flex gap-3 justify-end">
               <Button 
                 onClick={startApiService}
                 disabled={apiStatus.running}
+                variant="default"
+                size="sm"
               >
                 启动API服务
               </Button>
@@ -158,27 +162,27 @@ function App() {
               <Button 
                 onClick={stopApiService}
                 disabled={!apiStatus.running}
+                variant="secondary"
+                size="sm"
               >
                 停止API服务
               </Button>
             </div>
           </div>
           
-          <div className="api-logs">
-            <h3>API日志</h3>
-            <div className="logs-container">
+          <div className="mt-4">
+            <h3 className="text-base font-medium mb-2">API日志</h3>
+            <div className="h-[160px] overflow-y-auto border rounded-md bg-muted/10 p-3">
               {apiLogs.length === 0 ? (
-                <p className="no-logs">暂无日志</p>
+                <p className="text-muted-foreground text-center text-sm">暂无日志</p>
               ) : (
                 apiLogs.map((log, index) => (
-                  <div key={index} className="log-line">{log}</div>
+                  <div key={index} className="text-xs mb-0.5 font-mono">{log}</div>
                 ))
               )}
             </div>
           </div>
         </div>
-
-        <div className="divider"></div>
       </div>
     </main>
   );

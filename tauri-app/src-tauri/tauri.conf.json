@@ -12,12 +12,13 @@
   "app": {
     "windows": [
       {
-        "title": "KnowledgeFocus",
+        "title": "",
         "width": 1024,
         "height": 650,
         "minWidth": 1024,
         "minHeight": 650,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "decorations": false
       }
     ],
     "security": {
@@ -34,9 +35,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-
-    ],
+    "externalBin": [],
+    "createUpdaterArtifacts": true,
     "macOS": {
       "dmg": {
         "appPosition": {
@@ -59,6 +59,16 @@
       },
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.13"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyOEQ5NjBBMUIzMTUzMUUKUldRZVV6RWJDcGFOY2ovYlNaOVlZV0NlcTFKamNrSDYwOGVzYzZyQ0RKMzhVL1ErcXl6ZDg2cWoK",
+      "endpoints": [
+        "https://releases.myapp.com/{{target}}/{{arch}}/{{current_version}}",
+        "https://github.com/user/repo/releases/latest/download/latest.json"
+      ],
+      "dangerousInsecureTransportProtocols": true
     }
   }
 }

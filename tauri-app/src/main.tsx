@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import {create} from 'zustand'
 import { load } from '@tauri-apps/plugin-store';
 import { TrayIcon } from '@tauri-apps/api/tray';
-import { resourceDir, join } from '@tauri-apps/api/path';
+import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import Intro from "./Intro";
 import App from "./App";
 
@@ -41,7 +41,9 @@ export const useAppStore = create<MyState>((set) => ({
   showIntroPage: true, // 默认显示介绍页
   setShowIntroPage: async (show: boolean) => {
     try {
-      const store = await load('store.json', { autoSave: false });
+      const appDataPath = await appDataDir();
+      const storePath = await join(appDataPath, 'store.json');
+      const store = await load(storePath, { autoSave: false });
       console.log('更新前的store值:', await store.get('isFirstLaunch'));
       
       // 先更新zustand状态
@@ -74,7 +76,9 @@ const initializeApp = async () => {
     // 初始化系统托盘图标
     await setTrayIcon();
     
-    const store = await load('store.json', { autoSave: false });
+    const appDataPath = await appDataDir();
+    const storePath = await join(appDataPath, 'store.json');
+    const store = await load(storePath, { autoSave: false });
     const isFirstLaunch = await store.get('isFirstLaunch');
     const showIntro = isFirstLaunch === null || isFirstLaunch === undefined || isFirstLaunch === true;
     useAppStore.setState({ showIntroPage: showIntro });
