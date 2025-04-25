@@ -27,8 +27,8 @@ function SettingsBackend() {
       }
     }
   
-    // 启动API服务
-    async function startApiService() {
+    // 重启API服务
+    async function restartApiService() {
       try {
         const port = parseInt(customPort, 10);
         const response = await invoke("start_api_service", { 
@@ -38,7 +38,7 @@ function SettingsBackend() {
         setApiStatus(response as any);
         await checkApiStatus();
       } catch (error) {
-        console.error("启动API服务失败:", error);
+        console.error("重启API服务失败:", error);
       }
     }
   
@@ -51,7 +51,6 @@ function SettingsBackend() {
         console.error("停止API服务失败:", error);
       }
     }
-  
   
     // 组件加载时检查API状态
     useEffect(() => {
@@ -67,7 +66,7 @@ function SettingsBackend() {
       
       // 监听API错误事件
       const unlistenError = listen<string>("api-error", (event) => {
-        setApiLogs(prev => [...prev, `INFO: ${event.payload}`].slice(-50));
+        setApiLogs(prev => [...prev, `ERROR: ${event.payload}`].slice(-50));
       });
       
       // 监听API进程错误事件
@@ -94,7 +93,6 @@ function SettingsBackend() {
   
     return (
       <main className="container mx-auto p-3">
-        {/* <h1 className="text-xl font-bold text-center mb-3">KnowledgeFocus</h1> */}
         <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
           {/* API服务控制面板 */}
           <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4">
@@ -138,12 +136,12 @@ function SettingsBackend() {
               
               <div className="flex gap-3 justify-end">
                 <Button 
-                  onClick={startApiService}
-                  disabled={apiStatus.running}
+                  onClick={restartApiService}
+                  disabled={!apiStatus.running}
                   variant="default"
                   size="sm"
                 >
-                  启动API服务
+                  重启API服务
                 </Button>
                 
                 <Button 

@@ -1,5 +1,7 @@
 import "./index.css";
 import { AppSidebar } from "@/components/app-sidebar"
+import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -39,6 +41,30 @@ export const usePageStore = create<PageState>((set) => ({
 
 export default function Page() {
   const { currentPage, currentTitle, currentSubtitle } = usePageStore();
+
+  // 自动启动API服务
+  useEffect(() => {
+    const startApiService = async () => {
+      try {
+        const response = await invoke("start_api_service", {
+          port: 60000,
+          host: "127.0.0.1"
+        });
+        console.log("API服务已自动启动", response);
+      } catch (error) {
+        console.error("自动启动API服务失败:", error);
+      }
+    };
+
+    startApiService();
+
+    // 组件卸载时尝试停止API服务
+    return () => {
+      invoke("stop_api_service").catch(err => {
+        console.error("停止API服务失败:", err);
+      });
+    };
+  }, []); // 空依赖数组确保只在组件挂载时执行一次
 
   // 根据currentPage返回对应的组件
   const renderContent = () => {
