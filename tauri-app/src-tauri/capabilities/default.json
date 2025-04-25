@@ -11,6 +11,11 @@
     "core:resources:default",
     "core:window:allow-start-dragging",
     "store:default",
+    "fs:default",
+    {
+      "identifier": "fs:scope-appdata",
+      "allow": [{ "path": "$APPDATA/*" }, { "path": "$APPLOCALDATA/*"}]
+    },
     "updater:default",
     {
       "identifier": "shell:allow-spawn",
@@ -48,6 +53,13 @@
           ]
         }
       ]
+    },
+    "sql:default",
+    "sql:allow-execute",
+    "dialog:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "http://127.0.0.1:60000" }]
     }
   ]
 }

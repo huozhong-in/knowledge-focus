@@ -26,19 +26,17 @@ const Intro: React.FC = () => {
           <div className="text-lg">
             <h2 className="font-semibold mb-2">主要功能：</h2>
             <ul className="list-disc list-inside space-y-2">
-              <li>高效的知识管理</li>
-              <li>智能笔记整理</li>
-              <li>快速检索功能</li>
-              <li>多设备同步</li>
+              <li>文件管理新生代！人工智能加持的文档看板，帮你轻松管理散落各处的文档。</li>
+              <li>建立个人知识库！仅通过跟文件聊天方式完成知识的抽取和提炼，让知识彼此关联形成网状结构。</li>
+              <li>开放的导出能力！智能组合知识片段导出文件，给到商业应用使用，充分利用其先进的模型能力和产品形态。</li>
             </ul>
           </div>
           
           <div className="text-lg">
             <h2 className="font-semibold mb-2">使用提示：</h2>
             <ul className="list-disc list-inside space-y-2">
-              <li>使用快捷键提高效率</li>
-              <li>定期备份重要数据</li>
-              <li>合理组织知识结构</li>
+              <li>请授权本应用读取您的各个文档文件夹</li>
+              <li>首次启动需要下载本地小模型，请您耐心等待...</li>
             </ul>
           </div>
         </div>
