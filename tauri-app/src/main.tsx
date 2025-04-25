@@ -17,13 +17,13 @@ async function setTrayIcon() {
   let newIconPath;
   
   if (import.meta.env.MODE === 'development') {
-    console.log("当前环境: 开发");
+    // console.log("当前环境: 开发");
     newIconPath = await join(await resourceDir(), '../../../mac-tray-icon.png');
   } else {
     newIconPath = await join(await resourceDir(), 'mac-tray-icon.png');
   }
   
-  console.log("图标路径:", newIconPath);
+  // console.log("图标路径:", newIconPath);
   
   if (newIconPath) {
     const tray = await TrayIcon.getById("1");

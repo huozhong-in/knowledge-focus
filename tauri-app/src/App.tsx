@@ -1,254 +1,91 @@
-import { useState, useEffect } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from '@tauri-apps/api/event';
-import { Window } from '@tauri-apps/api/window';
-import { open } from '@tauri-apps/plugin-dialog';
-import { fetch } from '@tauri-apps/plugin-http';
 import "./index.css";
-import { Button } from "@/components/ui/button"
-// import { loadDB } from "./lib/utils.ts"
-// import { TestDB } from "./components/TestDB";
+import { AppSidebar } from "@/components/app-sidebar"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Separator } from "@/components/ui/separator"
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+import SettingsBackend from "./settings-backend";
+import PlaygroundTesting from "./playground-testing";
+import { create } from 'zustand';
 
-function App() {  
-  // API服务状态
-  const [apiStatus, setApiStatus] = useState({
-    running: false,
-    port: 60000,
-    host: "127.0.0.1",
-    url: "http://127.0.0.1:60000"
-  });
-  const [apiLogs, setApiLogs] = useState<string[]>([]);
-  const [customPort, setCustomPort] = useState("60000");
-  const [customHost, setCustomHost] = useState("127.0.0.1");
+// 创建一个store来管理页面内容
+interface PageState {
+  currentPage: string;
+  currentTitle: string;
+  currentSubtitle: string;
+  setPage: (page: string, title: string, subtitle: string) => void;
+}
 
-  // 获取API状态
-  async function checkApiStatus() {
-    try {
-      const status = await invoke("get_api_status");
-      setApiStatus(status as any);
-    } catch (error) {
-      console.error("获取API状态失败:", error);
-    }
-  }
+export const usePageStore = create<PageState>((set) => ({
+  currentPage: "home",
+  currentTitle: "Building Your Application",
+  currentSubtitle: "Data Fetching",
+  setPage: (page, title, subtitle) => set({ 
+    currentPage: page, 
+    currentTitle: title,
+    currentSubtitle: subtitle 
+  }),
+}));
 
-  // 启动API服务
-  async function startApiService() {
-    try {
-      const port = parseInt(customPort, 10);
-      const response = await invoke("start_api_service", { 
-        port: isNaN(port) ? undefined : port,
-        host: customHost || undefined 
-      });
-      setApiStatus(response as any);
-      await checkApiStatus();
-    } catch (error) {
-      console.error("启动API服务失败:", error);
-    }
-  }
+export default function Page() {
+  const { currentPage, currentTitle, currentSubtitle } = usePageStore();
 
-  // 停止API服务
-  async function stopApiService() {
-    try {
-      await invoke("stop_api_service");
-      await checkApiStatus();
-    } catch (error) {
-      console.error("停止API服务失败:", error);
-    }
-  }
-
-  // 文件选择测试
-  const handleFileSelect = async () => {
-    try {
-      const selected = await open({
-        multiple: true,
-        directory: false,
-      });
-      
-      if (selected) {
-        // 如果选择了文件，selected就是文件路径
-        setApiLogs(prev => [...prev, `选择的文件路径: ${selected}`].slice(-50));
-        
-        // 确保selected是数组
-        const filePaths = Array.isArray(selected) ? selected : [selected];
-        
-        // 发送到后端API
-        const response = await fetch('http://127.0.0.1:60000/file-content', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(filePaths),  // 直接发送文件路径数组
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          // 显示每个文件的结果
-          data.results.forEach((result: any) => {
-            setApiLogs(prev => [...prev, 
-              `文件: ${result.path}`,
-              result.success ? `内容: ${result.content.substring(0, 100)}...` : `错误: ${result.error}`
-            ].slice(-50));
-          });
-        } else {
-          setApiLogs(prev => [...prev, `请求失败: ${response.statusText}`].slice(-50));
-        }
-      }
-    } catch (err) {
-      console.error('文件选择错误:', err);
-      setApiLogs(prev => [...prev, `文件选择错误: ${err}`].slice(-50));
+  // 根据currentPage返回对应的组件
+  const renderContent = () => {
+    switch (currentPage) {
+      case "settings-backend":
+        return <SettingsBackend />;
+      case "playground-testing":
+        return <PlaygroundTesting />;
+      default:
+        return (
+          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+            <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+              <div className="aspect-video rounded-xl bg-muted/50" />
+              <div className="aspect-video rounded-xl bg-muted/50" />
+              <div className="aspect-video rounded-xl bg-muted/50" />
+            </div>
+            <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 md:min-h-min" />
+          </div>
+        );
     }
   };
 
-  // 组件加载时检查API状态
-  useEffect(() => {
-    const unlisten = Window.getCurrent().onCloseRequested(async () => {
-      await invoke('set_activation_policy_accessory');
-    });
-    checkApiStatus();
-    
-    // 监听API日志事件
-    const unlistenLog = listen<string>("api-log", (event) => {
-      setApiLogs(prev => [...prev, event.payload].slice(-50)); // 保留最新的50条日志
-    });
-    
-    // 监听API错误事件
-    const unlistenError = listen<string>("api-error", (event) => {
-      setApiLogs(prev => [...prev, `INFO: ${event.payload}`].slice(-50));
-    });
-    
-    // 监听API进程错误事件
-    const unlistenProcessError = listen<string>("api-process-error", (event) => {
-      setApiLogs(prev => [...prev, `进程错误: ${event.payload}`].slice(-50));
-      checkApiStatus();
-    });
-    
-    // 监听API终止事件
-    const unlistenTerminated = listen<number | null>("api-terminated", (event) => {
-      setApiLogs(prev => [...prev, `API服务已终止，状态码: ${event.payload ?? "未知"}`].slice(-50));
-      checkApiStatus();
-    });
-    
-    return () => {
-      // 清理监听器
-      unlistenLog.then(fn => fn());
-      unlistenError.then(fn => fn());
-      unlistenProcessError.then(fn => fn());
-      unlistenTerminated.then(fn => fn());
-      unlisten.then(fn => fn());
-    };
-  }, []);
-
   return (
-    <main className="container mx-auto p-3">
-      <h1 className="text-xl font-bold text-center mb-3">KnowledgeFocus</h1>
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
-        {/* 添加测试组件 */}
-        {/* <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4 mb-4">
-          <TestDB />
-        </div> */}
-        
-        {/* 添加文件选择测试 */}
-        <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4 mb-4">
-          <h2 className="text-lg font-semibold mb-3">文件路径测试</h2>
-          <Button onClick={handleFileSelect}>
-            选择文件测试
-          </Button>
-        </div>
-        
-        <div className="flex gap-6 items-center mb-4">
-          <a href="https://vitejs.dev" target="_blank" className="hover:opacity-80 transition-opacity">
-            <img src="/vite.svg" className="w-12 h-12" alt="Vite logo" />
-          </a>
-          <a href="https://tauri.app" target="_blank" className="hover:opacity-80 transition-opacity">
-            <img src="/tauri.svg" className="w-12 h-12" alt="Tauri logo" />
-          </a>
-          <a href="https://reactjs.org" target="_blank" className="hover:opacity-80 transition-opacity">
-            <img src={reactLogo} className="w-12 h-12" alt="React logo" />
-          </a>
-        </div>
-
-        <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4">
-          <h2 className="text-lg font-semibold mb-3">{}</h2>
-        </div>
-
-        {/* API服务控制面板 */}
-        <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4">
-          <h2 className="text-lg font-semibold mb-3">Python FastAPI 服务控制</h2>
-          
-          <div className="mb-4 p-3 bg-muted/30 rounded-md">
-            <p className="mb-1">状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
-            {apiStatus.running && (
-              <p>
-                API地址: <a href={apiStatus.url} target="_blank" className="text-primary hover:underline">{apiStatus.url}</a>
-              </p>
-            )}
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
+          <div className="flex items-center gap-2 px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem className="hidden md:block">
+                  <BreadcrumbLink href="#">
+                    {currentTitle}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator className="hidden md:block" />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{currentSubtitle}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
           </div>
-
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <label htmlFor="api-host" className="block text-sm font-medium">主机:</label>
-                <input
-                  id="api-host"
-                  value={customHost}
-                  onChange={(e) => setCustomHost(e.target.value)}
-                  disabled={apiStatus.running}
-                  placeholder="主机地址"
-                  className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
-                />
-              </div>
-              
-              <div className="space-y-1">
-                <label htmlFor="api-port" className="block text-sm font-medium">端口:</label>
-                <input
-                  id="api-port"
-                  value={customPort}
-                  onChange={(e) => setCustomPort(e.target.value)}
-                  disabled={apiStatus.running}
-                  placeholder="端口"
-                  className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
-                />
-              </div>
-            </div>
-            
-            <div className="flex gap-3 justify-end">
-              <Button 
-                onClick={startApiService}
-                disabled={apiStatus.running}
-                variant="default"
-                size="sm"
-              >
-                启动API服务
-              </Button>
-              
-              <Button 
-                onClick={stopApiService}
-                disabled={!apiStatus.running}
-                variant="secondary"
-                size="sm"
-              >
-                停止API服务
-              </Button>
-            </div>
-          </div>
-          
-          <div className="mt-4">
-            <h3 className="text-base font-medium mb-2">API日志</h3>
-            <div className="h-[160px] overflow-y-auto border rounded-md bg-muted/10 p-3">
-              {apiLogs.length === 0 ? (
-                <p className="text-muted-foreground text-center text-sm">暂无日志</p>
-              ) : (
-                apiLogs.map((log, index) => (
-                  <div key={index} className="text-xs mb-0.5 font-mono">{log}</div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
+        </header>
+        {renderContent()}
+      </SidebarInset>
+    </SidebarProvider>
+  )
 }
-
-export default App;
