@@ -54,7 +54,16 @@ function SettingsBackend() {
   
     // 组件加载时检查API状态
     useEffect(() => {
-      const unlisten = Window.getCurrent().onCloseRequested(async () => {
+      const unlisten = Window.getCurrent().onCloseRequested(async (_event) => {
+        // 在应用关闭前停止API服务
+        if (apiStatus.running) {
+          try {
+            await invoke("stop_api_service");
+            console.log("应用关闭时成功停止API服务");
+          } catch (error) {
+            console.error("应用关闭时停止API服务失败:", error);
+          }
+        }
         await invoke('set_activation_policy_accessory');
       });
       checkApiStatus();
@@ -89,7 +98,7 @@ function SettingsBackend() {
         unlistenTerminated.then(fn => fn());
         unlisten.then(fn => fn());
       };
-    }, []);
+    }, [apiStatus.running]);
   
     return (
       <main className="container mx-auto p-3">
@@ -137,11 +146,11 @@ function SettingsBackend() {
               <div className="flex gap-3 justify-end">
                 <Button 
                   onClick={restartApiService}
-                  disabled={!apiStatus.running}
+                  disabled={apiStatus.running}
                   variant="default"
                   size="sm"
                 >
-                  重启API服务
+                  启动API服务
                 </Button>
                 
                 <Button 
