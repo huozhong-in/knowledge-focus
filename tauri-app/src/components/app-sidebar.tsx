@@ -56,7 +56,7 @@ const data = {
       isActive: true,
       items: [
         {
-          title: "Main",
+          title: "Home",
           url: "#",
         },
         {
