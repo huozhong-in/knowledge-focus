@@ -6,7 +6,6 @@ import reactLogo from "./assets/react.svg";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { Button } from "@/components/ui/button";
-// import { TestDB } from "./components/TestDB";
 
 function PlaygroundTesting() {  
     const [apiLogs, setApiLogs] = useState<string[]>([]);
@@ -64,23 +63,8 @@ function PlaygroundTesting() {
   
     return (
       <main className="container mx-auto p-3">
-        <h1 className="text-xl font-bold text-center mb-3">KnowledgeFocus</h1>
+        {/* <h1 className="text-xl font-bold text-center mb-3">KnowledgeFocus</h1> */}
         <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
-          <div className="flex gap-6 items-center mb-4">
-            <a href="https://vitejs.dev" target="_blank" className="hover:opacity-80 transition-opacity">
-              <img src="/vite.svg" className="w-12 h-12" alt="Vite logo" />
-            </a>
-            <a href="https://tauri.app" target="_blank" className="hover:opacity-80 transition-opacity">
-              <img src="/tauri.svg" className="w-12 h-12" alt="Tauri logo" />
-            </a>
-            <a href="https://reactjs.org" target="_blank" className="hover:opacity-80 transition-opacity">
-              <img src={reactLogo} className="w-12 h-12" alt="React logo" />
-            </a>
-          </div>
-          {/* 添加测试组件 */}
-          {/* <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4 mb-4">
-            <TestDB />
-          </div> */}
           
           {/* 添加文件选择测试 */}
           <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4 mb-4">

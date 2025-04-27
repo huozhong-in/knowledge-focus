@@ -30,8 +30,8 @@ interface PageState {
 
 export const usePageStore = create<PageState>((set) => ({
   currentPage: "home",
-  currentTitle: "Building Your Application",
-  currentSubtitle: "Data Fetching",
+  currentTitle: "Knowledge Base",
+  currentSubtitle: "Kanban",
   setPage: (page, title, subtitle) => set({ 
     currentPage: page, 
     currentTitle: title,

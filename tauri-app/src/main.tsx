@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import {create} from 'zustand'
+import {create} from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';

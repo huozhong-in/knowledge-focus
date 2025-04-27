@@ -13,7 +13,7 @@ import {
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
+// import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -27,9 +27,9 @@ import {
 // This is sample data.
 const data = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "https://ui.shadcn.com/avatars/shadcn.jpg",
+    name: "GANDAOfoo",
+    email: "gandaofoo@gmail.com",
+    avatar: "https://pbs.twimg.com/profile_images/1785110422640869376/EJiBMUiv_x96.jpg",
   },
   teams: [
     {
@@ -65,7 +65,7 @@ const data = {
           pageId: "playground-testing"
         },
         {
-          title: "Temp",
+          title: "Archived",
           url: "#",
         },
       ],
@@ -76,38 +76,38 @@ const data = {
       icon: Bot,
       items: [
         {
-          title: "Genesis",
+          title: "Local Models",
           url: "#",
         },
         {
-          title: "Explorer",
+          title: "Domestic Models",
           url: "#",
         },
         {
-          title: "Quantum",
+          title: "Overseas Models",
           url: "#",
         },
       ],
     },
     {
-      title: "Documentation",
+      title: "Prompts",
       url: "#",
       icon: BookOpen,
       items: [
         {
-          title: "Introduction",
+          title: "Scanner",
           url: "#",
         },
         {
-          title: "Get Started",
+          title: "Crawler",
           url: "#",
         },
         {
-          title: "Tutorials",
+          title: "Organizer",
           url: "#",
         },
         {
-          title: "Changelog",
+          title: "Library",
           url: "#",
         },
       ],
@@ -167,7 +167,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
+        {/* <NavProjects projects={data.projects} /> */}
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
