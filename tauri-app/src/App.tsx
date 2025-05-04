@@ -16,8 +16,9 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import SettingsBackend from "./settings-backend";
-import PlaygroundTesting from "./playground-testing";
+import HomeDashboard from "./home-dashboard";
+import HomeMyFiles from "./home-myfiles";
+import SettingsDeveloperZone from "./settings-developerzone";
 import { create } from 'zustand';
 
 // 创建一个store来管理页面内容
@@ -29,9 +30,9 @@ interface PageState {
 }
 
 export const usePageStore = create<PageState>((set) => ({
-  currentPage: "home",
-  currentTitle: "Knowledge Base",
-  currentSubtitle: "Kanban",
+  currentPage: "Home",
+  currentTitle: "Home",
+  currentSubtitle: "Dashboard",
   setPage: (page, title, subtitle) => set({ 
     currentPage: page, 
     currentTitle: title,
@@ -59,31 +60,24 @@ export default function Page() {
     startApiService();
 
     // 组件卸载时尝试停止API服务
-    return () => {
-      invoke("stop_api_service").catch(err => {
-        console.error("停止API服务失败:", err);
-      });
-    };
+    // return () => {
+    //   invoke("stop_api_service").catch(err => {
+    //     console.error("停止API服务失败:", err);
+    //   });
+    // };
   }, []); // 空依赖数组确保只在组件挂载时执行一次
 
   // 根据currentPage返回对应的组件
   const renderContent = () => {
     switch (currentPage) {
-      case "settings-backend":
-        return <SettingsBackend />;
-      case "playground-testing":
-        return <PlaygroundTesting />;
+      case "home-myfiles":
+        return <HomeMyFiles />;
+      case "settings-developerzone":
+        return <SettingsDeveloperZone />;
+      case "home-dashboard":
+        return <HomeDashboard />;
       default:
-        return (
-          <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-            <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-              <div className="aspect-video rounded-xl bg-muted/50" />
-              <div className="aspect-video rounded-xl bg-muted/50" />
-              <div className="aspect-video rounded-xl bg-muted/50" />
-            </div>
-            <div className="min-h-[100vh] flex-1 rounded-xl bg-muted/50 md:min-h-min" />
-          </div>
-        );
+        return <HomeDashboard />;
     }
   };
 

@@ -20,6 +20,8 @@ Focus on building an open and extensible AI knowledge base system. Suitable for 
 
 `cd api`
 
+不要使用uv安装Python包，因为是软链接不能打包进release包，使用pip。
+
 `pip install fastapi uvicorn`
 
 ## 3. 给tauri app安装依赖并进行开发

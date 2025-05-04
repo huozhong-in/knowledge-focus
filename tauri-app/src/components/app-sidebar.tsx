@@ -6,30 +6,32 @@ import {
   Command,
   Frame,
   GalleryVerticalEnd,
+  HomeIcon,
   Map,
   PieChart,
   Settings2,
-  SquareTerminal,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-// import { NavProjects } from "@/components/nav-projects"
+import { NavProjects } from "@/components/nav-projects"
 import { NavUser } from "@/components/nav-user"
-import { TeamSwitcher } from "@/components/team-switcher"
+// import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
+  useSidebar
 } from "@/components/ui/sidebar"
+import { SearchForm } from "@/components/search-form"
 
 // This is sample data.
 const data = {
   user: {
-    name: "GANDAOfoo",
-    email: "gandaofoo@gmail.com",
-    avatar: "https://pbs.twimg.com/profile_images/1785110422640869376/EJiBMUiv_x96.jpg",
+    name: "Tom Cruise",
+    email: "tom.cruise@email.com",
+    avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
   },
   teams: [
     {
@@ -50,23 +52,25 @@ const data = {
   ],
   navMain: [
     {
-      title: "Playground",
+      title: "Home",
       url: "#",
-      icon: SquareTerminal,
+      icon: HomeIcon,
       isActive: true,
       items: [
         {
-          title: "Home",
+          title: "Dashboard",
           url: "#",
+          pageId: "home-dashboard",
         },
         {
-          title: "Testing",
+          title: "Insight Cards",
           url: "#",
-          pageId: "playground-testing"
+          pageId: "home-insightcards",
         },
         {
-          title: "Archived",
+          title: "My Files",
           url: "#",
+          pageId: "home-myfiles",
         },
       ],
     },
@@ -78,14 +82,17 @@ const data = {
         {
           title: "Local Models",
           url: "#",
+          pageId: "models-local",
         },
         {
           title: "Domestic Models",
           url: "#",
+          pageId: "models-domestic",
         },
         {
           title: "Overseas Models",
           url: "#",
+          pageId: "models-overseas",
         },
       ],
     },
@@ -95,20 +102,9 @@ const data = {
       icon: BookOpen,
       items: [
         {
-          title: "Scanner",
-          url: "#",
-        },
-        {
-          title: "Crawler",
-          url: "#",
-        },
-        {
-          title: "Organizer",
-          url: "#",
-        },
-        {
           title: "Library",
           url: "#",
+          pageId: "prompts-library",
         },
       ],
     },
@@ -123,36 +119,26 @@ const data = {
           pageId: "settings-general",
         },
         {
-          title: "Backend",
+          title: "Developer Zone",
           url: "#",
-          pageId: "settings-backend",
-        },
-        {
-          title: "Database",
-          url: "#",
-          pageId: "settings-database",
-        },
-        {
-          title: "Permissions",
-          url: "#",
-          pageId: "settings-permissions",
+          pageId: "settings-developerzone",
         },
       ],
     },
   ],
   projects: [
     {
-      name: "Design Engineering",
+      name: "今天修改的文件",
       url: "#",
       icon: Frame,
     },
     {
-      name: "Sales & Marketing",
+      name: "近7天修改的文件",
       url: "#",
       icon: PieChart,
     },
     {
-      name: "Travel",
+      name: "近30天修改的文件",
       url: "#",
       icon: Map,
     },
@@ -160,14 +146,21 @@ const data = {
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { state } = useSidebar()
+  const isCollapsed = state === "collapsed"
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <div className="flex items-center ">
+          <img src="/kf-logo.png" className="w-10 h-10 object-contain" alt="Logo" />
+          <SearchForm collapsed={isCollapsed} />
+        </div>
+      {/* <TeamSwitcher teams={data.teams} /> */}
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
-        {/* <NavProjects projects={data.projects} /> */}
+        <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />
