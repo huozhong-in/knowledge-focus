@@ -18,6 +18,12 @@ import {
 } from "@/components/ui/sidebar"
 import HomeDashboard from "./home-dashboard";
 import HomeMyFiles from "./home-myfiles";
+import HomeInsightCards from "./home-insightcards";
+import ModelsLocal from "./models-local";
+import ModelsDomestic from "./models-domestic";
+import ModelsOverseas from "./models-overseas";
+import PromptsLibrary from "./prompts-library";
+import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import { create } from 'zustand';
 
@@ -70,12 +76,24 @@ export default function Page() {
   // 根据currentPage返回对应的组件
   const renderContent = () => {
     switch (currentPage) {
-      case "home-myfiles":
-        return <HomeMyFiles />;
-      case "settings-developerzone":
-        return <SettingsDeveloperZone />;
       case "home-dashboard":
         return <HomeDashboard />;
+      case "home-insightcards":
+        return <HomeInsightCards />;
+      case "home-myfiles":
+        return <HomeMyFiles />;
+      case "models-local":
+        return <ModelsLocal />;
+      case "models-domestic":
+        return <ModelsDomestic />;
+      case "models-overseas":
+        return <ModelsOverseas />;
+      case "prompts-library":
+        return <PromptsLibrary />;
+      case "settings-general":
+        return <SettingsGeneral />;
+      case "settings-developerzone":
+        return <SettingsDeveloperZone />;
       default:
         return <HomeDashboard />;
     }
