@@ -16,6 +16,7 @@ struct ApiProcessState {
     process_child: Option<tauri_plugin_shell::process::CommandChild>,
     port: u16,
     host: String,
+    db_path: String,
 }
 
 // API状态包装为线程安全类型
@@ -56,6 +57,7 @@ async fn start_api_service(
     state: tauri::State<'_, ApiState>,
     port: Option<u16>,
     host: Option<String>,
+    db_path: Option<String>,
 ) -> Result<HashMap<String, serde_json::Value>, String> {
     let mut api_state = state.0.lock().unwrap();
 
@@ -83,9 +85,18 @@ async fn start_api_service(
 
     let port = port.unwrap_or(api_state.port);
     let host = host.unwrap_or_else(|| api_state.host.clone());
+    let db_path = db_path.unwrap_or_else(|| {
+        app.path()
+            .app_data_dir()
+            .unwrap()
+            .join("knowledge-focus.db")
+            .to_string_lossy()
+            .to_string()
+    });
 
     api_state.port = port;
     api_state.host = host.clone();
+    api_state.db_path = db_path;
 
     // 根据开发/生产环境选择不同的Python路径
     let python_path = if cfg!(debug_assertions) {
@@ -118,7 +129,7 @@ async fn start_api_service(
     println!("Python路径: {}", python_path);
     println!("脚本路径: {}", script_path);
 
-    let command = sidecar.args(&[&script_path, "--port", &port.to_string(), "--host", &host]);
+    let command = sidecar.args(&[&script_path, "--port", &port.to_string(), "--host", &host, "--db-path", &api_state.db_path]);
 
     let (mut rx, child) = command
         .spawn()
@@ -232,6 +243,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
@@ -290,12 +302,6 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
-            let home_dir_path = app.path().home_dir().expect("failed to get home dir");
-            let path = app
-                .path()
-                .resolve("knowledge-focus", BaseDirectory::Config)?;
-            println!("home dir path: {:?}", home_dir_path);
-            println!("path: {:?}", path);
             println!("Tray Icon ID: {:?}", tray_icon.id());
             Ok(())
         })
@@ -308,11 +314,11 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
             process_child: None,
             port: 60000,
             host: "127.0.0.1".to_string(),
+            db_path: String::new(),
         }))))
         .invoke_handler(tauri::generate_handler![
             greet,

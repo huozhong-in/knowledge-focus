@@ -1,6 +1,7 @@
 import "./index.css";
 import { AppSidebar } from "@/components/app-sidebar"
 import { useEffect } from "react";
+import { join, appDataDir } from '@tauri-apps/api/path';
 import { invoke } from "@tauri-apps/api/core";
 import {
   Breadcrumb,
@@ -36,7 +37,7 @@ interface PageState {
 }
 
 export const usePageStore = create<PageState>((set) => ({
-  currentPage: "Home",
+  currentPage: "home-dashboard",
   currentTitle: "Home",
   currentSubtitle: "Dashboard",
   setPage: (page, title, subtitle) => set({ 
@@ -53,9 +54,13 @@ export default function Page() {
   useEffect(() => {
     const startApiService = async () => {
       try {
+        const appDataPath = await appDataDir();
+        const dbPath = await join(appDataPath, 'knowledge-focus.db');
+        console.log("数据库路径:", dbPath);
         const response = await invoke("start_api_service", {
           port: 60000,
-          host: "127.0.0.1"
+          host: "127.0.0.1",
+          db_path: dbPath
         });
         console.log("API服务已自动启动", response);
       } catch (error) {

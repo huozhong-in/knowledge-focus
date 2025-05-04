@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { join, appDataDir } from '@tauri-apps/api/path';
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
 import { Window } from '@tauri-apps/api/window';
@@ -31,10 +32,13 @@ function SettingsDeveloperZone() {
     // 重启API服务
     async function restartApiService() {
       try {
+        const appDataPath = await appDataDir();
+        const dbPath = await join(appDataPath, 'knowledge-focus.db');
         const port = parseInt(customPort, 10);
         const response = await invoke("start_api_service", { 
           port: isNaN(port) ? undefined : port,
-          host: customHost || undefined 
+          host: customHost || undefined,
+          db_path: dbPath
         });
         setApiStatus(response as any);
         await checkApiStatus();

@@ -1,5 +1,6 @@
 import * as React from "react"
 import {
+  Archive,
   AudioWaveform,
   BookOpen,
   Bot,
@@ -7,6 +8,7 @@ import {
   Frame,
   GalleryVerticalEnd,
   HomeIcon,
+  Image,
   Map,
   PieChart,
   Settings2,
@@ -141,6 +143,21 @@ const data = {
       name: "近30天修改的文件",
       url: "#",
       icon: Map,
+    },
+    {
+      name: "图像文件",
+      url: "#",
+      icon: Image,
+    },
+    {
+      name: "音视频文件",
+      url: "#",
+      icon: AudioWaveform,
+    },
+    {
+      name: "压缩包/安装包",
+      url: "#",
+      icon: Archive,
     },
   ],
 }

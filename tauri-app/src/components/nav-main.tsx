@@ -33,6 +33,7 @@ export function NavMain({
   }[]
 }) {
   const setPage = usePageStore(state => state.setPage);
+  const currentPage = usePageStore(state => state.currentPage);
 
   return (
     <SidebarMenu>
@@ -52,12 +53,14 @@ export function NavMain({
                   <SidebarMenuSubItem key={subIndex}>
                     <SidebarMenuSubButton
                       href={subItem.url}
+                      isActive={subItem.pageId === currentPage}
                       onClick={(e) => {
                         if (subItem.pageId) {
                           e.preventDefault();
                           setPage(subItem.pageId, item.title, subItem.title);
                         }
                       }}
+                      className="hover:!bg-[#FFE4E6] data-[active=true]:!bg-[#FFE4E6]"
                     >
                       {subItem.title}
                     </SidebarMenuSubButton>
