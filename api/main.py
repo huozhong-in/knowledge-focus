@@ -19,14 +19,6 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
-# 表结构设计
-class Settings(SQLModel, table=True):
-    __tablename__ = "t_settings"
-    id: int = Field(default=None, primary_key=True)
-    name: str = Field(index=True)
-    value: str
-    description: str
-
 
 app = FastAPI()
 
@@ -48,43 +40,43 @@ def get_session():
         yield session
 
 # 示例：使用数据库连接的API端点
-@app.get("/db-test")
-def test_db_connection(session: Session = Depends(get_session)):
-    try:
-        # 使用SQLModel操作t_settings表
-        # 检查是否存在测试数据
-        statement = select(Settings).where(Settings.name == "test_setting")
-        test_setting = session.exec(statement).first()
+# @app.get("/db-test")
+# def test_db_connection(session: Session = Depends(get_session)):
+#     try:
+#         # 使用SQLModel操作t_settings表
+#         # 检查是否存在测试数据
+#         statement = select(Settings).where(Settings.name == "test_setting")
+#         test_setting = session.exec(statement).first()
         
-        if not test_setting:
-            # 不存在则创建测试数据
-            test_setting = Settings(
-                name="test_setting", 
-                value="测试数据",
-                description="这是一个用于测试数据库连接的设置项"
-            )
-            session.add(test_setting)
-            session.commit()
-            session.refresh(test_setting)
+#         if not test_setting:
+#             # 不存在则创建测试数据
+#             test_setting = Settings(
+#                 name="test_setting", 
+#                 value="测试数据",
+#                 description="这是一个用于测试数据库连接的设置项"
+#             )
+#             session.add(test_setting)
+#             session.commit()
+#             session.refresh(test_setting)
         
-        # 读取最近的5条设置数据
-        statement = select(Settings).order_by(Settings.id.desc()).limit(5)
-        recent_settings = session.exec(statement).all()
+#         # 读取最近的5条设置数据
+#         statement = select(Settings).order_by(Settings.id.desc()).limit(5)
+#         recent_settings = session.exec(statement).all()
         
-        # 使用model_dump()方法转换为可序列化的字典列表
-        settings_data = [s.model_dump() for s in recent_settings]
+#         # 使用model_dump()方法转换为可序列化的字典列表
+#         settings_data = [s.model_dump() for s in recent_settings]
         
-        return {
-            "status": "success",
-            "message": "数据库连接正常",
-            "data": settings_data
-        }
-    except Exception as e:
-        logger.error(f"数据库操作失败: {str(e)}")
-        return {
-            "status": "error",
-            "message": f"数据库操作失败: {str(e)}"
-        }
+#         return {
+#             "status": "success",
+#             "message": "数据库连接正常",
+#             "data": settings_data
+#         }
+#     except Exception as e:
+#         logger.error(f"数据库操作失败: {str(e)}")
+#         return {
+#             "status": "error",
+#             "message": f"数据库操作失败: {str(e)}"
+#         }
 
 @app.get("/")
 def read_root():

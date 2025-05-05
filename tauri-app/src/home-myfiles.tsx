@@ -37,7 +37,7 @@ function HomeMyFiles() {
             // 显示每个文件的结果
             data.results.forEach((result: any) => {
               setApiLogs(prev => [...prev, 
-                `文件: ${result.path}`,
+                `读取文件内容: ${result.path}`,
                 result.success ? `内容: ${result.content.substring(0, 100)}...` : `错误: ${result.error}`
               ].slice(-50));
             });
