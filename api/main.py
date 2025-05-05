@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends
 from typing import List
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import uvicorn
 import argparse
 import os
@@ -10,7 +11,7 @@ import pathlib
 import logging
 from sqlmodel import create_engine, Session
 import multiprocessing
-from db_mgr import DBManager, Task, TaskStatus, TaskResult, TaskPriority
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskPriority
 
 # 设置日志记录
 logger = logging.getLogger()
@@ -75,7 +76,6 @@ def task_processor(processor_id: int, db_path: str = None):
     try:
         sqlite_url = f"sqlite:///{db_path}"
         engine = create_engine(sqlite_url, echo=False)
-        # with session:
         _db_mgr = DBManager(session=Session(engine))
         while True:
             task = _db_mgr.get_next_task()
@@ -92,6 +92,59 @@ def task_processor(processor_id: int, db_path: str = None):
     except Exception as e:
         logger.error(f"{processor_id}号将任务处理失败: {str(e)}")
 
+def task_processor_v2(processor_id: int, db_path: str = None):
+    """处理任务的工作进程"""
+    logger.info("任务处理者已启动")
+    sqlite_url = f"sqlite:///{db_path}"
+    engine = create_engine(sqlite_url, echo=False)
+    _db_mgr = DBManager(session=Session(engine))
+
+    # 定义实际执行任务的函数
+    def execute_task(task_id, task_name):
+        logger.info(f"开始执行任务 {task_id}: {task_name}")
+        # 模拟任务处理时间
+        time.sleep(5)
+        logger.info(f"任务 {task_id} 执行完成")
+        return True
+    
+    # 创建线程池用于执行任务，便于实现超时控制
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            while True:
+                # 获取下一个待处理任务
+                task = _db_mgr.get_next_task()
+                
+                if not task:
+                    time.sleep(2)  # 没有任务时等待
+                    continue
+                
+                # 将任务状态更新为运行中
+                _db_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+                logger.info(f"处理任务: {task.id} - {task.task_name}")
+                
+                # 提交任务到线程池，设置超时时间（秒）
+                TASK_TIMEOUT = 30  # 30秒超时
+                future = executor.submit(execute_task, task.id, task.task_name)
+                
+                try:
+                    # 等待任务完成，最多等待TASK_TIMEOUT秒
+                    result = future.result(timeout=TASK_TIMEOUT)
+                    # 更新任务状态为完成
+                    _db_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
+                    logger.info(f"任务 {task.id} 处理完成")
+                except TimeoutError:
+                    # 任务超时处理
+                    logger.error(f"任务 {task.id} 处理超时")
+                    _db_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
+            
+        except Exception as e:
+            logger.error(f"任务处理失败: {str(e)}")
+            # 如果有任务正在处理，将其状态更新为失败
+            if 'task' in locals() and task:
+                try:
+                    _db_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
+                except Exception as update_error:
+                    logger.error(f"更新失败任务状态时出错: {str(update_error)}")
 
 # 示例：使用数据库连接的API端点
 # @app.get("/db-test")
