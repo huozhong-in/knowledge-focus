@@ -1,5 +1,4 @@
-from sqlmodel import Field, SQLModel, create_engine, Session, select, inspect, text
-from fastapi import FastAPI, Depends
+from sqlmodel import Field, SQLModel, Session, select, inspect, text
 
 # 表结构设计
 class Settings(SQLModel, table=True):
@@ -27,7 +26,12 @@ class DBManager:
             if not inspector.has_table(Settings.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Settings.__table__])
                 # 适当增加索引
-                if not any([col['name'] == 'idx_talker_id' for col in inspector.get_indexes(Settings.__tablename__)]):
-                    conn.execute(text(f'CREATE INDEX idx_talker_id ON {Settings.__tablename__} (id);'))
+                # if not any([col['name'] == 'idx_talker_id' for col in inspector.get_indexes(Settings.__tablename__)]):
+                #     conn.execute(text(f'CREATE INDEX idx_talker_id ON {Settings.__tablename__} (id);'))
         
         return True
+    
+if __name__ == '__main__':
+    db_mgr = DBManager(Session())
+    db_mgr.init_db()
+    print("数据库初始化完成")

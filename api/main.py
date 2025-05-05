@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends
 from typing import List
 import uvicorn
@@ -7,7 +8,7 @@ import time
 from utils import kill_process_on_port
 import pathlib
 import logging
-from sqlmodel import Field, SQLModel, create_engine, Session, select
+from sqlmodel import create_engine, Session
 
 # 设置日志记录
 logger = logging.getLogger()
@@ -19,64 +20,82 @@ formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(messag
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理器"""
+    # 在应用启动时执行初始化操作
+    logger.info("应用正在启动...")
+    
+    # 初始化数据库引擎
+    if hasattr(app.state, "db_path"):
+        sqlite_url = f"sqlite:///{app.state.db_path}"
+        app.state.engine = create_engine(sqlite_url, echo=False)
+        logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
+    else:
+        logger.warning("未设置数据库路径，数据库引擎未初始化")
+    
+    yield
+    
+    # 在应用关闭时执行清理操作
+    if hasattr(app.state, "engine") and app.state.engine is not None:
+        app.state.engine.dispose()  # 释放数据库连接池
+        logger.info("数据库连接池已释放")
+    
+    logger.info("应用正在关闭...")
 
-app = FastAPI()
-
-# 存储数据库引擎作为应用的属性
-app.state.engine = None
-
-# 数据库连接管理
-def get_engine():
-    """获取数据库引擎"""
-    if app.state.engine is None:
-        # 确保数据库引擎已初始化
-        raise RuntimeError("数据库引擎未初始化")
-    return app.state.engine
+app = FastAPI(lifespan=lifespan)
 
 def get_session():
     """FastAPI依赖函数，用于获取数据库会话"""
-    engine = get_engine()
-    with Session(engine) as session:
+    if not hasattr(app.state, "engine") or app.state.engine is None:
+        # 确保数据库引擎已初始化
+        raise RuntimeError("数据库引擎未初始化")
+    
+    with Session(app.state.engine) as session:
         yield session
 
 # 示例：使用数据库连接的API端点
-# @app.get("/db-test")
-# def test_db_connection(session: Session = Depends(get_session)):
-#     try:
-#         # 使用SQLModel操作t_settings表
-#         # 检查是否存在测试数据
-#         statement = select(Settings).where(Settings.name == "test_setting")
-#         test_setting = session.exec(statement).first()
+@app.get("/db-test")
+def test_db_connection(session: Session = Depends(get_session)):
+    from db_mgr import Settings, DBManager  # 确保db_mgr.py中定义了Settings模型
+    from sqlmodel import select
+    try:
+        # 使用SQLModel操作t_settings表
+        # 检查是否存在测试数据
+        db_mgr = DBManager(session)
+        db_mgr.init_db()  # 确保数据库已初始化
+        statement = select(Settings).where(Settings.name == "test_setting")
+        test_setting = session.exec(statement).first()
         
-#         if not test_setting:
-#             # 不存在则创建测试数据
-#             test_setting = Settings(
-#                 name="test_setting", 
-#                 value="测试数据",
-#                 description="这是一个用于测试数据库连接的设置项"
-#             )
-#             session.add(test_setting)
-#             session.commit()
-#             session.refresh(test_setting)
+        if not test_setting:
+            # 不存在则创建测试数据
+            test_setting = Settings(
+                name="test_setting", 
+                value="测试数据",
+                description="这是一个用于测试数据库连接的设置项"
+            )
+            session.add(test_setting)
+            session.commit()
+            session.refresh(test_setting)
         
-#         # 读取最近的5条设置数据
-#         statement = select(Settings).order_by(Settings.id.desc()).limit(5)
-#         recent_settings = session.exec(statement).all()
+        # 读取最近的5条设置数据
+        statement = select(Settings).order_by(Settings.id.desc()).limit(5)
+        recent_settings = session.exec(statement).all()
         
-#         # 使用model_dump()方法转换为可序列化的字典列表
-#         settings_data = [s.model_dump() for s in recent_settings]
+        # 使用model_dump()方法转换为可序列化的字典列表
+        settings_data = [s.model_dump() for s in recent_settings]
         
-#         return {
-#             "status": "success",
-#             "message": "数据库连接正常",
-#             "data": settings_data
-#         }
-#     except Exception as e:
-#         logger.error(f"数据库操作失败: {str(e)}")
-#         return {
-#             "status": "error",
-#             "message": f"数据库操作失败: {str(e)}"
-#         }
+        return {
+            "status": "success",
+            "message": "数据库连接正常",
+            "data": settings_data
+        }
+    except Exception as e:
+        logger.error(f"数据库操作失败: {str(e)}")
+        return {
+            "status": "error",
+            "message": f"数据库操作失败: {str(e)}"
+        }
 
 @app.get("/")
 def read_root():
@@ -135,14 +154,5 @@ if __name__ == "__main__":
     # 设置数据库路径
     app.state.db_path = args.db_path
     
-    # 初始化数据库引擎
-    sqlite_url = f"sqlite:///{args.db_path}"
-    engine = create_engine(sqlite_url, echo=False)
-    app.state.engine = engine
-    
-    # 创建所有表
-    SQLModel.metadata.create_all(engine)
-    
     logging.info(f"API服务启动在: http://{args.host}:{args.port}")
-    logging.info(f"数据库路径: {args.db_path}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
