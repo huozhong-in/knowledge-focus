@@ -11,7 +11,8 @@ import pathlib
 import logging
 from sqlmodel import create_engine, Session
 import multiprocessing
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskPriority, TaskType
+from db_mgr import TaskStatus, TaskResult
+from task_mgr import TaskManager
 from contextlib import asynccontextmanager
 import asyncio
 import threading
@@ -110,18 +111,18 @@ def task_processor(processor_id: int, db_path: str = None):
     try:
         sqlite_url = f"sqlite:///{db_path}"
         engine = create_engine(sqlite_url, echo=False)
-        _db_mgr = DBManager(session=Session(engine))
+        _task_mgr = TaskManager(session=Session(engine))
         while True:
-            task = _db_mgr.get_next_task()
+            task = _task_mgr.get_next_task()
             if not task:
                 time.sleep(2)  # 没有任务时等待
                 continue
             # 将任务状态更新为运行中
-            _db_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+            _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
             logger.info(f"{processor_id}号正在处理任务: {task.id} - {task.task_name}")
             # 模拟任务处理时间
             time.sleep(5)
-            _db_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
+            _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
             logger.info(f"{processor_id}号将任务 {task.id} 处理完成")
     except Exception as e:
         logger.error(f"{processor_id}号将任务处理失败: {str(e)}")
@@ -131,7 +132,7 @@ def task_processor_v2(processor_id: int, db_path: str = None):
     logger.info("任务处理者已启动")
     sqlite_url = f"sqlite:///{db_path}"
     engine = create_engine(sqlite_url, echo=False)
-    _db_mgr = DBManager(session=Session(engine))
+    _task_mgr = TaskManager(session=Session(engine))
 
     # 定义实际执行任务的函数
     def execute_task(task_id, task_name):
@@ -146,14 +147,14 @@ def task_processor_v2(processor_id: int, db_path: str = None):
         try:
             while True:
                 # 获取下一个待处理任务
-                task = _db_mgr.get_next_task()
+                task = _task_mgr.get_next_task()
                 
                 if not task:
                     time.sleep(2)  # 没有任务时等待
                     continue
                 
                 # 将任务状态更新为运行中
-                _db_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+                _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
                 logger.info(f"处理任务: {task.id} - {task.task_name}")
                 
                 # 提交任务到线程池，设置超时时间（秒）
@@ -164,31 +165,31 @@ def task_processor_v2(processor_id: int, db_path: str = None):
                     # 等待任务完成，最多等待TASK_TIMEOUT秒
                     result = future.result(timeout=TASK_TIMEOUT)
                     # 更新任务状态为完成
-                    _db_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
+                    _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
                     logger.info(f"任务 {task.id} 处理完成")
                 except TimeoutError:
                     # 任务超时处理
                     logger.error(f"任务 {task.id} 处理超时")
-                    _db_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
+                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
             
         except Exception as e:
             logger.error(f"任务处理失败: {str(e)}")
             # 如果有任务正在处理，将其状态更新为失败
             if 'task' in locals() and task:
                 try:
-                    _db_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
+                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
                 except Exception as update_error:
                     logger.error(f"更新失败任务状态时出错: {str(update_error)}")
 
 # 示例：使用数据库连接的API端点
 # @app.get("/db-test")
 # def test_db_connection(session: Session = Depends(get_session)):
-#     from db_mgr import Settings, DBManager  # 确保db_mgr.py中定义了Settings模型
+#     from db_mgr import Settings, TaskManager  # 确保db_mgr.py中定义了Settings模型
 #     from sqlmodel import select
 #     try:
 #         # 使用SQLModel操作t_settings表
 #         # 检查是否存在测试数据
-#         db_mgr = DBManager(session)
+#         db_mgr = TaskManager(session)
 #         db_mgr.init_db()  # 确保数据库已初始化
 #         statement = select(Settings).where(Settings.name == "test_setting")
 #         test_setting = session.exec(statement).first()
@@ -231,7 +232,7 @@ def read_root():
 # 新增task
 @app.post("/tasks")
 def create_task(task_data: dict = Body(...), session: Session = Depends(get_session)):
-    _db_mgr = DBManager(session)
+    _task_mgr = TaskManager(session)
     task_name = task_data.get("task_name")
     task_type = task_data.get("task_type", "index")
     priority = task_data.get("priority", "medium")
@@ -243,7 +244,7 @@ def create_task(task_data: dict = Body(...), session: Session = Depends(get_sess
         return {"error": "任务类型无效"}, 400
     if priority not in ["low", "medium", "high"]:
         return {"error": "优先级无效"}, 400
-    task = _db_mgr.add_task(task_name, task_type, priority)
+    task = _task_mgr.add_task(task_name, task_type, priority)
     return {"task_id": task.id}
 
 # 读取给定绝对路径的文件内容
