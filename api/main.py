@@ -228,25 +228,16 @@ def read_root():
 def create_task(task_data: dict = Body(...), session: Session = Depends(get_session)):
     _db_mgr = DBManager(session)
     task_name = task_data.get("task_name")
-    task_type_str = task_data.get("task_type", "index")
-    priority_str = task_data.get("priority", "medium")
+    task_type = task_data.get("task_type", "index")
+    priority = task_data.get("priority", "medium")
     
-    # 确保task_name不为空
+
     if not task_name:
-        return {"error": "task_name不能为空"}, 400
-    
-    # 转换priority字符串为枚举值
-    try:
-        priority = TaskPriority(priority_str.lower())
-    except ValueError:
-        return {"error": f"无效的priority值: {priority_str}，有效值为: low, medium, high"}, 400
-    
-    # 转换task_type字符串为枚举值
-    try:
-        task_type = TaskType(task_type_str.lower())
-    except ValueError:
-        return {"error": f"无效的task_type值: {task_type_str}，有效值为: index, insight"}, 400
-    
+        return {"error": "任务名称不能为空"}, 400
+    if task_type not in ["index", "insight"]:
+        return {"error": "任务类型无效"}, 400
+    if priority not in ["low", "medium", "high"]:
+        return {"error": "优先级无效"}, 400
     task = _db_mgr.add_task(task_name, task_type, priority)
     return {"task_id": task.id}
 
