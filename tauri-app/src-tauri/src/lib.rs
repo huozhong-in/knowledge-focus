@@ -329,6 +329,15 @@ pub fn run() {
             set_activation_policy_regular
         ])
         .on_window_event(|window, event| match event {
+            WindowEvent::Destroyed => {
+                // When window is destroyed, kill the Python process
+                let app = window.app_handle();
+                if let Ok(mut api_state) = app.state::<ApiState>().0.lock() {
+                    if let Some(child) = api_state.process_child.take() {
+                        let _ = child.kill();
+                    }
+                }
+            }
             WindowEvent::CloseRequested { api, .. } => {
                 #[cfg(target_os = "macos")]
                 {
@@ -346,6 +355,7 @@ pub fn run() {
                     // but explicitly exiting might be desired if default is hide.
                     window.app_handle().exit(0);
                 }
+                
             }
             _ => {}
         })

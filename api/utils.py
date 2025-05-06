@@ -3,6 +3,11 @@ import subprocess
 import re
 import platform
 import logging
+import os
+import time
+import signal
+import sys
+
 logger = logging.getLogger()
 
 
@@ -108,3 +113,23 @@ def kill_process_on_port_unix(port):
         logging.info(f"检查端口时发生错误: {str(e)}")
     
     return False
+
+def monitor_parent():
+    """Monitor the parent process and exit if it's gone"""
+    parent_pid = os.getppid()
+    print(f"Parent PID: {parent_pid}")
+    
+    while True:
+        try:
+            # Check if parent process still exists
+            parent = psutil.Process(parent_pid)
+            if not parent.is_running():
+                print("Parent process terminated, shutting down...")
+                os.kill(os.getpid(), signal.SIGTERM)
+                sys.exit(0)
+        except psutil.NoSuchProcess:
+            print("Parent process no longer exists, shutting down...")
+            os.kill(os.getpid(), signal.SIGTERM)
+            sys.exit(0)
+        
+        time.sleep(2)

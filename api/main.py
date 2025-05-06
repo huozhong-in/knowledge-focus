@@ -6,7 +6,7 @@ import uvicorn
 import argparse
 import os
 import time
-from utils import kill_process_on_port
+from utils import kill_process_on_port, monitor_parent
 import pathlib
 import logging
 from sqlmodel import create_engine, Session
@@ -14,6 +14,7 @@ import multiprocessing
 from db_mgr import DBManager, TaskStatus, TaskResult, TaskPriority, TaskType
 from contextlib import asynccontextmanager
 import asyncio
+import threading
 
 # 设置日志记录
 logger = logging.getLogger()
@@ -47,6 +48,10 @@ async def lifespan(app: FastAPI):
     
     # 启动通知检查任务
     asyncio.create_task(check_notifications())
+
+    # Start monitor can kill self process if parent process is dead
+    monitor_thread = threading.Thread(target=monitor_parent, daemon=True)
+    monitor_thread.start()
 
     yield
     
