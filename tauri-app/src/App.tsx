@@ -17,6 +17,8 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
+import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import HomeDashboard from "./home-dashboard";
 import HomeMyFiles from "./home-myfiles";
 import HomeInsightCards from "./home-insightcards";
@@ -52,6 +54,8 @@ export default function Page() {
 
   // 自动启动API服务
   useEffect(() => {
+    let wsInstance: WebSocket | null = null;
+    
     const startApiService = async () => {
       try {
         const appDataPath = await appDataDir();
@@ -68,14 +72,69 @@ export default function Page() {
       }
     };
 
-    startApiService();
+    const connectWebSocket = () => {
+      // 确保之前的连接已关闭
+      if (wsInstance) {
+        wsInstance.close();
+      }
+      
+      wsInstance = new WebSocket("ws://127.0.0.1:60000/ws");
+      
+      wsInstance.onopen = (event) => {
+        console.log("WebSocket连接已建立", event);
+      };
+      
+      wsInstance.onmessage = (event) => {
+        console.log("收到任务状态更新:", event.data);
+        
+        try {
+          // 尝试解析为JSON
+          const notification = JSON.parse(event.data);
+          
+          // 根据通知类型更新UI
+          if (notification.status === "completed") {
+            // 显示任务完成通知
+            toast.success(notification.message);
+          } else if (notification.status === "failed") {
+            // 显示任务失败通知
+            toast.error(notification.message);
+          }
+          // 处理其他状态...
+        } catch (e) {
+          // 如果不是JSON，则作为普通消息显示
+          toast.info(event.data);
+        }
+      };
+      
+      wsInstance.onclose = (event) => {
+        console.log("WebSocket连接已关闭，尝试重新连接...", event);
+        // 仅在组件仍然挂载的情况下重连
+        setTimeout(() => {
+          if (wsInstance) {
+            connectWebSocket();
+          }
+        }, 5000); // 5秒后尝试重连
+      };
+      
+      wsInstance.onerror = (error) => {
+        console.error("WebSocket错误:", error);
+      };
+      
+    };
 
-    // 组件卸载时尝试停止API服务
-    // return () => {
-    //   invoke("stop_api_service").catch(err => {
-    //     console.error("停止API服务失败:", err);
-    //   });
-    // };
+    startApiService();
+    connectWebSocket();
+
+    // 清理函数 - 组件卸载时关闭WebSocket连接
+    return () => {
+      console.log("组件卸载，关闭WebSocket连接");
+      if (wsInstance) {
+        wsInstance.onclose = null; // 防止卸载时触发重连
+        wsInstance.close();
+        wsInstance = null;
+
+      }
+    };
   }, []); // 空依赖数组确保只在组件挂载时执行一次
 
   // 根据currentPage返回对应的组件
@@ -128,6 +187,7 @@ export default function Page() {
           </div>
         </header>
         {renderContent()}
+        <Toaster />
       </SidebarInset>
     </SidebarProvider>
   )

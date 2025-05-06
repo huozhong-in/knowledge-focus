@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Body, Depends
+from fastapi import FastAPI, Body, Depends, WebSocket, WebSocketDisconnect
 from typing import List
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import uvicorn
@@ -13,6 +13,7 @@ from sqlmodel import create_engine, Session
 import multiprocessing
 from db_mgr import DBManager, TaskStatus, TaskResult, TaskPriority, TaskType
 from contextlib import asynccontextmanager
+import asyncio
 
 # 设置日志记录
 logger = logging.getLogger()
@@ -38,12 +39,15 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("未设置数据库路径，数据库引擎未初始化")
     
-     # 初始化进程池
+     # 初始化进程池和任务处理者
     processes = 1 # if multiprocessing.cpu_count() == 1 else multiprocessing.cpu_count() // 2
     app.state.process_pool = multiprocessing.Pool(processes=processes)
-    # 启动任务处理者
     for processor_id in range(processes):
         app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
+    
+    # 启动通知检查任务
+    asyncio.create_task(check_notifications())
+
     yield
     
     if hasattr(app.state, "process_pool") and app.state.process_pool is not None:
@@ -60,6 +64,30 @@ async def lifespan(app: FastAPI):
     logger.info("应用正在关闭...")
 
 app = FastAPI(lifespan=lifespan)
+
+# 存储活跃的WebSocket连接
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+    
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+    
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+    
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)
+
+manager = ConnectionManager()
+# 周期性检查新通知并广播
+async def check_notifications():
+    while True:
+        # 广播消息
+        # await manager.broadcast("New notification")
+        await asyncio.sleep(8)
 
 def get_session():
     """FastAPI依赖函数，用于获取数据库会话"""
@@ -254,6 +282,18 @@ def read_file_content(file_paths: List[str] = Body(...)):
             })
     
     return {"results": results}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # 接收客户端消息（可选）
+            data = await websocket.receive_text()
+            # 处理客户端消息...
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
