@@ -219,7 +219,7 @@ class FileScreeningResult(SQLModel, table=True):
     matched_rules: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 匹配的规则ID列表
     
     # 额外元数据和特征
-    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 其他元数据信息
+    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 其他元数据信息
     tags: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标签
     
     # 处理状态
@@ -275,7 +275,7 @@ class FileRefineResult(SQLModel, table=True):
     readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 可读性指标
     
     # 额外特征和元数据
-    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
     features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征
     
     # 项目和关联信息
@@ -343,7 +343,7 @@ class Insight(SQLModel, table=True):
     updated_at: datetime = Field(default=datetime.now())
     
     # 额外数据
-    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
     
     class Config:
         json_encoders = {
@@ -377,7 +377,7 @@ class Project(SQLModel, table=True):
     updated_at: datetime = Field(default=datetime.now())     # 更新时间
     
     # 额外数据
-    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
     
     class Config:
         json_encoders = {

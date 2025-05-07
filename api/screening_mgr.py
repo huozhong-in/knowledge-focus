@@ -40,8 +40,8 @@ class ScreeningManager:
                 modified_time=data.get("modified_time", datetime.now()),
                 accessed_time=data.get("accessed_time"),
                 category_id=data.get("category_id"),
-                matched_rules=data.get("matched_rules"),
-                metadata=data.get("metadata"),
+                matched_rules=data.get("matched_rules"), # Ensure this matches the key from Rust if it's 'metadata'
+                extra_metadata=data.get("extra_metadata", data.get("metadata")), # Handle potential old key 'metadata'
                 tags=data.get("tags"),
                 status=data.get("status", FileScreenResult.PENDING.value),
                 task_id=data.get("task_id")

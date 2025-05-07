@@ -284,7 +284,7 @@ def add_file_screening_result(
     - modified_time: 文件修改时间
     - accessed_time: 文件访问时间（可选）
     - category_id: 分类ID（可选）
-    - matched_rules: 匹配的规则ID列表（可选）
+    - matched_rules: 匹配的规则ID列表（可选）    
     - metadata: 其他元数据（可选）
     - tags: 标签列表（可选）
     - auto_create_task: 是否自动创建任务（默认 True）
@@ -300,8 +300,13 @@ def add_file_screening_result(
                     # 如果是修改时间字段转换失败，设置为当前时间
                     if time_field == "modified_time":
                         data[time_field] = datetime.now()
+        
+        # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
+        if "metadata" in data and "extra_metadata" not in data:
+            data["extra_metadata"] = data.pop("metadata")
 
         # 添加粗筛结果
+        # The screening_mgr.add_screening_result will now expect 'extra_metadata'
         result = screening_mgr.add_screening_result(data)
         if not result:
             return {
@@ -378,6 +383,9 @@ def add_batch_file_screening_results(
                         # 如果是修改时间字段转换失败，设置为当前时间
                         if time_field == "modified_time":
                             data[time_field] = datetime.now()
+            # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
+            if "metadata" in data and "extra_metadata" not in data:
+                data["extra_metadata"] = data.pop("metadata")
         
         # 批量添加粗筛结果
         result = screening_mgr.add_batch_screening_results(data_list)

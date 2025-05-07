@@ -164,15 +164,15 @@ class RefineManager:
             refine_result.analysis_type = FileAnalysisType.BASIC.value
             
             # 提取基本元数据
-            metadata = screening_result.metadata or {}
-            metadata.update({
+            current_extra_metadata = screening_result.extra_metadata or {}
+            current_extra_metadata.update({
                 "parent_folder": parent,
                 "is_hidden": path.name.startswith('.'),
                 "last_analyzed": datetime.now().isoformat(),
             })
             
-            # 更新元数据
-            refine_result.metadata = metadata
+            # 更新额外元数据
+            refine_result.extra_metadata = current_extra_metadata
             
             # 提取关键词
             if screening_result.file_name:
@@ -296,9 +296,9 @@ class RefineManager:
             refine_result.content_summary = f"文档文件: {screening_result.file_name}"
             
             # 提取文档元数据
-            metadata = refine_result.metadata or {}
-            metadata["document_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
-            refine_result.metadata = metadata
+            current_extra_metadata = refine_result.extra_metadata or {}
+            current_extra_metadata["document_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
+            refine_result.extra_metadata = current_extra_metadata
             
             return refine_result
             
@@ -323,9 +323,9 @@ class RefineManager:
             refine_result.content_summary = f"图片文件: {screening_result.file_name}"
             
             # 提取图片元数据
-            metadata = refine_result.metadata or {}
-            metadata["image_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
-            refine_result.metadata = metadata
+            current_extra_metadata = refine_result.extra_metadata or {}
+            current_extra_metadata["image_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
+            refine_result.extra_metadata = current_extra_metadata
             
             return refine_result
             
@@ -350,9 +350,9 @@ class RefineManager:
             refine_result.content_summary = f"多媒体文件: {screening_result.file_name}"
             
             # 提取媒体元数据
-            metadata = refine_result.metadata or {}
-            metadata["media_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
-            refine_result.metadata = metadata
+            current_extra_metadata = refine_result.extra_metadata or {}
+            current_extra_metadata["media_type"] = screening_result.extension.upper() if screening_result.extension else "未知"
+            refine_result.extra_metadata = current_extra_metadata
             
             return refine_result
             
