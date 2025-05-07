@@ -194,6 +194,196 @@ class ProjectRecognitionRule(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
+# 文件粗筛结果状态枚举
+class FileScreenResult(str, PyEnum):
+    PENDING = "pending"       # 等待进一步处理
+    PROCESSED = "processed"   # 已被Python处理
+    IGNORED = "ignored"       # 被忽略（符合排除规则）
+    FAILED = "failed"         # 处理失败
+
+# 粗筛结果表 - 存储Rust进行初步规则匹配后的结果
+class FileScreeningResult(SQLModel, table=True):
+    __tablename__ = "t_file_screening_results"
+    id: int = Field(default=None, primary_key=True)
+    file_path: str            # 文件完整路径
+    file_name: str            # 文件名（含扩展名）
+    file_size: int            # 文件大小（字节）
+    extension: str | None = Field(default=None)  # 文件扩展名（不含点）
+    file_hash: str | None = Field(default=None)  # 文件哈希值（可能是部分哈希）
+    created_time: datetime | None = Field(default=None)  # 文件创建时间
+    modified_time: datetime   # 文件最后修改时间
+    accessed_time: datetime | None = Field(default=None)  # 文件最后访问时间
+    
+    # 粗筛分类结果
+    category_id: int | None = Field(default=None)  # 根据扩展名或规则确定的分类ID
+    matched_rules: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 匹配的规则ID列表
+    
+    # 额外元数据和特征
+    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 其他元数据信息
+    tags: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标签
+    
+    # 处理状态
+    status: str = Field(sa_column=Column(Enum(FileScreenResult, values_callable=lambda obj: [e.value for e in obj]), default=FileScreenResult.PENDING.value))
+    error_message: str | None = Field(default=None)  # 错误信息，如果有
+    
+    # 任务关联和时间戳
+    task_id: int | None = Field(default=None)  # 关联的处理任务ID（如果有）
+    created_at: datetime = Field(default=datetime.now())  # 记录创建时间
+    updated_at: datetime = Field(default=datetime.now())  # 记录更新时间
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+# 文件精炼结果状态枚举
+class FileRefineStatus(str, PyEnum):
+    PENDING = "pending"       # 等待进一步处理
+    PROCESSING = "processing" # 正在处理中
+    COMPLETE = "complete"     # 处理完成
+    FAILED = "failed"         # 处理失败
+    IGNORED = "ignored"       # 被忽略
+
+# 文件精炼分析类型枚举
+class FileAnalysisType(str, PyEnum):
+    BASIC = "basic"           # 基本分析（元数据整理）
+    CONTENT = "content"       # 内容分析（文本提取、简单NLP）
+    DEEP = "deep"             # 深度分析（LLM处理、高级特征提取）
+    RELATIONSHIP = "relationship"  # 关联分析（文件间关系）
+    PROJECT = "project"       # 项目识别分析
+
+# 文件精炼结果表 - 存储Python对文件进行深度分析后的结果
+class FileRefineResult(SQLModel, table=True):
+    __tablename__ = "t_file_refine_results"
+    id: int = Field(default=None, primary_key=True)
+    screening_id: int = Field(foreign_key="t_file_screening_results.id", index=True)  # 关联的粗筛结果ID
+    task_id: int | None = Field(default=None, foreign_key="t_tasks.id", index=True)   # 关联的处理任务ID
+    
+    # 基本信息
+    file_path: str            # 文件完整路径（冗余存储，便于查询）
+    analysis_type: str = Field(sa_column=Column(Enum(FileAnalysisType, values_callable=lambda obj: [e.value for e in obj]), default=FileAnalysisType.BASIC.value))
+    status: str = Field(sa_column=Column(Enum(FileRefineStatus, values_callable=lambda obj: [e.value for e in obj]), default=FileRefineStatus.PENDING.value))
+    
+    # 处理结果
+    content_summary: str | None = Field(default=None)  # 文件内容摘要
+    extracted_text: str | None = Field(default=None)   # 提取的文本（可能部分）
+    language: str | None = Field(default=None)         # 检测到的语言
+    topics: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 主题标签
+    named_entities: Dict[str, List[str]] | None = Field(default=None, sa_column=Column(JSON))  # 命名实体（人名、地点、组织等）
+    key_phrases: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 关键短语
+    sentiment: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))  # 情感分析结果
+    readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 可读性指标
+    
+    # 额外特征和元数据
+    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征
+    
+    # 项目和关联信息
+    project_id: int | None = Field(default=None)  # 关联的项目ID（如果已识别）
+    related_files: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件ID列表
+    similar_files: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 相似文件和相似度
+    
+    # 处理统计
+    processing_time: float | None = Field(default=None)  # 处理耗时（秒）
+    tokens_processed: int | None = Field(default=None)   # 处理的token数量
+    error_message: str | None = Field(default=None)      # 错误信息（如果有）
+    
+    # 时间戳
+    created_at: datetime = Field(default=datetime.now())  # 记录创建时间
+    updated_at: datetime = Field(default=datetime.now())  # 记录更新时间
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+# 洞察类型枚举
+class InsightType(str, PyEnum):
+    FILE_ACTIVITY = "file_activity"     # 文件活动洞察
+    PROJECT_UPDATE = "project_update"   # 项目更新洞察
+    CLEANUP = "cleanup"                 # 清理建议
+    CONTENT_HIGHLIGHT = "content_highlight"  # 内容亮点
+    USAGE_PATTERN = "usage_pattern"     # 使用模式
+    CUSTOM = "custom"                   # 自定义洞察
+
+# 洞察优先级
+class InsightPriority(str, PyEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+# 洞察表 - 存储基于文件精炼结果生成的有价值洞察
+class Insight(SQLModel, table=True):
+    __tablename__ = "t_insights"
+    id: int = Field(default=None, primary_key=True)
+    task_id: int | None = Field(default=None, foreign_key="t_tasks.id", index=True)  # 关联的任务ID
+    
+    # 洞察内容
+    title: str                # 洞察标题
+    description: str          # 洞察描述
+    insight_type: str = Field(sa_column=Column(Enum(InsightType, values_callable=lambda obj: [e.value for e in obj])))
+    priority: str = Field(sa_column=Column(Enum(InsightPriority, values_callable=lambda obj: [e.value for e in obj]), default=InsightPriority.MEDIUM.value))
+    
+    # 关联数据
+    related_files: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件路径列表
+    related_projects: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联项目ID列表
+    action_items: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 推荐操作列表
+    
+    # 生成和状态信息
+    generation_method: str | None = Field(default=None)  # 生成方式（规则/LLM）
+    score: float | None = Field(default=None)  # 洞察评分（重要性/相关性）
+    is_read: bool = Field(default=False)  # 是否已读
+    is_dismissed: bool = Field(default=False)  # 是否已忽略
+    is_actioned: bool = Field(default=False)  # 是否已采取行动
+    
+    # 时间戳
+    valid_until: datetime | None = Field(default=None)  # 有效期（某些洞察可能过期）
+    created_at: datetime = Field(default=datetime.now())
+    updated_at: datetime = Field(default=datetime.now())
+    
+    # 额外数据
+    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+# 项目信息表 - 存储识别出的项目信息
+class Project(SQLModel, table=True):
+    __tablename__ = "t_projects"
+    id: int = Field(default=None, primary_key=True)
+    name: str                 # 项目名称
+    path: str                 # 项目根路径
+    description: str | None = Field(default=None)  # 项目描述
+    
+    # 项目特征
+    project_type: str | None = Field(default=None)  # 项目类型（代码、文档、设计等）
+    programming_languages: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 编程语言列表
+    framework: str | None = Field(default=None)     # 使用的框架
+    
+    # 项目统计
+    file_count: int | None = Field(default=None)    # 文件数量
+    total_size: int | None = Field(default=None)    # 总大小（字节）
+    last_activity: datetime | None = Field(default=None)  # 最后活动时间
+    
+    # 识别信息
+    recognition_confidence: float | None = Field(default=None)  # 识别置信度
+    recognition_method: str | None = Field(default=None)  # 识别方法
+    
+    # 时间戳
+    discovered_at: datetime = Field(default=datetime.now())  # 发现时间
+    updated_at: datetime = Field(default=datetime.now())     # 更新时间
+    
+    # 额外数据
+    metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
     从上层拿到session，自己不管理数据库连接"""
@@ -252,6 +442,38 @@ class DBManager:
             if not inspector.has_table(ProjectRecognitionRule.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[ProjectRecognitionRule.__table__])
                 self._init_project_recognition_rules()  # 初始化项目识别规则
+            
+            # 创建文件粗筛结果表
+            if not inspector.has_table(FileScreeningResult.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[FileScreeningResult.__table__])
+                # 创建索引 - 为文件路径创建唯一索引
+                conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_file_path ON {FileScreeningResult.__tablename__} (file_path);'))
+                # 创建索引 - 为文件状态创建索引，便于查询待处理文件
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
+                # 创建索引 - 为修改时间创建索引，便于按时间查询
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
+            
+            # 创建文件精炼结果表
+            if not inspector.has_table(FileRefineResult.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[FileRefineResult.__table__])
+                # 创建索引 - 为文件路径创建索引
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_file_path ON {FileRefineResult.__tablename__} (file_path);'))
+                # 创建索引 - 为处理状态创建索引
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_status ON {FileRefineResult.__tablename__} (status);'))
+            
+            # 创建洞察表
+            if not inspector.has_table(Insight.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[Insight.__table__])
+                # 创建索引 - 为洞察类型创建索引
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_insight_type ON {Insight.__tablename__} (insight_type);'))
+                # 创建索引 - 为优先级创建索引
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_insight_priority ON {Insight.__tablename__} (priority);'))
+            
+            # 创建项目表
+            if not inspector.has_table(Project.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[Project.__table__])
+                # 创建索引 - 为项目路径创建唯一索引
+                conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_project_path ON {Project.__tablename__} (path);'))
                 
         return True
 
