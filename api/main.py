@@ -1,17 +1,18 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import uvicorn
 import argparse
 import os
 import time
-from utils import kill_process_on_port, monitor_parent
+from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 import pathlib
 import logging
 from sqlmodel import create_engine, Session
 import multiprocessing
-from db_mgr import TaskStatus, TaskResult, TaskType, InsightType
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
@@ -45,7 +46,10 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("未设置数据库路径，数据库引擎未初始化")
     
-     # 初始化进程池和任务处理者
+    # 先清理可能存在的孤立子进程
+    kill_orphaned_processes("python", "task_processor")
+    
+    # 初始化进程池和任务处理者
     processes = 1 # if multiprocessing.cpu_count() == 1 else multiprocessing.cpu_count() // 2
     app.state.process_pool = multiprocessing.Pool(processes=processes)
     for processor_id in range(processes):
@@ -76,6 +80,19 @@ async def lifespan(app: FastAPI):
     logger.info("应用正在关闭...")
 
 app = FastAPI(lifespan=lifespan)
+origins = [
+    "http://localhost:1420",  # Your Tauri dev server
+    "tauri://localhost",      # Often used by Tauri in production
+    "https://tauri.localhost" # Also used by Tauri in production
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allows specific origins
+    # allow_origins=["*"], # Or, to allow all origins (less secure, use with caution)
+    allow_credentials=True, # Allows cookies to be included in requests
+    allow_methods=["*"],    # Allows all methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],    # Allows all headers
+)
 
 # 存储活跃的WebSocket连接
 class ConnectionManager:
@@ -110,60 +127,83 @@ def get_session():
     with Session(app.state.engine) as session:
         yield session
 
+@app.post("/init_db")
+def init_db(session: Session = Depends(get_session)):
+    """首次打开App，初始化数据库结构"""
+    print("初始化数据库结构")
+    db_mgr = DBManager(session)
+    db_mgr.init_db()
+
+    return {"message": "数据库结构已初始化"}
+
 # 任务处理者
 def task_processor(processor_id: int, db_path: str = None):
-    """处理任务的工作进程"""
+    """处理任务的工作进程(实现了超时控制)"""
     logger.info(f"{processor_id}号任务处理者已启动")
-    try:
-        sqlite_url = f"sqlite:///{db_path}"
-        engine = create_engine(sqlite_url, echo=False)
-        session = Session(engine)
-        
-        # 初始化各种管理器
-        _task_mgr = TaskManager(session)
-        _screening_mgr = ScreeningManager(session)
-        _refine_mgr = RefineManager(session)
-        
-        while True:
-            task = _task_mgr.get_next_task()
-            if not task:
-                time.sleep(2)  # 没有任务时等待
-                continue
-            
-            # 将任务状态更新为运行中
-            _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-            logger.info(f"{processor_id}号正在处理任务: {task.id} - {task.task_name}")
-            
-            task_success = False
-            error_message = None
-            
-            try:
-                # 根据任务类型执行不同的处理逻辑
+    sqlite_url = f"sqlite:///{db_path}"
+    engine = create_engine(sqlite_url, echo=False)
+    session = Session(engine)
+    
+    # 初始化各种管理器
+    _task_mgr = TaskManager(session)
+    _screening_mgr = ScreeningManager(session)
+    _refine_mgr = RefineManager(session)
+    
+    # 创建线程池用于执行任务，便于实现超时控制
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        try:
+            while True:
+                # 获取下一个待处理任务
+                task = _task_mgr.get_next_task()
+                
+                if not task:
+                    time.sleep(2)  # 没有任务时等待
+                    continue
+                
+                # 将任务状态更新为运行中
+                _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+                logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
+                
+                # 根据任务类型确定处理函数
                 if task.task_type == TaskType.INDEX.value:
-                    # 文件索引任务
-                    task_success = process_index_task(task, _screening_mgr, _refine_mgr)
+                    process_func = lambda: process_index_task(task, _screening_mgr, _refine_mgr)
                 elif task.task_type == TaskType.INSIGHT.value:
-                    # 洞察生成任务
-                    task_success = process_insight_task(task, _refine_mgr)
+                    process_func = lambda: process_insight_task(task, _refine_mgr)
                 else:
                     logger.warning(f"未知任务类型: {task.task_type}")
-                    error_message = f"未知任务类型: {task.task_type}"
-                    task_success = False
-            except Exception as e:
-                logger.error(f"任务处理出错: {str(e)}")
-                error_message = str(e)
-                task_success = False
-            
-            # 更新任务状态
-            if task_success:
-                _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
-                logger.info(f"{processor_id}号将任务 {task.id} 处理完成")
-            else:
-                _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, error_message)
-                logger.error(f"{processor_id}号将任务 {task.id} 处理失败: {error_message}")
+                    _task_mgr.update_task_status(
+                        task.id, 
+                        TaskStatus.FAILED, 
+                        TaskResult.FAILURE, 
+                        f"未知任务类型: {task.task_type}"
+                    )
+                    continue
                 
-    except Exception as e:
-        logger.error(f"{processor_id}号将任务处理失败: {str(e)}")
+                # 提交任务到线程池，设置超时时间（秒）
+                TASK_TIMEOUT = 120  # 2分钟超时
+                future = executor.submit(process_func)
+                
+                try:
+                    # 等待任务完成，最多等待TASK_TIMEOUT秒
+                    result = future.result(timeout=TASK_TIMEOUT)
+                    # 更新任务状态
+                    if result:
+                        _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
+                        logger.info(f"{processor_id}号任务 {task.id} 处理完成")
+                    else:
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, "任务处理失败")
+                        logger.error(f"{processor_id}号任务 {task.id} 处理失败")
+                except TimeoutError:
+                    # 任务超时处理
+                    logger.error(f"{processor_id}号任务 {task.id} 处理超时")
+                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
+                except Exception as e:
+                    # 任务异常处理
+                    logger.error(f"{processor_id}号任务 {task.id} 处理异常: {str(e)}")
+                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
+            
+        except Exception as e:
+            logger.error(f"{processor_id}号任务处理失败: {str(e)}")
 
 def process_index_task(task, screening_mgr, refine_mgr) -> bool:
     """处理文件索引任务
@@ -524,65 +564,13 @@ def read_root():
     # 现在可以在任何路由中使用 app.state.db_path
     return {"Hello": "World", "db_path": app.state.db_path}
 
-# 新增task
-@app.post("/tasks")
-def create_task(task_data: dict = Body(...), session: Session = Depends(get_session)):
-    _task_mgr = TaskManager(session)
-    task_name = task_data.get("task_name")
-    task_type = task_data.get("task_type", "index")
-    priority = task_data.get("priority", "medium")
-    
-
-    if not task_name:
-        return {"error": "任务名称不能为空"}, 400
-    if task_type not in ["index", "insight"]:
-        return {"error": "任务类型无效"}, 400
-    if priority not in ["low", "medium", "high"]:
-        return {"error": "优先级无效"}, 400
-    task = _task_mgr.add_task(task_name, task_type, priority)
-    return {"task_id": task.id}
-
-# 读取给定绝对路径的文件内容
-@app.post("/file-content")
-def read_file_content(file_paths: List[str] = Body(...)):
-    results = []
-    for file_path in file_paths:
-        try:
-            if not os.path.exists(file_path):
-                results.append({
-                    "path": file_path,
-                    "success": False,
-                    "error": "文件不存在",
-                    "content": None
-                })
-                continue
-                
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                results.append({
-                    "path": file_path,
-                    "success": True,
-                    "error": None,
-                    "content": content
-                })
-        except Exception as e:
-            results.append({
-                "path": file_path,
-                "success": False,
-                "error": str(e),
-                "content": None
-            })
-    
-    return {"results": results}
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
-            # 接收客户端消息（可选）
-            data = await websocket.receive_text()
-            # 处理客户端消息...
+            # 接收客户端消息（可选，因为这阶段产品设计只用websocket向前端推送通知）
+            _ = await websocket.receive_text()
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -598,6 +586,12 @@ def generate_insights(
     try:
         days = data.get("days", 7)
         
+
+        if not isinstance(days, int) or days <= 0:
+            return {
+                "success": False,
+                "message": "无效的参数: days 必须是一个正整数"
+            }
         # 创建洞察生成任务
         task = task_mgr.add_task(
             task_name=f"生成文件洞察 (最近{days}天)",
@@ -818,74 +812,8 @@ def get_project_files(
             "message": f"获取项目文件失败: {str(e)}"
         }
 
-# 修改task_processor_v2，实现更多功能
-def task_processor_v2(processor_id: int, db_path: str = None):
-    """处理任务的工作进程"""
-    logger.info(f"{processor_id}号任务处理者已启动")
-    sqlite_url = f"sqlite:///{db_path}"
-    engine = create_engine(sqlite_url, echo=False)
-    session = Session(engine)
-    
-    # 初始化各种管理器
-    _task_mgr = TaskManager(session)
-    _screening_mgr = ScreeningManager(session)
-    _refine_mgr = RefineManager(session)
-    
-    # 创建线程池用于执行任务，便于实现超时控制
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        try:
-            while True:
-                # 获取下一个待处理任务
-                task = _task_mgr.get_next_task()
-                
-                if not task:
-                    time.sleep(2)  # 没有任务时等待
-                    continue
-                
-                # 将任务状态更新为运行中
-                _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-                logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
-                
-                # 根据任务类型确定处理函数
-                if task.task_type == TaskType.INDEX.value:
-                    process_func = lambda: process_index_task(task, _screening_mgr, _refine_mgr)
-                elif task.task_type == TaskType.INSIGHT.value:
-                    process_func = lambda: process_insight_task(task, _refine_mgr)
-                else:
-                    logger.warning(f"未知任务类型: {task.task_type}")
-                    _task_mgr.update_task_status(
-                        task.id, 
-                        TaskStatus.FAILED, 
-                        TaskResult.FAILURE, 
-                        f"未知任务类型: {task.task_type}"
-                    )
-                    continue
-                
-                # 提交任务到线程池，设置超时时间（秒）
-                TASK_TIMEOUT = 120  # 2分钟超时
-                future = executor.submit(process_func)
-                
-                try:
-                    # 等待任务完成，最多等待TASK_TIMEOUT秒
-                    result = future.result(timeout=TASK_TIMEOUT)
-                    # 更新任务状态
-                    if result:
-                        _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
-                        logger.info(f"{processor_id}号任务 {task.id} 处理完成")
-                    else:
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, "任务处理失败")
-                        logger.error(f"{processor_id}号任务 {task.id} 处理失败")
-                except TimeoutError:
-                    # 任务超时处理
-                    logger.error(f"{processor_id}号任务 {task.id} 处理超时")
-                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
-                except Exception as e:
-                    # 任务异常处理
-                    logger.error(f"{processor_id}号任务 {task.id} 处理异常: {str(e)}")
-                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
-            
-        except Exception as e:
-            logger.error(f"{processor_id}号任务处理失败: {str(e)}")
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

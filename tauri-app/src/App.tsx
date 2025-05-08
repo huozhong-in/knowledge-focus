@@ -1,6 +1,6 @@
 import "./index.css";
 import { AppSidebar } from "@/components/app-sidebar"
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { join, appDataDir } from '@tauri-apps/api/path';
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -12,6 +12,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
+import { Button } from "@/components/ui/button";
 import {
   SidebarInset,
   SidebarProvider,
@@ -29,6 +30,7 @@ import PromptsLibrary from "./prompts-library";
 import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import { create } from 'zustand';
+import { useAppStore, ensureDatabaseInitialized } from './main'; // Import Zustand store and DB init function
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -51,83 +53,129 @@ export const usePageStore = create<PageState>((set) => ({
 
 export default function Page() {
   const { currentPage, currentTitle, currentSubtitle } = usePageStore();
+  const {
+    isFirstLaunchDbCheckPending,
+    isDbInitializing,
+    dbInitializationError,
+    setIsDbInitializing,
+    setDbInitializationError,
+    setFirstLaunchDbCheckPending,
+  } = useAppStore();
 
-  // 自动启动API服务
+  const [apiServiceStarted, setApiServiceStarted] = useState(false);
+
+  // Effect for the entire startup sequence (API + DB init if needed)
   useEffect(() => {
-    let wsInstance: WebSocket | null = null;
-    
-    const startApiService = async () => {
+    const startupSequence = async () => {
+      if (isFirstLaunchDbCheckPending) {
+        setIsDbInitializing(true); // Show full-screen loading for DB init
+        setDbInitializationError(null);
+        console.log("App.tsx: First launch detected. Starting full initialization sequence.");
+      } else {
+        console.log("App.tsx: Normal launch. Ensuring API service is running.");
+      }
+
       try {
+        // Step 1: Start API Service
+        console.log("App.tsx: Invoking start_api_service...");
         const appDataPath = await appDataDir();
         const dbPath = await join(appDataPath, 'knowledge-focus.db');
-        console.log("数据库路径:", dbPath);
-        const response = await invoke("start_api_service", {
+        await invoke("start_api_service", {
           port: 60000,
           host: "127.0.0.1",
           db_path: dbPath
         });
-        console.log("API服务已自动启动", response);
+        console.log("App.tsx: API service start invoked.");
+        setApiServiceStarted(true); // Signal API service is (likely) up
+
+        // Step 2: Initialize Database if it's the first launch
+        if (isFirstLaunchDbCheckPending) {
+          console.log("App.tsx: API service started/invoked. Now initializing database...");
+          const dbReady = await ensureDatabaseInitialized(); // This has retries
+
+          if (dbReady) {
+            console.log("App.tsx: Database initialization successful.");
+            setFirstLaunchDbCheckPending(false); // Clear the flag, init is done for this session
+          } else {
+            console.error("App.tsx: Database initialization failed after retries.");
+            // The alert is already in ensureDatabaseInitialized, but we set error for UI
+            setDbInitializationError("数据库关键初始化失败。请检查后台服务并尝试重启应用。");
+            setIsDbInitializing(false); // Stop loading
+            return; // Stop further sequence
+          }
+        }
       } catch (error) {
-        console.error("自动启动API服务失败:", error);
+        console.error("App.tsx: Error during API start or DB initialization:", error);
+        const errorMessage = `关键服务启动或初始化失败: ${error instanceof Error ? error.message : String(error)}`;
+        if (isFirstLaunchDbCheckPending) {
+          setDbInitializationError(errorMessage);
+        } else {
+          // Non-first launch API start error
+          toast.error(errorMessage + " 部分功能可能无法使用。");
+          // For non-first launch, we might still want to consider API started to allow WebSocket attempts
+          setApiServiceStarted(true); 
+        }
+      } finally {
+        if (isFirstLaunchDbCheckPending) { // Only manage this loading state if it was a first launch init
+            setIsDbInitializing(false); // Stop full-screen loading
+        }
       }
     };
 
+    startupSequence();
+  }, []); // Run once on mount, reads initial state from Zustand
+
+  // WebSocket connection effect
+  useEffect(() => {
+    const canConnectWebSocket = apiServiceStarted && !isDbInitializing && !dbInitializationError;
+
+    if (!canConnectWebSocket) {
+      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", apiServiceStarted, ", DB initializing:", isDbInitializing, ", DB error:", dbInitializationError,")");
+      return;
+    }
+
+    console.log("App.tsx: Conditions met. Attempting to connect WebSocket.");
+    let wsInstance: WebSocket | null = null;
+    
     const connectWebSocket = () => {
-      // 确保之前的连接已关闭
       if (wsInstance) {
+        wsInstance.onclose = null; 
         wsInstance.close();
       }
-      
       wsInstance = new WebSocket("ws://127.0.0.1:60000/ws");
-      
       wsInstance.onopen = (event) => {
         console.log("WebSocket连接已建立", event);
       };
-      
       wsInstance.onmessage = (event) => {
         console.log("收到任务状态更新:", event.data);
-        
         try {
-          // 尝试解析为JSON
           const notification = JSON.parse(event.data);
-          
-          // 根据通知类型更新UI
           if (notification.status === "completed") {
-            // 显示任务完成通知
             toast.success(notification.message);
           } else if (notification.status === "failed") {
-            // 显示任务失败通知
             toast.error(notification.message);
           }
-          // 处理其他状态...
         } catch (e) {
-          // 如果不是JSON，则作为普通消息显示
           toast.info(event.data);
         }
       };
-      
       wsInstance.onclose = (event) => {
         console.log("WebSocket连接已关闭，尝试重新连接...", event);
-        // 仅在组件仍然挂载的情况下重连
-        setTimeout(() => {
-          if (wsInstance) {
-            connectWebSocket();
-          }
-        }, 5000); // 5秒后尝试重连
+        if (wsInstance && document.visibilityState === 'visible') { // Check if still relevant
+            setTimeout(() => {
+                if (wsInstance) connectWebSocket();
+            }, 5000);
+        }
       };
-      
       wsInstance.onerror = (error) => {
         console.error("WebSocket错误:", error);
       };
-      
     };
 
-    startApiService();
     connectWebSocket();
 
-    // 清理函数 - 组件卸载时关闭WebSocket连接
     return () => {
-      console.log("组件卸载，关闭WebSocket连接");
+      console.log("App.tsx: Cleaning up WebSocket connection on effect re-run or unmount.");
       if (wsInstance) {
         wsInstance.onclose = null; // 防止卸载时触发重连
         wsInstance.close();
@@ -135,7 +183,36 @@ export default function Page() {
 
       }
     };
-  }, []); // 空依赖数组确保只在组件挂载时执行一次
+  }, [apiServiceStarted, isDbInitializing, dbInitializationError]); // Re-evaluate when these conditions change
+
+
+  // Conditional Rendering based on initialization state
+  if (isDbInitializing) { // This is true only during first launch's DB init phase
+    return (
+      <div className="flex items-center justify-center h-screen w-screen bg-background text-foreground">
+        <div className="text-center">
+          {/* You can add a spinner icon here */}
+          <p className="text-xl font-semibold animate-pulse">正在为首次使用准备应用...</p>
+          <p className="text-muted-foreground">请稍候，正在初始化数据。</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (dbInitializationError) { // This error is critical from first launch
+    return (
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-background text-foreground p-4">
+        <div className="text-center bg-card p-8 rounded-lg shadow-lg border border-destructive">
+          <h2 className="text-2xl font-bold text-destructive mb-4">应用初始化失败</h2>
+          <p className="text-card-foreground mb-6">{dbInitializationError}</p>
+          <Button onClick={() => window.location.reload()} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+            重新加载应用
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
 
   // 根据currentPage返回对应的组件
   const renderContent = () => {

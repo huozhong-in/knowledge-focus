@@ -18,6 +18,7 @@ from sqlmodel import (
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import List, Dict, Optional, Any
+import os
     
 # 任务状态枚举
 class TaskStatus(str, PyEnum):
@@ -1111,6 +1112,7 @@ class DBManager:
         self.session.commit()
 
 if __name__ == '__main__':
-    db_mgr = DBManager(Session(create_engine("sqlite:////Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db")))
+    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    db_mgr = DBManager(Session(create_engine(f'sqlite:///{db_file}')))
     db_mgr.init_db()
     print("数据库初始化完成")
