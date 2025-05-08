@@ -241,15 +241,22 @@ fn set_activation_policy_regular(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+            println!("另一个实例已尝试启动，参数: {:?}，工作目录: {}", args, cwd);
+            // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
+            if let Some(window) = app.get_webview_window("main") {
+                window.show().unwrap();
+                window.set_focus().unwrap();
+            }
+        }))
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .setup(|app| {
-            // app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
             let tray_icon = TrayIconBuilder::new()
@@ -305,15 +312,6 @@ pub fn run() {
             println!("Tray Icon ID: {:?}", tray_icon.id());
             Ok(())
         })
-        .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            println!("另一个实例已尝试启动，参数: {:?}，工作目录: {}", args, cwd);
-            // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
-            if let Some(window) = app.get_webview_window("main") {
-                window.show().unwrap();
-                window.set_focus().unwrap();
-            }
-        }))
-        .plugin(tauri_plugin_opener::init())
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
             process_child: None,
             port: 60000,
