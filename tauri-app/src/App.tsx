@@ -1,8 +1,6 @@
 import "./index.css";
 import { AppSidebar } from "@/components/app-sidebar"
 import { useEffect, useState } from "react";
-import { join, appDataDir } from '@tauri-apps/api/path';
-import { invoke } from "@tauri-apps/api/core";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -76,21 +74,48 @@ export default function Page() {
       }
 
       try {
-        // Step 1: Start API Service
-        console.log("App.tsx: Invoking start_api_service...");
-        const appDataPath = await appDataDir();
-        const dbPath = await join(appDataPath, 'knowledge-focus.db');
-        await invoke("start_api_service", {
-          port: 60000,
-          host: "127.0.0.1",
-          db_path: dbPath
-        });
-        console.log("App.tsx: API service start invoked.");
-        setApiServiceStarted(true); // Signal API service is (likely) up
+        // Step 1: 检查 API 服务是否可用
+        console.log("App.tsx: Checking API service availability...");
+        
+        // 跳过调用 start_api_service，直接检测API是否可用
+        // FastAPI 服务已经在应用启动时自动启动了
+        const maxRetries = 20; // 最多等待20次
+        const retryDelay = 500; // 每次等待500ms
+        let isApiAvailable = false;
+        let retries = 0;
+        
+        while (retries < maxRetries && !isApiAvailable) {
+          console.log(`App.tsx: Checking API availability (attempt ${retries + 1}/${maxRetries})...`);
+          try {
+            const response = await fetch('http://127.0.0.1:60000/health', { 
+              method: 'GET',
+              signal: AbortSignal.timeout(2000) // 2秒超时
+            });
+            
+            if (response.ok) {
+              console.log("App.tsx: API service is available!");
+              isApiAvailable = true;
+            } else {
+              console.log(`App.tsx: API service responded with status ${response.status}`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
+          } catch (error) {
+            console.log(`App.tsx: API service not available yet: ${error}`);
+            await new Promise(resolve => setTimeout(resolve, retryDelay));
+          }
+          retries++;
+        }
+        
+        if (!isApiAvailable) {
+          throw new Error(`无法连接到API服务，已尝试${maxRetries}次。请检查API服务是否正确启动。`);
+        }
+        
+        // API服务已确认可用
+        setApiServiceStarted(true);
 
         // Step 2: Initialize Database if it's the first launch
         if (isFirstLaunchDbCheckPending) {
-          console.log("App.tsx: API service started/invoked. Now initializing database...");
+          console.log("App.tsx: API service available. Now initializing database...");
           const dbReady = await ensureDatabaseInitialized(); // This has retries
 
           if (dbReady) {
@@ -105,19 +130,22 @@ export default function Page() {
           }
         }
       } catch (error) {
-        console.error("App.tsx: Error during API start or DB initialization:", error);
-        const errorMessage = `关键服务启动或初始化失败: ${error instanceof Error ? error.message : String(error)}`;
+        console.error("App.tsx: Error during API availability check:", error);
+        const errorMessage = `API服务不可用: ${error instanceof Error ? error.message : String(error)}`;
+        
         if (isFirstLaunchDbCheckPending) {
           setDbInitializationError(errorMessage);
         } else {
-          // Non-first launch API start error
-          toast.error(errorMessage + " 部分功能可能无法使用。");
-          // For non-first launch, we might still want to consider API started to allow WebSocket attempts
-          setApiServiceStarted(true); 
+          // 非首次启动也需要显示关键错误，并阻止进入主界面
+          setDbInitializationError(errorMessage);
+          toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
         }
+        
+        // 无论是否首次启动，都将API服务标记为未启动
+        setApiServiceStarted(false);
       } finally {
         if (isFirstLaunchDbCheckPending) { // Only manage this loading state if it was a first launch init
-            setIsDbInitializing(false); // Stop full-screen loading
+          setIsDbInitializing(false); // Stop full-screen loading
         }
       }
     };

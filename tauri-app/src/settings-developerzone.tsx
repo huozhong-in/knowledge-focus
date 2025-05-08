@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
-import { join, appDataDir } from '@tauri-apps/api/path';
+import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Store } from '@tauri-apps/plugin-store';
 import { listen } from '@tauri-apps/api/event';
-import { Window } from '@tauri-apps/api/window';
+import { join, appDataDir } from '@tauri-apps/api/path';
 import "./index.css";
 import { Button } from "@/components/ui/button"
+import { toast } from "sonner";
 
 function SettingsDeveloperZone() {  
     // API服务状态
@@ -16,89 +17,84 @@ function SettingsDeveloperZone() {
     });
     const [apiLogs, setApiLogs] = useState<string[]>([]);
     const [customPort, setCustomPort] = useState("60000");
-    const [customHost, setCustomHost] = useState("127.0.0.1");
-    const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  
+    const [isPortChanged, setIsPortChanged] = useState(false);
+    
     // 获取API状态
     async function checkApiStatus() {
       try {
         const status = await invoke("get_api_status");
         setApiStatus(status as any);
+        setCustomPort(String((status as any).port));
       } catch (error) {
         console.error("获取API状态失败:", error);
       }
     }
   
-    // 重启API服务
-    async function restartApiService() {
+    // 保存端口设置
+    async function savePortSetting() {
       try {
-        const appDataPath = await appDataDir();
-        const dbPath = await join(appDataPath, 'knowledge-focus.db');
         const port = parseInt(customPort, 10);
-        const response = await invoke("start_api_service", { 
-          port: isNaN(port) ? undefined : port,
-          host: customHost || undefined,
-          db_path: dbPath
-        });
-        setApiStatus(response as any);
-        await checkApiStatus();
+        if (isNaN(port) || port < 1024 || port > 65535) {
+          toast.error("请输入有效的端口号 (1024-65535)");
+          return;
+        }
+        
+        const response = await invoke("update_api_port", { port });
+        toast.success((response as any).message);
       } catch (error) {
-        console.error("重启API服务失败:", error);
+        console.error("保存端口设置失败:", error);
+        toast.error(`保存端口设置失败: ${error}`);
       }
     }
-  
-    // 停止API服务
-    async function stopApiService() {
-      try {
-        await invoke("stop_api_service");
-        await checkApiStatus();
-      } catch (error) {
-        console.error("停止API服务失败:", error);
-      }
+    
+    // 监听输入变化
+    function handlePortChange(e: React.ChangeEvent<HTMLInputElement>) {
+      const newPort = e.target.value;
+      setCustomPort(newPort);
+      setIsPortChanged(parseInt(newPort, 10) !== apiStatus.port);
     }
   
-    // 组件加载时检查API状态
+    // 组件加载时检查API状态与监听API日志事件
     useEffect(() => {
-      const unlisten = Window.getCurrent().onCloseRequested(async () => {
-        await invoke('set_activation_policy_accessory');
-      });
       checkApiStatus();
       
+      // 加载存储的端口设置
+      const loadStoredPort = async () => {
+        try {
+          const appDataPath = await appDataDir();
+          const storePath = await join(appDataPath, 'settings.json');
+          
+          // 使用正确的 Store API
+          const store = await Store.load(storePath);
+          
+          const storedPort = await store.get('api_port');
+          
+          if (storedPort && typeof storedPort === 'number') {
+            setCustomPort(String(storedPort));
+          }
+        } catch (error) {
+          // 如果是首次使用，store可能不存在
+          console.log("加载存储的端口设置失败 (可能是首次使用):", error);
+        }
+      };
+      
+      loadStoredPort();
+      
       // 监听API日志事件
-      const unlistenLog = listen<string>("api-log", (event) => {
-        setApiLogs(prev => [...prev, event.payload].slice(-50)); // 保留最新的50条日志
+      const unlistenApiLog = listen('api-log', (event) => {
+        const logMessage = event.payload as string;
+        setApiLogs((prev) => [...prev, logMessage].slice(-50)); // 保留最新的50条日志
       });
       
-      // 监听API错误事件
-      const unlistenError = listen<string>("api-error", (event) => {
-        setApiLogs(prev => [...prev, `ERROR: ${event.payload}`].slice(-50));
+      const unlistenApiError = listen('api-error', (event) => {
+        const errorMessage = event.payload as string;
+        setApiLogs((prev) => [...prev, `错误: ${errorMessage}`].slice(-50));
       });
-      
-      // 监听API进程错误事件
-      const unlistenProcessError = listen<string>("api-process-error", (event) => {
-        setApiLogs(prev => [...prev, `进程错误: ${event.payload}`].slice(-50));
-        checkApiStatus();
-      });
-      
-      // 监听API终止事件
-      const unlistenTerminated = listen<number | null>("api-terminated", (event) => {
-        setApiLogs(prev => [...prev, `API服务已终止，状态码: ${event.payload ?? "未知"}`].slice(-50));
-        checkApiStatus();
-      });
-
-      // 定时检查API状态
-      intervalRef.current = setInterval(checkApiStatus, 5000);
       
       return () => {
-        // 清理监听器
-        unlistenLog.then(fn => fn());
-        unlistenError.then(fn => fn());
-        unlistenProcessError.then(fn => fn());
-        unlistenTerminated.then(fn => fn());
-        unlisten.then(fn => fn());
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-        }
+        // 清理事件监听
+        unlistenApiLog.then(unlisten => unlisten());
+        unlistenApiError.then(unlisten => unlisten());
       };
     }, []);
   
@@ -107,63 +103,44 @@ function SettingsDeveloperZone() {
         <div className="flex flex-col items-center justify-center h-[calc(100vh-4rem)]">
           {/* API服务控制面板 */}
           <div className="w-full max-w-2xl bg-card rounded-lg shadow-lg p-4">
-            <h2 className="text-lg font-semibold mb-3">Python FastAPI 服务控制</h2>
+            <h2 className="text-lg font-semibold mb-3">Python FastAPI 服务配置</h2>
             
             <div className="mb-4 p-3 bg-muted/30 rounded-md">
               <p className="mb-1">状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
               {apiStatus.running && (
                 <p>
-                  API地址: <a href={apiStatus.url} target="_blank" className="text-primary hover:underline">{apiStatus.url}</a>
+                  API地址: <a href={apiStatus.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{apiStatus.url}</a>
                 </p>
               )}
             </div>
   
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label htmlFor="api-host" className="block text-sm font-medium">主机:</label>
-                  <input
-                    id="api-host"
-                    value={customHost}
-                    onChange={(e) => setCustomHost(e.target.value)}
-                    disabled={apiStatus.running}
-                    placeholder="主机地址"
-                    className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
-                  />
-                </div>
-                
-                <div className="space-y-1">
-                  <label htmlFor="api-port" className="block text-sm font-medium">端口:</label>
+              <div className="space-y-1">
+                <label htmlFor="api-port" className="block text-sm font-medium">端口设置:</label>
+                <p className="text-xs text-muted-foreground mb-2">修改端口设置后需要重启应用才能生效</p>
+                <div className="flex gap-3">
                   <input
                     id="api-port"
                     value={customPort}
-                    onChange={(e) => setCustomPort(e.target.value)}
-                    disabled={apiStatus.running}
+                    onChange={handlePortChange}
                     placeholder="端口"
-                    className="w-full px-3 py-1.5 rounded-md border bg-background disabled:opacity-50"
+                    className="w-full px-3 py-1.5 rounded-md border bg-background"
                   />
+                  
+                  <Button 
+                    onClick={savePortSetting}
+                    disabled={!isPortChanged}
+                    variant="default"
+                    size="sm"
+                  >
+                    保存设置
+                  </Button>
                 </div>
               </div>
-              
-              <div className="flex gap-3 justify-end">
-                <Button 
-                  onClick={restartApiService}
-                  disabled={apiStatus.running}
-                  variant="default"
-                  size="sm"
-                >
-                  启动API服务
-                </Button>
-                
-                <Button 
-                  onClick={stopApiService}
-                  disabled={!apiStatus.running}
-                  variant="secondary"
-                  size="sm"
-                >
-                  停止API服务
-                </Button>
-              </div>
+            </div>
+            
+            <div className="mt-6 flex items-center justify-center">
+              <p className="text-sm text-muted-foreground">FastAPI 服务会随应用启动和关闭自动管理</p>
             </div>
             
             <div className="mt-4">

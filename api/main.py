@@ -564,6 +564,11 @@ def read_root():
     # 现在可以在任何路由中使用 app.state.db_path
     return {"Hello": "World", "db_path": app.state.db_path}
 
+@app.get("/health")
+def health_check():
+    """健康检查接口"""
+    return {"status": "ok", "message": "API服务正常运行中"}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
