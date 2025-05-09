@@ -5,10 +5,41 @@ import { listen } from '@tauri-apps/api/event';
 import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
-import { Folder, FolderPlus, MinusCircle, PlusCircle, Eye, EyeOff, AlertTriangle, Check, X, Shield, Settings } from "lucide-react";
-
+import { basename } from '@tauri-apps/api/path';
+import { checkAccessibilityPermission } from "tauri-plugin-macos-permissions-api";
+import {
+  debug,
+  info,
+  attachConsole
+} from '@tauri-apps/plugin-log';
+import { 
+  Folder, 
+  FolderPlus, 
+  MinusCircle, 
+  PlusCircle, 
+  Eye, 
+  EyeOff, 
+  AlertTriangle, 
+  Check, 
+  X, 
+  Shield, 
+  Settings, 
+  Upload } from "lucide-react";
 // UI组件
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { 
+  Alert, 
+  AlertDescription, 
+  AlertTitle 
+} from "@/components/ui/alert";
+import { 
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger 
+} from "@/components/ui/tabs";
 import { 
   Dialog, 
   DialogContent, 
@@ -18,11 +49,14 @@ import {
   DialogTitle, 
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardFooter, 
+  CardHeader, 
+  CardTitle 
+} from "@/components/ui/card";
 import { 
   AlertDialog,
   AlertDialogAction,
@@ -42,7 +76,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // 定义文件夹类型接口
 interface Directory {
@@ -78,11 +111,26 @@ function HomeMyFiles() {
   const [permissionsHint, setPermissionsHint] = useState<PermissionsHint | null>(null);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   
+  // 初始化日志系统
+  useEffect(() => {
+    const initLogger = async () => {
+      try {
+        await attachConsole();
+        info("日志系统初始化成功 - HomeMyFiles组件");
+      } catch (e) {
+        console.error("初始化日志系统失败", e);
+      }
+    };
+    
+    initLogger();
+  }, []);
+  
   // 新文件夹对话框相关状态
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newDirPath, setNewDirPath] = useState("");
   const [newDirAlias, setNewDirAlias] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [isDraggingOver, setIsDraggingOver] = useState(false); // 新增：用于跟踪拖拽状态
 
   // 尝试获取所有文件夹的函数
   const fetchDirectories = async () => {
@@ -175,6 +223,40 @@ function HomeMyFiles() {
         setNewDirPath("");
         setNewDirAlias("");
         fetchDirectories();
+      } else {
+        toast.error(result.message || "添加文件夹失败");
+      }
+    } catch (err) {
+      console.error("添加文件夹失败", err);
+      toast.error("添加文件夹失败，请检查API服务是否启动");
+    }
+  };
+
+  // 通过路径添加文件夹（用于拖放操作）
+  const handleAddDirectoryWithPath = async (dirPath: string, dirAlias?: string) => {
+    if (!dirPath) {
+      toast.error("文件夹路径不能为空");
+      return;
+    }
+
+    try {
+      const response = await fetch("http://127.0.0.1:60000/directories", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          path: dirPath,
+          alias: dirAlias || null,
+        }),
+      });
+      
+      const responseJson = await response.json();
+      const result = responseJson as ApiResponse;
+      
+      if (result.status === "success") {
+        toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
+        fetchDirectories(); // 刷新列表
       } else {
         toast.error(result.message || "添加文件夹失败");
       }
@@ -281,13 +363,153 @@ function HomeMyFiles() {
     }
   };
 
-  // 在组件加载时获取文件夹列表
+  // 在组件加载时获取文件夹列表并设置拖拽事件监听
   useEffect(() => {
-    // 只获取文件夹列表，不自动初始化默认文件夹
+    // 初始化日志控制台
+    const initLogs = async () => {
+      try {
+        await attachConsole();
+        info("日志系统初始化成功");
+        // 输出一些调试信息
+        debug("系统平台信息:");
+        debug(`User-Agent: ${navigator.userAgent}`);
+        debug(`窗口尺寸: ${window.innerWidth}x${window.innerHeight}`);
+        debug(`拖拽overlay状态: ${isDraggingOver}`);
+      } catch (e) {
+        console.error("初始化日志系统失败", e);
+      }
+    };
+    initLogs();
+
+    // 获取文件夹列表和权限提示信息
     fetchDirectories();
-    
-    // 获取权限提示信息
     fetchMacOSPermissionsHint();
+    
+    // 设置拖拽事件监听器
+    const setupDragDropListeners = async () => {
+      info("正在设置拖拽事件监听器...");
+      
+      try {
+        // 尝试检测 Tauri 事件 API
+        info("尝试监听 Tauri 拖拽事件...");
+        
+        // 进入拖拽区域
+        const unlistenDragEnter = await listen('tauri://drag-enter', (event) => {
+          info(`拖拽进入事件触发: ${JSON.stringify(event)}`);
+          setIsDraggingOver(true);
+          debug(`isDraggingOver 状态已设置为: ${true}`);
+        });
+        info("成功设置 drag-enter 监听器");
+
+        // 使用 dragover 事件 (有些平台可能需要这个)
+        const unlistenDragOver = await listen('tauri://drag-over', (event) => {
+          info(`拖拽悬停事件触发: ${JSON.stringify(event)}`);
+          setIsDraggingOver(true);
+          debug(`isDraggingOver 状态已设置为: ${true}`);
+        });
+        info("成功设置 drag-over 监听器");
+
+        // 离开拖拽区域
+        const unlistenDragLeave = await listen('tauri://drag-leave', (event) => {
+          info(`拖拽离开事件触发: ${JSON.stringify(event)}`);
+          setIsDraggingOver(false);
+          debug(`isDraggingOver 状态已设置为: ${false}`);
+        });
+        info("成功设置 drag-leave 监听器");
+
+        // 放置文件/文件夹
+        const unlistenDragDrop = await listen('tauri://drag-drop', async (event) => {
+          info(`拖拽放置事件触发: ${JSON.stringify(event)}`);
+          setIsDraggingOver(false);
+          
+          try {
+            // 为Tauri拖放事件的payload定义一个接口，增强类型安全
+            interface TauriDragDropPayload {
+              paths: string[];
+              position: { x: number; y: number }; // 根据日志，payload还包含position
+            }
+
+            // 解析拖放的路径
+            const dropPayload = event.payload as TauriDragDropPayload;
+            const paths = dropPayload.paths; // 从payload对象中获取paths数组
+            info(`拖拽事件载荷类型: ${typeof event.payload}, 是数组: ${Array.isArray(event.payload)}`);
+            info(`拖拽事件完整载荷: ${JSON.stringify(event.payload)}`);
+            if (paths && paths.length > 0) {
+              info(`检测到 ${paths.length} 个拖入项目: ${JSON.stringify(paths)}`);
+              toast.info(`检测到 ${paths.length} 个拖入项目，正在处理...`);
+              
+              // 处理每个拖入的路径
+              for (const droppedPath of paths) {
+                try {
+                  debug(`正在处理路径: ${droppedPath}`);
+                  info(`路径类型: ${typeof droppedPath}, 长度: ${droppedPath.length}`);
+                  // 输出一些特殊字符，以检查路径中是否有不可见字符
+                  info(`路径前10个字符: "${droppedPath.substring(0, 10)}"`);
+                  info(`路径最后10个字符: "${droppedPath.substring(droppedPath.length - 10)}"`);
+                  
+                  // 处理可能的文件URL格式路径
+                  let processedPath = droppedPath;
+                  if (typeof processedPath === 'string' && processedPath.startsWith('file://')) {
+                    info(`检测到文件URL格式，尝试解码: ${processedPath}`);
+                    // 移除 file:// 前缀并解码URL
+                    processedPath = decodeURIComponent(processedPath.replace(/^file:\/\//, ''));
+                    info(`解码后的路径: ${processedPath}`);
+                  }
+                  
+                  // 调用Rust命令解析目录路径
+                  const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
+                  info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
+                  
+                  if (resolvedDir) {
+                    // 获取文件夹名称作为默认别名
+                    const dirName = await basename(resolvedDir);
+                    info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
+                    await handleAddDirectoryWithPath(resolvedDir, dirName);
+                  } else {
+                    info(`无法解析路径: ${droppedPath}`);
+                    toast.error(`无法解析路径: ${droppedPath}`);
+                  }
+                } catch (err) {
+                  info(`处理拖拽路径 ${droppedPath} 出错: ${err}`);
+                  console.error(`处理拖拽路径 ${droppedPath} 出错:`, err);
+                  const pathName = await basename(droppedPath).catch(() => droppedPath);
+                  const errorMessage = typeof err === 'string' ? err : (err as Error)?.message || "未知错误";
+                  toast.error(`处理 ${pathName} 出错: ${errorMessage}`);
+                }
+              }
+            } else {
+              info("拖入项目为空或格式不正确");
+              toast.error("无法识别拖放的文件或文件夹");
+            }
+          } catch (err) {
+            info(`解析拖放事件出错: ${err}`);
+            console.error("解析拖放事件出错:", err);
+            toast.error("处理拖放文件时出错");
+          }
+        });
+        info("成功设置 drag-drop 监听器");
+        
+        // 返回清理函数
+        return () => {
+          info("清理拖拽事件监听器");
+          unlistenDragEnter();
+          unlistenDragOver();
+          unlistenDragLeave();
+          unlistenDragDrop();
+        };
+      } catch (err) {
+        info(`设置拖拽事件监听器失败: ${err}`);
+        console.error("设置拖拽事件监听器失败:", err);
+        toast.error("初始化拖拽事件失败");
+        return () => {}; // 返回空函数
+      }
+    };
+    
+    // 设置监听器并在组件卸载时清理
+    const cleanupPromise = setupDragDropListeners();
+    return () => {
+      cleanupPromise.then(cleanup => cleanup && cleanup());
+    };
   }, []);
 
   // 筛选文件夹
@@ -344,23 +566,31 @@ function HomeMyFiles() {
                 {dir.path}
               </TableCell>
               <TableCell>
-                {dir.auth_status === "authorized" ? (
-                  <span className="flex items-center text-green-500">
+                {dir.is_blacklist ? (
+                  <span className="flex items-center text-gray-400">
+                    <MinusCircle size={16} className="mr-1" />已加入黑名单
+                  </span>
+                ) : dir.auth_status === "authorized" ? (
+                  <span className="flex items-center text-pink-500">
                     <Check size={16} className="mr-1" />已授权
                   </span>
                 ) : dir.auth_status === "unauthorized" ? (
-                  <span className="flex items-center text-red-500">
+                  <span className="flex items-center text-red-400">
                     <X size={16} className="mr-1" />未授权
                   </span>
                 ) : (
-                  <span className="flex items-center text-yellow-500">
+                  <span className="flex items-center text-amber-500">
                     <AlertTriangle size={16} className="mr-1" />待授权
                   </span>
                 )}
               </TableCell>
               <TableCell className="text-right flex justify-end gap-2">
                 {/* 授权/取消授权按钮 */}
-                {dir.auth_status === "authorized" ? (
+                {dir.is_blacklist ? (
+                  <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
+                    <Eye size={16} className="mr-1" />授权
+                  </Button>
+                ) : dir.auth_status === "authorized" ? (
                   <Button variant="outline" size="sm" onClick={() => updateAuthStatus(dir, "pending")}>
                     <EyeOff size={16} className="mr-1" />取消授权
                   </Button>
@@ -423,8 +653,69 @@ function HomeMyFiles() {
     </Table>
   );
 
+  // 使用useEffect监控isDraggingOver状态变化
+  // useEffect(() => {
+  //   info(`拖拽覆盖层状态发生变化: isDraggingOver = ${isDraggingOver}`);
+  //   debug(`当前DOM中是否应该显示拖拽覆盖层: ${isDraggingOver}`);
+  // }, [isDraggingOver]);
+
+  // 添加React中DOM标准拖拽处理函数
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    info("DOM 标准拖拽进入事件触发");
+    setIsDraggingOver(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // 不要在每次drag over时都设置state和打印日志，会导致性能问题
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    info("DOM 标准拖拽离开事件触发");
+    // 检查是否真的离开了容器，而不是进入了子元素
+    if(e.currentTarget === e.target) {
+      setIsDraggingOver(false);
+    }
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    info("DOM 标准拖拽放置事件触发");
+    setIsDraggingOver(false);
+
+    // 只是记录，但不作实际处理，因为Tauri的事件系统应该会处理
+    const files = Array.from(e.dataTransfer.files);
+    info(`标准DOM拖放检测到 ${files.length} 个文件:`);
+    files.forEach((file, i) => {
+      info(`文件 ${i+1}: ${file.name}, 类型: ${file.type}`);
+    });
+    
+    // 这里我们不再直接处理，因为应该由Tauri的事件系统接管
+    toast.info("拖放事件已触发，等待Tauri处理...");
+  };
+  
   return (
-    <main className="container mx-auto p-3">
+    <main 
+      className="container mx-auto p-3 relative"
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* 拖拽覆盖层，确保z-index足够高且覆盖整个界面 */}
+      {isDraggingOver && (
+        <div className="fixed inset-0 bg-pink-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-pink-300 rounded-lg pointer-events-none">
+          <Upload size={64} className="text-pink-400 mb-4" />
+          <p className="text-xl font-semibold text-pink-700">将文件或文件夹拖放到此处</p>
+          <p className="text-sm text-pink-500 mt-2">文件将自动添加其所在的父文件夹</p>
+        </div>
+      )}      
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">我的文件夹</h1>
@@ -433,14 +724,13 @@ function HomeMyFiles() {
         
         <div className="flex gap-2">
           {/* macOS权限指南按钮 */}
-          <Button variant="outline" onClick={showPermissionsGuide}>
+          <Button variant="outline" onClick={showPermissionsGuide} className="border-pink-200 hover:bg-pink-50 text-pink-700">
             <Shield className="mr-2 h-4 w-4" /> macOS权限指南
-          </Button>
-          
+          </Button>          
           {/* 添加文件夹按钮 */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button className="bg-pink-200 hover:bg-pink-300 text-pink-900">
                 <FolderPlus className="mr-2 h-4 w-4" /> 添加文件夹
               </Button>
             </DialogTrigger>
@@ -461,7 +751,7 @@ function HomeMyFiles() {
                     <Input id="path" 
                       value={newDirPath} 
                       onChange={(e) => setNewDirPath(e.target.value)} 
-                      placeholder="/Users/example/Documents"
+                      placeholder="/Users/tom/Documents"
                       className="flex-1"
                     />
                     <Button type="button" variant="outline" onClick={openFolderPicker}>
@@ -491,20 +781,20 @@ function HomeMyFiles() {
         </div>
       </div>
       
-      <Card>
-        <CardHeader>
-          <CardTitle>文件夹管理</CardTitle>
-          <CardDescription>
+      <Card className="border-pink-100">
+        <CardHeader className="bg-pink-50/50">
+          <CardTitle className="text-pink-900">文件夹管理</CardTitle>
+          <CardDescription className="text-pink-700">
             查看和管理所有需要监控的文件夹，授权或取消授权访问权限。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="all">全部</TabsTrigger>
-              <TabsTrigger value="authorized">已授权</TabsTrigger>
-              <TabsTrigger value="pending">待授权</TabsTrigger>
-              <TabsTrigger value="blacklist">黑名单</TabsTrigger>
+            <TabsList className="mb-4 bg-pink-100">
+              <TabsTrigger value="all" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">全部</TabsTrigger>
+              <TabsTrigger value="authorized" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">已授权</TabsTrigger>
+              <TabsTrigger value="pending" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">待授权</TabsTrigger>
+              <TabsTrigger value="blacklist" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">黑名单</TabsTrigger>
             </TabsList>
             
             <TabsContent value="all">{renderDirectoryTable()}</TabsContent>

@@ -9,6 +9,8 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WindowEvent,
 };
+// 导入自定义命令
+mod commands;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri_plugin_store::StoreBuilder;
 
@@ -324,6 +326,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_macos_permissions::init())
         .setup(|app| {
             let app_handle = app.handle();
             let api_state_instance = app.state::<ApiState>();
@@ -405,7 +408,6 @@ pub fn run() {
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
             let tray_icon = TrayIconBuilder::new()
-                // .icon(app.default_window_icon().unwrap().clone())
                 .menu(&menu)
                 .show_menu_on_left_click(false) // Changed to false for right-click menu
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -470,6 +472,7 @@ pub fn run() {
             set_activation_policy_accessory,
             set_activation_policy_regular,
             update_api_port,
+            commands::resolve_directory_from_path,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {

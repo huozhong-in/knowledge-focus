@@ -1,0 +1,95 @@
+/* 粉色主题 - 基于 #FFE4E6 */
+:root {
+  --background: #FFFFFF;
+  --foreground: #1F1F1F;
+  --card: #FFFFFF;
+  --card-foreground: #1F1F1F;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F1F1F;
+  
+  /* 粉色系主题，基于 #FFE4E6 */
+  --primary: #FFE4E6; /* 主要粉色，品牌色 */
+  --primary-foreground: #4B1D25;
+  --secondary: #FFF1F2; /* 淡粉背景色 */
+  --secondary-foreground: #601E29;
+  --muted: #FEF2F3;
+  --muted-foreground: #9D4351;
+  --accent: #FECDD3; /* 强调色 */
+  --accent-foreground: #881337;
+  --destructive: #EF4444; /* 保持警告色红色 */
+  --destructive-foreground: #FFFFFF;
+  --border: #FFD8DD;
+  --input: #FFD8DD;
+  --ring: #FDA4AF;
+  
+  /* 保持其他图表颜色等 */
+  --chart-1: #FDA4AF;
+  --chart-2: #FECDD3;
+  --chart-3: #FFE4E6;
+  --chart-4: #FFF1F2;
+  --chart-5: #F43F5E;
+  
+  /* 侧边栏颜色 */
+  --sidebar: #FFF1F2;
+  --sidebar-foreground: #881337;
+  --sidebar-primary: #FFE4E6;
+  --sidebar-primary-foreground: #4B1D25;
+  --sidebar-accent: #FECDD3;
+  --sidebar-accent-foreground: #601E29;
+  --sidebar-border: #FFD8DD;
+  --sidebar-ring: #FDA4AF;
+  
+  /* 暗色主题配置，使用深色粉红色 */
+  &.dark {
+    --background: #1F1F1F;
+    --foreground: #FFFFFF;
+    --card: #262626;
+    --card-foreground: #FFFFFF;
+    --popover: #262626;
+    --popover-foreground: #FFFFFF;
+    --primary: #F43F5E;
+    --primary-foreground: #FFFFFF;
+    --secondary: #450A14;
+    --secondary-foreground: #FFFFFF;
+    --muted: #3B0911;
+    --muted-foreground: #FDA4AF;
+    --accent: #881337;
+    --accent-foreground: #FFFFFF;
+    --destructive: #EF4444;
+    --destructive-foreground: #FFFFFF;
+    --border: rgba(255, 255, 255, 0.1);
+    --input: rgba(255, 255, 255, 0.15);
+    --ring: #F9A8D4;
+    
+    --sidebar: #262626;
+    --sidebar-foreground: #FFFFFF;
+    --sidebar-primary: #F43F5E;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #881337;
+    --sidebar-accent-foreground: #FFFFFF;
+    --sidebar-border: rgba(255, 255, 255, 0.1);
+    --sidebar-ring: #F9A8D4;
+  }
+}
+
+/* 粉红色调的按钮自定义样式 */
+.btn-pink {
+  background-color: #FFE4E6;
+  color: #881337;
+  border-color: #FDA4AF;
+}
+
+.btn-pink:hover {
+  background-color: #FECDD3;
+}
+
+/* 粉红背景卡片 */
+.card-pink {
+  border-color: #FFD8DD;
+  background-color: #FFF1F2;
+}
+
+.card-pink-header {
+  background-color: #FFE4E6;
+  color: #881337;
+}

@@ -8,13 +8,17 @@
   "permissions": [
     "core:default",
     "core:window:default",
-    "opener:default",
     "core:path:default",
     "core:resources:default",
     "core:window:allow-start-dragging",
+    "opener:default",
     "store:default",
     "fs:default",
     "process:default",
+    "updater:default",
+    "dialog:default",
+    "log:default",
+    "macos-permissions:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [
@@ -26,7 +30,6 @@
         }
       ]
     },
-    "updater:default",
     {
       "identifier": "shell:allow-spawn",
       "allow": [
@@ -64,7 +67,6 @@
         }
       ]
     },
-    "dialog:default",
     {
       "identifier": "http:default",
       "allow": [

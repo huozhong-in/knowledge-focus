@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Store } from '@tauri-apps/plugin-store';
+// import { Store } from '@tauri-apps/plugin-store';
 import { listen } from '@tauri-apps/api/event';
-import { join, appDataDir } from '@tauri-apps/api/path';
+// import { join, appDataDir } from '@tauri-apps/api/path';
 import "./index.css";
-import { Button } from "@/components/ui/button"
-import { toast } from "sonner";
+// import { Button } from "@/components/ui/button"
+// import { toast } from "sonner";
 
 function SettingsDeveloperZone() {  
     // API服务状态
@@ -16,69 +16,69 @@ function SettingsDeveloperZone() {
       url: "http://127.0.0.1:60000"
     });
     const [apiLogs, setApiLogs] = useState<string[]>([]);
-    const [customPort, setCustomPort] = useState("60000");
-    const [isPortChanged, setIsPortChanged] = useState(false);
+    // const [customPort, setCustomPort] = useState("60000");
+    // const [isPortChanged, setIsPortChanged] = useState(false);
     
     // 获取API状态
     async function checkApiStatus() {
       try {
         const status = await invoke("get_api_status");
         setApiStatus(status as any);
-        setCustomPort(String((status as any).port));
+        // setCustomPort(String((status as any).port));
       } catch (error) {
         console.error("获取API状态失败:", error);
       }
     }
   
     // 保存端口设置
-    async function savePortSetting() {
-      try {
-        const port = parseInt(customPort, 10);
-        if (isNaN(port) || port < 1024 || port > 65535) {
-          toast.error("请输入有效的端口号 (1024-65535)");
-          return;
-        }
+    // async function savePortSetting() {
+    //   try {
+    //     const port = parseInt(customPort, 10);
+    //     if (isNaN(port) || port < 1024 || port > 65535) {
+    //       toast.error("请输入有效的端口号 (1024-65535)");
+    //       return;
+    //     }
         
-        const response = await invoke("update_api_port", { port });
-        toast.success((response as any).message);
-      } catch (error) {
-        console.error("保存端口设置失败:", error);
-        toast.error(`保存端口设置失败: ${error}`);
-      }
-    }
+    //     const response = await invoke("update_api_port", { port });
+    //     toast.success((response as any).message);
+    //   } catch (error) {
+    //     console.error("保存端口设置失败:", error);
+    //     toast.error(`保存端口设置失败: ${error}`);
+    //   }
+    // }
     
-    // 监听输入变化
-    function handlePortChange(e: React.ChangeEvent<HTMLInputElement>) {
-      const newPort = e.target.value;
-      setCustomPort(newPort);
-      setIsPortChanged(parseInt(newPort, 10) !== apiStatus.port);
-    }
+    // // 监听输入变化
+    // function handlePortChange(e: React.ChangeEvent<HTMLInputElement>) {
+    //   const newPort = e.target.value;
+    //   setCustomPort(newPort);
+    //   setIsPortChanged(parseInt(newPort, 10) !== apiStatus.port);
+    // }
   
     // 组件加载时检查API状态与监听API日志事件
     useEffect(() => {
       checkApiStatus();
       
       // 加载存储的端口设置
-      const loadStoredPort = async () => {
-        try {
-          const appDataPath = await appDataDir();
-          const storePath = await join(appDataPath, 'settings.json');
+      // const loadStoredPort = async () => {
+      //   try {
+      //     const appDataPath = await appDataDir();
+      //     const storePath = await join(appDataPath, 'settings.json');
           
-          // 使用正确的 Store API
-          const store = await Store.load(storePath);
+      //     // 使用正确的 Store API
+      //     const store = await Store.load(storePath);
           
-          const storedPort = await store.get('api_port');
+      //     const storedPort = await store.get('api_port');
           
-          if (storedPort && typeof storedPort === 'number') {
-            setCustomPort(String(storedPort));
-          }
-        } catch (error) {
-          // 如果是首次使用，store可能不存在
-          console.log("加载存储的端口设置失败 (可能是首次使用):", error);
-        }
-      };
+      //     if (storedPort && typeof storedPort === 'number') {
+      //       setCustomPort(String(storedPort));
+      //     }
+      //   } catch (error) {
+      //     // 如果是首次使用，store可能不存在
+      //     console.log("加载存储的端口设置失败 (可能是首次使用):", error);
+      //   }
+      // };
       
-      loadStoredPort();
+      // loadStoredPort();
       
       // 监听API日志事件
       const unlistenApiLog = listen('api-log', (event) => {
@@ -114,7 +114,7 @@ function SettingsDeveloperZone() {
               )}
             </div>
   
-            <div className="space-y-4">
+            {/* <div className="space-y-4">
               <div className="space-y-1">
                 <label htmlFor="api-port" className="block text-sm font-medium">端口设置:</label>
                 <p className="text-xs text-muted-foreground mb-2">修改端口设置后需要重启应用才能生效</p>
@@ -137,7 +137,7 @@ function SettingsDeveloperZone() {
                   </Button>
                 </div>
               </div>
-            </div>
+            </div> */}
             
             <div className="mt-6 flex items-center justify-center">
               <p className="text-sm text-muted-foreground">FastAPI 服务会随应用启动和关闭自动管理</p>
