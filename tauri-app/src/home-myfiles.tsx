@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
+import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { Folder, FolderPlus, MinusCircle, PlusCircle, Eye, EyeOff, AlertTriangle, Check, X, Shield, Settings } from "lucide-react";
@@ -74,8 +75,6 @@ function HomeMyFiles() {
   // 状态定义
   const [directories, setDirectories] = useState<Directory[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [permissionsHint, setPermissionsHint] = useState<PermissionsHint | null>(null);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   
@@ -89,7 +88,6 @@ function HomeMyFiles() {
   const fetchDirectories = async () => {
     try {
       setLoading(true);
-      setError(null);
       
       // 调用API获取文件夹列表
       const response = await fetch("http://127.0.0.1:60000/directories");
@@ -99,11 +97,11 @@ function HomeMyFiles() {
       if (result.status === "success" && result.data) {
         setDirectories(result.data);
       } else {
-        setError(result.message || "获取文件夹列表失败");
+        toast.error(result.message || "获取文件夹列表失败");
       }
     } catch (err) {
       console.error("获取文件夹失败", err);
-      setError("获取文件夹列表失败，请检查API服务是否启动");
+      toast.error("获取文件夹列表失败，请检查API服务是否启动");
     } finally {
       setLoading(false);
     }
@@ -138,22 +136,21 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        setSuccessMessage("默认文件夹初始化成功");
-        setTimeout(() => setSuccessMessage(null), 3000); // 3秒后清除成功消息
+        toast.success("默认文件夹初始化成功");
         fetchDirectories(); // 重新获取文件夹列表
       } else {
-        setError(result.message || "初始化默认文件夹失败");
+        toast.error(result.message || "初始化默认文件夹失败");
       }
     } catch (err) {
       console.error("初始化默认文件夹失败", err);
-      setError("初始化默认文件夹失败，请检查API服务是否启动");
+      toast.error("初始化默认文件夹失败，请检查API服务是否启动");
     }
   };
 
   // 添加新文件夹
   const addDirectory = async () => {
     if (!newDirPath) {
-      setError("文件夹路径不能为空");
+      toast.error("文件夹路径不能为空");
       return;
     }
 
@@ -173,18 +170,17 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        setSuccessMessage(result.message || "添加文件夹成功");
-        setTimeout(() => setSuccessMessage(null), 3000);
+        toast.success(result.message || "添加文件夹成功");
         setIsDialogOpen(false);
         setNewDirPath("");
         setNewDirAlias("");
         fetchDirectories();
       } else {
-        setError(result.message || "添加文件夹失败");
+        toast.error(result.message || "添加文件夹失败");
       }
     } catch (err) {
       console.error("添加文件夹失败", err);
-      setError("添加文件夹失败，请检查API服务是否启动");
+      toast.error("添加文件夹失败，请检查API服务是否启动");
     }
   };
 
@@ -205,15 +201,14 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        setSuccessMessage(result.message || `成功更新"${directory.alias || directory.path}"的授权状态`);
-        setTimeout(() => setSuccessMessage(null), 3000);
+        toast.success(result.message || `成功更新"${directory.alias || directory.path}"的授权状态`);
         fetchDirectories();
       } else {
-        setError(result.message || "更新授权状态失败");
+        toast.error(result.message || "更新授权状态失败");
       }
     } catch (err) {
       console.error("更新授权状态失败", err);
-      setError("更新授权状态失败，请检查API服务是否启动");
+      toast.error("更新授权状态失败，请检查API服务是否启动");
     }
   };
 
@@ -235,15 +230,14 @@ function HomeMyFiles() {
       
       if (result.status === "success") {
         const action = isBlacklist ? "加入" : "移出";
-        setSuccessMessage(result.message || `成功${action}"${directory.alias || directory.path}"到黑名单`);
-        setTimeout(() => setSuccessMessage(null), 3000);
+        toast.success(result.message || `成功${action}"${directory.alias || directory.path}"到黑名单`);
         fetchDirectories();
       } else {
-        setError(result.message || "更新黑名单状态失败");
+        toast.error(result.message || "更新黑名单状态失败");
       }
     } catch (err) {
       console.error("更新黑名单状态失败", err);
-      setError("更新黑名单状态失败，请检查API服务是否启动");
+      toast.error("更新黑名单状态失败，请检查API服务是否启动");
     }
   };
 
@@ -258,15 +252,14 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        setSuccessMessage(result.message || `成功删除"${directory.alias || directory.path}"`);
-        setTimeout(() => setSuccessMessage(null), 3000);
+        toast.success(result.message || `成功删除"${directory.alias || directory.path}"`);
         fetchDirectories();
       } else {
-        setError(result.message || "删除文件夹失败");
+        toast.error(result.message || "删除文件夹失败");
       }
     } catch (err) {
       console.error("删除文件夹失败", err);
-      setError("删除文件夹失败，请检查API服务是否启动");
+      toast.error("删除文件夹失败，请检查API服务是否启动");
     }
   };
 
@@ -284,7 +277,7 @@ function HomeMyFiles() {
       }
     } catch (err) {
       console.error("选择文件夹失败", err);
-      setError("选择文件夹失败");
+      toast.error("选择文件夹失败");
     }
   };
 
@@ -497,24 +490,6 @@ function HomeMyFiles() {
           </Dialog>
         </div>
       </div>
-      
-      {/* 错误消息 */}
-      {error && (
-        <Alert variant="destructive" className="mb-6">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>错误</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-      
-      {/* 成功消息 */}
-      {successMessage && (
-        <Alert className="mb-6 bg-green-50 border-green-400 text-green-800">
-          <Check className="h-4 w-4 text-green-500" />
-          <AlertTitle>成功</AlertTitle>
-          <AlertDescription>{successMessage}</AlertDescription>
-        </Alert>
-      )}
       
       <Card>
         <CardHeader>
