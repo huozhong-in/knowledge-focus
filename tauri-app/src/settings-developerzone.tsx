@@ -129,7 +129,7 @@ function SettingsDeveloperZone() {
                   
                   <Button 
                     onClick={savePortSetting}
-                    disabled={!isPortChanged}
+                    disabled={true}
                     variant="default"
                     size="sm"
                   >

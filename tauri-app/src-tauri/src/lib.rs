@@ -443,7 +443,6 @@ pub fn run() {
             set_activation_policy_accessory,
             set_activation_policy_regular,
             update_api_port,
-            update_api_port
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {
