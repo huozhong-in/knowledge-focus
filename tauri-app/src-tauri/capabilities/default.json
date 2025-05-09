@@ -19,6 +19,7 @@
     "dialog:default",
     "log:default",
     "macos-permissions:default",
+    "window-state:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [

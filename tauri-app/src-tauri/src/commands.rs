@@ -1,5 +1,5 @@
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
@@ -9,7 +9,7 @@ pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
         let clean_path = path_str.replace("file://", "");
         return resolve_directory_from_path(clean_path);
     }
-    
+
     let path = Path::new(&path_str);
 
     match fs::metadata(path) {
@@ -20,10 +20,8 @@ pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
                     Some(parent_path) => {
                         let result = parent_path.to_string_lossy().into_owned();
                         Ok(result)
-                    },
-                    None => {
-                        Err(format!("文件 '{}' 没有父文件夹", path.display()))
-                    },
+                    }
+                    None => Err(format!("文件 '{}' 没有父文件夹", path.display())),
                 }
             } else if metadata.is_dir() {
                 // 如果是目录，直接返回
@@ -33,8 +31,6 @@ pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
                 Err(format!("路径 '{}' 不是有效的文件或文件夹", path.display()))
             }
         }
-        Err(e) => {
-            Err(format!("无法读取路径 '{}' 的元数据: {}", path.display(), e))
-        },
+        Err(e) => Err(format!("无法读取路径 '{}' 的元数据: {}", path.display(), e)),
     }
 }

@@ -13,8 +13,6 @@
     "windows": [
       {
         "title": "",
-        "width": 1024,
-        "height": 650,
         "minWidth": 1024,
         "minHeight": 650,
         "dragDropEnabled": true,

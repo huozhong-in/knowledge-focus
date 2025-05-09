@@ -309,10 +309,14 @@ fn update_api_port(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            println!("另一个实例已尝试启动，参数: {:?}，工作文件夹: {}", args, cwd);
+            println!(
+                "另一个实例已尝试启动，参数: {:?}，工作文件夹: {}",
+                args, cwd
+            );
             // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
             if let Some(window) = app.get_webview_window("main") {
                 window.show().unwrap();
