@@ -17,7 +17,7 @@ from sqlmodel import (
 )
 from datetime import datetime
 from db_mgr import MyFiles, AuthStatus
-from typing import Dict, List, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform
 import logging
@@ -30,7 +30,7 @@ class MyFilesManager:
     
     负责:
     1. 管理用户授权的文件夹列表
-    2. 维护常用目录的授权状态
+    2. 维护常用文件夹的授权状态
     3. 管理黑名单功能
     4. 提供跨平台(macOS/Windows)的文件路径处理
     """
@@ -39,10 +39,10 @@ class MyFilesManager:
         self.system = platform.system()  # 'Darwin' for macOS, 'Windows' for Windows
     
     def get_default_directories(self) -> List[Dict[str, str]]:
-        """获取系统默认常用目录，根据操作系统返回不同的目录列表
+        """获取系统默认常用文件夹，根据操作系统返回不同的文件夹列表
         
         Returns:
-            List[Dict[str, str]]: 包含目录名称和路径的字典列表
+            List[Dict[str, str]]: 包含文件夹名称和路径的字典列表
         """
         dirs = []
         
@@ -57,7 +57,7 @@ class MyFilesManager:
                 {"name": "影片", "path": os.path.join(home_dir, "Movies")},
             ]
         elif self.system == "Windows":
-            # Windows系统使用USERPROFILE环境变量获取用户主目录
+            # Windows系统使用USERPROFILE环境变量获取用户主文件夹
             home_dir = os.environ.get("USERPROFILE")
             if home_dir:
                 dirs = [
@@ -69,7 +69,7 @@ class MyFilesManager:
                     {"name": "视频", "path": os.path.join(home_dir, "Videos")},
                 ]
                 
-                # 添加Windows特有的目录（如OneDrive）
+                # 添加Windows特有的文件夹（如OneDrive）
                 onedrive_dir = os.environ.get("OneDriveConsumer") or os.environ.get("OneDrive")
                 if onedrive_dir:
                     dirs.append({"name": "OneDrive", "path": onedrive_dir})
@@ -77,9 +77,9 @@ class MyFilesManager:
         return dirs
     
     def initialize_default_directories(self) -> None:
-        """初始化默认目录到数据库
+        """初始化默认文件夹到数据库
         
-        如果数据库中不存在这些目录记录，将它们添加进去
+        如果数据库中不存在这些文件夹记录，将它们添加进去
         """
         default_dirs = self.get_default_directories()
         existing_paths = {myfile.path for myfile in self.session.exec(select(MyFiles)).all()}
@@ -98,21 +98,21 @@ class MyFilesManager:
         if new_records:
             self.session.add_all(new_records)
             self.session.commit()
-            logger.info(f"已初始化 {len(new_records)} 个默认目录")
+            logger.info(f"已初始化 {len(new_records)} 个默认文件夹")
     
     def get_all_directories(self) -> List[MyFiles]:
-        """获取所有目录记录
+        """获取所有文件夹记录
         
         Returns:
-            List[MyFiles]: 所有目录记录列表
+            List[MyFiles]: 所有文件夹记录列表
         """
         return self.session.exec(select(MyFiles)).all()
     
     def get_authorized_directories(self) -> List[MyFiles]:
-        """获取所有已授权的目录
+        """获取所有已授权的文件夹
         
         Returns:
-            List[MyFiles]: 已授权的目录记录列表
+            List[MyFiles]: 已授权的文件夹记录列表
         """
         return self.session.exec(
             select(MyFiles).where(
@@ -124,34 +124,34 @@ class MyFilesManager:
         ).all()
     
     def get_pending_directories(self) -> List[MyFiles]:
-        """获取所有待授权的目录
+        """获取所有待授权的文件夹
         
         Returns:
-            List[MyFiles]: 待授权的目录记录列表
+            List[MyFiles]: 待授权的文件夹记录列表
         """
         return self.session.exec(
             select(MyFiles).where(MyFiles.auth_status == AuthStatus.PENDING.value)
         ).all()
     
     def get_blacklist_directories(self) -> List[MyFiles]:
-        """获取所有黑名单目录
+        """获取所有黑名单文件夹
         
         Returns:
-            List[MyFiles]: 黑名单目录记录列表
+            List[MyFiles]: 黑名单文件夹记录列表
         """
         return self.session.exec(
             select(MyFiles).where(MyFiles.is_blacklist == True)
         ).all()
 
-    def add_directory(self, path: str, alias: Optional[str] = None) -> Tuple[bool, str]:
-        """添加新目录
+    def add_directory(self, path: str, alias: Optional[str] = None) -> Tuple[bool, Union[MyFiles, str]]:
+        """添加新文件夹
         
         Args:
-            path (str): 目录路径
-            alias (Optional[str], optional): 目录别名. Defaults to None.
+            path (str): 文件夹路径
+            alias (Optional[str], optional): 文件夹别名. Defaults to None.
         
         Returns:
-            Tuple[bool, str]: (成功标志, 消息)
+            Tuple[bool, Union[MyFiles, str]]: (成功标志, 文件夹对象或错误消息)
         """
         # 标准化路径
         path = os.path.normpath(path)
@@ -160,9 +160,9 @@ class MyFilesManager:
         if not os.path.exists(path):
             return False, f"路径不存在: {path}"
             
-        # 检查是否为目录
+        # 检查是否为文件夹
         if not os.path.isdir(path):
-            return False, f"不是有效的目录: {path}"
+            return False, f"不是有效的文件夹: {path}"
             
         # 检查记录是否已存在
         existing = self.session.exec(
@@ -170,7 +170,7 @@ class MyFilesManager:
         ).first()
         
         if existing:
-            return False, f"目录已存在: {path}"
+            return False, f"文件夹已存在: {path}"
             
         # 添加新记录
         new_file = MyFiles(
@@ -182,122 +182,98 @@ class MyFilesManager:
         
         self.session.add(new_file)
         self.session.commit()
+        self.session.refresh(new_file)  # 刷新以获取完整对象
         
-        return True, f"成功添加目录: {path}"
+        return True, new_file
     
-    def update_auth_status(self, path: str, status: AuthStatus) -> Tuple[bool, str]:
-        """更新目录的授权状态
-        
+    def update_auth_status(self, directory_id: int, status: AuthStatus) -> Tuple[bool, MyFiles | str]:
+        """更新文件夹的授权状态
+
         Args:
-            path (str): 目录路径
+            directory_id (int): 文件夹的ID
             status (AuthStatus): 新的授权状态
-        
+
         Returns:
-            Tuple[bool, str]: (成功标志, 消息)
+            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
-        # 标准化路径
-        path = os.path.normpath(path)
-        
-        # 查找记录
-        directory = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
-        ).first()
-        
+        directory = self.session.get(MyFiles, directory_id)
         if not directory:
-            return False, f"目录不存在: {path}"
-            
-        # 更新状态
+            return False, f"文件夹ID不存在: {directory_id}"
+
         directory.auth_status = status.value
         directory.updated_at = datetime.now()
         self.session.add(directory)
         self.session.commit()
-        
-        return True, f"成功更新目录状态: {path} -> {status.value}"
+        self.session.refresh(directory)
+        return True, directory
     
-    def toggle_blacklist(self, path: str, is_blacklist: bool) -> Tuple[bool, str]:
-        """切换目录的黑名单状态
-        
+    def toggle_blacklist(self, directory_id: int, is_blacklist: bool) -> Tuple[bool, MyFiles | str]:
+        """切换文件夹的黑名单状态
+
         Args:
-            path (str): 目录路径
+            directory_id (int): 文件夹的ID
             is_blacklist (bool): 是否加入黑名单
-        
+
         Returns:
-            Tuple[bool, str]: (成功标志, 消息)
+            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
-        # 标准化路径
-        path = os.path.normpath(path)
-        
-        # 查找记录
-        directory = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
-        ).first()
-        
+        directory = self.session.get(MyFiles, directory_id)
         if not directory:
-            return False, f"目录不存在: {path}"
-            
-        # 更新黑名单状态
+            return False, f"文件夹ID不存在: {directory_id}"
+
         directory.is_blacklist = is_blacklist
         directory.updated_at = datetime.now()
         self.session.add(directory)
         self.session.commit()
-        
-        action = "加入" if is_blacklist else "移出"
-        return True, f"成功{action}黑名单: {path}"
+        self.session.refresh(directory)
+        return True, directory
     
-    def remove_directory(self, path: str) -> Tuple[bool, str]:
-        """从数据库中删除目录记录
+    def remove_directory(self, directory_id: int) -> Tuple[bool, str]:
+        """从数据库中删除文件夹记录
         
         Args:
-            path (str): 目录路径
+            directory_id (int): 文件夹的ID
         
         Returns:
             Tuple[bool, str]: (成功标志, 消息)
         """
-        # 标准化路径
-        path = os.path.normpath(path)
-        
         # 查找记录
-        directory = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
-        ).first()
+        directory = self.session.get(MyFiles, directory_id)
         
         if not directory:
-            return False, f"目录不存在: {path}"
+            return False, f"文件夹ID不存在: {directory_id}"
             
         # 删除记录
+        deleted_path = directory.path # 保存路径用于日志或消息
         self.session.delete(directory)
         self.session.commit()
         
-        return True, f"成功删除目录: {path}"
+        return True, f"成功删除文件夹: {deleted_path}"
     
-    def update_alias(self, path: str, alias: str) -> Tuple[bool, str]:
-        """更新目录别名
+    def update_alias(self, directory_id: int, alias: str) -> Tuple[bool, MyFiles | str]:
+        """更新文件夹别名
         
         Args:
-            path (str): 目录路径
+            directory_id (int): 文件夹的ID
             alias (str): 新别名
         
         Returns:
-            Tuple[bool, str]: (成功标志, 消息)
+            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
-        # 标准化路径
-        path = os.path.normpath(path)
-        
         # 查找记录
-        directory = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
-        ).first()
+        directory = self.session.get(MyFiles, directory_id)
         
         if not directory:
-            return False, f"目录不存在: {path}"
+            return False, f"文件夹ID不存在: {directory_id}"
             
         # 更新别名
         directory.alias = alias
         directory.updated_at = datetime.now()
         self.session.add(directory)
         self.session.commit()
+        self.session.refresh(directory)
         
-        return True, f"成功更新目录别名: {path} -> {alias}"
+        return True, directory
     
     def is_path_monitored(self, path: str) -> bool:
         """检查路径是否被监控（已授权且不在黑名单中）
@@ -311,18 +287,34 @@ class MyFilesManager:
         # 标准化路径
         path = os.path.normpath(path)
         
-        # 检查路径是否在已授权的目录中，且不在黑名单中
+        # 首先检查是否在黑名单中
+        if self.is_path_in_blacklist(path):
+            return False
+        
+        # 检查路径是否存在于数据库
         directory = self.session.exec(
-            select(MyFiles).where(
-                and_(
-                    MyFiles.path == path,
-                    MyFiles.auth_status == AuthStatus.AUTHORIZED.value,
-                    MyFiles.is_blacklist == False
-                )
-            )
+            select(MyFiles).where(MyFiles.path == path)
         ).first()
         
-        return directory is not None
+        # 如果路径存在于数据库，检查是否已授权
+        if directory:
+            return directory.auth_status == AuthStatus.AUTHORIZED.value
+        
+        # 检查是否是已授权文件夹的子文件夹
+        authorized_dirs = self.get_authorized_directories()
+        path_obj = Path(path)
+        
+        for auth_dir in authorized_dirs:
+            auth_path = Path(auth_dir.path)
+            # 检查path是否是auth_path的子文件夹
+            try:
+                _ = path_obj.relative_to(auth_path)
+                return True
+            except ValueError:
+                continue
+        
+        # 如果路径不在数据库中，且不是任何已授权文件夹的子文件夹，则不监控
+        return False
     
     def is_path_in_blacklist(self, path: str) -> bool:
         """检查路径是否在黑名单中
@@ -349,13 +341,13 @@ class MyFilesManager:
         if directory:
             return True
             
-        # 检查路径是否是黑名单目录的子目录
+        # 检查路径是否是黑名单文件夹的子文件夹
         blacklist_dirs = self.get_blacklist_directories()
         path_obj = Path(path)
         
         for black_dir in blacklist_dirs:
             black_path = Path(black_dir.path)
-            # 检查path是否是black_path的子目录
+            # 检查path是否是black_path的子文件夹
             try:
                 _ = path_obj.relative_to(black_path)
                 return True
@@ -365,16 +357,17 @@ class MyFilesManager:
         return False
     
     def check_authorization_needed(self) -> List[Dict]:
-        """检查需要授权的目录
+        """获取需要用户授权的文件夹列表
         
         Returns:
-            List[Dict]: 包含需要授权的目录信息的字典列表
+            List[Dict]: 需要授权的文件夹列表，每个文件夹包含id, path和alias信息
         """
+        # 获取所有待授权的文件夹
         pending_dirs = self.get_pending_directories()
         result = []
         
         for directory in pending_dirs:
-            # 检查目录是否存在
+            # 检查文件夹是否存在
             if os.path.exists(directory.path):
                 result.append({
                     "id": directory.id,
@@ -412,8 +405,8 @@ class MyFilesManager:
             return {}
             
         return {
-            "full_disk_access": "需要在'系统设置'>'隐私与安全性'>'完全磁盘访问权限'中授权，才能读取非标准目录",
-            "docs_desktop_downloads": "需要在'系统设置'>'隐私与安全性'>'文件与文件夹'中授权读取这些目录",
+            "full_disk_access": "需要在'系统设置'>'隐私与安全性'>'完全磁盘访问权限'中授权，才能读取非标准文件夹",
+            "docs_desktop_downloads": "需要在'系统设置'>'隐私与安全性'>'文件与文件夹'中授权读取这些文件夹",
             "removable_volumes": "需要在'系统设置'>'隐私与安全性'>'可移除的卷宗'中授权读取外接设备",
             "network_volumes": "需要在'系统设置'>'隐私与安全性'>'网络卷宗'中授权读取网络设备",
         }
@@ -449,36 +442,36 @@ if __name__ == '__main__':
     # 测试文件管理器
     files_mgr = MyFilesManager(session)
     
-    # 初始化默认目录
+    # 初始化默认文件夹
     files_mgr.initialize_default_directories()
     
-    # 打印所有目录
-    print("所有目录:")
+    # 打印所有文件夹
+    print("所有文件夹:")
     for directory in files_mgr.get_all_directories():
         print(f"- {directory.path} ({directory.alias or '无别名'}): {directory.auth_status}")
     
-    # 测试添加目录
+    # 测试添加文件夹
     home_dir = os.path.expanduser("~")
     success, msg = files_mgr.add_directory(os.path.join(home_dir, "Projects"), "我的项目")
-    print(f"\n添加目录: {msg}")
+    print(f"\n添加文件夹: {msg}")
     
     # 测试更新授权状态
     for directory in files_mgr.get_pending_directories()[:2]:
-        success, msg = files_mgr.update_auth_status(directory.path, AuthStatus.AUTHORIZED)
+        success, msg = files_mgr.update_auth_status(directory.id, AuthStatus.AUTHORIZED)
         print(f"更新授权状态: {msg}")
     
     # 测试黑名单
     if files_mgr.get_all_directories():
         test_dir = files_mgr.get_all_directories()[0]
-        success, msg = files_mgr.toggle_blacklist(test_dir.path, True)
+        success, msg = files_mgr.toggle_blacklist(test_dir.id, True)
         print(f"\n切换黑名单: {msg}")
     
-    # 打印授权目录
-    print("\n已授权目录:")
+    # 打印授权文件夹
+    print("\n已授权文件夹:")
     for directory in files_mgr.get_authorized_directories():
         print(f"- {directory.path} ({directory.alias or '无别名'})")
     
-    # 打印黑名单目录
-    print("\n黑名单目录:")
+    # 打印黑名单文件夹
+    print("\n黑名单文件夹:")
     for directory in files_mgr.get_blacklist_directories():
         print(f"- {directory.path} ({directory.alias or '无别名'})")

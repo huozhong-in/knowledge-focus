@@ -12,10 +12,11 @@ import pathlib
 import logging
 from sqlmodel import create_engine, Session
 import multiprocessing
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType, AuthStatus
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
+from myfiles_mgr import MyFilesManager
 from contextlib import asynccontextmanager
 import asyncio
 import threading
@@ -737,7 +738,7 @@ def create_project(
         path = data.get("path")
         project_type = data.get("project_type")
         
-        if not name or not path:
+        if not path:
             return {
                 "success": False,
                 "message": "项目名称和路径不能为空"
@@ -817,8 +818,154 @@ def get_project_files(
             "message": f"获取项目文件失败: {str(e)}"
         }
 
+# 获取 MyFilesManager 的依赖函数
+def get_myfiles_manager(session: Session = Depends(get_session)):
+    """获取文件/文件夹管理器实例"""
+    return MyFilesManager(session)
 
+# 添加文件夹管理相关API
+@app.get("/directories")
+def get_directories(
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """获取所有文件夹"""
+    try:
+        all_dirs = myfiles_mgr.get_all_directories()
+        # 转换为JSON可序列化的格式
+        dirs_json = [d.model_dump() for d in all_dirs]
+        return {"status": "success", "data": dirs_json}
+    except Exception as e:
+        logger.error(f"获取文件夹列表失败: {str(e)}")
+        return {"status": "error", "message": f"获取文件夹列表失败: {str(e)}"}
 
+@app.post("/directories")
+def add_directory(
+    data: Dict[str, Any] = Body(...),
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """添加新文件夹"""
+    try:
+        path = data.get("path", "")
+        alias = data.get("alias", "")
+        
+        if not path: # 修正：之前是 if name或not path:
+            return {"status": "error", "message": "路径不能为空"}
+        
+        success, message_or_dir = myfiles_mgr.add_directory(path, alias)
+        
+        if success:
+            # 检查返回值是否是字符串或MyFiles对象
+            if isinstance(message_or_dir, str):
+                return {"status": "success", "message": message_or_dir}
+            else:
+                # 如果是MyFiles对象，调用model_dump()
+                return {"status": "success", "data": message_or_dir.model_dump(), "message": "文件夹添加成功"}
+        else:
+            return {"status": "error", "message": message_or_dir}
+    except Exception as e:
+        logger.error(f"添加文件夹失败: {str(e)}")
+        return {"status": "error", "message": f"添加文件夹失败: {str(e)}"}
+
+@app.put("/directories/{directory_id}/auth_status")
+def update_directory_auth_status(
+    directory_id: int,
+    data: Dict[str, Any] = Body(...),
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """更新文件夹的授权状态"""
+    try:
+        auth_status_str = data.get("auth_status")
+        if not auth_status_str or auth_status_str not in [status.value for status in AuthStatus]:
+            return {"status": "error", "message": "无效的授权状态"}
+            
+        auth_status = AuthStatus(auth_status_str)
+        success, message_or_dir = myfiles_mgr.update_auth_status(directory_id, auth_status)
+        if success:
+            return {"status": "success", "data": message_or_dir.model_dump(), "message": "授权状态更新成功"}
+        else:
+            return {"status": "error", "message": message_or_dir}
+    except Exception as e:
+        logger.error(f"更新文件夹授权状态失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"更新文件夹授权状态失败: {str(e)}"}
+
+@app.put("/directories/{directory_id}/blacklist")
+def toggle_directory_blacklist(
+    directory_id: int,
+    data: Dict[str, Any] = Body(...), # 包含 is_blacklist: bool
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """切换文件夹的黑名单状态"""
+    try:
+        is_blacklist = data.get("is_blacklist")
+        if not isinstance(is_blacklist, bool):
+            return {"status": "error", "message": "无效的黑名单状态参数"}
+
+        success, message_or_dir = myfiles_mgr.toggle_blacklist(directory_id, is_blacklist)
+        if success:
+            return {"status": "success", "data": message_or_dir.model_dump(), "message": "黑名单状态更新成功"}
+        else:
+            return {"status": "error", "message": message_or_dir}
+    except Exception as e:
+        logger.error(f"切换文件夹黑名单状态失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"切换文件夹黑名单状态失败: {str(e)}"}
+
+@app.delete("/directories/{directory_id}")
+def delete_directory(
+    directory_id: int,
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """删除文件夹"""
+    try:
+        success, message = myfiles_mgr.remove_directory(directory_id)
+        if success:
+            return {"status": "success", "message": "文件夹删除成功"}
+        else:
+            return {"status": "error", "message": message}
+    except Exception as e:
+        logger.error(f"删除文件夹失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"删除文件夹失败: {str(e)}"}
+
+@app.put("/directories/{directory_id}/alias")
+def update_directory_alias(
+    directory_id: int,
+    data: Dict[str, Any] = Body(...), # 包含 alias: str
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """更新文件夹的别名"""
+    try:
+        alias = data.get("alias")
+        if alias is None: # 允许空字符串作为别名，但不允许None
+            return {"status": "error", "message": "别名不能为空"}
+
+        success, message_or_dir = myfiles_mgr.update_alias(directory_id, alias)
+        if success:
+            return {"status": "success", "data": message_or_dir.model_dump(), "message": "别名更新成功"}
+        else:
+            return {"status": "error", "message": message_or_dir}
+    except Exception as e:
+        logger.error(f"更新文件夹别名失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"更新文件夹别名失败: {str(e)}"}
+
+# 在文件末尾添加以下端点，用于初始化默认文件夹和获取权限提示
+@app.get("/directories/default")
+def initialize_default_directories_endpoint(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    """初始化默认系统文件夹"""
+    try:
+        count = myfiles_mgr.initialize_default_directories()
+        return {"status": "success", "message": f"成功初始化/检查了 {count} 个默认文件夹。"}
+    except Exception as e:
+        logger.error(f"初始化默认文件夹失败: {str(e)}")
+        return {"status": "error", "message": f"初始化默认文件夹失败: {str(e)}"}
+
+@app.get("/macos-permissions-hint")
+def get_macos_permissions_hint_endpoint(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    """获取 macOS 权限提示"""
+    try:
+        hint = myfiles_mgr.get_macOS_permissions_hint()
+        return {"status": "success", "data": hint}
+    except Exception as e:
+        logger.error(f"获取 macOS 权限提示失败: {str(e)}")
+        return {"status": "error", "message": f"获取 macOS 权限提示失败: {str(e)}"}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

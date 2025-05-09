@@ -4,7 +4,7 @@ Focus on building an open and extensible AI knowledge base system. Suitable for 
 
 # 开发环境搭建
 
-## 1. api目录下建立python虚拟环境
+## 1. api文件夹下建立python虚拟环境
 
 `cd api`
 

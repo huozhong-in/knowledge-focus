@@ -14,6 +14,7 @@
     "core:window:allow-start-dragging",
     "store:default",
     "fs:default",
+    "process:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [

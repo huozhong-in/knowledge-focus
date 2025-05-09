@@ -87,13 +87,13 @@ class AuthStatus(str, PyEnum):
     AUTHORIZED = "authorized"  # 已授权，或者叫已经授权
     UNAUTHORIZED = "unauthorized"  # 未授权，或者叫拒绝授权
 
-# 监控的文件、文件夹表，用来存储文件、文件夹的路径和状态
+# 监控的文件夹表，用来存储文件夹的路径和状态
 class MyFiles(SQLModel, table=True):
     __tablename__ = "t_myfiles"
     id: int = Field(default=None, primary_key=True)
     path: str
     alias: str | None = Field(default=None)  # 别名
-    is_blacklist: bool = Field(default=False)  # 是否是用户不想监控的文件或文件夹(黑名单)
+    is_blacklist: bool = Field(default=False)  # 是否是用户不想监控的文件夹(黑名单)
     auth_status: str = Field(sa_column=Column(Enum(AuthStatus, values_callable=lambda obj: [e.value for e in obj]), default=AuthStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
     updated_at: datetime = Field(default=datetime.now())  # 更新时间
@@ -1073,7 +1073,7 @@ class DBManager:
             },
             {
                 "name": "通用开发项目",
-                "description": "识别包含常见开发目录结构的项目",
+                "description": "识别包含常见开发文件夹结构的项目",
                 "rule_type": "structure",
                 "pattern": "src|include|lib|docs|assets",
                 "pattern_type": "regex",

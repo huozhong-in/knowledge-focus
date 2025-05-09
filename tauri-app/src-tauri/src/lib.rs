@@ -9,8 +9,8 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WindowEvent,
 };
-use tauri_plugin_store::StoreBuilder;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri_plugin_store::StoreBuilder;
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -76,13 +76,14 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
         };
 
         let sidecar_result = app_handle.shell().sidecar(python_path);
-        
+
         let sidecar = match sidecar_result {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("无法找到sidecar: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-process-error", Some(format!("无法找到sidecar: {}", e)));
+                    let _ =
+                        window.emit("api-process-error", Some(format!("无法找到sidecar: {}", e)));
                 }
                 return;
             }
@@ -101,8 +102,11 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                 Ok(p) => p.to_string_lossy().to_string(),
                 Err(e) => {
                     eprintln!("无法解析资源路径: {}", e);
-                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-process-error", Some(format!("无法解析资源路径: {}", e)));
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit(
+                            "api-process-error",
+                            Some(format!("无法解析资源路径: {}", e)),
+                        );
                     }
                     return;
                 }
@@ -111,7 +115,10 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
 
         println!("Python路径: {}", python_path);
         println!("脚本路径: {}", script_path);
-        println!("API Port: {}, Host: {}, DB Path: {}", port_to_use, host_to_use, db_path_to_use);
+        println!(
+            "API Port: {}, Host: {}, DB Path: {}",
+            port_to_use, host_to_use, db_path_to_use
+        );
 
         let command = sidecar.args(&[
             &script_path,
@@ -130,16 +137,25 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                     let mut api_state_guard = api_state_mutex.lock().unwrap();
                     api_state_guard.process_child = Some(child);
                 }
-                println!("API服务已启动. Port: {}, Host: {}", port_to_use, host_to_use);
+                println!(
+                    "API服务已启动. Port: {}, Host: {}",
+                    port_to_use, host_to_use
+                );
                 if let Some(window) = app_handle.get_webview_window("main") {
-                     let _ = window.emit("api-log", Some(format!("API服务已启动. Port: {}, Host: {}", port_to_use, host_to_use)));
+                    let _ = window.emit(
+                        "api-log",
+                        Some(format!(
+                            "API服务已启动. Port: {}, Host: {}",
+                            port_to_use, host_to_use
+                        )),
+                    );
                 }
 
                 let app_handle_clone = app_handle.clone();
                 let api_state_mutex_clone = api_state_mutex.clone();
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
-                         if let Some(window) = app_handle_clone.get_webview_window("main") {
+                        if let Some(window) = app_handle_clone.get_webview_window("main") {
                             match event {
                                 CommandEvent::Stdout(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
@@ -159,7 +175,10 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                                     }
                                 }
                                 CommandEvent::Terminated(status) => {
-                                    println!("API进程已终止，状态码: {}", status.code.unwrap_or(-1));
+                                    println!(
+                                        "API进程已终止，状态码: {}",
+                                        status.code.unwrap_or(-1)
+                                    );
                                     let _ = window.emit("api-terminated", Some(status.code));
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;
@@ -174,7 +193,8 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
             Err(e) => {
                 eprintln!("启动API服务失败: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-process-error", Some(format!("启动API服务失败: {}", e)));
+                    let _ =
+                        window.emit("api-process-error", Some(format!("启动API服务失败: {}", e)));
                 }
             }
         }
@@ -212,13 +232,10 @@ fn start_api_service(
     // 启动API服务
     println!("前端请求启动API服务: port={}, host={}", port, host);
     start_python_api(app_handle, state.0.clone());
-    
+
     // 返回API状态
     let mut response = HashMap::new();
-    response.insert(
-        "success".into(),
-        serde_json::Value::Bool(true),
-    );
+    response.insert("success".into(), serde_json::Value::Bool(true));
     response.insert(
         "message".into(),
         serde_json::Value::String("API服务启动请求已发送".into()),
@@ -260,7 +277,7 @@ fn update_api_port(
     // 获取设置存储路径
     let store_path = match app_handle.path().app_data_dir() {
         Ok(path) => path.join("settings.json"),
-        Err(e) => return Err(format!("无法获取应用数据目录: {}", e)),
+        Err(e) => return Err(format!("无法获取应用数据文件夹: {}", e)),
     };
 
     // 加载存储
@@ -279,10 +296,7 @@ fn update_api_port(
 
     // 返回成功消息
     let mut response = HashMap::new();
-    response.insert(
-        "success".into(),
-        serde_json::Value::Bool(true),
-    );
+    response.insert("success".into(), serde_json::Value::Bool(true));
     response.insert(
         "message".into(),
         serde_json::Value::String("API端口设置已保存，重启应用后生效".into()),
@@ -293,8 +307,10 @@ fn update_api_port(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-            println!("另一个实例已尝试启动，参数: {:?}，工作目录: {}", args, cwd);
+            println!("另一个实例已尝试启动，参数: {:?}，工作文件夹: {}", args, cwd);
             // 如果要使已经运行的窗口获得焦点，取消下面代码的注释
             if let Some(window) = app.get_webview_window("main") {
                 window.show().unwrap();
@@ -311,29 +327,34 @@ pub fn run() {
         .setup(|app| {
             let app_handle = app.handle();
             let api_state_instance = app.state::<ApiState>();
-            
+
             // Initialize store for settings
-            let store_path = app_handle.path().app_data_dir()
+            let store_path = app_handle
+                .path()
+                .app_data_dir()
                 .map_err(|e| e.to_string())?
                 .join("settings.json");
-            
+
             // 修改: 使用 v2 正确的 Store 构建方式
             let mut default_settings = HashMap::new();
             default_settings.insert("api_port".to_string(), serde_json::json!(60000));
             default_settings.insert("api_host".to_string(), serde_json::json!("127.0.0.1"));
-            
+
             // 创建一个新的 store
             let store_result = StoreBuilder::new(app_handle, store_path.clone()).build();
-            
+
             // 处理创建 store 的结果
             let store = match store_result {
                 Ok(store) => store,
                 Err(e) => {
                     eprintln!("创建配置存储失败: {:?}", e);
-                    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())));
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    )));
                 }
             };
-            
+
             // 加载存储内容
             let load_result = store.reload();
             match load_result {
@@ -352,21 +373,27 @@ pub fn run() {
             }
 
             // Get port from store, default to 60000
-            let configured_port = store.get("api_port")
+            let configured_port = store
+                .get("api_port")
                 .and_then(|v| v.as_u64())
                 .map(|p| p as u16)
                 .unwrap_or(60000);
-                
-            let configured_host = store.get("api_host")
+
+            let configured_host = store
+                .get("api_host")
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
                 .unwrap_or("127.0.0.1".to_string());
 
-            let db_path_str = app_handle.path().app_data_dir()
+            let db_path_str = app_handle
+                .path()
+                .app_data_dir()
                 .map_err(|e| e.to_string())?
                 .join("knowledge-focus.db")
-                .to_string_lossy().to_string();
+                .to_string_lossy()
+                .to_string();
 
-            { // Scope for MutexGuard
+            {
+                // Scope for MutexGuard
                 let mut api_state_guard = api_state_instance.0.lock().unwrap();
                 api_state_guard.port = configured_port;
                 api_state_guard.host = configured_host;
@@ -471,7 +498,6 @@ pub fn run() {
                     // but explicitly exiting might be desired if default is hide.
                     window.app_handle().exit(0);
                 }
-                
             }
             _ => {}
         })

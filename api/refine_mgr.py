@@ -372,13 +372,13 @@ class RefineManager:
             更新后的精炼结果对象
         """
         try:
-            # 获取文件所在目录
+            # 获取文件所在文件夹
             file_dir = os.path.dirname(screening_result.file_path)
             
-            # 查找同目录下的相似文件(名称相似)
+            # 查找同文件夹下的相似文件(名称相似)
             base_name = os.path.splitext(screening_result.file_name)[0]
             
-            # 查询数据库中同一目录下的其他文件
+            # 查询数据库中同一文件夹下的其他文件
             similar_files_query = select(FileScreeningResult).where(
                 FileScreeningResult.file_path.like(f"{file_dir}/%"),
                 FileScreeningResult.id != screening_result.id
@@ -621,14 +621,14 @@ class RefineManager:
                         )
                         insights.append(insight)
             
-            # 按目录分组统计活跃文件
+            # 按文件夹分组统计活跃文件
             directories = {}
             for file in recent_files:
                 directory = os.path.dirname(file.file_path)
                 if directory:
                     directories[directory] = directories.get(directory, 0) + 1
             
-            # 找出最活跃的目录
+            # 找出最活跃的文件夹
             if directories:
                 top_dirs = sorted(directories.items(), key=lambda x: x[1], reverse=True)[:2]
                 
@@ -636,11 +636,11 @@ class RefineManager:
                     if count >= 5:  # 至少有5个文件才生成洞察
                         dir_name = os.path.basename(directory)
                         insight = Insight(
-                            title=f"活跃目录: {dir_name}",
-                            description=f"最近在目录 {dir_name} 中处理了 {count} 个文件，这可能是您正在进行的项目或任务。",
+                            title=f"活跃文件夹: {dir_name}",
+                            description=f"最近在文件夹 {dir_name} 中处理了 {count} 个文件，这可能是您正在进行的项目或任务。",
                             insight_type=InsightType.FILE_ACTIVITY.value,
                             priority=InsightPriority.MEDIUM.value,
-                            related_files=[os.path.join(directory, '*')],  # 使用通配符表示整个目录
+                            related_files=[os.path.join(directory, '*')],  # 使用通配符表示整个文件夹
                             generation_method="rule",
                             score=0.7 + min(count / 30, 0.2)  # 文件数量越多，评分越高，最高0.9
                         )
@@ -983,7 +983,7 @@ class RefineManager:
         try:
             # 检查路径是否存在
             if not os.path.exists(path) or not os.path.isdir(path):
-                logger.warning(f"创建项目失败: 路径不存在或不是目录 {path}")
+                logger.warning(f"创建项目失败: 路径不存在或不是文件夹 {path}")
                 return None
             
             # 检查是否已存在同路径项目

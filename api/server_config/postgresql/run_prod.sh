@@ -1,4 +1,4 @@
-# 判断/opt/postgresql_data 的目录是否存在，不存在则创建
+# 判断/opt/postgresql_data 的文件夹是否存在，不存在则创建
 if [ ! -d "/opt/postgresql_data" ]; then
     mkdir -p /opt/postgresql_data
 fi
