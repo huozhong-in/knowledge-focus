@@ -1,0 +1,137 @@
+/**
+ * 这个文件定义了自定义的 Tailwind CSS 类
+ * 针对主题颜色，特别是威士忌色系
+ */
+
+/* 从轻到重的威士忌颜色 */
+.bg-whiskey-50 {
+  background-color: #fbf7f1;
+}
+.bg-whiskey-100 {
+  background-color: #f5ecdf;
+}
+.bg-whiskey-200 {
+  background-color: #ebd5bd;
+}
+.bg-whiskey-300 {
+  background-color: #deb893;
+}
+.bg-whiskey-400 {
+  background-color: #d29b71;
+}
+.bg-whiskey-500 {
+  background-color: #c57a4a;
+}
+.bg-whiskey-600 {
+  background-color: #b7663f;
+}
+.bg-whiskey-700 {
+  background-color: #985036;
+}
+.bg-whiskey-800 {
+  background-color: #7b4331;
+}
+.bg-whiskey-900 {
+  background-color: #64382a;
+}
+.bg-whiskey-950 {
+  background-color: #351b15;
+}
+
+/* 文本颜色 */
+.text-whiskey-50 {
+  color: #fbf7f1;
+}
+.text-whiskey-100 {
+  color: #f5ecdf;
+}
+.text-whiskey-200 {
+  color: #ebd5bd;
+}
+.text-whiskey-300 {
+  color: #deb893;
+}
+.text-whiskey-400 {
+  color: #d29b71;
+}
+.text-whiskey-500 {
+  color: #c57a4a;
+}
+.text-whiskey-600 {
+  color: #b7663f;
+}
+.text-whiskey-700 {
+  color: #985036;
+}
+.text-whiskey-800 {
+  color: #7b4331;
+}
+.text-whiskey-900 {
+  color: #64382a;
+}
+.text-whiskey-950 {
+  color: #351b15;
+}
+
+/* 边框颜色 */
+.border-whiskey-50 {
+  border-color: #fbf7f1;
+}
+.border-whiskey-100 {
+  border-color: #f5ecdf;
+}
+.border-whiskey-200 {
+  border-color: #ebd5bd;
+}
+.border-whiskey-300 {
+  border-color: #deb893;
+}
+.border-whiskey-400 {
+  border-color: #d29b71;
+}
+.border-whiskey-500 {
+  border-color: #c57a4a;
+}
+.border-whiskey-600 {
+  border-color: #b7663f;
+}
+.border-whiskey-700 {
+  border-color: #985036;
+}
+.border-whiskey-800 {
+  border-color: #7b4331;
+}
+.border-whiskey-900 {
+  border-color: #64382a;
+}
+.border-whiskey-950 {
+  border-color: #351b15;
+}
+
+/* 悬停状态 */
+.hover\:bg-whiskey-50:hover {
+  background-color: #fbf7f1;
+}
+.hover\:bg-whiskey-100:hover {
+  background-color: #f5ecdf;
+}
+.hover\:bg-whiskey-200:hover {
+  background-color: #ebd5bd;
+}
+.hover\:bg-whiskey-300:hover {
+  background-color: #deb893;
+}
+.hover\:bg-whiskey-400:hover {
+  background-color: #d29b71;
+}
+.hover\:bg-whiskey-500:hover {
+  background-color: #c57a4a;
+}
+
+/* 数据属性状态 */
+.data-\[state\=active\]\:bg-whiskey-200[data-state=active] {
+  background-color: #ebd5bd;
+}
+.data-\[state\=active\]\:text-whiskey-900[data-state=active] {
+  color: #64382a;
+}

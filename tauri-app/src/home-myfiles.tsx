@@ -727,7 +727,7 @@ function HomeMyFiles() {
                     <MinusCircle size={16} className="mr-1" />已加入黑名单
                   </span>
                 ) : dir.auth_status === "authorized" ? (
-                  <span className="flex items-center text-amber-600">
+                  <span className="flex items-center text-whiskey-600">
                     <Check size={16} className="mr-1" />已授权
                   </span>
                 ) : dir.auth_status === "unauthorized" ? (
@@ -735,7 +735,7 @@ function HomeMyFiles() {
                     <X size={16} className="mr-1" />未授权
                   </span>
                 ) : (
-                  <span className="flex items-center text-amber-500">
+                  <span className="flex items-center text-whiskey-500">
                     <AlertTriangle size={16} className="mr-1" />待授权
                   </span>
                 )}
@@ -878,10 +878,10 @@ function HomeMyFiles() {
     >
       {/* 拖拽覆盖层，确保z-index足够高且覆盖整个界面 */}
       {isDraggingOver && (
-        <div className="fixed inset-0 bg-amber-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-amber-300 rounded-lg pointer-events-none">
-          <Upload size={64} className="text-amber-500 mb-4" />
-          <p className="text-xl font-semibold text-amber-800">将文件或文件夹拖放到此处</p>
-          <p className="text-sm text-amber-600 mt-2">文件将自动添加其所在的父文件夹</p>
+        <div className="fixed inset-0 bg-whiskey-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-whiskey-300 rounded-lg pointer-events-none">
+          <Upload size={64} className="text-whiskey-500 mb-4" />
+          <p className="text-xl font-semibold text-whiskey-800">将文件或文件夹拖放到此处</p>
+          <p className="text-sm text-whiskey-600 mt-2">文件将自动添加其所在的父文件夹</p>
         </div>
       )}      
       <div className="flex justify-between items-center mb-6">
@@ -892,7 +892,7 @@ function HomeMyFiles() {
         
         <div className="flex gap-2">
           {/* macOS权限按钮 */}
-          <Button variant="outline" onClick={showPermissionsGuide} className="border-amber-200 hover:bg-amber-50 text-amber-700">
+          <Button variant="outline" onClick={showPermissionsGuide} className="border-whiskey-200 hover:bg-whiskey-50 text-whiskey-700">
             <Shield className="mr-2 h-4 w-4" /> macOS权限指南
           </Button>          
           {/* 完全磁盘访问按钮 */}
@@ -904,7 +904,7 @@ function HomeMyFiles() {
           {/* 添加文件夹按钮 */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-amber-200 hover:bg-amber-300 text-amber-900">
+              <Button className="bg-whiskey-200 hover:bg-whiskey-300 text-whiskey-900">
                 <FolderPlus className="mr-2 h-4 w-4" /> 添加文件夹
               </Button>
             </DialogTrigger>
@@ -955,10 +955,10 @@ function HomeMyFiles() {
         </div>
       </div>
       
-      <Card className="border-amber-100">
-        <CardHeader className="bg-amber-50/50">
-          <CardTitle className="text-amber-900">文件夹管理</CardTitle>
-          <CardDescription className="text-amber-700">
+      <Card className="border-whiskey-100">
+        <CardHeader className="bg-whiskey-50/50">
+          <CardTitle className="text-whiskey-900">文件夹管理</CardTitle>
+          <CardDescription className="text-whiskey-700">
             查看和管理所有需要监控的文件夹，授权或取消授权访问权限。
           </CardDescription>
         </CardHeader>
@@ -974,11 +974,11 @@ function HomeMyFiles() {
             </Alert>
           )}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 bg-amber-100">
-              <TabsTrigger value="all" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">全部</TabsTrigger>
-              <TabsTrigger value="authorized" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">已授权</TabsTrigger>
-              <TabsTrigger value="pending" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">待授权</TabsTrigger>
-              <TabsTrigger value="blacklist" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">黑名单</TabsTrigger>
+            <TabsList className="mb-4 bg-whiskey-100">
+              <TabsTrigger value="all" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">全部</TabsTrigger>
+              <TabsTrigger value="authorized" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">已授权</TabsTrigger>
+              <TabsTrigger value="pending" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">待授权</TabsTrigger>
+              <TabsTrigger value="blacklist" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">黑名单</TabsTrigger>
             </TabsList>
             
             <TabsContent value="all">{renderDirectoryTable()}</TabsContent>

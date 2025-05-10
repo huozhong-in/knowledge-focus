@@ -21,14 +21,14 @@ export function SearchForm({ collapsed, className, ...props }: SearchFormProps) 
       <SidebarGroup className="py-0">
         <SidebarGroupContent className="relative">
           <Label htmlFor="search" className="sr-only">
-            Search
+            搜索
           </Label>
           <SidebarInput
             id="search"
-            placeholder="Type to search..."
-            className="pl-6"
+            placeholder="搜索内容..."
+            className="pl-6 border-whiskey-300 focus-visible:ring-whiskey-400 bg-whiskey-100 placeholder:text-whiskey-500 text-whiskey-800"
           />
-          <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 select-none opacity-50" />
+          <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 select-none text-whiskey-400" />
         </SidebarGroupContent>
       </SidebarGroup>
     </form>

@@ -121,6 +121,11 @@ const data = {
           pageId: "settings-general",
         },
         {
+          title: "Theme",
+          url: "#",
+          pageId: "settings-theme",
+        },
+        {
           title: "Developer Zone",
           url: "#",
           pageId: "settings-developerzone",
@@ -167,22 +172,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const isCollapsed = state === "collapsed"
 
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
-        <div className="flex items-center ">
+    <Sidebar collapsible="icon" className="bg-whiskey-50 border-r border-whiskey-200" {...props}>
+      <SidebarHeader className="border-b border-whiskey-200">
+        <div className="flex items-center">
           <img src="/kf-logo.png" className="w-10 h-10 object-contain" alt="Logo" />
           <SearchForm collapsed={isCollapsed} />
         </div>
       {/* <TeamSwitcher teams={data.teams} /> */}
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="bg-whiskey-50">
         <NavMain items={data.navMain} />
         <NavProjects projects={data.projects} />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="border-t border-whiskey-200 mt-auto">
         <NavUser user={data.user} />
       </SidebarFooter>
-      <SidebarRail />
+      <SidebarRail className="hover:after:bg-whiskey-300" />
     </Sidebar>
   )
 }

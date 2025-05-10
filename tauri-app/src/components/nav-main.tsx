@@ -36,15 +36,15 @@ export function NavMain({
   const currentPage = usePageStore(state => state.currentPage);
 
   return (
-    <SidebarMenu>
+    <SidebarMenu className="px-1">
       {items?.map((item, index) => (
         <SidebarGroup key={index}>
           <Collapsible defaultOpen={item.isActive} className="group/collapsible">
             <CollapsibleTrigger asChild>
-              <SidebarMenuButton>
-                {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+              <SidebarMenuButton className="text-whiskey-800 hover:bg-whiskey-100 hover:text-whiskey-950 font-medium">
+                {item.icon && <item.icon className="mr-2 h-4 w-4 text-whiskey-500" />}
                 {item.title}
-                <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                <ChevronRight className="ml-auto h-4 w-4 text-whiskey-400 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
               </SidebarMenuButton>
             </CollapsibleTrigger>
             <CollapsibleContent asChild>
@@ -60,7 +60,7 @@ export function NavMain({
                           setPage(subItem.pageId, item.title, subItem.title);
                         }
                       }}
-                      className="hover:!bg-[#FFE4E6] data-[active=true]:!bg-[#FFE4E6]"
+                      className="text-whiskey-700 hover:!bg-whiskey-200 hover:text-whiskey-900 data-[active=true]:!bg-whiskey-300 data-[active=true]:text-whiskey-900 data-[active=true]:font-medium"
                     >
                       {subItem.title}
                     </SidebarMenuSubButton>

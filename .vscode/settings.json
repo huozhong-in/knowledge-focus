@@ -1,7 +1,19 @@
 {
     "rust-analyzer.workspace.symbol.search.scope": "workspace",
     "rust-analyzer.linkedProjects": [
-
         "${workspaceFolder}/tauri-app/src-tauri/Cargo.toml",
-    ]
+    ],
+    "tailwindCSS.includeLanguages": {
+        "typescript": "javascript",
+        "typescriptreact": "javascript"
+    },
+    "tailwindCSS.experimental.configFile": "${workspaceFolder}/tauri-app/tailwind.config.js",
+    "tailwindCSS.experimental.classRegex": [
+        "cn\\(([^)]*)\\)",
+        ["classNames\\(([^']*)'", "'([^']*)'"]
+    ],
+    "css.validate": false,
+    "editor.quickSuggestions": {
+        "strings": true
+    }
 }
