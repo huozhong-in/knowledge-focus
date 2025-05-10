@@ -1,4 +1,3 @@
-// filepath: /Users/dio/workspace/knowledge-focus/tauri-app/src/home-myfiles.tsx
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from '@tauri-apps/api/event';
@@ -6,7 +5,7 @@ import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { basename } from '@tauri-apps/api/path';
-import { checkAccessibilityPermission } from "tauri-plugin-macos-permissions-api";
+import { checkFullDiskAccessPermission, requestFullDiskAccessPermission } from "tauri-plugin-macos-permissions-api";
 import {
   debug,
   info,
@@ -110,6 +109,8 @@ function HomeMyFiles() {
   const [loading, setLoading] = useState<boolean>(true);
   const [permissionsHint, setPermissionsHint] = useState<PermissionsHint | null>(null);
   const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
+  const [hasFullDiskAccess, setHasFullDiskAccess] = useState<boolean>(false);
+  const [_, setCheckingPermissions] = useState<boolean>(false);
   
   // 初始化日志系统
   useEffect(() => {
@@ -143,7 +144,29 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success" && result.data) {
-        setDirectories(result.data);
+        const dirs = result.data as Directory[];
+        setDirectories(dirs);
+        
+        // 检查是否需要进行完全磁盘访问权限检查
+        // 如果有非默认常用文件夹，则检查完全磁盘访问权限
+        const hasNonStandardDirs = dirs.some(dir => 
+          dir.auth_status === "authorized" && !dir.path.includes("/Users") && 
+          !dir.path.includes("/Documents") && !dir.path.includes("/Desktop") && 
+          !dir.path.includes("/Downloads"));
+          
+        if (hasNonStandardDirs) {
+          info("检测到非常用文件夹，需要检查完全磁盘访问权限");
+          const hasAccess = await checkFullDiskAccess();
+          if (!hasAccess) {
+            info("未获得完全磁盘访问权限，需要向用户提示");
+            toast.warning("检测到您正在监控系统文件夹，建议开启完全磁盘访问权限", {
+              action: {
+                label: "授权",
+                onClick: requestFullDiskAccess
+              }
+            });
+          }
+        }
       } else {
         toast.error(result.message || "获取文件夹列表失败");
       }
@@ -179,13 +202,29 @@ function HomeMyFiles() {
   // 初始化默认文件夹
   const initializeDefaultDirectories = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:60000/directories/default");
+      // 如果有完全磁盘访问权限，传递此信息给后端
+      const url = hasFullDiskAccess 
+        ? "http://127.0.0.1:60000/directories/default?has_full_disk_access=true" 
+        : "http://127.0.0.1:60000/directories/default";
+      
+      const response = await fetch(url);
       const responseJson = await response.json();
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
         toast.success("默认文件夹初始化成功");
         fetchDirectories(); // 重新获取文件夹列表
+        
+        // 如果没有完全磁盘访问权限，提示用户
+        if (!hasFullDiskAccess) {
+          toast.info("为了获得最佳体验，建议开启完全磁盘访问权限", {
+            action: {
+              label: "了解更多",
+              onClick: showPermissionsGuide
+            },
+            duration: 8000,
+          });
+        }
       } else {
         toast.error(result.message || "初始化默认文件夹失败");
       }
@@ -203,6 +242,9 @@ function HomeMyFiles() {
     }
 
     try {
+      // 如果有完全磁盘访问权限，直接设置为已授权状态
+      const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
+      
       const response = await fetch("http://127.0.0.1:60000/directories", {
         method: "POST",
         headers: {
@@ -211,6 +253,7 @@ function HomeMyFiles() {
         body: JSON.stringify({
           path: newDirPath,
           alias: newDirAlias || null,
+          auth_status: initialAuthStatus, // 添加初始授权状态
         }),
       });
       
@@ -223,6 +266,21 @@ function HomeMyFiles() {
         setNewDirPath("");
         setNewDirAlias("");
         fetchDirectories();
+        
+        // 如果没有完全磁盘访问权限且是系统路径，提示用户
+        if (!hasFullDiskAccess && 
+            !newDirPath.includes("/Users") && 
+            !newDirPath.includes("/Documents") && 
+            !newDirPath.includes("/Desktop") && 
+            !newDirPath.includes("/Downloads")) {
+          toast.warning("检测到您添加了系统文件夹，建议开启完全磁盘访问权限", {
+            action: {
+              label: "授权",
+              onClick: requestFullDiskAccess
+            },
+            duration: 8000,
+          });
+        }
       } else {
         toast.error(result.message || "添加文件夹失败");
       }
@@ -240,6 +298,9 @@ function HomeMyFiles() {
     }
 
     try {
+      // 如果有完全磁盘访问权限，直接设置为已授权状态
+      const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
+      
       const response = await fetch("http://127.0.0.1:60000/directories", {
         method: "POST",
         headers: {
@@ -248,6 +309,7 @@ function HomeMyFiles() {
         body: JSON.stringify({
           path: dirPath,
           alias: dirAlias || null,
+          auth_status: initialAuthStatus, // 添加初始授权状态
         }),
       });
       
@@ -257,6 +319,21 @@ function HomeMyFiles() {
       if (result.status === "success") {
         toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
         fetchDirectories(); // 刷新列表
+        
+        // 如果没有完全磁盘访问权限且是系统路径，提示用户
+        if (!hasFullDiskAccess && 
+            !dirPath.includes("/Users") && 
+            !dirPath.includes("/Documents") && 
+            !dirPath.includes("/Desktop") && 
+            !dirPath.includes("/Downloads")) {
+          toast.warning("检测到您添加了系统文件夹，建议开启完全磁盘访问权限", {
+            action: {
+              label: "授权",
+              onClick: requestFullDiskAccess
+            },
+            duration: 8000,
+          });
+        }
       } else {
         toast.error(result.message || "添加文件夹失败");
       }
@@ -363,6 +440,39 @@ function HomeMyFiles() {
     }
   };
 
+  // 检查完全磁盘访问权限
+  const checkFullDiskAccess = async () => {
+    try {
+      setCheckingPermissions(true);
+      info("检查完全磁盘访问权限...");
+      const hasAccess = await checkFullDiskAccessPermission();
+      info(`完全磁盘访问权限状态: ${hasAccess}`);
+      setHasFullDiskAccess(hasAccess);
+      return hasAccess;
+    } catch (err) {
+      console.error("检查完全磁盘访问权限失败", err);
+      info(`检查完全磁盘访问权限失败: ${err}`);
+      return false;
+    } finally {
+      setCheckingPermissions(false);
+    }
+  };
+
+  // 请求完全磁盘访问权限
+  const requestFullDiskAccess = async () => {
+    try {
+      info("请求完全磁盘访问权限...");
+      await requestFullDiskAccessPermission();
+      toast.info("已打开系统偏好设置，请授予完全磁盘访问权限");
+      // 权限请求后，我们不立即检查权限状态，因为用户可能需要时间去授权
+      // 当用户返回应用时，我们会再次检查权限状态
+    } catch (err) {
+      console.error("请求完全磁盘访问权限失败", err);
+      info(`请求完全磁盘访问权限失败: ${err}`);
+      toast.error("请求完全磁盘访问权限失败");
+    }
+  };
+
   // 在组件加载时获取文件夹列表并设置拖拽事件监听
   useEffect(() => {
     // 初始化日志控制台
@@ -375,6 +485,16 @@ function HomeMyFiles() {
         debug(`User-Agent: ${navigator.userAgent}`);
         debug(`窗口尺寸: ${window.innerWidth}x${window.innerHeight}`);
         debug(`拖拽overlay状态: ${isDraggingOver}`);
+        
+        // 检查操作系统类型
+        const isMacOS = navigator.userAgent.toLowerCase().includes('mac');
+        if (isMacOS) {
+          info("检测到macOS系统，将检查完全磁盘访问权限");
+          // 在macOS上，初始化时检查完全磁盘访问权限
+          await checkFullDiskAccess();
+        } else {
+          info("非macOS系统，跳过完全磁盘访问权限检查");
+        }
       } catch (e) {
         console.error("初始化日志系统失败", e);
       }
@@ -512,6 +632,38 @@ function HomeMyFiles() {
     };
   }, []);
 
+  // 监听窗口焦点事件，当用户从系统设置返回应用时，重新检查权限状态
+  useEffect(() => {
+    const setupFocusListener = async () => {
+      try {
+        info("正在设置窗口焦点监听器...");
+        
+        // 监听窗口获得焦点事件
+        const unlistenFocus = await listen('tauri://focus', async () => {
+          info("应用获得焦点，重新检查完全磁盘访问权限...");
+          await checkFullDiskAccess();
+        });
+        
+        info("成功设置窗口焦点监听器");
+        
+        // 返回清理函数
+        return () => {
+          info("清理窗口焦点监听器");
+          unlistenFocus();
+        };
+      } catch (err) {
+        info(`设置窗口焦点监听器失败: ${err}`);
+        console.error("设置窗口焦点监听器失败:", err);
+        return () => {}; // 返回空函数
+      }
+    };
+    
+    const cleanupPromise = setupFocusListener();
+    return () => {
+      cleanupPromise.then(cleanup => cleanup && cleanup());
+    };
+  }, []);
+
   // 筛选文件夹
   const filteredDirectories = directories.filter(dir => {
     if (activeTab === "all") return true;
@@ -566,12 +718,16 @@ function HomeMyFiles() {
                 {dir.path}
               </TableCell>
               <TableCell>
-                {dir.is_blacklist ? (
+                {hasFullDiskAccess ? (
+                  <span className="flex items-center text-green-600">
+                    <Shield size={16} className="mr-1" />通过完全磁盘访问权限授权
+                  </span>
+                ) : dir.is_blacklist ? (
                   <span className="flex items-center text-gray-400">
                     <MinusCircle size={16} className="mr-1" />已加入黑名单
                   </span>
                 ) : dir.auth_status === "authorized" ? (
-                  <span className="flex items-center text-pink-500">
+                  <span className="flex items-center text-amber-600">
                     <Check size={16} className="mr-1" />已授权
                   </span>
                 ) : dir.auth_status === "unauthorized" ? (
@@ -586,7 +742,11 @@ function HomeMyFiles() {
               </TableCell>
               <TableCell className="text-right flex justify-end gap-2">
                 {/* 授权/取消授权按钮 */}
-                {dir.is_blacklist ? (
+                {hasFullDiskAccess ? (
+                  <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed" title="已获得完全磁盘访问权限，无需单独授权">
+                    <Shield size={16} className="mr-1" />已授权
+                  </Button>
+                ) : dir.is_blacklist ? (
                   <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
                     <Eye size={16} className="mr-1" />授权
                   </Button>
@@ -630,7 +790,15 @@ function HomeMyFiles() {
                 {/* 删除按钮 */}
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
-                    <Button variant="destructive" size="sm">删除</Button>
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      disabled={hasFullDiskAccess} 
+                      className={hasFullDiskAccess ? "opacity-50 cursor-not-allowed" : ""}
+                      title={hasFullDiskAccess ? "已获得完全磁盘访问权限，无需移除文件夹" : ""}
+                    >
+                      删除
+                    </Button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
@@ -710,10 +878,10 @@ function HomeMyFiles() {
     >
       {/* 拖拽覆盖层，确保z-index足够高且覆盖整个界面 */}
       {isDraggingOver && (
-        <div className="fixed inset-0 bg-pink-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-pink-300 rounded-lg pointer-events-none">
-          <Upload size={64} className="text-pink-400 mb-4" />
-          <p className="text-xl font-semibold text-pink-700">将文件或文件夹拖放到此处</p>
-          <p className="text-sm text-pink-500 mt-2">文件将自动添加其所在的父文件夹</p>
+        <div className="fixed inset-0 bg-amber-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-amber-300 rounded-lg pointer-events-none">
+          <Upload size={64} className="text-amber-500 mb-4" />
+          <p className="text-xl font-semibold text-amber-800">将文件或文件夹拖放到此处</p>
+          <p className="text-sm text-amber-600 mt-2">文件将自动添加其所在的父文件夹</p>
         </div>
       )}      
       <div className="flex justify-between items-center mb-6">
@@ -723,14 +891,20 @@ function HomeMyFiles() {
         </div>
         
         <div className="flex gap-2">
-          {/* macOS权限指南按钮 */}
-          <Button variant="outline" onClick={showPermissionsGuide} className="border-pink-200 hover:bg-pink-50 text-pink-700">
+          {/* macOS权限按钮 */}
+          <Button variant="outline" onClick={showPermissionsGuide} className="border-amber-200 hover:bg-amber-50 text-amber-700">
             <Shield className="mr-2 h-4 w-4" /> macOS权限指南
           </Button>          
+          {/* 完全磁盘访问按钮 */}
+          {!hasFullDiskAccess && (
+            <Button variant="outline" onClick={requestFullDiskAccess} className="border-green-200 hover:bg-green-50 text-green-700">
+              <Shield className="mr-2 h-4 w-4" /> 请求完全磁盘访问
+            </Button>
+          )}
           {/* 添加文件夹按钮 */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-pink-200 hover:bg-pink-300 text-pink-900">
+              <Button className="bg-amber-200 hover:bg-amber-300 text-amber-900">
                 <FolderPlus className="mr-2 h-4 w-4" /> 添加文件夹
               </Button>
             </DialogTrigger>
@@ -781,20 +955,30 @@ function HomeMyFiles() {
         </div>
       </div>
       
-      <Card className="border-pink-100">
-        <CardHeader className="bg-pink-50/50">
-          <CardTitle className="text-pink-900">文件夹管理</CardTitle>
-          <CardDescription className="text-pink-700">
+      <Card className="border-amber-100">
+        <CardHeader className="bg-amber-50/50">
+          <CardTitle className="text-amber-900">文件夹管理</CardTitle>
+          <CardDescription className="text-amber-700">
             查看和管理所有需要监控的文件夹，授权或取消授权访问权限。
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* 完全磁盘访问权限提示 */}
+          {hasFullDiskAccess && (
+            <Alert className="mb-6 bg-green-50 border-green-200">
+              <Shield className="h-4 w-4 text-green-600" />
+              <AlertTitle className="text-green-700">已获得完全磁盘访问权限</AlertTitle>
+              <AlertDescription className="text-green-600">
+                您的应用已获得macOS完全磁盘访问权限，可以访问所有文件夹，无需单独授权每个文件夹。
+              </AlertDescription>
+            </Alert>
+          )}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 bg-pink-100">
-              <TabsTrigger value="all" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">全部</TabsTrigger>
-              <TabsTrigger value="authorized" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">已授权</TabsTrigger>
-              <TabsTrigger value="pending" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">待授权</TabsTrigger>
-              <TabsTrigger value="blacklist" className="data-[state=active]:bg-pink-200 data-[state=active]:text-pink-900">黑名单</TabsTrigger>
+            <TabsList className="mb-4 bg-amber-100">
+              <TabsTrigger value="all" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">全部</TabsTrigger>
+              <TabsTrigger value="authorized" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">已授权</TabsTrigger>
+              <TabsTrigger value="pending" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">待授权</TabsTrigger>
+              <TabsTrigger value="blacklist" className="data-[state=active]:bg-amber-200 data-[state=active]:text-amber-900">黑名单</TabsTrigger>
             </TabsList>
             
             <TabsContent value="all">{renderDirectoryTable()}</TabsContent>
@@ -832,8 +1016,26 @@ function HomeMyFiles() {
             {permissionsHint && (
               <>
                 <div>
-                  <h3 className="font-bold">完全磁盘访问</h3>
+                  <h3 className="font-bold flex items-center">
+                    完全磁盘访问
+                    {hasFullDiskAccess && (
+                      <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">已授权</span>
+                    )}
+                  </h3>
                   <p className="text-sm">{permissionsHint.full_disk_access}</p>
+                  {!hasFullDiskAccess && (
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={requestFullDiskAccess} 
+                      className="mt-2 border-green-200 hover:bg-green-50 text-green-700"
+                    >
+                      <Shield className="mr-2 h-4 w-4" /> 请求完全磁盘访问权限
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    注意：在macOS系统中，一旦本应用获得了"完全磁盘访问权限"，将自动获得对所有"文件与文件夹"的访问权限，无需单独授权每个文件夹。
+                  </p>
                 </div>
                 <div>
                   <h3 className="font-bold">文档、桌面和下载文件夹</h3>

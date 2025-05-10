@@ -1,4 +1,5 @@
 import "./index.css";
+import "./theme-whiskey.css"; // 引入威士忌主题
 import { AppSidebar } from "@/components/app-sidebar"
 import { useEffect, useState } from "react";
 import {

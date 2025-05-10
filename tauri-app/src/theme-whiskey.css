@@ -1,0 +1,95 @@
+/* 威士忌主题 - 基于 #d29b71 */
+:root {
+  --background: #FFFFFF;
+  --foreground: #1F1F1F;
+  --card: #FFFFFF;
+  --card-foreground: #1F1F1F;
+  --popover: #FFFFFF;
+  --popover-foreground: #1F1F1F;
+  
+  /* 威士忌系主题，基于 #d29b71 */
+  --primary: #d29b71; /* 主要威士忌色，品牌色 */
+  --primary-foreground: #432a15;
+  --secondary: #f3e6d8; /* 淡威士忌背景色 */
+  --secondary-foreground: #6b4423;
+  --muted: #f8f0e7;
+  --muted-foreground: #8c6341;
+  --accent: #e0b990; /* 强调色 */
+  --accent-foreground: #7c4a1e;
+  --destructive: #EF4444; /* 保持警告色红色 */
+  --destructive-foreground: #FFFFFF;
+  --border: #e8d0b5;
+  --input: #e8d0b5;
+  --ring: #d8ae87;
+  
+  /* 保持其他图表颜色等 */
+  --chart-1: #d8ae87;
+  --chart-2: #e0b990;
+  --chart-3: #d29b71;
+  --chart-4: #f3e6d8;
+  --chart-5: #9c6d48;
+  
+  /* 侧边栏颜色 */
+  --sidebar: #f3e6d8;
+  --sidebar-foreground: #7c4a1e;
+  --sidebar-primary: #d29b71;
+  --sidebar-primary-foreground: #432a15;
+  --sidebar-accent: #e0b990;
+  --sidebar-accent-foreground: #6b4423;
+  --sidebar-border: #e8d0b5;
+  --sidebar-ring: #d8ae87;
+  
+  /* 暗色主题配置，使用深色威士忌色 */
+  &.dark {
+    --background: #1F1F1F;
+    --foreground: #FFFFFF;
+    --card: #262626;
+    --card-foreground: #FFFFFF;
+    --popover: #262626;
+    --popover-foreground: #FFFFFF;
+    --primary: #b88253;
+    --primary-foreground: #FFFFFF;
+    --secondary: #53341a;
+    --secondary-foreground: #FFFFFF;
+    --muted: #422a14;
+    --muted-foreground: #d8ae87;
+    --accent: #7c4a1e;
+    --accent-foreground: #FFFFFF;
+    --destructive: #EF4444;
+    --destructive-foreground: #FFFFFF;
+    --border: rgba(255, 255, 255, 0.1);
+    --input: rgba(255, 255, 255, 0.15);
+    --ring: #c49b76;
+    
+    --sidebar: #262626;
+    --sidebar-foreground: #FFFFFF;
+    --sidebar-primary: #b88253;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #7c4a1e;
+    --sidebar-accent-foreground: #FFFFFF;
+    --sidebar-border: rgba(255, 255, 255, 0.1);
+    --sidebar-ring: #c49b76;
+  }
+}
+
+/* 威士忌色调的按钮自定义样式 */
+.btn-whiskey {
+  background-color: #d29b71;
+  color: #7c4a1e;
+  border-color: #d8ae87;
+}
+
+.btn-whiskey:hover {
+  background-color: #e0b990;
+}
+
+/* 威士忌背景卡片 */
+.card-whiskey {
+  border-color: #e8d0b5;
+  background-color: #f3e6d8;
+}
+
+.card-whiskey-header {
+  background-color: #d29b71;
+  color: #7c4a1e;
+}

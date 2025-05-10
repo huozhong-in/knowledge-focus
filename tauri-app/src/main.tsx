@@ -57,7 +57,7 @@ export const useAppStore = create<AppGlobalState>((set) => ({
   setShowIntroPage: async (show: boolean) => {
     try {
       const appDataPath = await appDataDir();
-      const storePath = await join(appDataPath, 'store.json');
+      const storePath = await join(appDataPath, 'settings.json');
       const store = await load(storePath, { autoSave: false });
       
       // 先更新zustand状态
@@ -67,7 +67,7 @@ export const useAppStore = create<AppGlobalState>((set) => ({
         // Update the persistent store to reflect that the app has been launched at least once.
         await store.set('isFirstLaunch', false);
         await store.save();
-        console.log('store.json updated: isFirstLaunch=false.');
+        console.log('settings.json updated: isFirstLaunch=false.');
         // isFirstLaunchDbCheckPending remains true; App.tsx will consume and clear it after DB init.
       }
     } catch (error) {
@@ -134,7 +134,7 @@ const initializeApp = async () => {
     await setTrayIcon();
     
     const appDataPath = await appDataDir();
-    const storePath = await join(appDataPath, 'store.json');
+    const storePath = await join(appDataPath, 'settings.json');
     const store = await load(storePath, { autoSave: false });
     const isFirstLaunchValue = await store.get('isFirstLaunch');
     const isActuallyFirstLaunch = isFirstLaunchValue === null || isFirstLaunchValue === undefined || isFirstLaunchValue === true;
