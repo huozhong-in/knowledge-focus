@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512px" height="512px" viewBox="0 0 512 512" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>export svg</title>
+    <defs>
+        <linearGradient x1="22.2182191%" y1="22.7055522%" x2="92.7279278%" y2="93.6267445%" id="linearGradient-1">
+            <stop stop-color="#FFB8BE" offset="0%"></stop>
+            <stop stop-color="#F77A89" offset="100%"></stop>
+        </linearGradient>
+        <rect id="path-2" x="51" y="53" width="412" height="412" rx="90"></rect>
+        <filter x="-1.7%" y="-1.2%" width="103.4%" height="103.4%" filterUnits="objectBoundingBox" id="filter-3">
+            <feOffset dx="0" dy="2" in="SourceAlpha" result="shadowOffsetOuter1"></feOffset>
+            <feGaussianBlur stdDeviation="2" in="shadowOffsetOuter1" result="shadowBlurOuter1"></feGaussianBlur>
+            <feComposite in="shadowBlurOuter1" in2="SourceAlpha" operator="out" result="shadowBlurOuter1"></feComposite>
+            <feColorMatrix values="0 0 0 0 0   0 0 0 0 0   0 0 0 0 0  0 0 0 0.5 0" type="matrix" in="shadowBlurOuter1"></feColorMatrix>
+        </filter>
+    </defs>
+    <g id="Logo" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="矩形">
+            <use fill="black" fill-opacity="1" filter="url(#filter-3)" xlink:href="#path-2"></use>
+            <rect stroke="#979797" stroke-width="1" stroke-linejoin="square" fill="url(#linearGradient-1)" fill-rule="evenodd" x="51.5" y="53.5" width="411" height="411" rx="90"></rect>
+        </g>
+        <text id="K" fill-rule="nonzero" font-family="HanziPenSC-W3, HanziPen SC" font-size="390" font-weight="normal" fill="#000000" fill-opacity="0.85">
+            <tspan x="151" y="409">K</tspan>
+        </text>
+    </g>
+</svg>

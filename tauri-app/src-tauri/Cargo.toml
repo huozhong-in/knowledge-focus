@@ -33,6 +33,7 @@ ignore = "0.4.23"
 tauri-plugin-log = "2"
 tauri-plugin-process = "2"
 tauri-plugin-macos-permissions = "2.3.0"
+tokio = "1.45.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-single-instance = "2"

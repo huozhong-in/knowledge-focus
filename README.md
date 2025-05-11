@@ -28,6 +28,12 @@ Focus on building an open and extensible AI knowledge base system. Suitable for 
 
 `bun tauri dev`
 
+### 重新生成icon
+
+`bun tauri icon`
+
+默认读取app-icon.png文件，生成所有平台所需图标文件，放在了icons文件夹下。
+
 ## 4. 打包应用
 
 `bun tauri build --bundles app`
