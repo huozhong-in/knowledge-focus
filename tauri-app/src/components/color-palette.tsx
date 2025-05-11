@@ -34,14 +34,21 @@ export function ColorPalette() {
             <div>
               <h4 className="text-sm font-medium mb-2">Tailwind 类示例</h4>
               <div className="flex flex-wrap gap-2">
-                {colorShades.map(shade => (
-                  <div 
-                    key={shade}
-                    className={`bg-whiskey-${shade} text-xs px-3 py-1 rounded-full`}
-                  >
-                    bg-whiskey-{shade}
-                  </div>
-                ))}
+                {colorShades.map(shade => {
+                  // Find the reverse color shade (e.g., if 50 is lightest and 950 is darkest)
+                  const maxShade = Math.max(...colorShades);
+                  const minShade = Math.min(...colorShades);
+                  const reverseShade = maxShade - (shade - minShade);
+                  
+                  return (
+                    <div 
+                      key={shade}
+                      className={`bg-whiskey-${shade} text-whiskey-${reverseShade} text-xs px-3 py-1 rounded-full`}
+                    >
+                      bg-whiskey-{shade}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             
