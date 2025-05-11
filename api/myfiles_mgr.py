@@ -76,10 +76,13 @@ class MyFilesManager:
         
         return dirs
     
-    def initialize_default_directories(self) -> None:
+    def initialize_default_directories(self) -> int:
         """初始化默认文件夹到数据库
         
         如果数据库中不存在这些文件夹记录，将它们添加进去
+        
+        Returns:
+            int: 初始化的文件夹数量
         """
         default_dirs = self.get_default_directories()
         existing_paths = {myfile.path for myfile in self.session.exec(select(MyFiles)).all()}
@@ -99,6 +102,8 @@ class MyFilesManager:
             self.session.add_all(new_records)
             self.session.commit()
             logger.info(f"已初始化 {len(new_records)} 个默认文件夹")
+        
+        return len(new_records)
     
     def get_all_directories(self) -> List[MyFiles]:
         """获取所有文件夹记录
@@ -425,6 +430,156 @@ class MyFilesManager:
             "removable_drives": "可能需要单独授权访问可移动设备",
             "network_drives": "访问网络驱动器可能需要额外凭据",
         }
+
+    def test_directory_access(self, directory_id: int) -> Tuple[bool, str]:
+        """尝试读取文件夹以触发系统授权对话框
+        
+        Args:
+            directory_id (int): 文件夹ID
+            
+        Returns:
+            Tuple[bool, str]: (成功标志, 消息)
+        """
+        try:
+            # 获取目录
+            directory = self.session.get(MyFiles, directory_id)
+            if not directory:
+                return False, f"文件夹ID不存在: {directory_id}"
+            
+            path = directory.path
+            
+            # 检查路径是否存在
+            if not os.path.exists(path):
+                return False, f"路径不存在: {path}"
+                
+            # 尝试列出文件夹内容，这将触发系统授权对话框
+            file_list = os.listdir(path)
+            
+            # 如果成功读取，更新授权状态
+            directory.auth_status = AuthStatus.AUTHORIZED.value
+            directory.updated_at = datetime.now()
+            self.session.add(directory)
+            self.session.commit()
+            
+            return True, f"成功读取文件夹，发现 {len(file_list)} 个文件/文件夹"
+        except PermissionError:
+            return False, "没有访问权限，用户可能拒绝了授权请求"
+        except Exception as e:
+            return False, f"读取文件夹时出错: {str(e)}"
+    
+    def check_directory_access_status(self, directory_id: int) -> Tuple[bool, Dict]:
+        """检查文件夹的访问权限状态
+        
+        Args:
+            directory_id (int): 文件夹ID
+            
+        Returns:
+            Tuple[bool, Dict]: (成功标志, 包含访问状态信息的字典)
+        """
+        try:
+            # 获取目录
+            directory = self.session.get(MyFiles, directory_id)
+            if not directory:
+                return False, {"message": f"文件夹ID不存在: {directory_id}"}
+            
+            path = directory.path
+            
+            # 检查路径是否存在
+            if not os.path.exists(path):
+                return False, {"message": f"路径不存在: {path}", "access_granted": False}
+                
+            # 尝试列出文件夹内容
+            try:
+                file_list = os.listdir(path)
+                # 如果成功读取，返回访问权限状态为True
+                return True, {
+                    "message": f"成功读取文件夹，发现 {len(file_list)} 个文件/文件夹",
+                    "access_granted": True, 
+                    "file_count": len(file_list)
+                }
+            except PermissionError:
+                # 权限错误，返回访问权限状态为False
+                return True, {
+                    "message": "没有访问权限",
+                    "access_granted": False
+                }
+            except Exception as e:
+                return False, {
+                    "message": f"读取文件夹时出错: {str(e)}",
+                    "access_granted": False
+                }
+        except Exception as e:
+            return False, {"message": f"检查访问权限时出错: {str(e)}", "access_granted": False}
+
+    def check_full_disk_access_status(self) -> Dict:
+        """检查系统完全磁盘访问权限状态
+        
+        Returns:
+            Dict: 包含完全磁盘访问权限状态的字典
+        """
+        try:
+            # 检查操作系统类型
+            if self.system != "Darwin":
+                return {
+                    "has_full_disk_access": False,
+                    "message": "完全磁盘访问权限仅适用于macOS系统",
+                    "status": "not_applicable"
+                }
+                
+            # 尝试读取一些系统目录，这些目录通常需要完全磁盘访问权限
+            test_paths = [
+                "/Library/Application Support",
+                "/Library/Preferences",
+                "/System/Library/Preferences",
+                "/private/var/db",
+                "/usr/local"
+            ]
+            
+            # 尝试读取每个路径
+            access_results = {}
+            for path in test_paths:
+                if os.path.exists(path):
+                    try:
+                        # 尝试列出目录内容
+                        files = os.listdir(path)
+                        access_results[path] = {
+                            "accessible": True,
+                            "file_count": len(files)
+                        }
+                    except PermissionError:
+                        access_results[path] = {
+                            "accessible": False,
+                            "error": "权限错误"
+                        }
+                    except Exception as e:
+                        access_results[path] = {
+                            "accessible": False,
+                            "error": str(e)
+                        }
+                else:
+                    access_results[path] = {
+                        "accessible": False,
+                        "error": "路径不存在"
+                    }
+            
+            # 如果所有测试路径都能访问，则认为有完全磁盘访问权限
+            accessible_count = sum(1 for res in access_results.values() if res.get("accessible", False))
+            has_full_access = accessible_count >= len(test_paths) * 0.8  # 80%以上的路径可访问
+            
+            return {
+                "has_full_disk_access": has_full_access,
+                "access_results": access_results,
+                "test_paths_count": len(test_paths),
+                "accessible_paths_count": accessible_count,
+                "status": "checked"
+            }
+        
+        except Exception as e:
+            return {
+                "has_full_disk_access": False,
+                "message": f"检查时出错: {str(e)}",
+                "status": "error"
+            }
 
 
 if __name__ == '__main__':

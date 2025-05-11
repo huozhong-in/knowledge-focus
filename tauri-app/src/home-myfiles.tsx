@@ -294,7 +294,7 @@ function HomeMyFiles() {
   const handleAddDirectoryWithPath = async (dirPath: string, dirAlias?: string) => {
     if (!dirPath) {
       toast.error("文件夹路径不能为空");
-      return;
+      return null;
     }
 
     try {
@@ -334,17 +334,169 @@ function HomeMyFiles() {
             duration: 8000,
           });
         }
+        
+        // 返回添加的目录ID（如果后端提供）
+        if (result.data && typeof result.data === 'object' && 'id' in result.data) {
+          return { directoryId: result.data.id };
+        }
+        return { success: true };
       } else {
         toast.error(result.message || "添加文件夹失败");
+        return null;
       }
     } catch (err) {
       console.error("添加文件夹失败", err);
       toast.error("添加文件夹失败，请检查API服务是否启动");
+      return null;
     }
   };
 
   // 更新文件夹授权状态
   const updateAuthStatus = async (directory: Directory, newStatus: string) => {
+    try {
+      // 如果是要授权，先尝试读取该目录，以触发macOS授权弹窗
+      if (newStatus === "authorized") {
+        info(`尝试读取文件夹以触发系统授权对话框: ${directory.path}`);
+        // 显示加载状态
+        toast.loading(`正在请求访问权限: ${directory.alias || directory.path}...`, {id: `auth-${directory.id}`});
+        
+        try {
+          // 调用后端API尝试读取目录，这将触发系统授权对话框
+          const testResponse = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/test-access`, {
+            method: "GET",
+          });
+          const testResult = await testResponse.json() as ApiResponse;
+          
+          if (testResult.status === "success") {
+            info(`成功读取目录 ${directory.path}: ${JSON.stringify(testResult)}`);
+            toast.success(`成功获取"${directory.alias || directory.path}"的访问权限`, {id: `auth-${directory.id}`});
+          } else {
+            // 如果读取失败但不是权限问题，可能是其他错误
+            info(`读取目录失败 ${directory.path}: ${testResult.message}`);
+            toast.error(`无法访问"${directory.alias || directory.path}": ${testResult.message}`, {id: `auth-${directory.id}`});
+            return; // 如果读取失败，不继续更新状态
+          }
+        } catch (readErr) {
+          // 捕获网络错误或其他异常
+          info(`读取目录异常 ${directory.path}: ${readErr}`);
+          toast.error(`尝试访问文件夹时出错`, {id: `auth-${directory.id}`});
+          console.error("测试文件夹访问权限失败:", readErr);
+          return; // 如果读取出错，不继续更新状态
+        }
+      }
+      
+      // 更新后端状态
+      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/auth_status`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          auth_status: newStatus,
+        }),
+      });
+      
+      const responseJson = await response.json();
+      const result = responseJson as ApiResponse;
+      
+      if (result.status === "success") {
+        const message = newStatus === "authorized" 
+          ? `成功授权"${directory.alias || directory.path}"`
+          : `已取消"${directory.alias || directory.path}"的授权`;
+        toast.success(message);
+        fetchDirectories();
+      } else {
+        toast.error(result.message || "更新授权状态失败");
+      }
+    } catch (err) {
+      console.error("更新授权状态失败", err);
+      toast.error("更新授权状态失败，请检查API服务是否启动");
+    }
+  };
+
+  // 请求目录访问权限 - 触发系统权限对话框并启动检查循环
+  const requestDirectoryAccess = async (directory: Directory) => {
+    try {
+      info(`请求访问目录权限: ${directory.path}`);
+      toast.loading(`请求访问"${directory.alias || directory.path}"权限...`, {id: `auth-req-${directory.id}`});
+      
+      // 调用后端API尝试读取目录，这将触发系统授权对话框
+      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/request-access`, {
+        method: "POST",
+      });
+      
+      const result = await response.json() as ApiResponse;
+      
+      if (result.status === "success") {
+        info(`已发送访问请求: ${JSON.stringify(result)}`);
+        toast.success(`请查看系统弹出的权限请求对话框`, {id: `auth-req-${directory.id}`});
+        
+        // 开始循环检查访问状态
+        checkDirectoryAccessStatus(directory);
+      } else {
+        toast.error(`无法请求访问"${directory.alias || directory.path}": ${result.message}`, {id: `auth-req-${directory.id}`});
+      }
+    } catch (err) {
+      console.error("请求目录访问权限失败:", err);
+      toast.error(`请求权限失败，请检查API服务是否启动`, {id: `auth-req-${directory.id}`});
+    }
+  };
+
+  // 检查指定文件夹的访问权限状态
+  const checkDirectoryAccessStatus = async (directory: Directory) => {
+    info(`开始检查文件夹访问权限状态: ${directory.path}`);
+    let attempts = 0;
+    const maxAttempts = 10;
+    const checkInterval = 1500; // 1.5秒检查一次
+    
+    // 显示加载状态
+    toast.loading(`正在检查访问权限状态...`, {id: `check-auth-${directory.id}`});
+    
+    // 创建一个循环检查函数
+    const checkAccess = async (): Promise<boolean> => {
+      try {
+        const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/access-status`);
+        const result = await response.json() as ApiResponse;
+        
+        if (result.status === "success") {
+          const accessGranted = result.data?.access_granted === true;
+          info(`文件夹 ${directory.path} 访问权限状态: ${accessGranted ? '已授权' : '未授权'}`);
+          return accessGranted;
+        }
+        return false;
+      } catch (err) {
+        info(`检查文件夹访问权限状态出错: ${err}`);
+        console.error("检查访问权限状态出错:", err);
+        return false;
+      }
+    };
+    
+    // 使用Promise和setInterval实现周期性检查
+    return new Promise<boolean>(async (resolve) => {
+      const intervalId = setInterval(async () => {
+        attempts++;
+        info(`检查文件夹访问权限，第 ${attempts}/${maxAttempts} 次尝试`);
+        
+        const hasAccess = await checkAccess();
+        if (hasAccess || attempts >= maxAttempts) {
+          clearInterval(intervalId);
+          if (hasAccess) {
+            toast.success(`成功获得"${directory.alias || directory.path}"的访问权限`, {id: `check-auth-${directory.id}`});
+            // 更新授权状态到后端
+            await updateDirectoryAuthStatus(directory, "authorized");
+          } else if (attempts >= maxAttempts) {
+            toast.error(`无法获得"${directory.alias || directory.path}"的访问权限，用户可能拒绝了请求`, {id: `check-auth-${directory.id}`});
+            // 更新授权状态到后端
+            await updateDirectoryAuthStatus(directory, "unauthorized");
+          }
+          resolve(hasAccess);
+        }
+      }, checkInterval);
+    });
+  };
+
+  // 仅更新目录授权状态到数据库而不触发读取操作
+  const updateDirectoryAuthStatus = async (directory: Directory, newStatus: string) => {
     try {
       const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/auth_status`, {
         method: "PUT",
@@ -360,14 +512,13 @@ function HomeMyFiles() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        toast.success(result.message || `成功更新"${directory.alias || directory.path}"的授权状态`);
-        fetchDirectories();
+        info(`成功更新文件夹 ${directory.path} 的授权状态为 ${newStatus}`);
+        fetchDirectories(); // 刷新列表
       } else {
-        toast.error(result.message || "更新授权状态失败");
+        info(`更新授权状态失败: ${result.message}`);
       }
     } catch (err) {
       console.error("更新授权状态失败", err);
-      toast.error("更新授权状态失败，请检查API服务是否启动");
     }
   };
 
@@ -445,8 +596,30 @@ function HomeMyFiles() {
     try {
       setCheckingPermissions(true);
       info("检查完全磁盘访问权限...");
+      
+      // 检查是否在开发环境
+      const isDev = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost';
+      if (isDev) {
+        info("检测到开发环境，将向后端查询磁盘访问状态");
+        // 在开发环境中，通过API查询权限状态
+        try {
+          const response = await fetch("http://127.0.0.1:60000/system/full-disk-access-status");
+          const result = await response.json() as ApiResponse;
+          
+          if (result.status === "success" && result.data) {
+            const hasAccess = result.data.has_full_disk_access === true;
+            info(`从后端API获取完全磁盘访问权限状态: ${hasAccess}`);
+            setHasFullDiskAccess(hasAccess);
+            return hasAccess;
+          }
+        } catch (apiErr) {
+          info(`无法从API获取磁盘访问状态: ${apiErr}`);
+        }
+      }
+      
+      // 如果不在开发环境或API查询失败，则使用插件检查
       const hasAccess = await checkFullDiskAccessPermission();
-      info(`完全磁盘访问权限状态: ${hasAccess}`);
+      info(`通过插件获取完全磁盘访问权限状态: ${hasAccess}`);
       setHasFullDiskAccess(hasAccess);
       return hasAccess;
     } catch (err) {
@@ -574,21 +747,47 @@ function HomeMyFiles() {
                     // 移除 file:// 前缀并解码URL
                     processedPath = decodeURIComponent(processedPath.replace(/^file:\/\//, ''));
                     info(`解码后的路径: ${processedPath}`);
-                  }
-                  
-                  // 调用Rust命令解析目录路径
-                  const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
-                  info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
-                  
-                  if (resolvedDir) {
-                    // 获取文件夹名称作为默认别名
-                    const dirName = await basename(resolvedDir);
-                    info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
-                    await handleAddDirectoryWithPath(resolvedDir, dirName);
-                  } else {
-                    info(`无法解析路径: ${droppedPath}`);
-                    toast.error(`无法解析路径: ${droppedPath}`);
-                  }
+                  }                    // 调用Rust命令解析目录路径
+                    const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
+                    info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
+                    
+                    if (resolvedDir) {
+                      try {
+                        // 获取文件夹名称作为默认别名
+                        const dirName = await basename(resolvedDir);
+                        info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
+                        
+                        // 添加目录并获取结果
+                        const addResult = await handleAddDirectoryWithPath(resolvedDir, dirName);
+                        
+                        // 如果没有完全磁盘访问权限，并且添加成功并返回了目录ID，则尝试请求访问权限
+                        if (!hasFullDiskAccess && addResult && addResult.directoryId) {
+                          info(`成功添加目录，ID: ${addResult.directoryId}，将请求访问权限`);
+                          
+                          // 创建一个临时的Directory对象用于授权检查
+                          const tempDir: Directory = {
+                            id: addResult.directoryId,
+                            path: resolvedDir,
+                            alias: dirName,
+                            auth_status: "pending",
+                            is_blacklist: false,
+                            created_at: new Date().toISOString(),
+                            updated_at: new Date().toISOString()
+                          };
+                          
+                          // 延迟一点请求权限，让UI有时间更新
+                          setTimeout(() => {
+                            requestDirectoryAccess(tempDir);
+                          }, 500);
+                        }
+                      } catch (processErr) {
+                        info(`处理目录 ${resolvedDir} 时出错: ${processErr}`);
+                        toast.error(`处理文件夹时出错: ${processErr}`);
+                      }
+                    } else {
+                      info(`无法解析路径: ${droppedPath}`);
+                      toast.error(`无法解析路径: ${droppedPath}`);
+                    }
                 } catch (err) {
                   info(`处理拖拽路径 ${droppedPath} 出错: ${err}`);
                   console.error(`处理拖拽路径 ${droppedPath} 出错:`, err);
@@ -755,7 +954,7 @@ function HomeMyFiles() {
                     <EyeOff size={16} className="mr-1" />取消授权
                   </Button>
                 ) : (
-                  <Button variant="outline" size="sm" onClick={() => updateAuthStatus(dir, "authorized")}>
+                  <Button variant="outline" size="sm" onClick={() => requestDirectoryAccess(dir)}>
                     <Eye size={16} className="mr-1" />授权
                   </Button>
                 )}
@@ -821,12 +1020,6 @@ function HomeMyFiles() {
     </Table>
   );
 
-  // 使用useEffect监控isDraggingOver状态变化
-  // useEffect(() => {
-  //   info(`拖拽覆盖层状态发生变化: isDraggingOver = ${isDraggingOver}`);
-  //   debug(`当前DOM中是否应该显示拖拽覆盖层: ${isDraggingOver}`);
-  // }, [isDraggingOver]);
-
   // 添加React中DOM标准拖拽处理函数
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -846,7 +1039,9 @@ function HomeMyFiles() {
     e.stopPropagation();
     info("DOM 标准拖拽离开事件触发");
     // 检查是否真的离开了容器，而不是进入了子元素
-    if(e.currentTarget === e.target) {
+    // 使用relatedTarget来检查是否离开了容器
+    const relatedTarget = e.relatedTarget as Node;
+    if (!e.currentTarget.contains(relatedTarget)) {
       setIsDraggingOver(false);
     }
   };
@@ -878,10 +1073,12 @@ function HomeMyFiles() {
     >
       {/* 拖拽覆盖层，确保z-index足够高且覆盖整个界面 */}
       {isDraggingOver && (
-        <div className="fixed inset-0 bg-whiskey-50/80 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-whiskey-300 rounded-lg pointer-events-none">
-          <Upload size={64} className="text-whiskey-500 mb-4" />
-          <p className="text-xl font-semibold text-whiskey-800">将文件或文件夹拖放到此处</p>
-          <p className="text-sm text-whiskey-600 mt-2">文件将自动添加其所在的父文件夹</p>
+        <div className="fixed inset-0 bg-whiskey-200/90 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-whiskey-500 rounded-lg pointer-events-none backdrop-blur-sm transition-all duration-200">
+          <div className="bg-whiskey-50 p-8 rounded-xl shadow-lg border-2 border-whiskey-400">
+            <Upload size={72} className="text-whiskey-600 mb-4 mx-auto" />
+            <p className="text-2xl font-bold text-whiskey-900 text-center">将文件或文件夹拖放到此处</p>
+            <p className="text-sm text-whiskey-700 mt-2 text-center">文件将自动添加其所在的父文件夹</p>
+          </div>
         </div>
       )}      
       <div className="flex justify-between items-center mb-6">
@@ -959,7 +1156,7 @@ function HomeMyFiles() {
         <CardHeader className="bg-whiskey-50/50">
           <CardTitle className="text-whiskey-900">文件夹管理</CardTitle>
           <CardDescription className="text-whiskey-700">
-            查看和管理所有需要监控的文件夹，授权或取消授权访问权限。
+            查看和管理所有需要监控的文件夹，授权或取消授权读取权限。
           </CardDescription>
         </CardHeader>
         <CardContent>

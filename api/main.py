@@ -967,6 +967,50 @@ def get_macos_permissions_hint_endpoint(myfiles_mgr: MyFilesManager = Depends(ge
         logger.error(f"获取 macOS 权限提示失败: {str(e)}")
         return {"status": "error", "message": f"获取 macOS 权限提示失败: {str(e)}"}
 
+@app.post("/directories/{directory_id}/request-access")
+def request_directory_access(
+    directory_id: int,
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """尝试读取目录以触发系统授权对话框"""
+    try:
+        success, message = myfiles_mgr.test_directory_access(directory_id)
+        if success:
+            return {"status": "success", "message": message}
+        else:
+            return {"status": "error", "message": message}
+    except Exception as e:
+        logger.error(f"请求目录访问失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"请求目录访问失败: {str(e)}"}
+
+@app.get("/directories/{directory_id}/access-status")
+def check_directory_access_status(
+    directory_id: int,
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """检查目录的访问权限状态"""
+    try:
+        success, result = myfiles_mgr.check_directory_access_status(directory_id)
+        if success:
+            return {"status": "success", "data": result}
+        else:
+            return {"status": "error", "message": result.get("message", "检查访问状态失败")}
+    except Exception as e:
+        logger.error(f"检查目录访问状态失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"检查目录访问状态失败: {str(e)}"}
+
+@app.get("/system/full-disk-access-status")
+def check_full_disk_access_status(
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """检查系统完全磁盘访问权限状态"""
+    try:
+        result = myfiles_mgr.check_full_disk_access_status()
+        return {"status": "success", "data": result}
+    except Exception as e:
+        logger.error(f"检查完全磁盘访问权限状态失败: {str(e)}")
+        return {"status": "error", "message": f"检查完全磁盘访问权限状态失败: {str(e)}"}
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=60000, help="API服务监听端口")
