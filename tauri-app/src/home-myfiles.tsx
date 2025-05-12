@@ -680,11 +680,11 @@ function HomeMyFiles() {
     
     // 设置拖拽事件监听器
     const setupDragDropListeners = async () => {
-      info("正在设置拖拽事件监听器...");
+      // info("正在设置拖拽事件监听器...");
       
       try {
         // 尝试检测 Tauri 事件 API
-        info("尝试监听 Tauri 拖拽事件...");
+        // info("尝试监听 Tauri 拖拽事件...");
         
         // 进入拖拽区域
         const unlistenDragEnter = await listen('tauri://drag-enter', (event) => {
@@ -692,7 +692,7 @@ function HomeMyFiles() {
           setIsDraggingOver(true);
           debug(`isDraggingOver 状态已设置为: ${true}`);
         });
-        info("成功设置 drag-enter 监听器");
+        // info("成功设置 drag-enter 监听器");
 
         // 使用 dragover 事件 (有些平台可能需要这个)
         const unlistenDragOver = await listen('tauri://drag-over', (event) => {
@@ -700,7 +700,7 @@ function HomeMyFiles() {
           setIsDraggingOver(true);
           debug(`isDraggingOver 状态已设置为: ${true}`);
         });
-        info("成功设置 drag-over 监听器");
+        // info("成功设置 drag-over 监听器");
 
         // 离开拖拽区域
         const unlistenDragLeave = await listen('tauri://drag-leave', (event) => {
@@ -708,7 +708,7 @@ function HomeMyFiles() {
           setIsDraggingOver(false);
           debug(`isDraggingOver 状态已设置为: ${false}`);
         });
-        info("成功设置 drag-leave 监听器");
+        // info("成功设置 drag-leave 监听器");
 
         // 放置文件/文件夹
         const unlistenDragDrop = await listen('tauri://drag-drop', async (event) => {
@@ -806,11 +806,11 @@ function HomeMyFiles() {
             toast.error("处理拖放文件时出错");
           }
         });
-        info("成功设置 drag-drop 监听器");
+        // info("成功设置 drag-drop 监听器");
         
         // 返回清理函数
         return () => {
-          info("清理拖拽事件监听器");
+          // info("清理拖拽事件监听器");
           unlistenDragEnter();
           unlistenDragOver();
           unlistenDragLeave();
@@ -835,7 +835,7 @@ function HomeMyFiles() {
   useEffect(() => {
     const setupFocusListener = async () => {
       try {
-        info("正在设置窗口焦点监听器...");
+        // info("正在设置窗口焦点监听器...");
         
         // 监听窗口获得焦点事件
         const unlistenFocus = await listen('tauri://focus', async () => {
@@ -843,11 +843,11 @@ function HomeMyFiles() {
           await checkFullDiskAccess();
         });
         
-        info("成功设置窗口焦点监听器");
+        // info("成功设置窗口焦点监听器");
         
         // 返回清理函数
         return () => {
-          info("清理窗口焦点监听器");
+          // info("清理窗口焦点监听器");
           unlistenFocus();
         };
       } catch (err) {

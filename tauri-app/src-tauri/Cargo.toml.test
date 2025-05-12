@@ -1,0 +1,21 @@
+[package]
+name = "file_monitor_test"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "file_monitor_test"
+path = "src/file_monitor_test.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+notify = { version = "8.0.0", features = ["serde"] }
+walkdir = "2.5.0"
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = "0.4"
+futures = "0.3"
+ctrlc = "3.4"

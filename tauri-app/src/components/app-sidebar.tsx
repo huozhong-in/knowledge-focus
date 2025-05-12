@@ -27,6 +27,9 @@ import {
   useSidebar
 } from "@/components/ui/sidebar"
 import { SearchForm } from "@/components/search-form"
+import { Switch } from "@/components/ui/switch"
+import { useState } from "react"
+import { toast } from "sonner"
 
 // This is sample data.
 const data = {
@@ -170,6 +173,12 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
+  const [networkEnabled, setNetworkEnabled] = useState(true)
+
+  const handleNetworkSwitch = (checked: boolean) => {
+    setNetworkEnabled(checked)
+    toast.info(checked ? "已开启联网功能" : "已切换至仅本地模式")
+  }
 
   return (
     <Sidebar collapsible="icon" className="bg-whiskey-50 border-r border-whiskey-200" {...props}>
@@ -178,7 +187,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <img src="/kf-logo.png" className="w-10 h-10 object-contain" alt="Logo" />
           <SearchForm collapsed={isCollapsed} />
         </div>
-      {/* <TeamSwitcher teams={data.teams} /> */}
+        {/* <TeamSwitcher teams={data.teams} /> */}
+        <div className="flex items-center justify-between p-2">
+          <div className="flex items-center gap-2">
+            <span className="text-whiskey-800 text-sm">联网控制</span>
+            <Switch 
+              id="network-switch"
+              className="data-[state=checked]:bg-whiskey-600" 
+              aria-label="联网控制开关"
+              checked={networkEnabled}
+              onCheckedChange={handleNetworkSwitch}
+            />
+          </div>
+          <div className="text-xs text-whiskey-500">
+            {networkEnabled ? '联网模式' : '仅本地运行'}
+          </div>
+        </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
         <NavMain items={data.navMain} />

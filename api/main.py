@@ -10,9 +10,9 @@ import time
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 import pathlib
 import logging
-from sqlmodel import create_engine, Session
+from sqlmodel import create_engine, Session, select
 import multiprocessing
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType, AuthStatus
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule # Updated import
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
@@ -22,16 +22,21 @@ import asyncio
 import threading
 from datetime import datetime
 import json
+from enum import Enum
+import sys  # 添加在文件顶部其他 import 语句附近
 
 # 设置日志记录
-logger = logging.getLogger()
+logger = logging.getLogger(__name__) # Use __name__ for logger
 parents_logs_dir = pathlib.Path(__file__).parent / 'logs'
-os.mkdir(parents_logs_dir) if not parents_logs_dir.exists() else None
+parents_logs_dir.mkdir(exist_ok=True) # Safer way to create directory
+
 logger.setLevel(logging.INFO)
-handler = logging.FileHandler(parents_logs_dir / 'api_{starttime}.log'.format(starttime=time.strftime('%Y%m%d', time.localtime(time.time()))))
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+# Ensure handler is not added multiple times if script is reloaded or logger is already configured
+if not logger.handlers:
+    handler = logging.FileHandler(parents_logs_dir / 'api_{starttime}.log'.format(starttime=time.strftime('%Y%m%d', time.localtime(time.time()))))
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -136,6 +141,32 @@ def init_db(session: Session = Depends(get_session)):
     db_mgr.init_db()
 
     return {"message": "数据库结构已初始化"}
+
+# 新增：获取所有配置信息的API端点
+@app.get("/config/all")
+def get_all_configuration(session: Session = Depends(get_session)):
+    """
+    获取所有Rust端进行文件处理所需的配置信息。
+    包括文件分类、粗筛规则、文件扩展名映射、项目识别规则以及监控的文件夹列表。
+    """
+    try:
+        file_categories = session.exec(select(FileCategory)).all()
+        file_filter_rules = session.exec(select(FileFilterRule)).all()
+        file_extension_maps = session.exec(select(FileExtensionMap)).all()
+        project_recognition_rules = session.exec(select(ProjectRecognitionRule)).all()
+        monitored_folders = session.exec(select(MyFiles)).all()
+        
+        return {
+            "file_categories": file_categories,
+            "file_filter_rules": file_filter_rules,
+            "file_extension_maps": file_extension_maps,
+            "project_recognition_rules": project_recognition_rules,
+            "monitored_folders": monitored_folders,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching all configuration: {e}", exc_info=True)
+        # Consider raising HTTPException for client feedback
+        return {"error": str(e)}
 
 # 任务处理者
 def task_processor(processor_id: int, db_path: str = None):
@@ -828,15 +859,40 @@ def get_myfiles_manager(session: Session = Depends(get_session)):
 def get_directories(
     myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
 ):
-    """获取所有文件夹"""
     try:
-        all_dirs = myfiles_mgr.get_all_directories()
-        # 转换为JSON可序列化的格式
-        dirs_json = [d.model_dump() for d in all_dirs]
-        return {"status": "success", "data": dirs_json}
+        # 根据系统平台设置 full_disk_access 状态
+        # 只在 macOS 上才有意义
+        fda_status = False
+        if sys.platform == "darwin":  # macOS
+            # 在 macOS 上，检查应用是否有完全磁盘访问权限
+            access_status = myfiles_mgr.check_full_disk_access_status()
+            fda_status = access_status.get("has_full_disk_access", False)
+            logger.info(f"[API DEBUG] Full disk access status: {fda_status}, details: {access_status}")
+
+        # 使用 select 语句从数据库获取所有监控的目录
+        stmt = select(MyFiles)
+        directories_from_db = myfiles_mgr.session.exec(stmt).all()
+        
+        processed_dirs = []
+        for d in directories_from_db:
+            auth_status_value = d.auth_status.value if isinstance(d.auth_status, AuthStatus) else str(d.auth_status)
+            
+            dir_dict = {
+                "id": getattr(d, 'id', None),
+                "path": getattr(d, 'path', None),
+                "alias": getattr(d, 'alias', None),
+                "auth_status": auth_status_value,
+                "is_blacklist": getattr(d, 'is_blacklist', False),
+                "created_at": d.created_at.isoformat() if getattr(d, 'created_at', None) else None,
+                "updated_at": d.updated_at.isoformat() if getattr(d, 'updated_at', None) else None,
+            }
+            processed_dirs.append(dir_dict)
+        
+        logger.info(f"[API DEBUG] /directories returning: fda_status={fda_status}, num_dirs={len(processed_dirs)}")
+        return {"status": "success", "full_disk_access": fda_status, "data": processed_dirs}
     except Exception as e:
-        logger.error(f"获取文件夹列表失败: {str(e)}")
-        return {"status": "error", "message": f"获取文件夹列表失败: {str(e)}"}
+        logger.error(f"Error in get_directories: {e}", exc_info=True)
+        return {"status": "error", "full_disk_access": False, "data": [], "message": str(e)}
 
 @app.post("/directories")
 def add_directory(
@@ -1003,13 +1059,26 @@ def check_directory_access_status(
 def check_full_disk_access_status(
     myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
 ):
-    """检查系统完全磁盘访问权限状态"""
+    """
+    Checks the system's full disk access status for the application.
+    DEPRECATED: This information is now included in the /directories endpoint.
+    This endpoint may be removed in a future version.
+    Note: Currently always returns False as the full disk access check is not implemented.
+    """
     try:
-        result = myfiles_mgr.check_full_disk_access_status()
-        return {"status": "success", "data": result}
+        # 根据系统平台返回状态
+        status = False
+        if sys.platform == "darwin":  # macOS
+            # 在 macOS 上，我们可以通过检查特定目录的访问权限来判断是否有完全磁盘访问权限
+            # 这里简单返回 False，因为现在我们没有这个方法了
+            # 如果将来需要这个功能，可以实现新的检查方法
+            pass
+            
+        logger.info(f"[API DEBUG] /system/full-disk-access-status returning: {status}")
+        return {"status": "success", "full_disk_access_status": status}
     except Exception as e:
-        logger.error(f"检查完全磁盘访问权限状态失败: {str(e)}")
-        return {"status": "error", "message": f"检查完全磁盘访问权限状态失败: {str(e)}"}
+        logger.error(f"Error in check_full_disk_access_status: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

@@ -11,6 +11,9 @@ use tauri::{
 };
 // 导入自定义命令
 mod commands;
+mod file_monitor;
+mod setup_file_monitor;
+use file_monitor::FileMonitor;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tauri_plugin_store::StoreBuilder;
 
@@ -166,7 +169,7 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                                 }
                                 CommandEvent::Stderr(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
-                                    eprintln!("Python API Error: {}", line_str);
+                                    eprintln!("Python API Debug: {}", line_str);
                                     let _ = window.emit("api-error", Some(line_str.to_string()));
                                 }
                                 CommandEvent::Error(err) => {
@@ -268,6 +271,146 @@ fn set_activation_policy_regular(app: tauri::AppHandle) {
 
 // 添加更新API端口的命令
 #[tauri::command]
+fn start_file_monitoring(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<Arc<Mutex<Option<FileMonitor>>>>,
+    api_state: tauri::State<ApiState>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    // 检查API是否在运行，只有在API运行后才能启动文件监控
+    let api_running = {
+        let api_state_guard = api_state.0.lock().unwrap();
+        api_state_guard.process_child.is_some()
+    };
+
+    if !api_running {
+        return Err("API服务未运行，无法启动文件监控".into());
+    }
+
+    let api_host;
+    let api_port;
+    {
+        let api_state_guard = api_state.0.lock().unwrap();
+        api_host = api_state_guard.host.clone();
+        api_port = api_state_guard.port;
+    }
+
+    // 检查是否已经在运行
+    let already_running = {
+        let monitor_guard = state.lock().unwrap();
+        monitor_guard.is_some()
+    };
+
+    if already_running {
+        return Err("文件监控已经在运行".into());
+    }
+    
+    // 创建文件监控
+    let mut monitor_for_spawn = FileMonitor::new(api_host, api_port);
+    
+    // 提取共享状态和应用句柄以传递给异步任务
+    let state_arc = Arc::clone(&*state);
+    let app_handle_clone = app_handle.clone();
+    
+    // 在新线程中启动监控
+    tauri::async_runtime::spawn(async move {
+        // 异步开始监控
+        let monitoring_result = monitor_for_spawn.start_monitoring().await;
+        
+        match monitoring_result {
+            Ok(_) => {
+                println!("文件监控已成功启动");
+                if let Some(window) = app_handle_clone.get_webview_window("main") {
+                    let _ = window.emit("file-monitor-started", ());
+                }
+                
+                // 保存监控实例 - 在同步块中完成锁定和修改操作
+                {
+                    let mut monitor_guard = state_arc.lock().unwrap();
+                    *monitor_guard = Some(monitor_for_spawn);
+                }
+            }
+            Err(e) => {
+                eprintln!("启动文件监控失败: {}", e);
+                if let Some(window) = app_handle_clone.get_webview_window("main") {
+                    let _ = window.emit("file-monitor-error", e.to_string());
+                }
+            }
+        }
+    });
+
+    let mut response = HashMap::new();
+    response.insert("success".into(), serde_json::Value::Bool(true));
+    response.insert(
+        "message".into(),
+        serde_json::Value::String("文件监控启动中...".into()),
+    );
+    Ok(response)
+}
+
+#[tauri::command]
+fn stop_file_monitoring(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<Arc<Mutex<Option<FileMonitor>>>>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    // 检查是否在运行
+    let is_running = {
+        let monitor_guard = state.lock().unwrap();
+        monitor_guard.is_some()
+    };
+
+    if !is_running {
+        return Err("文件监控未在运行".into());
+    }
+
+    // 停止监控
+    {
+        let mut monitor_guard = state.lock().unwrap();
+        *monitor_guard = None;
+    }
+
+    // 通知前端
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.emit("file-monitor-stopped", ());
+    }
+
+    let mut response = HashMap::new();
+    response.insert("success".into(), serde_json::Value::Bool(true));
+    response.insert(
+        "message".into(),
+        serde_json::Value::String("文件监控已停止".into()),
+    );
+    Ok(response)
+}
+
+#[tauri::command]
+fn get_monitoring_status(
+    state: tauri::State<Arc<Mutex<Option<FileMonitor>>>>,
+) -> Result<HashMap<String, serde_json::Value>, String> {
+    let is_running = {
+        let monitor_guard = state.lock().unwrap();
+        monitor_guard.is_some()
+    };
+
+    let mut response = HashMap::new();
+    response.insert("running".into(), serde_json::Value::Bool(is_running));
+    
+    if is_running {
+        let dirs = {
+            let monitor_guard = state.lock().unwrap();
+            if let Some(monitor) = &*monitor_guard {
+                serde_json::to_value(monitor.get_monitored_directories()).unwrap_or(serde_json::Value::Array(Vec::new()))
+            } else {
+                serde_json::Value::Array(Vec::new())
+            }
+        };
+        
+        response.insert("directories".into(), dirs);
+    }
+    
+    Ok(response)
+}
+
+#[tauri::command]
 fn update_api_port(
     app_handle: tauri::AppHandle,
     port: u16,
@@ -311,7 +454,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info) // 你可以设置一个全局的默认级别，例如 Info
+                .level_for("tao", log::LevelFilter::Warn) // 将 tao crate 的日志级别设为 Warn
+                .build()
+        )
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
             println!(
                 "另一个实例已尝试启动，参数: {:?}，工作文件夹: {}",
@@ -408,6 +556,18 @@ pub fn run() {
             }
             // Start the Python API service automatically
             start_python_api(app_handle.clone(), api_state_instance.0.clone());
+            
+            // 在API启动后延迟启动文件监控
+            let app_handle_for_monitor = app_handle.clone();
+            let monitor_state = Arc::clone(&app.state::<Arc<Mutex<Option<FileMonitor>>>>());
+            let api_state_for_monitor = api_state_instance.0.clone();
+            
+            // 使用setup_file_monitor模块中的函数启动文件监控
+            crate::setup_file_monitor::setup_auto_file_monitoring(
+                app_handle_for_monitor,
+                monitor_state,
+                api_state_for_monitor
+            );
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
@@ -463,12 +623,15 @@ pub fn run() {
             println!("Tray Icon ID: {:?}", tray_icon.id());
             Ok(())
         })
+        // 管理API进程状态
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
             process_child: None,
             port: 60000,
             host: "127.0.0.1".to_string(),
             db_path: String::new(),
         }))))
+        // 管理文件监控状态
+        .manage(Arc::new(Mutex::new(Option::<FileMonitor>::None)))
         .invoke_handler(tauri::generate_handler![
             greet,
             get_api_status,
@@ -476,6 +639,9 @@ pub fn run() {
             set_activation_policy_accessory,
             set_activation_policy_regular,
             update_api_port,
+            start_file_monitoring,
+            stop_file_monitoring,
+            get_monitoring_status,
             commands::resolve_directory_from_path,
         ])
         .on_window_event(|window, event| match event {
