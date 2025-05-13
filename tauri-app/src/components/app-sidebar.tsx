@@ -193,7 +193,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <span className="text-whiskey-800 text-sm">联网控制</span>
             <Switch 
               id="network-switch"
-              className="data-[state=checked]:bg-whiskey-600" 
+              className="data-[state=checked]:bg-whiskey-600 border-whiskey-200" 
               aria-label="联网控制开关"
               checked={networkEnabled}
               onCheckedChange={handleNetworkSwitch}
