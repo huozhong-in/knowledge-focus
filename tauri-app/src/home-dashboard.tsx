@@ -20,40 +20,72 @@ import {
 } from "@/components/ui/chart"
 
 function HomeInsightCards() {
-    interface InsightCardData {
-      id: string;
-      title: string;
-      insightLevel: 1 | 2 | 3; // 1: low, 2: medium, 3: high
-    }
-    const mockInsightCards: InsightCardData[] = [
-      { id: "1", title: "“沉睡文件苏醒！” - 文件 report.docx 在沉寂 3个月 后，今天被频繁访问。", insightLevel: 3 },
-      { id: "2", title: "“磁盘空间黑洞？” - /backup/archive.zip 的体积增长异常迅速。", insightLevel: 2 },
-      { id: "3", title: "“时间胶囊开启！” - 您刚刚打开了一个 1年 未曾触碰的 project_archive_2022.zip。", insightLevel: 1 },
-    ];  
-    const getCardStyle = (level: 1 | 2 | 3) => {
-      switch (level) {
-        case 1: return "bg-[#e6c3a5] hover:bg-[#e6c3a5]/90"; // Lighter
-        case 2: return "bg-[#d29b71] hover:bg-[#d29b71]/90"; // Base
-        case 3: return "bg-[#b8855f] hover:bg-[#b8855f]/90"; // Darker
-        default: return "bg-muted/50 hover:bg-muted/40";
-      }
-    };
-
-    return (
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
-        <div className="grid auto-rows-min gap-4 md:grid-cols-3">
-          {mockInsightCards.map((card) => (
-            <div 
-              key={card.id} 
-              className={`aspect-video rounded-xl p-4 flex flex-col justify-between text-white transition-colors ${getCardStyle(card.insightLevel)}`}
-            >
-              <p className="text-sm font-medium">{card.title}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  interface InsightCardData {
+    id: string;
+    title: string;
+    insightLevel: 1 | 2 | 3; // 1: low, 2: medium, 3: high
+    priorityLabel?: string; // 优先级标签
+    timestamp?: string; // 时间戳
   }
+  const mockInsightCards: InsightCardData[] = [
+    { 
+      id: "1", 
+      title: "“沉睡文件苏醒！” - 文件 report.docx 在沉寂 3个月 后，今天被频繁访问。", 
+      insightLevel: 3,
+      priorityLabel: "Top 1",
+      timestamp: "今天 10:23"
+    },
+    { 
+      id: "2", 
+      title: "“磁盘空间黑洞？” - /backup/archive.zip 的体积增长异常迅速。", 
+      insightLevel: 2,
+      priorityLabel: "Top 2",
+      timestamp: "今天 09:15"
+    },
+    { 
+      id: "3", 
+      title: "“时间胶囊开启！” - 您刚刚打开了一个 1年 未曾触碰的 project_archive_2022.zip。", 
+      insightLevel: 1,
+      priorityLabel: "Top 3",
+      timestamp: "昨天 18:42"
+    },
+  ];  
+  const getCardStyle = (level: 1 | 2 | 3) => {
+    switch (level) {
+      case 1: return "bg-[#e6c3a5] hover:bg-[#e6c3a5]/90"; // Lighter
+      case 2: return "bg-[#d29b71] hover:bg-[#d29b71]/90"; // Base
+      case 3: return "bg-[#b8855f] hover:bg-[#b8855f]/90"; // Darker
+      default: return "bg-muted/50 hover:bg-muted/40";
+    }
+  };
+
+  return (
+    <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+      <div className="grid auto-rows-min gap-4 md:grid-cols-3">
+        {mockInsightCards.map((card) => (
+          <div 
+            key={card.id} 
+            className={`aspect-video rounded-xl p-4 flex flex-col justify-between text-white transition-colors ${getCardStyle(card.insightLevel)}`}
+          >
+            <div className="flex justify-between items-start mb-2">
+              {card.priorityLabel && (
+                <span className="px-2 py-0.5 rounded-full bg-white/20 text-xs font-semibold">
+                  {card.priorityLabel}
+                </span>
+              )}
+              {card.timestamp && (
+                <span className="text-xs text-white/70">
+                  {card.timestamp}
+                </span>
+              )}
+            </div>
+            <p className="text-sm font-medium">{card.title}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 const chartData = [
   { month: "January", desktop: 186, mobile: 80 },
   { month: "February", desktop: 305, mobile: 200 },
@@ -66,19 +98,19 @@ const chartData = [
 const chartConfig = {
   desktop: {
     label: "Desktop",
-    color: "hsl(var(--chart-1))",
+    color: "var(--chart-1)",
   },
   mobile: {
     label: "Mobile",
-    color: "hsl(var(--chart-2))",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig
 const chartData2 = [
-  { browser: "chrome", visitors: 275, fill: "var(--color-chrome)" },
-  { browser: "safari", visitors: 200, fill: "var(--color-safari)" },
-  { browser: "firefox", visitors: 287, fill: "var(--color-firefox)" },
-  { browser: "edge", visitors: 173, fill: "var(--color-edge)" },
-  { browser: "other", visitors: 190, fill: "var(--color-other)" },
+  { browser: "chrome", visitors: 275, fill: "var(--chart-1)" },
+  { browser: "safari", visitors: 200, fill: "var(--chart-2)" },
+  { browser: "firefox", visitors: 287, fill: "var(--chart-3)" },
+  { browser: "edge", visitors: 173, fill: "var(--chart-4)" },
+  { browser: "other", visitors: 190, fill: "var(--chart-5)" },
 ]
 const chartConfig2 = {
   visitors: {
@@ -86,23 +118,23 @@ const chartConfig2 = {
   },
   chrome: {
     label: "Chrome",
-    color: "hsl(var(--chart-1))",
+    color: "var(--chart-1)",
   },
   safari: {
     label: "Safari",
-    color: "hsl(var(--chart-2))",
+    color: "var(--chart-2)",
   },
   firefox: {
     label: "Firefox",
-    color: "hsl(var(--chart-3))",
+    color: "var(--chart-3)",
   },
   edge: {
     label: "Edge",
-    color: "hsl(var(--chart-4))",
+    color: "var(--chart-4)",
   },
   other: {
     label: "Other",
-    color: "hsl(var(--chart-5))",
+    color: "var(--chart-5)",
   },
 } satisfies ChartConfig
 const chartData3 = [
@@ -116,11 +148,11 @@ const chartData3 = [
 const chartConfig3 = {
   desktop: {
     label: "Desktop",
-    color: "hsl(var(--chart-1))",
+    color: "var(--chart-1)",
   },
   mobile: {
     label: "Mobile",
-    color: "hsl(var(--chart-2))",
+    color: "var(--chart-2)",
   },
 } satisfies ChartConfig
 
@@ -158,17 +190,17 @@ function StackedAreaChart() {
             <Area
               dataKey="mobile"
               type="natural"
-              fill="var(--color-mobile)"
+              fill="var(--chart-2)"
               fillOpacity={0.4}
-              stroke="var(--color-mobile)"
+              stroke="var(--chart-2)"
               stackId="a"
             />
             <Area
               dataKey="desktop"
               type="natural"
-              fill="var(--color-desktop)"
+              fill="var(--chart-1)"
               fillOpacity={0.4}
-              stroke="var(--color-desktop)"
+              stroke="var(--chart-1)"
               stackId="a"
             />
           </AreaChart>
@@ -283,8 +315,8 @@ function BarChartMultiple() {
               cursor={false}
               content={<ChartTooltipContent indicator="dashed" />}
             />
-            <Bar dataKey="desktop" fill="var(--color-desktop)" radius={4} />
-            <Bar dataKey="mobile" fill="var(--color-mobile)" radius={4} />
+            <Bar dataKey="desktop" fill="var(--chart-1)" radius={4} />
+            <Bar dataKey="mobile" fill="var(--chart-2)" radius={4} />
           </BarChart>
         </ChartContainer>
       </CardContent>
@@ -303,12 +335,12 @@ function HomeDashboard() {
   
     return (
       <div className="flex flex-1 flex-col gap-2 p-4 pt-0">
+        <HomeInsightCards />
         <div className="grid auto-rows-min gap-2 md:grid-cols-3">
           <StackedAreaChart />
           <PieChartWithText />
           <BarChartMultiple />
         </div>
-        <HomeInsightCards />
       </div>
     );
   }
