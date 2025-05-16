@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { usePageStore } from "@/App"
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -23,25 +24,32 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-export function NavProjects({
+export function NavViews({
   projects,
 }: {
   projects: {
     name: string
     url: string
     icon: LucideIcon
+    pageId?: string
   }[]
 }) {
   const { isMobile } = useSidebar()
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden mt-2 mb-1">
-      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">智能文件夹</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">智能视图</SidebarGroupLabel>
       <SidebarMenu className="px-1">
         {projects.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild className="text-whiskey-700 hover:bg-whiskey-100 hover:text-whiskey-800">
-              <a href={item.url}>
+              <a href={item.url} onClick={(e) => {
+                if (item.pageId) {
+                  e.preventDefault();
+                  // 使用usePageStore来切换页面
+                  usePageStore.getState().setPage(item.pageId, "智能视图", item.name);
+                }
+              }}>
                 <item.icon className="text-whiskey-400" />
                 <span>{item.name}</span>
               </a>
@@ -64,12 +72,12 @@ export function NavProjects({
                 </DropdownMenuItem>
                 <DropdownMenuItem className="hover:bg-whiskey-100 focus:bg-whiskey-100">
                   <Forward className="text-whiskey-500" />
-                  <span className="text-whiskey-800">分享文件</span>
+                  <span className="text-whiskey-800">修改条件</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-whiskey-200" />
                 <DropdownMenuItem className="hover:bg-whiskey-100 focus:bg-whiskey-100">
                   <Trash2 className="text-whiskey-500" />
-                  <span className="text-whiskey-800">删除文件</span>
+                  <span className="text-whiskey-800">取消收藏</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import HomeDashboard from "./home-dashboard";
 import HomeMyFiles from "./home-myfiles";
 import HomeInsightCards from "./home-insightcards";
+import { SmartViews } from "./smart-views";
 import ModelsLocal from "./models-local";
 import ModelsDomestic from "./models-domestic";
 import ModelsOverseas from "./models-overseas";
@@ -254,6 +255,8 @@ export default function Page() {
         return <HomeInsightCards />;
       case "home-myfiles":
         return <HomeMyFiles />;
+      case "smart-views":
+        return <SmartViews />;
       case "models-local":
         return <ModelsLocal />;
       case "models-domestic":

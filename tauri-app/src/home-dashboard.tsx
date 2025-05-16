@@ -87,71 +87,71 @@ function HomeInsightCards() {
   );
 }
 const chartData = [
-  { month: "January", desktop: 186, mobile: 80 },
-  { month: "February", desktop: 305, mobile: 200 },
-  { month: "March", desktop: 237, mobile: 120 },
-  { month: "April", desktop: 73, mobile: 190 },
-  { month: "May", desktop: 209, mobile: 130 },
-  { month: "June", desktop: 214, mobile: 140 },
+  { month: "1月", documents: 186, media: 80 },
+  { month: "2月", documents: 305, media: 200 },
+  { month: "3月", documents: 237, media: 120 },
+  { month: "4月", documents: 73, media: 190 },
+  { month: "5月", documents: 209, media: 130 },
+  { month: "6月", documents: 214, media: 140 },
 ]
 
 const chartConfig = {
-  desktop: {
-    label: "Desktop",
+  documents: {
+    label: "文档文件",
     color: "var(--chart-1)",
   },
-  mobile: {
-    label: "Mobile",
+  media: {
+    label: "媒体文件",
     color: "var(--chart-2)",
   },
 } satisfies ChartConfig
 const chartData2 = [
-  { browser: "chrome", visitors: 275, fill: "var(--chart-1)" },
-  { browser: "safari", visitors: 200, fill: "var(--chart-2)" },
-  { browser: "firefox", visitors: 287, fill: "var(--chart-3)" },
-  { browser: "edge", visitors: 173, fill: "var(--chart-4)" },
-  { browser: "other", visitors: 190, fill: "var(--chart-5)" },
+  { fileType: "文档", count: 275, fill: "var(--chart-1)" },
+  { fileType: "图片", count: 200, fill: "var(--chart-2)" },
+  { fileType: "视频", count: 287, fill: "var(--chart-3)" },
+  { fileType: "音频", count: 173, fill: "var(--chart-4)" },
+  { fileType: "其他", count: 190, fill: "var(--chart-5)" },
 ]
 const chartConfig2 = {
-  visitors: {
-    label: "Visitors",
+  count: {
+    label: "文件数量",
   },
-  chrome: {
-    label: "Chrome",
+  文档: {
+    label: "文档",
     color: "var(--chart-1)",
   },
-  safari: {
-    label: "Safari",
+  图片: {
+    label: "图片",
     color: "var(--chart-2)",
   },
-  firefox: {
-    label: "Firefox",
+  视频: {
+    label: "视频",
     color: "var(--chart-3)",
   },
-  edge: {
-    label: "Edge",
+  音频: {
+    label: "音频",
     color: "var(--chart-4)",
   },
-  other: {
-    label: "Other",
+  其他: {
+    label: "其他",
     color: "var(--chart-5)",
   },
 } satisfies ChartConfig
 const chartData3 = [
-  { month: "January", desktop: 186, mobile: 80 },
-  { month: "February", desktop: 305, mobile: 200 },
-  { month: "March", desktop: 237, mobile: 120 },
-  { month: "April", desktop: 73, mobile: 190 },
-  { month: "May", desktop: 209, mobile: 130 },
-  { month: "June", desktop: 214, mobile: 140 },
+  { month: "1月", created: 186, accessed: 80 },
+  { month: "2月", created: 305, accessed: 200 },
+  { month: "3月", created: 237, accessed: 120 },
+  { month: "4月", created: 73, accessed: 190 },
+  { month: "5月", created: 209, accessed: 130 },
+  { month: "6月", created: 214, accessed: 140 },
 ]
 const chartConfig3 = {
-  desktop: {
-    label: "Desktop",
+  created: {
+    label: "新建文件",
     color: "var(--chart-1)",
   },
-  mobile: {
-    label: "Mobile",
+  accessed: {
+    label: "访问文件",
     color: "var(--chart-2)",
   },
 } satisfies ChartConfig
@@ -160,9 +160,9 @@ function StackedAreaChart() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Area Chart - Stacked</CardTitle>
+        <CardTitle>文件类型趋势</CardTitle>
         <CardDescription>
-          Showing total visitors for the last 6 months
+          最近6个月文档与媒体文件变化趋势
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -188,7 +188,7 @@ function StackedAreaChart() {
               content={<ChartTooltipContent indicator="dot" />}
             />
             <Area
-              dataKey="mobile"
+              dataKey="media"
               type="natural"
               fill="var(--chart-2)"
               fillOpacity={0.4}
@@ -196,7 +196,7 @@ function StackedAreaChart() {
               stackId="a"
             />
             <Area
-              dataKey="desktop"
+              dataKey="documents"
               type="natural"
               fill="var(--chart-1)"
               fillOpacity={0.4}
@@ -210,10 +210,10 @@ function StackedAreaChart() {
         <div className="flex w-full items-start gap-2 text-sm">
           <div className="grid gap-2">
             <div className="flex items-center gap-2 font-medium leading-none">
-              Trending up by 5.2% this month <TrendingUp className="h-4 w-4" />
+              文档文件增长5.2% <TrendingUp className="h-4 w-4" />
             </div>
             <div className="flex items-center gap-2 leading-none text-muted-foreground">
-              January - June 2024
+              2025年1月 - 6月统计
             </div>
           </div>
         </div>
@@ -223,14 +223,14 @@ function StackedAreaChart() {
 }
 
 function PieChartWithText() {
-  const totalVisitors = React.useMemo(() => {
-    return chartData2.reduce((acc, curr) => acc + curr.visitors, 0)
+  const totalFiles = React.useMemo(() => {
+    return chartData2.reduce((acc, curr) => acc + curr.count, 0)
   }, [])
   return (
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">
-        <CardTitle>Pie Chart - Donut with Text</CardTitle>
-        <CardDescription>January - June 2024</CardDescription>
+        <CardTitle>文件类型分布</CardTitle>
+        <CardDescription>2025年文件类型统计</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
         <ChartContainer
@@ -244,8 +244,8 @@ function PieChartWithText() {
             />
             <Pie
               data={chartData2}
-              dataKey="visitors"
-              nameKey="browser"
+              dataKey="count"
+              nameKey="fileType"
               innerRadius={60}
               strokeWidth={5}
             >
@@ -264,14 +264,14 @@ function PieChartWithText() {
                           y={viewBox.cy}
                           className="fill-foreground text-3xl font-bold"
                         >
-                          {totalVisitors.toLocaleString()}
+                          {totalFiles.toLocaleString()}
                         </tspan>
                         <tspan
                           x={viewBox.cx}
                           y={(viewBox.cy || 0) + 24}
                           className="fill-muted-foreground"
                         >
-                          Visitors
+                          文件总数
                         </tspan>
                       </text>
                     )
@@ -284,10 +284,10 @@ function PieChartWithText() {
       </CardContent>
       <CardFooter className="flex-col gap-2 text-sm">
         <div className="flex items-center gap-2 font-medium leading-none">
-          Trending up by 5.2% this month <TrendingUp className="h-4 w-4" />
+          图片文件增长12.7% <TrendingUp className="h-4 w-4" />
         </div>
         <div className="leading-none text-muted-foreground">
-          Showing total visitors for the last 6 months
+          显示所有被监控文件夹的文件分布
         </div>
       </CardFooter>
     </Card>
@@ -297,8 +297,8 @@ function BarChartMultiple() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Bar Chart - Multiple</CardTitle>
-        <CardDescription>January - June 2024</CardDescription>
+        <CardTitle>文件活动情况</CardTitle>
+        <CardDescription>2025年新建与访问统计</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig3}>
@@ -315,17 +315,17 @@ function BarChartMultiple() {
               cursor={false}
               content={<ChartTooltipContent indicator="dashed" />}
             />
-            <Bar dataKey="desktop" fill="var(--chart-1)" radius={4} />
-            <Bar dataKey="mobile" fill="var(--chart-2)" radius={4} />
+            <Bar dataKey="created" fill="var(--chart-1)" radius={4} />
+            <Bar dataKey="accessed" fill="var(--chart-2)" radius={4} />
           </BarChart>
         </ChartContainer>
       </CardContent>
       <CardFooter className="flex-col items-start gap-2 text-sm">
         <div className="flex gap-2 font-medium leading-none">
-          Trending up by 5.2% this month <TrendingUp className="h-4 w-4" />
+          访问文件量增长9.5% <TrendingUp className="h-4 w-4" />
         </div>
         <div className="leading-none text-muted-foreground">
-          Showing total visitors for the last 6 months
+          展示2025年上半年文件活动情况
         </div>
       </CardFooter>
     </Card>

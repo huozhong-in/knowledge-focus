@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavProjects } from "@/components/nav-projects"
+import { NavViews } from "@/components/nav-smartviews"
 import { NavUser } from "@/components/nav-user"
 // import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -138,6 +138,12 @@ const data = {
   ],
   projects: [
     {
+      name: "智能视图",
+      url: "#",
+      icon: Frame,
+      pageId: "smart-views",
+    },
+    {
       name: "今天修改的文件",
       url: "#",
       icon: Frame,
@@ -205,8 +211,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
+        <NavViews projects={data.projects} />
         <NavMain items={data.navMain} />
-        <NavProjects projects={data.projects} />
       </SidebarContent>
       <SidebarFooter className="border-t border-whiskey-200 mt-auto">
         <NavUser user={data.user} />

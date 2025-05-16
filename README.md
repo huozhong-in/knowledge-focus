@@ -22,7 +22,11 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 
 `cd api`
 
+使用conda而不是uv，因为uv的虚拟环境是软链接，不能打包进release包。
+
 `conda create -p ./.venv -y python=3.12 --always-copy`
+
+使用`./`前缀是为了跟带有名字的conda全局虚拟环境区分开来，使用的是当前目录中的.venv。
 
 `conda activate ./.venv`
 
@@ -30,7 +34,7 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 
 `cd api`
 
-不要使用uv安装Python包，因为是软链接不能打包进release包，使用pip。
+不要使用uv安装Python包，因为是软链接不能打包进release包，要使用pip。
 
 `pip install fastapi uvicorn`
 
