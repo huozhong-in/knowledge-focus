@@ -747,47 +747,48 @@ function HomeAuthorization() {
                     // 移除 file:// 前缀并解码URL
                     processedPath = decodeURIComponent(processedPath.replace(/^file:\/\//, ''));
                     info(`解码后的路径: ${processedPath}`);
-                  }                    // 调用Rust命令解析目录路径
-                    const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
-                    info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
-                    
-                    if (resolvedDir) {
-                      try {
-                        // 获取文件夹名称作为默认别名
-                        const dirName = await basename(resolvedDir);
-                        info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
+                  }
+                  // 调用Rust命令解析目录路径
+                  const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
+                  info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
+                  
+                  if (resolvedDir) {
+                    try {
+                      // 获取文件夹名称作为默认别名
+                      const dirName = await basename(resolvedDir);
+                      info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
+                      
+                      // 添加目录并获取结果
+                      const addResult = await handleAddDirectoryWithPath(resolvedDir, dirName);
+                      
+                      // 如果没有完全磁盘访问权限，并且添加成功并返回了目录ID，则尝试请求访问权限
+                      if (!hasFullDiskAccess && addResult && addResult.directoryId) {
+                        info(`成功添加目录，ID: ${addResult.directoryId}，将请求访问权限`);
                         
-                        // 添加目录并获取结果
-                        const addResult = await handleAddDirectoryWithPath(resolvedDir, dirName);
+                        // 创建一个临时的Directory对象用于授权检查
+                        const tempDir: Directory = {
+                          id: addResult.directoryId,
+                          path: resolvedDir,
+                          alias: dirName,
+                          auth_status: "pending",
+                          is_blacklist: false,
+                          created_at: new Date().toISOString(),
+                          updated_at: new Date().toISOString()
+                        };
                         
-                        // 如果没有完全磁盘访问权限，并且添加成功并返回了目录ID，则尝试请求访问权限
-                        if (!hasFullDiskAccess && addResult && addResult.directoryId) {
-                          info(`成功添加目录，ID: ${addResult.directoryId}，将请求访问权限`);
-                          
-                          // 创建一个临时的Directory对象用于授权检查
-                          const tempDir: Directory = {
-                            id: addResult.directoryId,
-                            path: resolvedDir,
-                            alias: dirName,
-                            auth_status: "pending",
-                            is_blacklist: false,
-                            created_at: new Date().toISOString(),
-                            updated_at: new Date().toISOString()
-                          };
-                          
-                          // 延迟一点请求权限，让UI有时间更新
-                          setTimeout(() => {
-                            requestDirectoryAccess(tempDir);
-                          }, 500);
-                        }
-                      } catch (processErr) {
-                        info(`处理目录 ${resolvedDir} 时出错: ${processErr}`);
-                        toast.error(`处理文件夹时出错: ${processErr}`);
+                        // 延迟一点请求权限，让UI有时间更新
+                        setTimeout(() => {
+                          requestDirectoryAccess(tempDir);
+                        }, 500);
                       }
-                    } else {
-                      info(`无法解析路径: ${droppedPath}`);
-                      toast.error(`无法解析路径: ${droppedPath}`);
+                    } catch (processErr) {
+                      info(`处理目录 ${resolvedDir} 时出错: ${processErr}`);
+                      toast.error(`处理文件夹时出错: ${processErr}`);
                     }
+                  } else {
+                    info(`无法解析路径: ${droppedPath}`);
+                    toast.error(`无法解析路径: ${droppedPath}`);
+                  }
                 } catch (err) {
                   info(`处理拖拽路径 ${droppedPath} 出错: ${err}`);
                   console.error(`处理拖拽路径 ${droppedPath} 出错:`, err);
@@ -1083,8 +1084,8 @@ function HomeAuthorization() {
       )}      
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-2xl font-bold">我的文件夹</h1>
-          <p className="text-muted-foreground">当文件发生变化，系统将自动解析其中的新知识</p>
+          <h1 className="text-2xl font-bold">授权监控文件变化</h1>
+          <p className="text-muted-foreground">当文件发生变化，系统将自动解析其中的知识</p>
         </div>
         
         <div className="flex gap-2">
@@ -1189,7 +1190,7 @@ function HomeAuthorization() {
         </CardContent>
         <CardFooter className="flex justify-between items-center"> {/* Added items-center */}
           <p className="text-xs text-muted-foreground">
-            注意：授权文件夹后，应用将能够监控这些文件夹中的变化，以提供文件洞察功能。
+            Tips: 如果你误删了常见文件夹，可以点击右侧恢复默认文件夹。
           </p>
           {directories.length > 0 && (
             <Button variant="outline" size="sm" onClick={initializeDefaultDirectories}>

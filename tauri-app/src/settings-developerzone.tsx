@@ -109,7 +109,7 @@ function SettingsDeveloperZone() {
               <p className="mb-1">状态: <strong>{apiStatus.running ? "运行中" : "已停止"}</strong></p>
               {apiStatus.running && (
                 <p>
-                  API地址: <a href={apiStatus.url} target="_blank" rel="noreferrer" className="text-primary hover:underline">{apiStatus.url}</a>
+                  API地址: {apiStatus.url}
                 </p>
               )}
             </div>

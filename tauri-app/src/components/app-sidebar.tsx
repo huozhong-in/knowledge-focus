@@ -24,7 +24,7 @@ import {
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
-  useSidebar
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { AskMeForm } from "@/components/askme-form"
 import { Switch } from "@/components/ui/switch"
