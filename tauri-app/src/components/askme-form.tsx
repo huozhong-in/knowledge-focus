@@ -7,11 +7,11 @@ import {
   SidebarInput,
 } from "@/components/ui/sidebar"
 
-interface SearchFormProps extends React.ComponentProps<"form"> {
+interface AskMeFormProps extends React.ComponentProps<"form"> {
   collapsed?: boolean
 }
 
-export function SearchForm({ collapsed, className, ...props }: SearchFormProps) {
+export function AskMeForm({ collapsed, className, ...props }: AskMeFormProps) {
   if (collapsed) {
     return null
   }
@@ -20,12 +20,12 @@ export function SearchForm({ collapsed, className, ...props }: SearchFormProps) 
     <form className={cn("w-full", className)} {...props}>
       <SidebarGroup className="py-0">
         <SidebarGroupContent className="relative">
-          <Label htmlFor="search" className="sr-only">
-            搜索
+          <Label htmlFor="ask" className="sr-only">
+            问答
           </Label>
           <SidebarInput
-            id="search"
-            placeholder="搜索内容..."
+            id="ask"
+            placeholder="ask me..."
             className="pl-6 border-whiskey-300 focus-visible:ring-whiskey-400 bg-whiskey-100 placeholder:text-whiskey-500 text-whiskey-800"
           />
           <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 select-none text-whiskey-400" />

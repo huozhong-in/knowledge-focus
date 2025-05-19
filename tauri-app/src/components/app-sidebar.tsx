@@ -15,7 +15,7 @@ import {
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavViews } from "@/components/nav-smartviews"
+import { NavPinned } from "@/components/nav-pinned"
 import { NavUser } from "@/components/nav-user"
 // import { TeamSwitcher } from "@/components/team-switcher"
 import {
@@ -26,7 +26,7 @@ import {
   SidebarRail,
   useSidebar
 } from "@/components/ui/sidebar"
-import { SearchForm } from "@/components/search-form"
+import { AskMeForm } from "@/components/askme-form"
 import { Switch } from "@/components/ui/switch"
 import { useState } from "react"
 import { toast } from "sonner"
@@ -63,19 +63,19 @@ const data = {
       isActive: true,
       items: [
         {
-          title: "Dashboard",
+          title: "Knowledge Base",
           url: "#",
-          pageId: "home-dashboard",
+          pageId: "home-knowledgebase",
         },
         {
-          title: "Insight Cards",
+          title: "Wise Folders",
           url: "#",
-          pageId: "home-insightcards",
+          pageId: "home-wisefolders",
         },
         {
-          title: "My Files",
+          title: "Authorization",
           url: "#",
-          pageId: "home-myfiles",
+          pageId: "home-authorization",
         },
       ],
     },
@@ -138,38 +138,32 @@ const data = {
   ],
   projects: [
     {
-      name: "智能视图",
-      url: "#",
-      icon: Frame,
-      pageId: "smart-views",
-    },
-    {
-      name: "今天修改的文件",
+      name: "today",  //"今天修改的文件",
       url: "#",
       icon: Frame,
     },
     {
-      name: "近7天修改的文件",
+      name: "last 7 days",
       url: "#",
       icon: PieChart,
     },
     {
-      name: "近30天修改的文件",
+      name: "last 30 days",
       url: "#",
       icon: Map,
     },
     {
-      name: "图像文件",
+      name: "image files",
       url: "#",
       icon: Image,
     },
     {
-      name: "音视频文件",
+      name: "audio&video files",
       url: "#",
       icon: AudioWaveform,
     },
     {
-      name: "压缩包/安装包",
+      name: "archive files",
       url: "#",
       icon: Archive,
     },
@@ -183,7 +177,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const handleNetworkSwitch = (checked: boolean) => {
     setNetworkEnabled(checked)
-    toast.info(checked ? "已开启联网功能" : "已切换至仅本地模式")
+    toast.info(checked ? "Network mode enabled" : "Switched to local mode")
   }
 
   return (
@@ -191,27 +185,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarHeader className="border-b border-whiskey-200">
         <div className="flex items-center">
           <img src="/kf-logo.png" className="w-10 h-10 object-contain" alt="Logo" />
-          <SearchForm collapsed={isCollapsed} />
+          <AskMeForm collapsed={isCollapsed} />
         </div>
         {/* <TeamSwitcher teams={data.teams} /> */}
         <div className="flex items-center justify-between p-2">
           <div className="flex items-center gap-2">
-            <span className="text-whiskey-800 text-sm">联网控制</span>
+            <span className="text-whiskey-800 text-sm">Network Switch</span>
             <Switch 
               id="network-switch"
               className="data-[state=checked]:bg-whiskey-600 border-whiskey-200" 
-              aria-label="联网控制开关"
+              aria-label="Network Switch"
               checked={networkEnabled}
               onCheckedChange={handleNetworkSwitch}
             />
           </div>
           <div className="text-xs text-whiskey-500">
-            {networkEnabled ? '联网模式' : '仅本地运行'}
+            {networkEnabled ? 'Online' : 'Offline'}
           </div>
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
-        <NavViews projects={data.projects} />
+        <NavPinned projects={data.projects} />
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter className="border-t border-whiskey-200 mt-auto">

@@ -1,8 +1,9 @@
 import {
-  Folder,
-  Forward,
+  FolderEdit,
+  ListIcon,
   MoreHorizontal,
-  Trash2,
+  Pin,
+  PinOff,
   type LucideIcon,
 } from "lucide-react"
 
@@ -24,7 +25,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
-export function NavViews({
+export function NavPinned({
   projects,
 }: {
   projects: {
@@ -38,7 +39,7 @@ export function NavViews({
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden mt-2 mb-1">
-      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">智能视图</SidebarGroupLabel>
+      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">PINNED<Pin className="mr-2" /></SidebarGroupLabel>
       <SidebarMenu className="px-1">
         {projects.map((item) => (
           <SidebarMenuItem key={item.name}>
@@ -47,7 +48,7 @@ export function NavViews({
                 if (item.pageId) {
                   e.preventDefault();
                   // 使用usePageStore来切换页面
-                  usePageStore.getState().setPage(item.pageId, "智能视图", item.name);
+                  usePageStore.getState().setPage(item.pageId, "PINNED", item.name);
                 }
               }}>
                 <item.icon className="text-whiskey-400" />
@@ -67,24 +68,30 @@ export function NavViews({
                 align={isMobile ? "end" : "start"}
               >
                 <DropdownMenuItem className="hover:bg-whiskey-100 focus:bg-whiskey-100">
-                  <Folder className="text-whiskey-500" />
-                  <span className="text-whiskey-800">查看文件</span>
+                  <ListIcon className="text-whiskey-500" />
+                  <span className="text-whiskey-800">View File</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem className="hover:bg-whiskey-100 focus:bg-whiskey-100">
-                  <Forward className="text-whiskey-500" />
-                  <span className="text-whiskey-800">修改条件</span>
+                  <FolderEdit className="text-whiskey-500" />
+                  <span className="text-whiskey-800">Edit</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-whiskey-200" />
                 <DropdownMenuItem className="hover:bg-whiskey-100 focus:bg-whiskey-100">
-                  <Trash2 className="text-whiskey-500" />
-                  <span className="text-whiskey-800">取消收藏</span>
+                  <PinOff className="text-whiskey-500" />
+                  <span className="text-whiskey-800">Unpin</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
         ))}
         <SidebarMenuItem>
-          <SidebarMenuButton className="text-whiskey-500 hover:bg-whiskey-100 hover:text-whiskey-600">
+          <SidebarMenuButton 
+            className="text-whiskey-500 hover:bg-whiskey-100 hover:text-whiskey-600"
+            onClick={() => {
+              // 使用usePageStore来切换页面到HomeWiseFolders
+              usePageStore.getState().setPage("home-wisefolders", "Home", "Wise Folders");
+            }}
+          >
             <MoreHorizontal className="text-whiskey-400" />
             <span>更多</span>
           </SidebarMenuButton>

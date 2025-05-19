@@ -20,10 +20,9 @@ import {
 } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import HomeDashboard from "./home-dashboard";
-import HomeMyFiles from "./home-myfiles";
-import HomeInsightCards from "./home-insightcards";
-import { SmartViews } from "./smart-views";
+import HomeKnowledgeBase from "./home-knowledgebase";
+import HomeAuthorization from "./home-authorization";
+import HomeWiseFolders from "./home-wisefolders";
 import ModelsLocal from "./models-local";
 import ModelsDomestic from "./models-domestic";
 import ModelsOverseas from "./models-overseas";
@@ -43,9 +42,9 @@ interface PageState {
 }
 
 export const usePageStore = create<PageState>((set) => ({
-  currentPage: "home-dashboard",
+  currentPage: "home-knowledgebase",
   currentTitle: "Home",
-  currentSubtitle: "Dashboard",
+  currentSubtitle: "Knowledge Base",
   setPage: (page, title, subtitle) => set({ 
     currentPage: page, 
     currentTitle: title,
@@ -249,14 +248,12 @@ export default function Page() {
   // 根据currentPage返回对应的组件
   const renderContent = () => {
     switch (currentPage) {
-      case "home-dashboard":
-        return <HomeDashboard />;
-      case "home-insightcards":
-        return <HomeInsightCards />;
-      case "home-myfiles":
-        return <HomeMyFiles />;
-      case "smart-views":
-        return <SmartViews />;
+      case "home-knowledgebase":
+        return <HomeKnowledgeBase />;
+      case "home-wisefolders":
+        return <HomeWiseFolders />;
+      case "home-authorization":
+        return <HomeAuthorization />;
       case "models-local":
         return <ModelsLocal />;
       case "models-domestic":
@@ -267,12 +264,12 @@ export default function Page() {
         return <PromptsLibrary />;
       case "settings-general":
         return <SettingsGeneral />;
-      case "settings-developerzone":
-        return <SettingsDeveloperZone />;
       case "settings-theme":
         return <SettingsTheme />;
+      case "settings-developerzone":
+        return <SettingsDeveloperZone />;
       default:
-        return <HomeDashboard />;
+        return <HomeKnowledgeBase />;
     }
   };
 

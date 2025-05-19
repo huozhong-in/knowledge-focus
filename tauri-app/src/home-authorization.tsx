@@ -103,7 +103,7 @@ interface PermissionsHint {
 }
 
 // 主组件
-function HomeMyFiles() {
+function HomeAuthorization() {
   // 状态定义
   const [directories, setDirectories] = useState<Directory[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -117,7 +117,7 @@ function HomeMyFiles() {
     const initLogger = async () => {
       try {
         await attachConsole();
-        info("日志系统初始化成功 - HomeMyFiles组件");
+        info("日志系统初始化成功");
       } catch (e) {
         console.error("初始化日志系统失败", e);
       }
@@ -1267,4 +1267,4 @@ function HomeMyFiles() {
   );
 }
 
-export default HomeMyFiles;
+export default HomeAuthorization;
