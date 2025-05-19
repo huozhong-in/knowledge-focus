@@ -189,19 +189,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
         {/* <TeamSwitcher teams={data.teams} /> */}
         <div className="flex items-center justify-between p-2">
-          <div className="flex items-center gap-2">
-            <span className="text-whiskey-800 text-sm">Network Switch</span>
-            <Switch 
-              id="network-switch"
-              className="data-[state=checked]:bg-whiskey-600 border-whiskey-200" 
-              aria-label="Network Switch"
-              checked={networkEnabled}
-              onCheckedChange={handleNetworkSwitch}
-            />
-          </div>
-          <div className="text-xs text-whiskey-500">
-            {networkEnabled ? 'Online' : 'Offline'}
-          </div>
+          {isCollapsed ? (
+            <div className="w-full flex justify-center">
+              <Switch 
+                id="network-switch"
+                className="data-[state=checked]:bg-primary border-whiskey-400 transform rotate-90" 
+                aria-label="Network Switch"
+                checked={networkEnabled}
+                onCheckedChange={handleNetworkSwitch}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2">
+                <span className="text-whiskey-800 text-sm">Network Switch</span>
+                <Switch 
+                  id="network-switch"
+                  className="data-[state=checked]:bg-primary border-whiskey-400" 
+                  aria-label="Network Switch"
+                  checked={networkEnabled}
+                  onCheckedChange={handleNetworkSwitch}
+                />
+              </div>
+              <div className="text-xs text-whiskey-500">
+                {networkEnabled ? 'Online' : 'Offline'}
+              </div>
+            </>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">

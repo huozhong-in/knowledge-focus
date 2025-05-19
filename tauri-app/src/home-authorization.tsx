@@ -1084,7 +1084,7 @@ function HomeAuthorization() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold">我的文件夹</h1>
-          <p className="text-muted-foreground">管理需要监控的文件夹</p>
+          <p className="text-muted-foreground">当文件发生变化，系统将自动解析其中的新知识</p>
         </div>
         
         <div className="flex gap-2">
