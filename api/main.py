@@ -133,6 +133,11 @@ def get_session():
     with Session(app.state.engine) as session:
         yield session
 
+# 获取 MyFilesManager 的依赖函数
+def get_myfiles_manager(session: Session = Depends(get_session)):
+    """获取文件/文件夹管理器实例"""
+    return MyFilesManager(session)
+
 @app.post("/init_db")
 def init_db(session: Session = Depends(get_session)):
     """首次打开App，初始化数据库结构"""
@@ -144,7 +149,10 @@ def init_db(session: Session = Depends(get_session)):
 
 # 新增：获取所有配置信息的API端点
 @app.get("/config/all")
-def get_all_configuration(session: Session = Depends(get_session)):
+def get_all_configuration(
+    session: Session = Depends(get_session),
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
     """
     获取所有Rust端进行文件处理所需的配置信息。
     包括文件分类、粗筛规则、文件扩展名映射、项目识别规则以及监控的文件夹列表。
@@ -156,12 +164,20 @@ def get_all_configuration(session: Session = Depends(get_session)):
         project_recognition_rules = session.exec(select(ProjectRecognitionRule)).all()
         monitored_folders = session.exec(select(MyFiles)).all()
         
+        # 检查完全磁盘访问权限状态 
+        full_disk_access = False
+        if sys.platform == "darwin":  # macOS
+            access_status = myfiles_mgr.check_full_disk_access_status()
+            full_disk_access = access_status.get("has_full_disk_access", False)
+            logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
+        
         return {
             "file_categories": file_categories,
             "file_filter_rules": file_filter_rules,
             "file_extension_maps": file_extension_maps,
             "project_recognition_rules": project_recognition_rules,
             "monitored_folders": monitored_folders,
+            "full_disk_access": full_disk_access  # 添加此字段告知客户端完全磁盘访问权限状态
         }
     except Exception as e:
         logger.error(f"Error fetching all configuration: {e}", exc_info=True)
@@ -915,15 +931,6 @@ def get_project_files(
         
     except Exception as e:
         logger.error(f"获取项目文件失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"获取项目文件失败: {str(e)}"
-        }
-
-# 获取 MyFilesManager 的依赖函数
-def get_myfiles_manager(session: Session = Depends(get_session)):
-    """获取文件/文件夹管理器实例"""
-    return MyFilesManager(session)
 
 # 添加文件夹管理相关API
 @app.get("/directories")

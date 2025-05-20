@@ -94,6 +94,8 @@ pub struct AllConfigurations {
     pub file_extension_maps: Vec<FileExtensionMapRust>,
     pub project_recognition_rules: Vec<ProjectRecognitionRuleRust>,
     pub monitored_folders: Vec<MonitoredDirectory>, // Already defined as MonitoredDirectory
+    #[serde(default)]
+    pub full_disk_access: bool, // 是否有完全磁盘访问权限，特别是macOS
 }
 // --- End of New Configuration Structs ---
 
@@ -209,9 +211,27 @@ impl FileMonitor {
 
                             // Also update monitored_dirs from this unified config endpoint
                             let mut monitored_dirs_lock = self.monitored_dirs.lock().unwrap();
-                            *monitored_dirs_lock = config_data.monitored_folders;
                             
-                            println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries from /config/all.", monitored_dirs_lock.len());
+                            // 根据完全磁盘访问权限状态过滤文件夹
+                            let mut authorized_folders = Vec::new();
+                            for dir in &config_data.monitored_folders {
+                                // 如果有完全磁盘访问权限，只过滤黑名单文件夹
+                                // 否则，需要同时判断授权状态和黑名单状态
+                                let should_monitor = if config_data.full_disk_access {
+                                    !dir.is_blacklist
+                                } else {
+                                    dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
+                                };
+                                
+                                if should_monitor {
+                                    authorized_folders.push(dir.clone());
+                                }
+                            }
+                            
+                            *monitored_dirs_lock = authorized_folders;
+                            
+                            println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries from /config/all. (Full disk access: {})",
+                                monitored_dirs_lock.len(), config_data.full_disk_access);
                             Ok(())
                         }
                         Err(e) => {
@@ -954,17 +974,33 @@ impl FileMonitor {
 
         // self.update_monitored_directories().await?; // This is now part of fetch_and_store_all_config
 
+        // 获取完全磁盘访问权限状态
+        let full_disk_access = {
+            let cache_guard = self.config_cache.lock().unwrap();
+            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
+        };
+        
+        println!("[START_MONITORING] Full disk access status: {}", full_disk_access);
+        
         // Clone the monitored directories to avoid holding the lock across await points
         let dirs_to_watch = {
             let dirs_guard = self.monitored_dirs.lock().unwrap();
             dirs_guard.iter()
-                .filter(|d| d.auth_status == DirectoryAuthStatus::Authorized && !d.is_blacklist)
+                .filter(|d| {
+                    // 如果有完全磁盘访问权限，只过滤黑名单文件夹
+                    // 否则，需要同时判断授权状态和黑名单状态
+                    if full_disk_access {
+                        !d.is_blacklist
+                    } else {
+                        d.auth_status == DirectoryAuthStatus::Authorized && !d.is_blacklist
+                    }
+                })
                 .cloned()
                 .collect::<Vec<_>>()
         };
         
         if dirs_to_watch.is_empty() {
-            return Err("No authorized directories to monitor".into());
+            return Err("自动启动文件监控失败: No authorized directories to monitor".into());
         }
 
         // 创建事件通道
