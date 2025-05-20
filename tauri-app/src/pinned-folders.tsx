@@ -5,7 +5,7 @@ import { zhCN } from "date-fns/locale";
 import { FileService } from "./api/file-service";
 
 // 文件类型定义
-export interface WiseFolder {
+export interface FullDiskFolder {
   id: string;
   title: string;
   files: FileScreeningResult[];
@@ -43,82 +43,36 @@ export const filterFilesByTime = (files: FileScreeningResult[], timeRange: strin
   }
 };
 
-// 按文件分类筛选函数
+// 按文件分类筛选函数 
+// 注意：下面的两个函数仅保留参考，实际的文件筛选工作现在在 Rust 实现
 export const filterFilesByCategory = (files: FileScreeningResult[], categoryId: number): FileScreeningResult[] => {
   return files.filter(file => file.category_id === categoryId);
 };
 
-// 获取筛选后的文件并创建智慧文件夹
-export const createWiseFolders = (files: FileScreeningResult[]): WiseFolder[] => {
-  // 今日修改的文件
-  const todayFiles = filterFilesByTime(files, "today");
-  // 最近7天修改的文件
-  const last7DaysFiles = filterFilesByTime(files, "last7days");
-  // 最近30天修改的文件
-  const last30DaysFiles = filterFilesByTime(files, "last30days");
-  
-  // 按类型筛选
-  const imageFiles = filterFilesByCategory(files, 2); // 假设图片类别ID为2
-  const audioVideoFiles = filterFilesByCategory(files, 3); // 假设音视频类别ID为3
-  const archiveFiles = filterFilesByCategory(files, 4); // 假设压缩包类别ID为4
-  
-  // 格式化当前日期
-  const currentDate = format(new Date(), "yyyy年MM月dd日", { locale: zhCN });
-  
-  return [
-    {
-      id: "today",
-      title: `今日更新: ${currentDate}修改了${todayFiles.length}个文件`,
-      files: todayFiles,
-      count: todayFiles.length,
-      icon: "📆",
-      timeRange: "today"
-    },
-    {
-      id: "last7days",
-      title: `本周动态: 近7天有${last7DaysFiles.length}个文件更新`,
-      files: last7DaysFiles,
-      count: last7DaysFiles.length,
-      icon: "📊",
-      timeRange: "last7days"
-    },
-    {
-      id: "last30days",
-      title: `本月回顾: 近30天有${last30DaysFiles.length}个文件更新`,
-      files: last30DaysFiles,
-      count: last30DaysFiles.length,
-      icon: "📅",
-      timeRange: "last30days"
-    },
-    {
-      id: "image-files",
-      title: `图片文件: 共${imageFiles.length}个图片文件`,
-      files: imageFiles,
-      count: imageFiles.length,
-      icon: "🖼️",
-      categoryId: 2
-    },
-    {
-      id: "audio-video-files",
-      title: `音视频文件: 共${audioVideoFiles.length}个音视频文件`,
-      files: audioVideoFiles,
-      count: audioVideoFiles.length,
-      icon: "🎬",
-      categoryId: 3
-    },
-    {
-      id: "archive-files",
-      title: `压缩包文件: 共${archiveFiles.length}个压缩包文件`,
-      files: archiveFiles,
-      count: archiveFiles.length,
-      icon: "🗃️",
-      categoryId: 4
-    }
-  ];
-};
+// 注意：以下函数现在被更高效的方法替代，但保留供参考
+// 格式化当前日期
+// const currentDate = format(new Date(), "yyyy年MM月dd日", { locale: zhCN });
+//     {
+//       id: "audio-video-files",
+//       title: `音视频文件: 共${audioVideoFiles.length}个音视频文件`,
+//       files: audioVideoFiles,
+//       count: audioVideoFiles.length,
+//       icon: "🎬",
+//       categoryId: 3
+//     },
+//     {
+//       id: "archive-files",
+//       title: `压缩包文件: 共${archiveFiles.length}个压缩包文件`,
+//       files: archiveFiles,
+//       count: archiveFiles.length,
+//       icon: "🗃️",
+//       categoryId: 4
+//     }
+//   ];
+// };
 
 export const usePinnedFolders = () => {
-  const [wiseFolders, setWiseFolders] = useState<WiseFolder[]>([]);
+  const [fullDiskFolders, setFullDiskFolders] = useState<FullDiskFolder[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -132,12 +86,72 @@ export const usePinnedFolders = () => {
         setLoading(true);
       }
       
-      // 使用FileService获取文件筛选结果
-      const data = await FileService.getFileScreeningResults(1000);
+      // 获取不同类型的文件
+      const [todayFiles, last7DaysFiles, last30DaysFiles, imageFiles, audioVideoFiles, archiveFiles] = await Promise.all([
+        FileService.getFileScreeningResults(1000, undefined, "today"),
+        FileService.getFileScreeningResults(1000, undefined, "last7days"),
+        FileService.getFileScreeningResults(1000, undefined, "last30days"),
+        FileService.getFileScreeningResults(1000, 2), // 图片文件类别ID = 2
+        FileService.getFileScreeningResults(1000, 3), // 音视频文件类别ID = 3
+        FileService.getFileScreeningResults(1000, 4)  // 压缩包文件类别ID = 4
+      ]);
       
-      // 创建智慧文件夹
-      const folders = createWiseFolders(data);
-      setWiseFolders(folders);
+      // 格式化当前日期
+      const currentDate = format(new Date(), "yyyy年MM月dd日", { locale: zhCN });
+      
+      // 手动创建智慧文件夹
+      const folders: FullDiskFolder[] = [
+        {
+          id: "today",
+          title: `今日更新: ${currentDate}修改了${todayFiles.length}个文件`,
+          files: todayFiles,
+          count: todayFiles.length,
+          icon: "📆",
+          timeRange: "today"
+        },
+        {
+          id: "last7days",
+          title: `本周动态: 近7天有${last7DaysFiles.length}个文件更新`,
+          files: last7DaysFiles,
+          count: last7DaysFiles.length,
+          icon: "📊",
+          timeRange: "last7days"
+        },
+        {
+          id: "last30days",
+          title: `本月回顾: 近30天有${last30DaysFiles.length}个文件更新`,
+          files: last30DaysFiles,
+          count: last30DaysFiles.length,
+          icon: "📅",
+          timeRange: "last30days"
+        },
+        {
+          id: "image-files",
+          title: `图片文件: 共${imageFiles.length}个图片文件`,
+          files: imageFiles,
+          count: imageFiles.length,
+          icon: "🖼️",
+          categoryId: 2
+        },
+        {
+          id: "audio-video-files",
+          title: `音视频文件: 共${audioVideoFiles.length}个音视频文件`,
+          files: audioVideoFiles,
+          count: audioVideoFiles.length,
+          icon: "🎬",
+          categoryId: 3
+        },
+        {
+          id: "archive-files",
+          title: `压缩包文件: 共${archiveFiles.length}个压缩包文件`,
+          files: archiveFiles,
+          count: archiveFiles.length,
+          icon: "🗃️",
+          categoryId: 4
+        }
+      ];
+      
+      setFullDiskFolders(folders);
       setLastUpdated(new Date());
       setError(null);
     } catch (err) {
@@ -176,7 +190,7 @@ export const usePinnedFolders = () => {
   }, []);
 
   return { 
-    wiseFolders, 
+    fullDiskFolders: fullDiskFolders, 
     loading, 
     error, 
     refreshData,
@@ -184,9 +198,9 @@ export const usePinnedFolders = () => {
   };
 };
 
-// 导出WiseFolderView组件
-export const WiseFolderView = ({ folderId }: { folderId: string }) => {
-  const { wiseFolders, loading, error, refreshData, lastUpdated } = usePinnedFolders();
+// 导出FullDiskFolderView组件
+export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
+  const { fullDiskFolders, loading, error, refreshData, lastUpdated } = usePinnedFolders();
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
   
   if (loading && !lastUpdated) return (
@@ -209,7 +223,7 @@ export const WiseFolderView = ({ folderId }: { folderId: string }) => {
     </div>
   );
   
-  const folder = wiseFolders.find(folder => folder.id === folderId);
+  const folder = fullDiskFolders.find(folder => folder.id === folderId);
   
   if (!folder) return (
     <div className="p-8 text-center text-gray-500">
@@ -223,7 +237,7 @@ export const WiseFolderView = ({ folderId }: { folderId: string }) => {
     return (
       <div className="p-8 text-center">
         <div className="text-gray-500 mb-4">暂无文件</div>
-        <p className="mb-4">此智慧文件夹中没有匹配的文件</p>
+        <p className="mb-4">此文件夹中没有匹配的文件</p>
         <div className="text-xs text-gray-400">
           {lastUpdated && `最后更新于 ${new Date(lastUpdated).toLocaleString('zh-CN')}`}
         </div>

@@ -26,9 +26,9 @@ import {
 } from "@/components/ui/sidebar"
 
 export function NavPinned({
-  projects,
+  folders: folders,
 }: {
-  projects: {
+  folders: {
     name: string
     url: string
     icon: LucideIcon
@@ -41,7 +41,7 @@ export function NavPinned({
     <SidebarGroup className="group-data-[collapsible=icon]:hidden mt-2 mb-1">
       <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">PINNED<Pin className="mr-2" /></SidebarGroupLabel>
       <SidebarMenu className="px-1">
-        {projects.map((item) => (
+        {folders.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild className="text-whiskey-700 hover:bg-whiskey-100 hover:text-whiskey-800">
               <a href={item.url} onClick={(e) => {

@@ -31,12 +31,12 @@ import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
 import {
-  WiseFolderTodayView,
-  WiseFolderLast7DaysView,
-  WiseFolderLast30DaysView,
-  WiseFolderImageFilesView,
-  WiseFolderAudioVideoFilesView,
-  WiseFolderArchiveFilesView
+  FullDiskFolderTodayView,
+  FullDiskFolderLast7DaysView,
+  FullDiskFolderLast30DaysView,
+  FullDiskFolderImageFilesView,
+  FullDiskFolderAudioVideoFilesView,
+  FullDiskFolderArchiveFilesView
 } from './wise-folder-view';
 import { create } from 'zustand';
 import { useAppStore, ensureDatabaseInitialized } from './main'; // Import Zustand store and DB init function
@@ -276,19 +276,19 @@ export default function Page() {
         return <SettingsTheme />;
       case "settings-developerzone":
         return <SettingsDeveloperZone />;
-      // 智慧文件夹视图
-      case "wise-folder-today":
-        return <WiseFolderTodayView />;
-      case "wise-folder-last7days":
-        return <WiseFolderLast7DaysView />;
-      case "wise-folder-last30days":
-        return <WiseFolderLast30DaysView />;
-      case "wise-folder-image-files":
-        return <WiseFolderImageFilesView />;
-      case "wise-folder-audio-video-files":
-        return <WiseFolderAudioVideoFilesView />;
-      case "wise-folder-archive-files":
-        return <WiseFolderArchiveFilesView />;
+      // 全盘文件夹视图
+      case "full-disk-folder-today":
+        return <FullDiskFolderTodayView />;
+      case "full-disk-folder-last7days":
+        return <FullDiskFolderLast7DaysView />;
+      case "full-disk-folder-last30days":
+        return <FullDiskFolderLast30DaysView />;
+      case "full-disk-folder-image-files":
+        return <FullDiskFolderImageFilesView />;
+      case "full-disk-folder-audio-video-files":
+        return <FullDiskFolderAudioVideoFilesView />;
+      case "full-disk-folder-archive-files":
+        return <FullDiskFolderArchiveFilesView />;
       default:
         return <HomeKnowledgeBase />;
     }

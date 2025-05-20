@@ -141,37 +141,37 @@ const data = {
       name: "今日文件",
       url: "#",
       icon: Frame,
-      pageId: "wise-folder-today",
+      pageId: "full-disk-folder-today",
     },
     {
       name: "最近7天",
       url: "#",
       icon: PieChart,
-      pageId: "wise-folder-last7days",
+      pageId: "full-disk-folder-last7days",
     },
     {
       name: "最近30天",
       url: "#",
       icon: Map,
-      pageId: "wise-folder-last30days",
+      pageId: "full-disk-folder-last30days",
     },
     {
       name: "图片文件",
       url: "#",
       icon: Image,
-      pageId: "wise-folder-image-files",
+      pageId: "full-disk-folder-image-files",
     },
     {
       name: "音视频文件",
       url: "#",
       icon: AudioWaveform,
-      pageId: "wise-folder-audio-video-files",
+      pageId: "full-disk-folder-audio-video-files",
     },
     {
       name: "归档文件",
       url: "#",
       icon: Archive,
-      pageId: "wise-folder-archive-files",
+      pageId: "full-disk-folder-archive-files",
     },
   ],
 }
@@ -225,7 +225,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
-        <NavPinned projects={data.pinnedFolders} />
+        <NavPinned folders={data.pinnedFolders} />
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter className="border-t border-whiskey-200 mt-auto">
