@@ -40,7 +40,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { FileIcon, FolderIcon, MoreHorizontal, ExternalLink, EyeIcon, FileSearch } from "lucide-react";
+import { FileIcon, FolderIcon, MoreHorizontal, ExternalLink, FileSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { openPath } from "@tauri-apps/plugin-opener";
 

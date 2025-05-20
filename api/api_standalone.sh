@@ -1,0 +1,1 @@
+python main.py --port 60000 --host 127.0.0.1 --db-path "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"

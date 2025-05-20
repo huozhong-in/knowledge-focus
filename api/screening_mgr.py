@@ -133,6 +133,26 @@ class ScreeningManager:
             .order_by(FileScreeningResult.modified_time.desc())\
             .limit(limit)
         return self.session.exec(statement).all()
+        
+    def get_all_results(self, limit: int = 1000) -> List[FileScreeningResult]:
+        """获取所有文件粗筛结果
+        
+        Args:
+            limit: 最大返回结果数量
+            
+        Returns:
+            文件粗筛结果列表
+        """
+        try:
+            statement = select(FileScreeningResult)\
+                .order_by(FileScreeningResult.modified_time.desc())\
+                .limit(limit)
+            return self.session.exec(statement).all()
+        except Exception as e:
+            logger.error(f"获取所有文件粗筛结果失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
     
     def update_screening_result(self, result_id: int, data: Dict[str, Any]) -> Optional[FileScreeningResult]:
         """更新粗筛结果

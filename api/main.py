@@ -12,7 +12,7 @@ import pathlib
 import logging
 from sqlmodel import create_engine, Session, select
 import multiprocessing
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, InsightType, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule # Updated import
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
@@ -198,7 +198,7 @@ def task_processor(processor_id: int, db_path: str = None):
                 
                 # 根据任务类型确定处理函数
                 if task.task_type == TaskType.REFINE.value:
-                    process_func = lambda: process_index_task(task, _screening_mgr, _refine_mgr)
+                    process_func = lambda: process_refine_task(task, _screening_mgr, _refine_mgr)
                 elif task.task_type == TaskType.INSIGHT.value:
                     process_func = lambda: process_insight_task(task, _refine_mgr)
                 else:
@@ -237,8 +237,8 @@ def task_processor(processor_id: int, db_path: str = None):
         except Exception as e:
             logger.error(f"{processor_id}号任务处理失败: {str(e)}")
 
-def process_index_task(task, screening_mgr, refine_mgr) -> bool:
-    """处理文件索引任务
+def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
+    """处理文件精炼任务
     
     Args:
         task: 任务对象
@@ -301,36 +301,37 @@ def process_insight_task(task, refine_mgr) -> bool:
     Returns:
         处理成功返回True，失败返回False
     """
+    return False
     # 获取任务额外数据
-    extra_data = {}
-    if hasattr(task, 'extra_data') and task.extra_data:
-        try:
-            if isinstance(task.extra_data, str):
-                extra_data = json.loads(task.extra_data)
-            elif isinstance(task.extra_data, dict):
-                extra_data = task.extra_data
-        except Exception:
-            pass
+    # extra_data = {}
+    # if hasattr(task, 'extra_data') and task.extra_data:
+    #     try:
+    #         if isinstance(task.extra_data, str):
+    #             extra_data = json.loads(task.extra_data)
+    #         elif isinstance(task.extra_data, dict):
+    #             extra_data = task.extra_data
+    #     except Exception:
+    #         pass
     
-    # 获取分析天数
-    days = extra_data.get("days", 7)
+    # # 获取分析天数
+    # days = extra_data.get("days", 7)
     
-    # 生成洞察
-    logger.info(f"生成洞察任务: 分析最近 {days} 天的文件")
-    insights = refine_mgr.generate_insights(days)
+    # # 生成洞察
+    # logger.info(f"生成洞察任务: 分析最近 {days} 天的文件")
+    # insights = refine_mgr.generate_insights(days)
     
-    # 检查结果
-    if insights:
-        insight_types = {}
-        for insight in insights:
-            insight_type = insight.insight_type
-            insight_types[insight_type] = insight_types.get(insight_type, 0) + 1
+    # # 检查结果
+    # if insights:
+    #     insight_types = {}
+    #     for insight in insights:
+    #         insight_type = insight.insight_type
+    #         insight_types[insight_type] = insight_types.get(insight_type, 0) + 1
         
-        logger.info(f"生成了 {len(insights)} 条洞察: {insight_types}")
-        return True
-    else:
-        logger.warning("没有生成任何洞察")
-        return False
+    #     logger.info(f"生成了 {len(insights)} 条洞察: {insight_types}")
+    #     return True
+    # else:
+    #     logger.warning("没有生成任何洞察")
+    #     return False
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
@@ -489,30 +490,70 @@ def add_batch_file_screening_results(
             "message": f"批量处理失败: {str(e)}"
         }
 
-@app.get("/file-screening/{screening_id}")
-def get_file_screening_result(
-    screening_id: int,
+@app.get("/file-screening/results")
+def get_file_screening_results(
+    limit: int = 1000,
+    category_id: int = None,
+    time_range: str = None,
     screening_mgr: ScreeningManager = Depends(get_screening_manager)
 ):
-    """获取单个文件粗筛结果"""
+    """获取文件粗筛结果列表，支持按分类和时间范围筛选
+    
+    参数:
+    - limit: 最大返回结果数
+    - category_id: 可选，按文件分类ID过滤
+    - time_range: 可选，按时间范围过滤 ("today", "last7days", "last30days")
+    """
     try:
-        result = screening_mgr.get_by_id(screening_id)
-        if not result:
+        from datetime import datetime, timedelta
+        
+        # 基础查询
+        results = screening_mgr.get_all_results(limit)
+        
+        # 如果结果为空，直接返回空列表，防止后续处理出错
+        if not results:
             return {
-                "success": False,
-                "message": f"未找到ID为 {screening_id} 的文件粗筛结果"
+                "success": True,
+                "count": 0,
+                "data": []
             }
         
-        # 将模型对象转换为可序列化的字典
-        result_dict = result.model_dump()
+        # 转换为可序列化字典列表
+        results_dict = [result.model_dump() for result in results]
+        
+        # 过滤逻辑
+        filtered_results = results_dict
+        
+        # 按分类过滤
+        if category_id is not None:
+            filtered_results = [r for r in filtered_results if r.get('category_id') == category_id]
+        
+        # 按时间范围过滤
+        if time_range:
+            now = datetime.now()
+            # Ensure modified_time is a string before parsing
+            date_format = "%Y-%m-%d %H:%M:%S" # Define the correct format
+
+            if time_range == "today":
+                today = datetime(now.year, now.month, now.day)
+                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= today]
+            elif time_range == "last7days":
+                week_ago = now - timedelta(days=7)
+                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= week_ago]
+            elif time_range == "last30days":
+                month_ago = now - timedelta(days=30)
+                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= month_ago]
         
         return {
             "success": True,
-            "data": result_dict
+            "count": len(filtered_results),
+            "data": filtered_results
         }
         
     except Exception as e:
-        logger.error(f"获取文件粗筛结果失败: {str(e)}")
+        logger.error(f"获取文件粗筛结果列表失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {
             "success": False,
             "message": f"获取失败: {str(e)}"
@@ -538,6 +579,36 @@ def get_pending_file_screenings(
         
     except Exception as e:
         logger.error(f"获取待处理文件粗筛结果列表失败: {str(e)}")
+        return {
+            "success": False,
+            "message": f"获取失败: {str(e)}"
+        }
+
+# 将带参数的路由移到最后，避免与特定路由冲突
+@app.get("/file-screening/{screening_id}")
+def get_file_screening_result(
+    screening_id: int,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """获取单个文件粗筛结果"""
+    try:
+        result = screening_mgr.get_by_id(screening_id)
+        if not result:
+            return {
+                "success": False,
+                "message": f"未找到ID为 {screening_id} 的文件粗筛结果"
+            }
+        
+        # 将模型对象转换为可序列化的字典
+        result_dict = result.model_dump()
+        
+        return {
+            "success": True,
+            "data": result_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"获取文件粗筛结果失败: {str(e)}")
         return {
             "success": False,
             "message": f"获取失败: {str(e)}"
@@ -680,82 +751,82 @@ def get_insights(
             "message": f"获取洞察列表失败: {str(e)}"
         }
 
-@app.get("/insight-types")
-def get_insight_types():
-    """获取可用的洞察类型"""
-    try:
-        insight_types = [
-            {"value": InsightType.FILE_ACTIVITY.value, "label": "文件活动"},
-            {"value": InsightType.PROJECT_UPDATE.value, "label": "项目更新"},
-            {"value": InsightType.CLEANUP.value, "label": "清理建议"},
-            {"value": InsightType.CONTENT_HIGHLIGHT.value, "label": "内容亮点"},
-            {"value": InsightType.USAGE_PATTERN.value, "label": "使用模式"},
-            {"value": InsightType.CUSTOM.value, "label": "自定义洞察"}
-        ]
+# @app.get("/insight-types")
+# def get_insight_types():
+#     """获取可用的洞察类型"""
+#     try:
+#         insight_types = [
+#             {"value": InsightType.FILE_ACTIVITY.value, "label": "文件活动"},
+#             {"value": InsightType.PROJECT_UPDATE.value, "label": "项目更新"},
+#             {"value": InsightType.CLEANUP.value, "label": "清理建议"},
+#             {"value": InsightType.CONTENT_HIGHLIGHT.value, "label": "内容亮点"},
+#             {"value": InsightType.USAGE_PATTERN.value, "label": "使用模式"},
+#             {"value": InsightType.CUSTOM.value, "label": "自定义洞察"}
+#         ]
         
-        return {
-            "success": True,
-            "data": insight_types
-        }
+#         return {
+#             "success": True,
+#             "data": insight_types
+#         }
         
-    except Exception as e:
-        logger.error(f"获取洞察类型失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"获取洞察类型失败: {str(e)}"
-        }
+#     except Exception as e:
+#         logger.error(f"获取洞察类型失败: {str(e)}")
+#         return {
+#             "success": False,
+#             "message": f"获取洞察类型失败: {str(e)}"
+#         }
 
-@app.put("/insights/{insight_id}/read")
-def mark_insight_as_read(
-    insight_id: int,
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """将洞察标记为已读"""
-    try:
-        success = refine_mgr.mark_insight_as_read(insight_id)
-        if not success:
-            return {
-                "success": False,
-                "message": f"标记洞察 {insight_id} 为已读失败"
-            }
+# @app.put("/insights/{insight_id}/read")
+# def mark_insight_as_read(
+#     insight_id: int,
+#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
+# ):
+#     """将洞察标记为已读"""
+#     try:
+#         success = refine_mgr.mark_insight_as_read(insight_id)
+#         if not success:
+#             return {
+#                 "success": False,
+#                 "message": f"标记洞察 {insight_id} 为已读失败"
+#             }
         
-        return {
-            "success": True,
-            "message": f"已将洞察 {insight_id} 标记为已读"
-        }
+#         return {
+#             "success": True,
+#             "message": f"已将洞察 {insight_id} 标记为已读"
+#         }
         
-    except Exception as e:
-        logger.error(f"标记洞察为已读失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"标记洞察为已读失败: {str(e)}"
-        }
+#     except Exception as e:
+#         logger.error(f"标记洞察为已读失败: {str(e)}")
+#         return {
+#             "success": False,
+#             "message": f"标记洞察为已读失败: {str(e)}"
+#         }
 
-@app.put("/insights/{insight_id}/dismiss")
-def dismiss_insight(
-    insight_id: int,
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """忽略洞察"""
-    try:
-        success = refine_mgr.dismiss_insight(insight_id)
-        if not success:
-            return {
-                "success": False,
-                "message": f"忽略洞察 {insight_id} 失败"
-            }
+# @app.put("/insights/{insight_id}/dismiss")
+# def dismiss_insight(
+#     insight_id: int,
+#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
+# ):
+#     """忽略洞察"""
+#     try:
+#         success = refine_mgr.dismiss_insight(insight_id)
+#         if not success:
+#             return {
+#                 "success": False,
+#                 "message": f"忽略洞察 {insight_id} 失败"
+#             }
         
-        return {
-            "success": True,
-            "message": f"已忽略洞察 {insight_id}"
-        }
+#         return {
+#             "success": True,
+#             "message": f"已忽略洞察 {insight_id}"
+#         }
         
-    except Exception as e:
-        logger.error(f"忽略洞察失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"忽略洞察失败: {str(e)}"
-        }
+#     except Exception as e:
+#         logger.error(f"忽略洞察失败: {str(e)}")
+#         return {
+#             "success": False,
+#             "message": f"忽略洞察失败: {str(e)}"
+#         }
 
 # 项目相关API
 @app.post("/projects")

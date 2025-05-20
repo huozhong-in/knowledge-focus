@@ -138,34 +138,40 @@ const data = {
   ],
   pinnedFolders: [
     {
-      name: "today",  //今天修改的文件
+      name: "今日文件",
       url: "#",
       icon: Frame,
+      pageId: "wise-folder-today",
     },
     {
-      name: "last 7 days",
+      name: "最近7天",
       url: "#",
       icon: PieChart,
+      pageId: "wise-folder-last7days",
     },
     {
-      name: "last 30 days",
+      name: "最近30天",
       url: "#",
       icon: Map,
+      pageId: "wise-folder-last30days",
     },
     {
-      name: "image files",
+      name: "图片文件",
       url: "#",
       icon: Image,
+      pageId: "wise-folder-image-files",
     },
     {
-      name: "audio&video files",
+      name: "音视频文件",
       url: "#",
       icon: AudioWaveform,
+      pageId: "wise-folder-audio-video-files",
     },
     {
-      name: "archive files", // 压缩包，安装文件
+      name: "归档文件",
       url: "#",
       icon: Archive,
+      pageId: "wise-folder-archive-files",
     },
   ],
 }

@@ -3,20 +3,20 @@ import "./theme-whiskey.css"; // 引入威士忌主题
 import "./theme/whiskey-colors.css"; // 引入显式定义的威士忌颜色类
 import { AppSidebar } from "@/components/app-sidebar"
 import { useEffect, useState } from "react";
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
-import { Separator } from "@/components/ui/separator"
+// import {
+//   Breadcrumb,
+//   BreadcrumbItem,
+//   BreadcrumbLink,
+//   BreadcrumbList,
+//   BreadcrumbPage,
+//   BreadcrumbSeparator,
+// } from "@/components/ui/breadcrumb"
+// import { Separator } from "@/components/ui/separator"
 import { Button } from "@/components/ui/button";
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
+  // SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -30,6 +30,14 @@ import PromptsLibrary from "./prompts-library";
 import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
+import {
+  WiseFolderTodayView,
+  WiseFolderLast7DaysView,
+  WiseFolderLast30DaysView,
+  WiseFolderImageFilesView,
+  WiseFolderAudioVideoFilesView,
+  WiseFolderArchiveFilesView
+} from './wise-folder-view';
 import { create } from 'zustand';
 import { useAppStore, ensureDatabaseInitialized } from './main'; // Import Zustand store and DB init function
 
@@ -268,6 +276,19 @@ export default function Page() {
         return <SettingsTheme />;
       case "settings-developerzone":
         return <SettingsDeveloperZone />;
+      // 智慧文件夹视图
+      case "wise-folder-today":
+        return <WiseFolderTodayView />;
+      case "wise-folder-last7days":
+        return <WiseFolderLast7DaysView />;
+      case "wise-folder-last30days":
+        return <WiseFolderLast30DaysView />;
+      case "wise-folder-image-files":
+        return <WiseFolderImageFilesView />;
+      case "wise-folder-audio-video-files":
+        return <WiseFolderAudioVideoFilesView />;
+      case "wise-folder-archive-files":
+        return <WiseFolderArchiveFilesView />;
       default:
         return <HomeKnowledgeBase />;
     }
