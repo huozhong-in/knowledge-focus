@@ -42,15 +42,15 @@ class TaskPriority(str, PyEnum):
 
 # 2种任务类型
 class TaskType(str, PyEnum):
-    INDEX = "index"  # 索引任务
-    INSIGHT = "insight"  # 洞察任务
+    REFINE = "refine"  # 精炼任务
+    INSIGHT = "insight"  # 洞察任务(暂不实现)
 
 # 供worker使用的tasks表
 class Task(SQLModel, table=True):
     __tablename__ = "t_tasks"
     id: int = Field(default=None, primary_key=True)
     task_name: str
-    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.INDEX.value))
+    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.REFINE.value))
     priority: str = Field(sa_column=Column(Enum(TaskPriority, values_callable=lambda obj: [e.value for e in obj]), default=TaskPriority.MEDIUM.value))
     status: str = Field(sa_column=Column(Enum(TaskStatus, values_callable=lambda obj: [e.value for e in obj]), default=TaskStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
@@ -210,7 +210,7 @@ class FileScreeningResult(SQLModel, table=True):
     file_name: str            # 文件名（含扩展名）
     file_size: int            # 文件大小（字节）
     extension: str | None = Field(default=None)  # 文件扩展名（不含点）
-    file_hash: str | None = Field(default=None)  # 文件哈希值（可能是部分哈希）
+    file_hash: str | None = Field(default=None)  # 文件哈希值（部分哈希: 大于4k的部分，小于4k则是整个文件）
     created_time: datetime | None = Field(default=None)  # 文件创建时间
     modified_time: datetime   # 文件最后修改时间
     accessed_time: datetime | None = Field(default=None)  # 文件最后访问时间
@@ -298,59 +298,6 @@ class FileRefineResult(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 洞察类型枚举
-class InsightType(str, PyEnum):
-    FILE_ACTIVITY = "file_activity"     # 文件活动洞察
-    PROJECT_UPDATE = "project_update"   # 项目更新洞察
-    CLEANUP = "cleanup"                 # 清理建议
-    CONTENT_HIGHLIGHT = "content_highlight"  # 内容亮点
-    USAGE_PATTERN = "usage_pattern"     # 使用模式
-    CUSTOM = "custom"                   # 自定义洞察
-
-# 洞察优先级
-class InsightPriority(str, PyEnum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-
-# 洞察表 - 存储基于文件精炼结果生成的有价值洞察
-class Insight(SQLModel, table=True):
-    __tablename__ = "t_insights"
-    id: int = Field(default=None, primary_key=True)
-    task_id: int | None = Field(default=None, foreign_key="t_tasks.id", index=True)  # 关联的任务ID
-    
-    # 洞察内容
-    title: str                # 洞察标题
-    description: str          # 洞察描述
-    insight_type: str = Field(sa_column=Column(Enum(InsightType, values_callable=lambda obj: [e.value for e in obj])))
-    priority: str = Field(sa_column=Column(Enum(InsightPriority, values_callable=lambda obj: [e.value for e in obj]), default=InsightPriority.MEDIUM.value))
-    
-    # 关联数据
-    related_files: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件路径列表
-    related_projects: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联项目ID列表
-    action_items: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 推荐操作列表
-    
-    # 生成和状态信息
-    generation_method: str | None = Field(default=None)  # 生成方式（规则/LLM）
-    score: float | None = Field(default=None)  # 洞察评分（重要性/相关性）
-    is_read: bool = Field(default=False)  # 是否已读
-    is_dismissed: bool = Field(default=False)  # 是否已忽略
-    is_actioned: bool = Field(default=False)  # 是否已采取行动
-    
-    # 时间戳
-    valid_until: datetime | None = Field(default=None)  # 有效期（某些洞察可能过期）
-    created_at: datetime = Field(default=datetime.now())
-    updated_at: datetime = Field(default=datetime.now())
-    
-    # 额外数据
-    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
-    
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
 # 项目信息表 - 存储识别出的项目信息
 class Project(SQLModel, table=True):
     __tablename__ = "t_projects"
@@ -409,16 +356,16 @@ class DBManager:
             if not inspector.has_table(Notification.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Notification.__table__])
                 # 创建触发器 - 当任务表中洞察任务状态成功完成时插入通知
-                conn.execute(text(f'''
-                    CREATE TRIGGER IF NOT EXISTS notify_insight_task
-                    AFTER UPDATE ON {Task.__tablename__}
-                    FOR EACH ROW
-                    WHEN NEW.task_type = 'insight' AND NEW.status = 'completed' AND NEW.result = 'success'
-                    BEGIN
-                        INSERT INTO {Notification.__tablename__} (task_id, message, created_at, read)
-                        VALUES (NEW.id, '洞察任务完成', CURRENT_TIMESTAMP, 0);
-                    END;
-                '''))
+                # conn.execute(text(f'''
+                #     CREATE TRIGGER IF NOT EXISTS notify_insight_task
+                #     AFTER UPDATE ON {Task.__tablename__}
+                #     FOR EACH ROW
+                #     WHEN NEW.task_type = 'insight' AND NEW.status = 'completed' AND NEW.result = 'success'
+                #     BEGIN
+                #         INSERT INTO {Notification.__tablename__} (task_id, message, created_at, read)
+                #         VALUES (NEW.id, '洞察任务完成', CURRENT_TIMESTAMP, 0);
+                #     END;
+                # '''))
             
             # 创建文件表
             if not inspector.has_table(MyFiles.__tablename__):
@@ -461,14 +408,6 @@ class DBManager:
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_file_path ON {FileRefineResult.__tablename__} (file_path);'))
                 # 创建索引 - 为处理状态创建索引
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_status ON {FileRefineResult.__tablename__} (status);'))
-            
-            # 创建洞察表
-            if not inspector.has_table(Insight.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Insight.__table__])
-                # 创建索引 - 为洞察类型创建索引
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_insight_type ON {Insight.__tablename__} (insight_type);'))
-                # 创建索引 - 为优先级创建索引
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_insight_priority ON {Insight.__tablename__} (priority);'))
             
             # 创建项目表
             if not inspector.has_table(Project.__tablename__):
@@ -669,7 +608,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "draft",
                     "tag_name": "草稿",
-                    "insight_type": "status"
+                    "refine_type": "status"
                 }
             },
             {
@@ -682,7 +621,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "final",
                     "tag_name": "最终版",
-                    "insight_type": "status"
+                    "refine_type": "status"
                 }
             },
             {
@@ -695,7 +634,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "versioned",
                     "tag_name": "带版本号",
-                    "insight_type": "version"
+                    "refine_type": "version"
                 }
             },
             {
@@ -708,7 +647,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "backup",
                     "tag_name": "备份/旧版",
-                    "insight_type": "cleanup"
+                    "refine_type": "cleanup"
                 }
             }
         ]
@@ -725,7 +664,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "report",
                     "tag_name": "报告",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -738,7 +677,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "proposal",
                     "tag_name": "提案",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -751,7 +690,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "contract",
                     "tag_name": "合同/协议",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -764,7 +703,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "invoice",
                     "tag_name": "发票/收据",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -777,7 +716,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "presentation",
                     "tag_name": "演示/幻灯片",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -790,7 +729,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "report_periodical",
                     "tag_name": "周报/月报",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             },
             {
@@ -803,7 +742,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "resume",
                     "tag_name": "简历",
-                    "insight_type": "document_type"
+                    "refine_type": "document_type"
                 }
             }
         ]
@@ -820,7 +759,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "dated_ymd",
                     "tag_name": "带日期",
-                    "insight_type": "time"
+                    "refine_type": "time"
                 }
             },
             {
@@ -833,7 +772,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "quarterly",
                     "tag_name": "季度文件",
-                    "insight_type": "time"
+                    "refine_type": "time"
                 }
             },
             {
@@ -846,7 +785,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "monthly",
                     "tag_name": "月度文件",
-                    "insight_type": "time"
+                    "refine_type": "time"
                 }
             }
         ]
@@ -864,7 +803,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "screenshot",
                     "tag_name": "截图",
-                    "insight_type": "app_source"
+                    "refine_type": "app_source"
                 }
             },
             {
@@ -877,7 +816,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "camera",
                     "tag_name": "相机照片",
-                    "insight_type": "app_source"
+                    "refine_type": "app_source"
                 }
             },
             {
@@ -891,7 +830,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "wechat",
                     "tag_name": "微信文件",
-                    "insight_type": "app_source"
+                    "refine_type": "app_source"
                 }
             },
             {
@@ -904,7 +843,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "download",
                     "tag_name": "下载文件",
-                    "insight_type": "app_source"
+                    "refine_type": "app_source"
                 }
             },
             {
@@ -917,7 +856,7 @@ class DBManager:
                 "extra_data": {
                     "tag": "meeting",
                     "tag_name": "会议文件",
-                    "insight_type": "app_source"
+                    "refine_type": "app_source"
                 }
             }
         ]
@@ -999,7 +938,7 @@ class DBManager:
                 "priority": RulePriority.MEDIUM.value,
                 "indicators": {
                     "min_files": 3,  # 至少包含3个文件才会被识别为项目
-                    "insight_score": 70  # 洞察权重分
+                    "refine_score": 70  # 精炼权重分
                 }
             },
             {
@@ -1010,7 +949,7 @@ class DBManager:
                 "priority": RulePriority.MEDIUM.value,
                 "indicators": {
                     "min_files": 5,
-                    "insight_score": 70
+                    "refine_score": 70
                 }
             },
             {
@@ -1021,7 +960,7 @@ class DBManager:
                 "priority": RulePriority.HIGH.value,
                 "indicators": {
                     "min_files": 2,
-                    "insight_score": 80
+                    "refine_score": 80
                 }
             }
         ]
@@ -1038,8 +977,8 @@ class DBManager:
                     "is_code_project": True,
                     "structure_markers": [".git"],
                     "exclude_indexing": ["node_modules", ".git", "dist", "build", "target"],
-                    "include_markdown": True,  # 仅索引Markdown文档
-                    "insight_score": 90
+                    "include_markdown": True,  # 仅处理Markdown文档
+                    "refine_score": 90
                 }
             },
             {
@@ -1053,7 +992,7 @@ class DBManager:
                     "structure_markers": ["node_modules", "package.json"],
                     "exclude_indexing": ["node_modules", "dist", "build"],
                     "include_markdown": True,
-                    "insight_score": 85
+                    "refine_score": 85
                 }
             },
             {
@@ -1068,7 +1007,7 @@ class DBManager:
                     "structure_markers": ["venv", ".venv", "requirements.txt", "setup.py", "pyproject.toml"],
                     "exclude_indexing": ["venv", ".venv", "__pycache__", ".pytest_cache"],
                     "include_markdown": True,
-                    "insight_score": 85
+                    "refine_score": 85
                 }
             },
             {
@@ -1081,7 +1020,7 @@ class DBManager:
                 "indicators": {
                     "is_code_project": True,
                     "structure_markers": ["src", "lib", "include", "docs"],
-                    "insight_score": 80
+                    "refine_score": 80
                 }
             }
         ]

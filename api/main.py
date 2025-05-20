@@ -197,7 +197,7 @@ def task_processor(processor_id: int, db_path: str = None):
                 logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
                 
                 # 根据任务类型确定处理函数
-                if task.task_type == TaskType.INDEX.value:
+                if task.task_type == TaskType.REFINE.value:
                     process_func = lambda: process_index_task(task, _screening_mgr, _refine_mgr)
                 elif task.task_type == TaskType.INSIGHT.value:
                     process_func = lambda: process_insight_task(task, _refine_mgr)

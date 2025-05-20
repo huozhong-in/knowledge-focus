@@ -136,9 +136,9 @@ const data = {
       ],
     },
   ],
-  projects: [
+  pinnedFolders: [
     {
-      name: "today",  //"今天修改的文件",
+      name: "today",  //今天修改的文件
       url: "#",
       icon: Frame,
     },
@@ -163,7 +163,7 @@ const data = {
       icon: AudioWaveform,
     },
     {
-      name: "archive files",
+      name: "archive files", // 压缩包，安装文件
       url: "#",
       icon: Archive,
     },
@@ -219,7 +219,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
-        <NavPinned projects={data.projects} />
+        <NavPinned projects={data.pinnedFolders} />
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter className="border-t border-whiskey-200 mt-auto">
