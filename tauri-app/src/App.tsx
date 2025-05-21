@@ -30,16 +30,9 @@ import PromptsLibrary from "./prompts-library";
 import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
-import {
-  FullDiskFolderTodayView,
-  FullDiskFolderLast7DaysView,
-  FullDiskFolderLast30DaysView,
-  FullDiskFolderImageFilesView,
-  FullDiskFolderAudioVideoFilesView,
-  FullDiskFolderArchiveFilesView
-} from './wise-folder-view';
+import { FullDiskFolderView } from './pinned-folders';
 import { create } from 'zustand';
-import { useAppStore, ensureDatabaseInitialized } from './main'; // Import Zustand store and DB init function
+import { useAppStore, ensureDatabaseInitialized } from './main';
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -61,7 +54,10 @@ export const usePageStore = create<PageState>((set) => ({
 }));
 
 export default function Page() {
-  const { currentPage, currentTitle, currentSubtitle } = usePageStore();
+  const { currentPage, 
+    // currentTitle, 
+    // currentSubtitle 
+  } = usePageStore();
   const {
     isFirstLaunchDbCheckPending,
     isDbInitializing,
@@ -255,6 +251,7 @@ export default function Page() {
 
   // 根据currentPage返回对应的组件
   const renderContent = () => {
+    console.log("App.tsx: Rendering content for page:", currentPage);
     switch (currentPage) {
       case "home-knowledgebase":
         return <HomeKnowledgeBase />;
@@ -276,19 +273,15 @@ export default function Page() {
         return <SettingsTheme />;
       case "settings-developerzone":
         return <SettingsDeveloperZone />;
-      // 全盘文件夹视图
-      case "full-disk-folder-today":
-        return <FullDiskFolderTodayView />;
-      case "full-disk-folder-last7days":
-        return <FullDiskFolderLast7DaysView />;
-      case "full-disk-folder-last30days":
-        return <FullDiskFolderLast30DaysView />;
-      case "full-disk-folder-image-files":
-        return <FullDiskFolderImageFilesView />;
-      case "full-disk-folder-audio-video-files":
-        return <FullDiskFolderAudioVideoFilesView />;
-      case "full-disk-folder-archive-files":
-        return <FullDiskFolderArchiveFilesView />;
+      // Render the single FullDiskFolderView for all pinned folder cases
+      case "today":
+      case "last7days":
+      case "last30days":
+      case "image":
+      case "audio-video":
+      case "archive":
+        // Pass the currentPage (which is the folderId) as a prop
+        return <FullDiskFolderView folderId={currentPage} />;
       default:
         return <HomeKnowledgeBase />;
     }

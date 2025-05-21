@@ -24,16 +24,19 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+// Removed import of FullDiskFolder
+// import { FullDiskFolder } from "../pinned-folders"
 
 export function NavPinned({
   folders: folders,
 }: {
+  // Reverted prop type to match the simplified definition
   folders: {
-    name: string
-    url: string
-    icon: LucideIcon
-    pageId?: string
-  }[]
+    id: string;
+    name: string;
+    icon: LucideIcon;
+    pageId?: string;
+  }[];
 }) {
   const { isMobile } = useSidebar()
 
@@ -42,17 +45,21 @@ export function NavPinned({
       <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">PINNED<Pin className="mr-2" /></SidebarGroupLabel>
       <SidebarMenu className="px-1">
         {folders.map((item) => (
-          <SidebarMenuItem key={item.name}>
-            <SidebarMenuButton asChild className="text-whiskey-700 hover:bg-whiskey-100 hover:text-whiskey-800">
-              <a href={item.url} onClick={(e) => {
-                if (item.pageId) {
+          // Use item.id as the key
+          <SidebarMenuItem key={item.id} onClick={(e) => { // Added onClick here
                   e.preventDefault();
                   // 使用usePageStore来切换页面
-                  usePageStore.getState().setPage(item.pageId, "PINNED", item.name);
-                }
+                  // Use item.pageId for navigation and item.name for display
+                  if (item.pageId) {
+                    usePageStore.getState().setPage(item.pageId, "PINNED", item.name);
+                  }
               }}>
+            <SidebarMenuButton> {/* Removed onClick from here */}
+              {/* Moved className and onClick to the a tag */}
+              <a href="#" className="flex items-center gap-2 text-whiskey-700 hover:bg-whiskey-100 hover:text-whiskey-800"> {/* onClick removed from here */}
+                {/* Assuming item.icon is a LucideIcon component */}
                 <item.icon className="text-whiskey-400" />
-                <span>{item.name}</span>
+                <span>{item.name}</span> {/* Use item.name for display */}
               </a>
             </SidebarMenuButton>
             <DropdownMenu>
@@ -85,7 +92,7 @@ export function NavPinned({
           </SidebarMenuItem>
         ))}
         <SidebarMenuItem>
-          <SidebarMenuButton 
+          <SidebarMenuButton
             className="text-whiskey-500 hover:bg-whiskey-100 hover:text-whiskey-600"
             onClick={() => {
               // 使用usePageStore来切换页面到HomeWiseFolders

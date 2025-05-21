@@ -30,6 +30,8 @@ import { AskMeForm } from "@/components/askme-form"
 import { Switch } from "@/components/ui/switch"
 import { useState } from "react"
 import { toast } from "sonner"
+// Removed import of usePinnedFolders and FullDiskFolder
+// import usePinnedFolders, { FullDiskFolder } from "../pinned-folders"
 
 // This is sample data.
 const data = {
@@ -136,50 +138,56 @@ const data = {
       ],
     },
   ],
-  pinnedFolders: [
-    {
-      name: "今日文件",
-      url: "#",
-      icon: Frame,
-      pageId: "full-disk-folder-today",
-    },
-    {
-      name: "最近7天",
-      url: "#",
-      icon: PieChart,
-      pageId: "full-disk-folder-last7days",
-    },
-    {
-      name: "最近30天",
-      url: "#",
-      icon: Map,
-      pageId: "full-disk-folder-last30days",
-    },
-    {
-      name: "图片文件",
-      url: "#",
-      icon: Image,
-      pageId: "full-disk-folder-image-files",
-    },
-    {
-      name: "音视频文件",
-      url: "#",
-      icon: AudioWaveform,
-      pageId: "full-disk-folder-audio-video-files",
-    },
-    {
-      name: "归档文件",
-      url: "#",
-      icon: Archive,
-      pageId: "full-disk-folder-archive-files",
-    },
-  ],
 }
+
+// Define the simplified pinned folder definitions
+const pinnedFolderDefinitions = [
+  {
+    id: "today", // Simplified ID
+    name: "今日更新",
+    icon: Frame,
+    pageId: "today", // Simplified pageId
+  },
+  {
+    id: "last7days", // Simplified ID
+    name: "最近7天",
+    icon: PieChart,
+    pageId: "last7days", // Simplified pageId
+  },
+  {
+    id: "last30days", // Simplified ID
+    name: "最近30天",
+    icon: Map,
+    pageId: "last30days", // Simplified pageId
+  },
+  {
+    id: "image", // Corresponds to FileType.Image, Simplified ID
+    name: "图片文件",
+    icon: Image,
+    pageId: "image", // Simplified pageId
+  },
+  {
+    id: "audio-video", // Corresponds to FileType.AudioVideo, Simplified ID
+    name: "音视频文件",
+    icon: AudioWaveform,
+    pageId: "audio-video", // Simplified pageId
+  },
+  {
+    id: "archive", // Corresponds to FileType.Archive, Simplified ID
+    name: "归档文件",
+    icon: Archive,
+    pageId: "archive", // Simplified pageId
+  },
+];
+
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const [networkEnabled, setNetworkEnabled] = useState(true)
+
+  // Removed usage of usePinnedFolders hook
+  // const { fullDiskFolders, loading: pinnedFoldersLoading } = usePinnedFolders();
 
   const handleNetworkSwitch = (checked: boolean) => {
     setNetworkEnabled(checked)
@@ -197,9 +205,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <div className="flex items-center justify-between p-2">
           {isCollapsed ? (
             <div className="w-full flex justify-center">
-              <Switch 
+              <Switch
                 id="network-switch"
-                className="data-[state=checked]:bg-primary border-whiskey-400 transform rotate-90" 
+                className="data-[state=checked]:bg-primary border-whiskey-400 transform rotate-90"
                 aria-label="Network Switch"
                 checked={networkEnabled}
                 onCheckedChange={handleNetworkSwitch}
@@ -209,9 +217,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <>
               <div className="flex items-center gap-2">
                 <span className="text-whiskey-800 text-sm">Network Switch</span>
-                <Switch 
+                <Switch
                   id="network-switch"
-                  className="data-[state=checked]:bg-primary border-whiskey-400" 
+                  className="data-[state=checked]:bg-primary border-whiskey-400"
                   aria-label="Network Switch"
                   checked={networkEnabled}
                   onCheckedChange={handleNetworkSwitch}
@@ -225,7 +233,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
-        <NavPinned folders={data.pinnedFolders} />
+        {/* Pass the simplified definitions to NavPinned */}
+        <NavPinned folders={pinnedFolderDefinitions} />
         <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter className="border-t border-whiskey-200 mt-auto">

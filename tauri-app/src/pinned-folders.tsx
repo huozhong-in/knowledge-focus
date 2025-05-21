@@ -1,220 +1,208 @@
 import { useEffect, useState } from "react";
-import { FileScreeningResult } from "./types/file-types";
-import { format, subDays } from "date-fns";
+import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
-import { FileService } from "./api/file-service";
+import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
 
 // 文件类型定义
 export interface FullDiskFolder {
   id: string;
   title: string;
-  files: FileScreeningResult[];
+  files: FileInfo[];
   count: number;
   icon: string;
-  timeRange?: string; // 例如："today", "last7days", "last30days"
-  categoryId?: number; // 对应文件分类ID
+  timeRange?: TimeRange; // 例如："today", "last7days", "last30days"
+  fileType?: FileType; // 例如："image", "audio-video", "archive"
 }
 
-// 格式化文件大小的辅助函数
-export const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 B';
-  
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
-};
+// Use FileScannerService's formatFileSize function
+export const formatFileSize = FileScannerService.formatFileSize;
 
-// 按时间筛选函数
-export const filterFilesByTime = (files: FileScreeningResult[], timeRange: string): FileScreeningResult[] => {
-  const now = new Date();
-  
-  switch (timeRange) {
-    case "today": {
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      return files.filter(file => new Date(file.modified_time) >= today);
-    }
-    case "last7days":
-      return files.filter(file => new Date(file.modified_time) >= subDays(now, 7));
-    case "last30days":
-      return files.filter(file => new Date(file.modified_time) >= subDays(now, 30));
-    default:
-      return files;
-  }
-};
+// Simple in-memory cache
+const fileCache: Map<string, { data: FileInfo[], timestamp: number }> = new Map();
+const CACHE_DURATION = 5 * 60 * 1000; // Cache for 5 minutes
 
-// 按文件分类筛选函数 
-// 注意：下面的两个函数仅保留参考，实际的文件筛选工作现在在 Rust 实现
-export const filterFilesByCategory = (files: FileScreeningResult[], categoryId: number): FileScreeningResult[] => {
-  return files.filter(file => file.category_id === categoryId);
-};
-
-// 注意：以下函数现在被更高效的方法替代，但保留供参考
-// 格式化当前日期
-// const currentDate = format(new Date(), "yyyy年MM月dd日", { locale: zhCN });
-//     {
-//       id: "audio-video-files",
-//       title: `音视频文件: 共${audioVideoFiles.length}个音视频文件`,
-//       files: audioVideoFiles,
-//       count: audioVideoFiles.length,
-//       icon: "🎬",
-//       categoryId: 3
-//     },
-//     {
-//       id: "archive-files",
-//       title: `压缩包文件: 共${archiveFiles.length}个压缩包文件`,
-//       files: archiveFiles,
-//       count: archiveFiles.length,
-//       icon: "🗃️",
-//       categoryId: 4
-//     }
-//   ];
-// };
-
-export const usePinnedFolders = () => {
-  const [fullDiskFolders, setFullDiskFolders] = useState<FullDiskFolder[]>([]);
+// Hook to fetch data for a single pinned folder
+export const usePinnedFolderData = (folderId: string) => {
+  const [folderData, setFolderData] = useState<FullDiskFolder | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const refreshInterval = 60000; // 默认1分钟
 
-  // 定义获取结果的函数
-  const fetchScreeningResults = async (showLoading = false) => {
+  const fetchFolderData = async (showLoading = false) => {
+    if (!folderId) {
+      setFolderData(null);
+      setLoading(false);
+      return;
+    }
+
+    // Check cache first
+    const cached = fileCache.get(folderId);
+    if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
+      console.log(`[CACHE] Using cached data for folder: ${folderId}`);
+      // Reconstruct FullDiskFolder from cached data and definition
+      const definition = getFolderDefinition(folderId); // Need a way to get definition by ID
+      if (definition) {
+         setFolderData({
+            id: folderId,
+            title: definition.name, // Use name from definition for title
+            files: cached.data,
+            count: cached.data.length,
+            icon: definition.icon, // Use icon from definition
+            timeRange: definition.timeRange,
+            fileType: definition.fileType,
+         });
+         setLastUpdated(new Date(cached.timestamp));
+         setError(null);
+         setLoading(false);
+         return;
+      }
+    }
+
     try {
-      // 根据参数决定是否显示加载状态
       if (showLoading) {
         setLoading(true);
       }
-      
-      // 获取不同类型的文件
-      const [todayFiles, last7DaysFiles, last30DaysFiles, imageFiles, audioVideoFiles, archiveFiles] = await Promise.all([
-        FileService.getFileScreeningResults(1000, undefined, "today"),
-        FileService.getFileScreeningResults(1000, undefined, "last7days"),
-        FileService.getFileScreeningResults(1000, undefined, "last30days"),
-        FileService.getFileScreeningResults(1000, 2), // 图片文件类别ID = 2
-        FileService.getFileScreeningResults(1000, 3), // 音视频文件类别ID = 3
-        FileService.getFileScreeningResults(1000, 4)  // 压缩包文件类别ID = 4
-      ]);
-      
-      // 格式化当前日期
-      const currentDate = format(new Date(), "yyyy年MM月dd日", { locale: zhCN });
-      
-      // 手动创建智慧文件夹
-      const folders: FullDiskFolder[] = [
-        {
-          id: "today",
-          title: `今日更新: ${currentDate}修改了${todayFiles.length}个文件`,
-          files: todayFiles,
-          count: todayFiles.length,
-          icon: "📆",
-          timeRange: "today"
-        },
-        {
-          id: "last7days",
-          title: `本周动态: 近7天有${last7DaysFiles.length}个文件更新`,
-          files: last7DaysFiles,
-          count: last7DaysFiles.length,
-          icon: "📊",
-          timeRange: "last7days"
-        },
-        {
-          id: "last30days",
-          title: `本月回顾: 近30天有${last30DaysFiles.length}个文件更新`,
-          files: last30DaysFiles,
-          count: last30DaysFiles.length,
-          icon: "📅",
-          timeRange: "last30days"
-        },
-        {
-          id: "image-files",
-          title: `图片文件: 共${imageFiles.length}个图片文件`,
-          files: imageFiles,
-          count: imageFiles.length,
-          icon: "🖼️",
-          categoryId: 2
-        },
-        {
-          id: "audio-video-files",
-          title: `音视频文件: 共${audioVideoFiles.length}个音视频文件`,
-          files: audioVideoFiles,
-          count: audioVideoFiles.length,
-          icon: "🎬",
-          categoryId: 3
-        },
-        {
-          id: "archive-files",
-          title: `压缩包文件: 共${archiveFiles.length}个压缩包文件`,
-          files: archiveFiles,
-          count: archiveFiles.length,
-          icon: "🗃️",
-          categoryId: 4
-        }
-      ];
-      
-      setFullDiskFolders(folders);
-      setLastUpdated(new Date());
+
+      let files: FileInfo[] = [];
+      let title = "";
+      let icon = "";
+      let timeRange: TimeRange | undefined;
+      let fileType: FileType | undefined;
+
+      // Determine which scanner function to call based on folderId
+      switch (folderId) {
+        case "today":
+          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Today);
+          title = `今日更新: ${format(new Date(), "yyyy年MM月dd日", { locale: zhCN })}修改了${files.length}个文件`;
+          icon = "📆";
+          timeRange = TimeRange.Today;
+          break;
+        case "last7days":
+          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last7Days);
+          title = `本周动态: 近7天有${files.length}个文件更新`;
+          icon = "📊";
+          timeRange = TimeRange.Last7Days;
+          break;
+        case "last30days":
+          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last30Days);
+          title = `本月回顾: 近30天有${files.length}个文件更新`;
+          icon = "📅";
+          timeRange = TimeRange.Last30Days;
+          break;
+        case "image": // Corresponds to FileType.Image
+          files = await FileScannerService.scanFilesByType(FileType.Image);
+          title = `图片文件: 共${files.length}个图片文件`;
+          icon = "🖼️";
+          fileType = FileType.Image;
+          break;
+        case "audio-video": // Corresponds to FileType.AudioVideo
+          files = await FileScannerService.scanFilesByType(FileType.AudioVideo);
+          title = `音视频文件: 共${files.length}个音视频文件`;
+          icon = "🎬";
+          fileType = FileType.AudioVideo;
+          break;
+        case "archive": // Corresponds to FileType.Archive
+          files = await FileScannerService.scanFilesByType(FileType.Archive);
+          title = `压缩包文件: 共${files.length}个压缩包文件`;
+          icon = "🗃️";
+          fileType = FileType.Archive;
+          break;
+        default:
+          setError(`未知文件夹ID: ${folderId}`);
+          setLoading(false);
+          return;
+      }
+
+      const fetchedData: FullDiskFolder = {
+        id: folderId,
+        title,
+        files,
+        count: files.length,
+        icon,
+        timeRange,
+        fileType,
+      };
+
+      setFolderData(fetchedData);
+      const now = new Date();
+      setLastUpdated(now);
       setError(null);
+
+      // Cache the fetched data
+      fileCache.set(folderId, { data: files, timestamp: now.getTime() });
+      console.log(`[CACHE] Cached data for folder: ${folderId}`);
+
     } catch (err) {
-      console.error("获取文件筛选结果失败:", err);
-      setError(`获取文件筛选结果失败: ${err}`);
+      console.error(`扫描文件夹 ${folderId} 失败:`, err);
+      setError(`扫描文件夹失败: ${err}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // 手动刷新方法，展示加载指示器
-  const refreshData = () => {
-    fetchScreeningResults(true);
+  // Need a way to get the folder definition (name, icon, type/range) by ID
+  // This could be passed as a prop or fetched from a central place.
+  // For now, let's define a helper function based on the definitions in app-sidebar.tsx
+  const getFolderDefinition = (id: string) => {
+      // This should ideally come from a shared place or prop,
+      // but for now, hardcoding based on app-sidebar definitions
+      const definitions = [
+          { id: "today", name: "今日更新", icon: "📆", timeRange: TimeRange.Today },
+          { id: "last7days", name: "最近7天", icon: "📊", timeRange: TimeRange.Last7Days },
+          { id: "last30days", name: "最近30天", icon: "📅", timeRange: TimeRange.Last30Days },
+          { id: "image", name: "图片文件", icon: "🖼️", fileType: FileType.Image },
+          { id: "audio-video", name: "音视频文件", icon: "🎬", fileType: FileType.AudioVideo },
+          { id: "archive", name: "归档文件", icon: "🗃️", fileType: FileType.Archive },
+      ];
+      // Map icon strings to LucideIcon components if needed for FullDiskFolderView
+      // For now, assuming icon is just a string or handled by the view component
+      return definitions.find(def => def.id === id);
   };
 
-  useEffect(() => {
-    // 初始加载，显示加载状态
-    fetchScreeningResults(true);
-    
-    // 设置定期刷新，后台静默更新
-    const intervalId = setInterval(() => fetchScreeningResults(false), refreshInterval);
-    
-    // 添加窗口焦点事件监听，当用户重新关注窗口时刷新数据
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        fetchScreeningResults(false);
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
 
-  return { 
-    fullDiskFolders: fullDiskFolders, 
-    loading, 
-    error, 
+  useEffect(() => {
+    fetchFolderData(true); // Fetch data when folderId changes or component mounts
+  }, [folderId]); // Re-fetch when folderId changes
+
+  // Manual refresh function
+  const refreshData = () => {
+      // Invalidate cache for this folder before fetching
+      fileCache.delete(folderId);
+      console.log(`[CACHE] Invalidated cache for folder: ${folderId}`);
+      fetchFolderData(true);
+  };
+
+
+  return {
+    folderData,
+    loading,
+    error,
     refreshData,
-    lastUpdated
+    lastUpdated,
   };
 };
 
-// 导出FullDiskFolderView组件
+
+// Export FullDiskFolderView component - needs to use usePinnedFolderData
 export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
-  const { fullDiskFolders, loading, error, refreshData, lastUpdated } = usePinnedFolders();
+  // Use the new hook to fetch data for the specific folderId
+  const { folderData, loading, error, refreshData, lastUpdated } = usePinnedFolderData(folderId);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
-  
-  if (loading && !lastUpdated) return (
+
+  // Show loading state if data is being fetched and no previous data exists
+  if (loading && !folderData) return (
     <div className="flex justify-center items-center h-64">
       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       <span className="ml-3">加载中...</span>
     </div>
   );
-  
+
+  // Show error state
   if (error) return (
     <div className="p-8 text-center">
       <div className="text-red-500 text-lg">出现错误</div>
       <p className="mt-2 text-gray-600">{error}</p>
-      <button 
+      <button
         className="mt-4 px-4 py-2 bg-primary text-white rounded hover:bg-primary/80 transition-colors"
         onClick={() => refreshData()}
       >
@@ -222,26 +210,26 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
       </button>
     </div>
   );
-  
-  const folder = fullDiskFolders.find(folder => folder.id === folderId);
-  
-  if (!folder) return (
-    <div className="p-8 text-center text-gray-500">
-      <div className="text-2xl mb-2">⚠️</div>
-      未找到此文件夹
-    </div>
+
+  // If folderData is null (e.g., invalid folderId)
+  if (!folderData) return (
+      <div className="p-8 text-center text-gray-500">
+        <div className="text-2xl mb-2">⚠️</div>
+        未找到此文件夹或数据
+      </div>
   );
-  
-  // 文件夹存在但文件列表为空
-  if (folder.files.length === 0) {
+
+
+  // Folder exists but file list is empty
+  if (folderData.files.length === 0) {
     return (
       <div className="p-8 text-center">
         <div className="text-gray-500 mb-4">暂无文件</div>
         <p className="mb-4">此文件夹中没有匹配的文件</p>
         <div className="text-xs text-gray-400">
-          {lastUpdated && `最后更新于 ${new Date(lastUpdated).toLocaleString('zh-CN')}`}
+          {lastUpdated && `最后更新于 ${format(lastUpdated, 'yyyy-MM-dd HH:mm:ss', { locale: zhCN })}`}
         </div>
-        <button 
+        <button
           className="mt-4 px-4 py-2 bg-primary text-white rounded hover:bg-primary/80 transition-colors"
           onClick={() => refreshData()}
         >
@@ -250,9 +238,9 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
       </div>
     );
   }
-  
-  // 按条件排序的文件
-  const sortedFiles = [...folder.files].sort((a, b) => {
+
+  // Sort files based on sortOrder
+  const sortedFiles = [...folderData.files].sort((a, b) => {
     switch (sortOrder) {
       case 'newest':
         return new Date(b.modified_time).getTime() - new Date(a.modified_time).getTime();
@@ -266,21 +254,22 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
         return 0;
     }
   });
-  
+
   return (
     <div className="p-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
         <h2 className="text-xl font-bold flex items-center gap-2">
-          <span>{folder.icon}</span> {folder.title}
+          {/* Assuming folderData.icon is a string or handled by the view */}
+          <span>{folderData.icon}</span> {folderData.title}
         </h2>
-        
+
         <div className="flex flex-col md:flex-row items-end md:items-center gap-2 md:gap-4 mt-2 md:mt-0">
           {lastUpdated && (
             <div className="text-xs text-gray-500">
               上次更新: {format(lastUpdated, "HH:mm:ss")}
             </div>
           )}
-          
+
           <div className="flex items-center gap-2">
             <button
               className="p-1.5 rounded-full hover:bg-gray-100 text-gray-600 disabled:opacity-50"
@@ -292,8 +281,8 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-            
-            <select 
+
+            <select
               className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-sm"
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as any)}
@@ -306,12 +295,12 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
           </div>
         </div>
       </div>
-      
+
       {sortedFiles.length > 0 ? (
         <div className="grid gap-3">
-          {sortedFiles.map((file) => (
+          {sortedFiles.map((file, index) => (
             <div
-              key={file.id}
+              key={file.file_path + '_' + index}
               className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-100"
             >
               <div className="flex justify-between">
@@ -332,7 +321,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
                   </span>
                 )}
                 <span className="text-xs text-gray-500">
-                  {formatFileSize(file.file_size)}
+                  {FileScannerService.formatFileSize(file.file_size)}
                 </span>
               </div>
             </div>
@@ -348,4 +337,5 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   );
 };
 
-export default usePinnedFolders;
+// Export the new hook as default
+export default usePinnedFolderData;

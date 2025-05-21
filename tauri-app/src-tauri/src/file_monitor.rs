@@ -160,6 +160,7 @@ struct DirectoryApiResponse {
 }
 
 // 初始化文件监控器
+#[derive(Clone)]
 pub struct FileMonitor {
     monitored_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
     config_cache: Arc<Mutex<Option<AllConfigurations>>>, // Added config cache
@@ -256,6 +257,12 @@ impl FileMonitor {
         }
     }
     // --- End of new method ---
+
+    // 获取当前配置
+    pub fn get_configurations(&self) -> Option<AllConfigurations> {
+        let config_guard = self.config_cache.lock().unwrap();
+        config_guard.clone()
+    }
 
     // 添加监控目录
     pub fn add_monitored_directory(&self, directory: MonitoredDirectory) {
@@ -879,7 +886,7 @@ impl FileMonitor {
                         }
                     } else {
                         // Channel closed
-                        if !batch.is_empty() {
+                        if (!batch.is_empty()) {
                             println!("[BATCH_PROC] Channel closed. Logging remaining batch ({} items).", batch.len());
                              for item in &batch {
                                 println!("[BATCH_CONTENT] {:?}", item);
@@ -1130,20 +1137,5 @@ impl FileMonitor {
         });
         
         Ok(())
-    }
-}
-
-impl Clone for FileMonitor {
-    fn clone(&self) -> Self {
-        FileMonitor {
-            monitored_dirs: self.monitored_dirs.clone(),
-            config_cache: self.config_cache.clone(), // Clone config cache
-            api_host: self.api_host.clone(),
-            api_port: self.api_port,
-            client: self.client.clone(),
-            event_tx: None,
-            batch_size: self.batch_size,
-            batch_interval: self.batch_interval,
-        }
     }
 }

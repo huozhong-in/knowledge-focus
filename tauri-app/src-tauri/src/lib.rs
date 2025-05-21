@@ -12,6 +12,7 @@ use tauri::{
 // 导入自定义命令
 mod commands;
 mod file_monitor;
+mod file_scanner; // 新增文件扫描模块
 mod setup_file_monitor;
 use file_monitor::FileMonitor;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
@@ -27,6 +28,32 @@ struct ApiProcessState {
 
 // API状态包装为线程安全类型
 struct ApiState(Arc<Mutex<ApiProcessState>>);
+
+// 应用配置状态，用于存储文件扫描配置
+pub struct AppState {
+    config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            config: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    pub async fn get_config(&self) -> Result<file_monitor::AllConfigurations, String> {
+        let config_guard = self.config.lock().unwrap();
+        match &*config_guard {
+            Some(config) => Ok(config.clone()),
+            None => Err("配置未初始化".to_string()),
+        }
+    }
+
+    pub fn update_config(&self, config: file_monitor::AllConfigurations) {
+        let mut config_guard = self.config.lock().unwrap();
+        *config_guard = Some(config);
+    }
+}
 
 // 获取API状态的命令
 #[tauri::command]
@@ -479,6 +506,8 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_macos_permissions::init())
+        // 创建和管理AppState
+        .manage(AppState::new())
         .setup(|app| {
             let app_handle = app.handle();
             let api_state_instance = app.state::<ApiState>();
@@ -561,12 +590,14 @@ pub fn run() {
             let app_handle_for_monitor = app_handle.clone();
             let monitor_state = Arc::clone(&app.state::<Arc<Mutex<Option<FileMonitor>>>>());
             let api_state_for_monitor = api_state_instance.0.clone();
-            
-            // 使用setup_file_monitor模块中的函数启动文件监控
+            // Removed app_state_for_monitor as it's no longer needed in setup_auto_file_monitoring
+
+            // 使用setup_file_monitor模块中的函数启动文件监控，并传递AppState用于更新配置
             crate::setup_file_monitor::setup_auto_file_monitoring(
                 app_handle_for_monitor,
                 monitor_state,
-                api_state_for_monitor
+                api_state_for_monitor,
+                // Removed app_state_for_monitor argument
             );
 
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -643,6 +674,8 @@ pub fn run() {
             stop_file_monitoring,
             get_monitoring_status,
             commands::resolve_directory_from_path,
+            file_scanner::scan_files_by_time_range,
+            file_scanner::scan_files_by_type,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {
