@@ -886,7 +886,7 @@ impl FileMonitor {
                         }
                     } else {
                         // Channel closed
-                        if (!batch.is_empty()) {
+                        if !batch.is_empty() {
                             println!("[BATCH_PROC] Channel closed. Logging remaining batch ({} items).", batch.len());
                              for item in &batch {
                                 println!("[BATCH_CONTENT] {:?}", item);

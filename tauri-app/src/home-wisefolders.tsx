@@ -1,19 +1,19 @@
 import { Button } from "@/components/ui/button";
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerDescription,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from "@/components/ui/drawer"
-import React, { useState, useEffect } from "react";
+// import {
+//   Drawer,
+//   DrawerClose,
+//   DrawerContent,
+//   DrawerDescription,
+//   DrawerFooter,
+//   DrawerHeader,
+//   DrawerTitle,
+//   DrawerTrigger,
+// } from "@/components/ui/drawer"
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
-  CardDescription,
+  // CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -213,7 +213,7 @@ function HomeWiseFolders() {
     };
   
     // 获取文件图标（简单版）
-    const getFileIcon = (extension: string | null) => {
+    const getFileIcon = (_extension: string | null) => {
       return <FileIcon className="h-4 w-4 text-gray-500" />;
     };
   

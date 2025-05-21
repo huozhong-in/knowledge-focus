@@ -50,7 +50,7 @@ function ModelsLocal() {
 
   // Mock function to fetch models - replace with actual API call
   const fetchModels = async (
-    config: ApiConfigState,
+    _config: ApiConfigState,
     setConfig: React.Dispatch<React.SetStateAction<ApiConfigState>>
   ) => {
     setConfig((prev) => ({ ...prev, loadingModels: true, models: [] }));
