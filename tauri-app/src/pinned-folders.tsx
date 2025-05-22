@@ -2,7 +2,7 @@ import React,{ useEffect, useState } from "react";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { 
   File, FileText, Image, Music, Video, FileArchive, FileCode, FilePenLine, 
   FileSpreadsheet, FileX, Copy, Folder, ExternalLink 
@@ -269,9 +269,9 @@ interface FileActionMenuProps {
 const FileActionMenu: React.FC<FileActionMenuProps> = ({ file }) => {
   const openContainingFolder = async () => {
     try {
-      // 获取文件所在的目录
-      const folderPath = file.file_path.substring(0, file.file_path.lastIndexOf('/'));
-      await openPath(folderPath);
+      // 获取文件所在的目录后让文件被选中
+      // const folderPath = file.file_path.substring(0, file.file_path.lastIndexOf('/'));
+      await revealItemInDir(file.file_path);
     } catch (error) {
       console.error("打开文件夹失败:", error);
       toast.error("打开文件夹失败");

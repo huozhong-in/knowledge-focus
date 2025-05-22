@@ -243,19 +243,19 @@ async fn scan_files_with_filter(
                 if file_name.starts_with(".") {
                     return false;
                 }
-                // 过滤掉Cache目录 (大小写不敏感)
-                if e.file_type().is_dir() && file_name.eq_ignore_ascii_case("Cache") {
-                    return false;
-                }
-                
                 
                 // 检查完整路径中的每个组件
                 let path = e.path();
                 for component in path.components() {
                     if let std::path::Component::Normal(name) = component {
                         if let Some(name_str) = name.to_str() {
+                            // 过滤掉路径中包含以点开头的目录
                             if name_str.starts_with(".") && name_str != "." && name_str != ".." {
-                                return false; // 过滤掉路径中包含以点开头的目录
+                                return false; 
+                            }
+                            // 过滤掉Cache目录 (大小写不敏感)
+                            if name_str.eq_ignore_ascii_case("Cache") {
+                                return false;
                             }
                         }
                     }
