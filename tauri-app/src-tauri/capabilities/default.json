@@ -24,10 +24,10 @@
       "identifier": "fs:scope-appdata",
       "allow": [
         {
-          "path": "$APPDATA/*"
+          "path": "$APPDATA/**/*"
         },
         {
-          "path": "$APPLOCALDATA/*"
+          "path": "$APPLOCALDATA/**/*"
         }
       ]
     },
@@ -73,6 +73,166 @@
       "allow": [
         {
           "url": "http://127.0.0.1:60000"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-open-path",
+      "allow": [
+        {
+          "path": "$AUDIO/**/*"
+        },
+        {
+          "path": "$CACHE/**/*"
+        },
+        {
+          "path": "$CONFIG/**/*"
+        },
+        {
+          "path": "$DATA/**/*"
+        },
+        {
+          "path": "$LOCALDATA/**/*"
+        },
+        {
+          "path": "$DESKTOP/**/*"
+        },
+        {
+          "path": "$DOCUMENT/**/*"
+        },
+        {
+          "path": "$DOWNLOAD/**/*"
+        },
+        {
+          "path": "$EXE/**/*"
+        },
+        {
+          "path": "$FONT/**/*"
+        },
+        {
+          "path": "$HOME/**/*"
+        },
+        {
+          "path": "$PICTURE/**/*"
+        },
+        {
+          "path": "$PUBLIC/**/*"
+        },
+        {
+          "path": "$RUNTIME/**/*"
+        },
+        {
+          "path": "$TEMPLATE/**/*"
+        },
+        {
+          "path": "$VIDEO/**/*"
+        },
+        {
+          "path": "$RESOURCE/**/*"
+        },
+        {
+          "path": "$APP/**/*"
+        },
+        {
+          "path": "$LOG/**/*"
+        },
+        {
+          "path": "$TEMP/**/*"
+        },
+        {
+          "path": "$APPCONFIG/**/*"
+        },
+        {
+          "path": "$APPDATA/**/*"
+        },
+        {
+          "path": "$APPLOCALDATA/**/*"
+        },
+        {
+          "path": "$APPCACHE/**/*"
+        },
+        {
+          "path": "$APPLOG/**/*"
+        }
+      ]
+    },
+    {
+      "identifier": "opener:allow-reveal-item-in-dir",
+      "allow": [
+        {
+          "path": "$AUDIO/**/*"
+        },
+        {
+          "path": "$CACHE/**/*"
+        },
+        {
+          "path": "$CONFIG/**/*"
+        },
+        {
+          "path": "$DATA/**/*"
+        },
+        {
+          "path": "$LOCALDATA/**/*"
+        },
+        {
+          "path": "$DESKTOP/**/*"
+        },
+        {
+          "path": "$DOCUMENT/**/*"
+        },
+        {
+          "path": "$DOWNLOAD/**/*"
+        },
+        {
+          "path": "$EXE/**/*"
+        },
+        {
+          "path": "$FONT/**/*"
+        },
+        {
+          "path": "$HOME/**/*"
+        },
+        {
+          "path": "$PICTURE/**/*"
+        },
+        {
+          "path": "$PUBLIC/**/*"
+        },
+        {
+          "path": "$RUNTIME/**/*"
+        },
+        {
+          "path": "$TEMPLATE/**/*"
+        },
+        {
+          "path": "$VIDEO/**/*"
+        },
+        {
+          "path": "$RESOURCE/**/*"
+        },
+        {
+          "path": "$APP/**/*"
+        },
+        {
+          "path": "$LOG/**/*"
+        },
+        {
+          "path": "$TEMP/**/*"
+        },
+        {
+          "path": "$APPCONFIG/**/*"
+        },
+        {
+          "path": "$APPDATA/**/*"
+        },
+        {
+          "path": "$APPLOCALDATA/**/*"
+        },
+        {
+          "path": "$APPCACHE/**/*"
+        },
+        {
+          "path": "$APPLOG/**/*"
         }
       ]
     }

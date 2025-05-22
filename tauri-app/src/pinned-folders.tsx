@@ -1,7 +1,22 @@
-import { useEffect, useState } from "react";
+import React,{ useEffect, useState } from "react";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
+import { openPath } from "@tauri-apps/plugin-opener";
+import { 
+  File, FileText, Image, Music, Video, FileArchive, FileCode, FilePenLine, 
+  FileSpreadsheet, FileX, Copy, Folder, ExternalLink 
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
 // 文件类型定义
 export interface FullDiskFolder {
@@ -16,6 +31,56 @@ export interface FullDiskFolder {
 
 // Use FileScannerService's formatFileSize function
 export const formatFileSize = FileScannerService.formatFileSize;
+
+// 文件类型图标映射
+const getFileIcon = (extension?: string) => {
+  if (!extension) return <FileX size={18} />;
+  
+  extension = extension.toLowerCase();
+  
+  // 图片文件
+  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico', 'tiff'].includes(extension)) {
+    return <Image size={18} className="text-blue-500" />;
+  }
+  
+  // 音频文件
+  if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(extension)) {
+    return <Music size={18} className="text-purple-500" />;
+  }
+  
+  // 视频文件
+  if (['mp4', 'avi', 'mov', 'flv', 'wmv', 'webm', 'mkv', 'm4v'].includes(extension)) {
+    return <Video size={18} className="text-pink-500" />;
+  }
+  
+  // 压缩文件
+  if (['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz'].includes(extension)) {
+    return <FileArchive size={18} className="text-amber-500" />;
+  }
+  
+  // 代码文件
+  if (['js', 'ts', 'jsx', 'tsx', 'html', 'css', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'php'].includes(extension)) {
+    return <FileCode size={18} className="text-green-500" />;
+  }
+  
+  // 文档文件
+  if (['doc', 'docx', 'txt', 'rtf', 'md', 'pdf'].includes(extension)) {
+    return <FileText size={18} className="text-sky-500" />;
+  }
+  
+  // 表格文件
+  if (['xls', 'xlsx', 'csv'].includes(extension)) {
+    return <FileSpreadsheet size={18} className="text-emerald-500" />;
+  }
+  
+  // 其他文本类型
+  if (['json', 'xml', 'yaml', 'yml', 'ini', 'conf', 'config'].includes(extension)) {
+    return <FilePenLine size={18} className="text-orange-500" />;
+  }
+  
+  // 默认文件图标
+  return <File size={18} className="text-gray-500" />;
+};
 
 // Simple in-memory cache
 const fileCache: Map<string, { data: FileInfo[], timestamp: number }> = new Map();
@@ -73,37 +138,49 @@ export const usePinnedFolderData = (folderId: string) => {
       switch (folderId) {
         case "today":
           files = await FileScannerService.scanFilesByTimeRange(TimeRange.Today);
-          title = `今日更新: ${format(new Date(), "yyyy年MM月dd日", { locale: zhCN })}修改了${files.length}个文件`;
+          // 修改：文件数为500时显示为500+
+          const todayFileCount = files.length === 500 ? "500+" : files.length;
+          title = `今日更新: ${format(new Date(), "yyyy年MM月dd日", { locale: zhCN })}修改了${todayFileCount}个文件`;
           icon = "📆";
           timeRange = TimeRange.Today;
           break;
         case "last7days":
           files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last7Days);
-          title = `本周动态: 近7天有${files.length}个文件更新`;
+          // 修改：文件数为500时显示为500+
+          const last7daysFileCount = files.length === 500 ? "500+" : files.length;
+          title = `本周动态: 近7天有${last7daysFileCount}个文件更新`;
           icon = "📊";
           timeRange = TimeRange.Last7Days;
           break;
         case "last30days":
           files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last30Days);
-          title = `本月回顾: 近30天有${files.length}个文件更新`;
+          // 修改：文件数为500时显示为500+
+          const last30daysFileCount = files.length === 500 ? "500+" : files.length;
+          title = `本月回顾: 近30天有${last30daysFileCount}个文件更新`;
           icon = "📅";
           timeRange = TimeRange.Last30Days;
           break;
         case "image": // Corresponds to FileType.Image
           files = await FileScannerService.scanFilesByType(FileType.Image);
-          title = `图片文件: 共${files.length}个图片文件`;
+          // 修改：文件数为500时显示为500+
+          const imageFileCount = files.length === 500 ? "500+" : files.length;
+          title = `图片文件: 共${imageFileCount}个图片文件`;
           icon = "🖼️";
           fileType = FileType.Image;
           break;
         case "audio-video": // Corresponds to FileType.AudioVideo
           files = await FileScannerService.scanFilesByType(FileType.AudioVideo);
-          title = `音视频文件: 共${files.length}个音视频文件`;
+          // 修改：文件数为500时显示为500+
+          const audioVideoFileCount = files.length === 500 ? "500+" : files.length;
+          title = `音视频文件: 共${audioVideoFileCount}个音视频文件`;
           icon = "🎬";
           fileType = FileType.AudioVideo;
           break;
         case "archive": // Corresponds to FileType.Archive
           files = await FileScannerService.scanFilesByType(FileType.Archive);
-          title = `压缩包文件: 共${files.length}个压缩包文件`;
+          // 修改：文件数为500时显示为500+
+          const archiveFileCount = files.length === 500 ? "500+" : files.length;
+          title = `压缩包文件: 共${archiveFileCount}个压缩包文件`;
           icon = "🗃️";
           fileType = FileType.Archive;
           break;
@@ -184,10 +261,120 @@ export const usePinnedFolderData = (folderId: string) => {
 
 
 // Export FullDiskFolderView component - needs to use usePinnedFolderData
+// 文件操作菜单组件
+interface FileActionMenuProps {
+  file: FileInfo;
+}
+
+const FileActionMenu: React.FC<FileActionMenuProps> = ({ file }) => {
+  const openContainingFolder = async () => {
+    try {
+      // 获取文件所在的目录
+      const folderPath = file.file_path.substring(0, file.file_path.lastIndexOf('/'));
+      await openPath(folderPath);
+    } catch (error) {
+      console.error("打开文件夹失败:", error);
+      toast.error("打开文件夹失败");
+    }
+  };
+
+  const openFileDirectly = async () => {
+    try {
+      await openPath(file.file_path);
+    } catch (error) {
+      console.error("打开文件失败:", error);
+      toast.error("打开文件失败");
+    }
+  };
+
+  const copyFilePath = () => {
+    navigator.clipboard.writeText(file.file_path)
+      .then(() => {
+        toast.success("文件路径已复制到剪贴板");
+      })
+      .catch(err => {
+        console.error("复制失败:", err);
+        toast.error("复制文件路径失败");
+      });
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className="ml-auto flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-transparent p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-600 focus:outline-none">
+          <span className="sr-only">打开菜单</span>
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+          </svg>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[200px]">
+        <DropdownMenuLabel>文件操作</DropdownMenuLabel>
+        <DropdownMenuItem onClick={openFileDirectly} className="flex items-center gap-2 cursor-pointer">
+          <ExternalLink size={16} /> 打开文件
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={openContainingFolder} className="flex items-center gap-2 cursor-pointer">
+          <Folder size={16} /> 打开所在文件夹
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={copyFilePath} className="flex items-center gap-2 cursor-pointer">
+          <Copy size={16} /> 复制文件路径
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+};
+
 export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   // Use the new hook to fetch data for the specific folderId
   const { folderData, loading, error, refreshData, lastUpdated } = usePinnedFolderData(folderId);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
+  const [filterExtension, setFilterExtension] = useState<string>('all');
+  const [uniqueExtensions, setUniqueExtensions] = useState<string[]>([]);
+
+  // 提取所有唯一的文件扩展名
+  useEffect(() => {
+    if (folderData?.files) {
+      const extensions = folderData.files
+        .map(file => file.extension || '未知')
+        .filter(Boolean);
+      
+      // 获取唯一的扩展名并排序
+      const uniqueExts = Array.from(new Set(extensions)).sort();
+      setUniqueExtensions(uniqueExts);
+    }
+  }, [folderData?.files]);
+
+  // 根据排序和过滤条件处理文件列表
+  const processedFiles = React.useMemo(() => {
+    if (!folderData?.files) return [];
+
+    // 先应用过滤
+    let filtered = folderData.files;
+    if (filterExtension !== 'all') {
+      filtered = folderData.files.filter(file => 
+        filterExtension === '未知' 
+          ? !file.extension
+          : file.extension?.toLowerCase() === filterExtension.toLowerCase()
+      );
+    }
+
+    // 再应用排序
+    return [...filtered].sort((a, b) => {
+      switch (sortOrder) {
+        case 'newest':
+          return new Date(b.modified_time).getTime() - new Date(a.modified_time).getTime();
+        case 'oldest':
+          return new Date(a.modified_time).getTime() - new Date(b.modified_time).getTime();
+        case 'name':
+          return a.file_name.localeCompare(b.file_name);
+        case 'size':
+          return b.file_size - a.file_size;
+        default:
+          return 0;
+      }
+    });
+  }, [folderData?.files, sortOrder, filterExtension]);
 
   // Show loading state if data is being fetched and no previous data exists
   if (loading && !folderData) return (
@@ -239,22 +426,6 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
     );
   }
 
-  // Sort files based on sortOrder
-  const sortedFiles = [...folderData.files].sort((a, b) => {
-    switch (sortOrder) {
-      case 'newest':
-        return new Date(b.modified_time).getTime() - new Date(a.modified_time).getTime();
-      case 'oldest':
-        return new Date(a.modified_time).getTime() - new Date(b.modified_time).getTime();
-      case 'name':
-        return a.file_name.localeCompare(b.file_name);
-      case 'size':
-        return b.file_size - a.file_size;
-      default:
-        return 0;
-    }
-  });
-
   return (
     <div className="p-4">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
@@ -271,6 +442,21 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
           )}
 
           <div className="flex items-center gap-2">
+            {/* 文件类型过滤器 */}
+            {uniqueExtensions.length > 1 && (
+              <select
+                className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-sm"
+                value={filterExtension}
+                onChange={(e) => setFilterExtension(e.target.value)}
+                title="按文件类型过滤"
+              >
+                <option value="all">所有类型</option>
+                {uniqueExtensions.map(ext => (
+                  <option key={ext} value={ext}>{ext || '未知'}</option>
+                ))}
+              </select>
+            )}
+
             <button
               className="p-1.5 rounded-full hover:bg-gray-100 text-gray-600 disabled:opacity-50"
               onClick={refreshData}
@@ -296,29 +482,45 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
         </div>
       </div>
 
-      {sortedFiles.length > 0 ? (
+      {/* 添加文件数量提示，当达到500个文件时显示 */}
+      {folderData.files.length === 500 && (
+        <div className="mb-4 p-2 bg-yellow-50 text-yellow-700 rounded-md text-sm border border-yellow-200">
+          ⚠️ 仅显示前500个文件，可能还有更多匹配的文件未列出。请使用更精确的筛选条件。
+        </div>
+      )}
+
+      {processedFiles.length > 0 ? (
         <div className="grid gap-3">
-          {sortedFiles.map((file, index) => (
+          {processedFiles.map((file, index) => (
             <div
               key={file.file_path + '_' + index}
-              className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-100"
+              className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-100 group"
+              onDoubleClick={() => openPath(file.file_path).catch(err => toast.error("无法打开文件: " + err))}
             >
               <div className="flex justify-between">
-                <h3 className="font-medium truncate flex-1" title={file.file_name}>
-                  {file.file_name}
-                </h3>
-                <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">
-                  {format(new Date(file.modified_time), "yyyy-MM-dd HH:mm")}
-                </span>
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="flex-shrink-0 inline-flex items-center justify-center">
+                    {getFileIcon(file.extension)}
+                  </span>
+                  <h3 className="font-medium truncate" title={file.file_name}>
+                    {file.file_name}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {format(new Date(file.modified_time), "yyyy-MM-dd HH:mm")}
+                  </span>
+                  <FileActionMenu file={file} />
+                </div>
               </div>
-              <div className="text-sm text-gray-600 truncate mt-1" title={file.file_path}>
+              <div className="text-sm text-gray-600 truncate mt-1 ml-6" title={file.file_path}>
                 {file.file_path}
               </div>
-              <div className="mt-2 flex items-center justify-between">
+              <div className="mt-2 flex items-center justify-between ml-6">
                 {file.extension && (
-                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+                  <Badge variant="secondary" className="text-xs font-normal">
                     {file.extension}
-                  </span>
+                  </Badge>
                 )}
                 <span className="text-xs text-gray-500">
                   {FileScannerService.formatFileSize(file.file_size)}

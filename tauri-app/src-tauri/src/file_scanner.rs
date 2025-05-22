@@ -86,11 +86,14 @@ fn is_file_of_type(extension: &Option<String>, file_type: &FileType, extension_m
     if let Some(ext) = extension {
         let ext = ext.to_lowercase();
         let target_category_ids = get_category_ids_for_file_type(file_type);
-
-        // Check if the file's extension maps to any of the target category IDs
-        extension_maps.iter().any(|map| {
+        
+        // 检查文件扩展名是否在扩展名映射列表中
+        // 只有扩展名在列表中且关联到指定分类ID的文件才会被返回
+        let matches = extension_maps.iter().any(|map| {
             map.extension.to_lowercase() == ext && target_category_ids.contains(&map.category_id)
-        })
+        });
+        
+        return matches;
     } else {
         false
     }
@@ -201,6 +204,17 @@ async fn scan_files_with_filter(
     let mut files = Vec::new();
     let extension_maps = &config.file_extension_maps;
 
+    // 检查扩展名映射是否为空
+    if extension_maps.is_empty() {
+        return Err("配置中未找到文件扩展名映射".to_string());
+    }
+
+    // 创建有效扩展名哈希集，用于快速查找
+    let mut valid_extensions = std::collections::HashSet::new();
+    for map in extension_maps {
+        valid_extensions.insert(map.extension.to_lowercase());
+    }
+
     for monitored_dir in &config.monitored_folders {
         // Only scan authorized and non-blacklisted directories
         let should_scan = if config.full_disk_access {
@@ -223,6 +237,32 @@ async fn scan_files_with_filter(
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
+            .filter(|e| {
+                // 过滤掉以点开头的目录和文件
+                let file_name = e.file_name().to_string_lossy();
+                if file_name.starts_with(".") {
+                    return false;
+                }
+                // 过滤掉Cache目录 (大小写不敏感)
+                if e.file_type().is_dir() && file_name.eq_ignore_ascii_case("Cache") {
+                    return false;
+                }
+                
+                
+                // 检查完整路径中的每个组件
+                let path = e.path();
+                for component in path.components() {
+                    if let std::path::Component::Normal(name) = component {
+                        if let Some(name_str) = name.to_str() {
+                            if name_str.starts_with(".") && name_str != "." && name_str != ".." {
+                                return false; // 过滤掉路径中包含以点开头的目录
+                            }
+                        }
+                    }
+                }
+                
+                true // 其他情况都保留
+            })
         {
             if !entry.file_type().is_file() {
                 continue;
@@ -230,6 +270,18 @@ async fn scan_files_with_filter(
 
             let file_path = entry.path();
             let extension = get_file_extension(file_path);
+            
+            // 只处理有扩展名且扩展名在配置中的文件
+            if let Some(ref ext) = extension {
+                let ext_lower = ext.to_lowercase();
+                if !valid_extensions.contains(&ext_lower) {
+                    // 扩展名不在配置列表中，跳过
+                    continue;
+                }
+            } else if file_type != Some(FileType::All) {
+                // 没有扩展名且不是查找所有文件类型，跳过
+                continue;
+            }
 
             // Check file type filter
             if let Some(ref ft) = file_type {
@@ -295,6 +347,10 @@ async fn scan_files_with_filter(
                 modified_time: system_time_to_iso_string(modified_time),
                 category_id,
             });
+            // 返回前500个文件
+            if files.len() >= 500 {
+                break;
+            }
         }
     }
 
