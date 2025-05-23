@@ -32,12 +32,14 @@ struct ApiState(Arc<Mutex<ApiProcessState>>);
 // 应用配置状态，用于存储文件扫描配置
 pub struct AppState {
     config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
+    file_monitor: Arc<Mutex<Option<FileMonitor>>>,
 }
 
 impl AppState {
     fn new() -> Self {
         Self {
             config: Arc::new(Mutex::new(None)),
+            file_monitor: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -191,12 +193,12 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                             match event {
                                 CommandEvent::Stdout(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
-                                    println!("Python API: {}", line_str);
+                                    // println!("Python API: {}", line_str);
                                     let _ = window.emit("api-log", Some(line_str.to_string()));
                                 }
                                 CommandEvent::Stderr(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
-                                    eprintln!("Python API Debug: {}", line_str);
+                                    // eprintln!("Python API Debug: {}", line_str);
                                     let _ = window.emit("api-error", Some(line_str.to_string()));
                                 }
                                 CommandEvent::Error(err) => {
@@ -674,6 +676,8 @@ pub fn run() {
             stop_file_monitoring,
             get_monitoring_status,
             commands::resolve_directory_from_path,
+            commands::get_file_monitor_stats,
+            commands::test_bundle_detection,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
         ])

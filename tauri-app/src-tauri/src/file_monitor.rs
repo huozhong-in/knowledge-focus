@@ -11,6 +11,15 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
 use walkdir::WalkDir;
 
+// 文件监控统计信息
+#[derive(Debug, Default, Clone, Serialize)]
+pub struct MonitorStats {
+    pub processed_files: u64,     // 处理的文件数量
+    pub filtered_files: u64,      // 被过滤的文件数量
+    pub filtered_bundles: u64,    // 被过滤的macOS包数量
+    pub error_count: u64,         // 处理错误次数
+}
+
 // --- New Configuration Structs ---
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCategoryRust {
@@ -31,6 +40,8 @@ pub enum RuleTypeRust {
     Folder,
     #[serde(alias = "structure")]
     Structure,
+    #[serde(alias = "os_bundle")]
+    OSBundle,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -118,6 +129,8 @@ pub struct FileMetadata {
     pub initial_rule_matches: Option<Vec<String>>, // 匹配的初步规则
     #[serde(rename = "extra_metadata", skip_serializing_if = "Option::is_none")]
     pub extra_metadata: Option<serde_json::Value>, // 额外元数据
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_os_bundle: Option<bool>,  // 是否是macOS bundle
 }
 
 // API响应结构
@@ -162,21 +175,33 @@ struct DirectoryApiResponse {
 // 初始化文件监控器
 #[derive(Clone)]
 pub struct FileMonitor {
+    // 监控目录列表（用于监控）
     monitored_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
-    config_cache: Arc<Mutex<Option<AllConfigurations>>>, // Added config cache
+    // 黑名单目录列表（仅用于检查路径是否在黑名单中）
+    blacklist_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
+    // 配置缓存
+    config_cache: Arc<Mutex<Option<AllConfigurations>>>,
+    // API主机和端口
     api_host: String,
     api_port: u16,
+    // HTTP 客户端
     client: reqwest::Client,
+    // 事件发送通道
     event_tx: Option<Sender<(PathBuf, notify::EventKind)>>,
+    // 批处理大小
     batch_size: usize,
+    // 批处理间隔
     batch_interval: Duration,
+    // 监控统计数据
+    stats: Arc<Mutex<MonitorStats>>,
 }
 
 impl FileMonitor {
     // 创建新的文件监控器实例
-    pub fn new(api_host: String, api_port: u16) -> Self {
+    pub fn new(api_host: String, api_port: u16) -> FileMonitor {
         FileMonitor {
             monitored_dirs: Arc::new(Mutex::new(Vec::new())),
+            blacklist_dirs: Arc::new(Mutex::new(Vec::new())),
             config_cache: Arc::new(Mutex::new(None)), // Initialize config cache
             api_host,
             api_port,
@@ -184,6 +209,7 @@ impl FileMonitor {
                 .timeout(Duration::from_secs(30))
                 .build()
                 .expect("Failed to create HTTP client"),
+            stats: Arc::new(Mutex::new(MonitorStats::default())),
             event_tx: None,
             batch_size: 50,
             batch_interval: Duration::from_secs(5),
@@ -210,18 +236,29 @@ impl FileMonitor {
                             let mut cache = self.config_cache.lock().unwrap();
                             *cache = Some(config_data.clone()); // Store all fetched config
 
-                            // Also update monitored_dirs from this unified config endpoint
+                            // 更新监控目录和黑名单目录列表
                             let mut monitored_dirs_lock = self.monitored_dirs.lock().unwrap();
+                            let mut blacklist_dirs_lock = self.blacklist_dirs.lock().unwrap(); // 同时获取黑名单锁
                             
-                            // 根据完全磁盘访问权限状态过滤文件夹
+                            // 清空黑名单目录列表，准备重新填充
+                            blacklist_dirs_lock.clear();
+                            
+                            // 根据完全磁盘访问权限状态分类文件夹
                             let mut authorized_folders = Vec::new();
+                            
                             for dir in &config_data.monitored_folders {
-                                // 如果有完全磁盘访问权限，只过滤黑名单文件夹
-                                // 否则，需要同时判断授权状态和黑名单状态
+                                // 如果是黑名单文件夹，则添加到黑名单列表中
+                                if dir.is_blacklist {
+                                    blacklist_dirs_lock.push(dir.clone());
+                                    println!("[CONFIG_FETCH] Added blacklist directory: {}", dir.path);
+                                    continue; // 黑名单文件夹不添加到监控列表
+                                }
+                                
+                                // 对于非黑名单文件夹，根据授权状态决定是否监控
                                 let should_monitor = if config_data.full_disk_access {
-                                    !dir.is_blacklist
+                                    true // 有完全访问权限时监控所有非黑名单文件夹
                                 } else {
-                                    dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
+                                    dir.auth_status == DirectoryAuthStatus::Authorized // 否则仅监控已授权文件夹
                                 };
                                 
                                 if should_monitor {
@@ -231,8 +268,8 @@ impl FileMonitor {
                             
                             *monitored_dirs_lock = authorized_folders;
                             
-                            println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries from /config/all. (Full disk access: {})",
-                                monitored_dirs_lock.len(), config_data.full_disk_access);
+                            println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries and blacklist_dirs with {} entries from /config/all. (Full disk access: {})",
+                                monitored_dirs_lock.len(), blacklist_dirs_lock.len(), config_data.full_disk_access);
                             Ok(())
                         }
                         Err(e) => {
@@ -408,15 +445,143 @@ impl FileMonitor {
             .map(|name| name.starts_with("."))
             .unwrap_or(false)
     }
-
-    // 检查路径是否在黑名单内
-    fn is_in_blacklist(&self, path: &Path) -> bool {
-        let dirs = self.monitored_dirs.lock().unwrap();
-        for dir in dirs.iter() {
-            if dir.is_blacklist && path.starts_with(&dir.path) {
+    
+    // 检查是否为macOS bundle文件夹
+    pub fn is_macos_bundle_folder(path: &Path) -> bool {
+        // 首先处理可能为null的情况
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+        
+        // 设置常用的bundle扩展名，仅作为备选检测方式
+        // 注意：主要检测逻辑应该基于从API获取的规则
+        // 这里保留最基本的几种作为异常情况下的安全网
+        let fallback_bundle_extensions = [
+            ".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", 
+            ".imovielibrary", ".tvlibrary", ".theater"
+        ];
+        
+        // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            let lowercase_name = file_name.to_lowercase();
+            
+            // 检查文件名是否匹配bundle扩展名
+            if fallback_bundle_extensions.iter().any(|ext| lowercase_name.ends_with(ext)) {
                 return true;
             }
         }
+        
+        // 2. 检查路径中的任何部分是否包含bundle
+        if let Some(path_str) = path.to_str() {
+            let path_components: Vec<&str> = path_str.split('/').collect();
+            
+            for component in path_components {
+                let lowercase_component = component.to_lowercase();
+                if fallback_bundle_extensions.iter().any(|ext| {
+                    // 检查组件是否以bundle扩展名结尾
+                    lowercase_component.ends_with(ext)
+                }) {
+                    return true;
+                }
+            }
+        }
+        
+        // 3. 如果是目录，检查是否有典型的macOS bundle目录结构
+        if path.is_dir() && cfg!(target_os = "macos") {
+            // 检查常见的bundle内部目录结构
+            let contents_dir = path.join("Contents");
+            if contents_dir.exists() && contents_dir.is_dir() {
+                let info_plist = contents_dir.join("Info.plist");
+                let macos_dir = contents_dir.join("MacOS");
+                let resources_dir = contents_dir.join("Resources");
+                
+                // 如果存在Info.plist或典型的bundle子目录，很可能是一个bundle
+                if info_plist.exists() || macos_dir.exists() || resources_dir.exists() {
+                    return true;
+                }
+            }
+        }
+        
+        // 如果以上检查都未通过，则不是bundle
+        false
+    }
+
+    // 检查文件是否在macOS bundle内部
+    pub fn is_inside_macos_bundle(path: &Path) -> bool {
+        if let Some(path_str) = path.to_str() {
+            // 检查常见bundle扩展
+            let bundle_extensions = [".app/", ".bundle/", ".framework/", ".fcpbundle/", 
+                                    ".photoslibrary/", ".imovielibrary/", ".tvlibrary/", ".theater/"];
+            for ext in bundle_extensions.iter() {
+                if path_str.contains(ext) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    // 检查路径是否在黑名单内
+    fn is_in_blacklist(&self, path: &Path) -> bool {
+        // 现在从blacklist_dirs而不是monitored_dirs中获取黑名单文件夹
+        let dirs = self.blacklist_dirs.lock().unwrap();
+        
+        // 获取当前路径的规范化字符串表示
+        let path_str = path.to_string_lossy().to_string();
+        
+        // 打印当前检查的路径（调试信息）
+        // println!("[BLACKLIST_CHECK] 正在检查路径: {:?}", path_str);
+        
+        // 打印所有黑名单文件夹（调试信息）
+        // println!("[BLACKLIST_DEBUG] 当前黑名单文件夹列表:");
+        let mut has_blacklist = false;
+        for (i, dir) in dirs.iter().enumerate() {
+            // 不需要再检查is_blacklist，因为blacklist_dirs中的所有文件夹都是黑名单文件夹
+            has_blacklist = true;
+            // println!("[BLACKLIST_DEBUG] 黑名单 #{}: {}", i, dir.path);
+        }
+        
+        if !has_blacklist {
+            // println!("[BLACKLIST_DEBUG] 警告：没有找到任何黑名单文件夹!");
+        }
+        
+        // 检查路径是否在任何黑名单文件夹内
+        for dir in dirs.iter() {
+            // 获取规范化的黑名单路径字符串用于比较
+            let mut blacklist_path = dir.path.trim_end_matches('/').to_string();
+            
+            // 确保路径以斜杠结尾便于目录比较
+            if !blacklist_path.ends_with('/') {
+                blacklist_path.push('/');
+            }
+            
+            // println!("[BLACKLIST_COMPARE] 比较 - 路径: '{}', 黑名单: '{}'", path_str, blacklist_path);
+            
+            // 方法1：检查路径是否以黑名单路径开头（目录匹配）
+            if path_str.starts_with(&blacklist_path) {
+                // println!("[BLACKLIST] 路径 {:?} 在黑名单目录内: {}", path, dir.path);
+                return true;
+            }
+            
+            // 方法2：检查路径是否与黑名单路径完全匹配（文件匹配）
+            let trimmed_blacklist = dir.path.trim_end_matches('/');
+            if path_str == trimmed_blacklist {
+                // println!("[BLACKLIST] 路径 {:?} 与黑名单路径完全匹配: {}", path, dir.path);
+                return true;
+            }
+            
+            // 方法3：规范化路径后进行比较
+            if let Ok(canonical_path) = std::fs::canonicalize(path) {
+                let canonical_str = canonical_path.to_string_lossy().to_string();
+                // println!("[BLACKLIST_CANONICAL] 规范化路径比较 - 路径: '{}', 黑名单: '{}'", canonical_str, blacklist_path);
+                
+                if canonical_str.starts_with(&blacklist_path) || canonical_str == trimmed_blacklist {
+                    // println!("[BLACKLIST] 规范化路径 {:?} 在黑名单内: {}", canonical_str, dir.path);
+                    return true;
+                }
+            }
+        }
+        // println!("[BLACKLIST_RESULT] 路径 {} 不在任何黑名单中", path_str);
         false
     }
 
@@ -429,14 +594,24 @@ impl FileMonitor {
         }
         let config = config_guard.as_ref().unwrap();
 
+        // 更新处理文件计数器
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.processed_files += 1;
+        }
+        
         // 创建额外元数据对象
         let mut extra_data = serde_json::Map::new();
         
+        // 强制标记隐藏文件为排除
+        if metadata.is_hidden {
+            extra_data.insert("excluded_by_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(9999)));
+            extra_data.insert("excluded_by_rule_name".to_string(), serde_json::Value::String("隐藏文件自动排除".to_string()));
+            println!("[APPLY_RULES] 隐藏文件将被自动排除: {}", metadata.file_name);
+        }
+        
         // 根据扩展名进行初步分类
         if let Some(ext) = &metadata.extension {
-            // 这里可以添加静态规则或从API获取规则
-            // Replace hardcoded logic with rules from config.file_extension_maps
-            let mut applied_category = false;
+            // 从API获取规则
             for ext_map_rule in &config.file_extension_maps {
                 if ext_map_rule.extension == *ext {
                     metadata.category_id = Some(ext_map_rule.category_id);
@@ -445,35 +620,8 @@ impl FileMonitor {
                         .find(|cat| cat.id == ext_map_rule.category_id)
                         .map_or("unknown_category_id".to_string(), |cat| cat.name.clone());
                     extra_data.insert("file_type_from_ext_map".to_string(), serde_json::Value::String(category_name));
-                    applied_category = true;
-                    println!("[APPLY_RULES] Applied category {} from extension map for ext: {}", ext_map_rule.category_id, ext);
+                    // println!("[APPLY_RULES] Applied category {} from extension map for ext: {}", ext_map_rule.category_id, ext);
                     break; // Assuming first match is enough, or consider priority
-                }
-            }
-
-            if !applied_category {
-                 // Fallback to old hardcoded logic if no extension map rule matched (optional)
-                let category_id = match ext.as_str() {
-                    "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" => 1, // 图片
-                    "doc" | "docx" | "pdf" | "txt" | "md" | "rtf" => 2,   // 文档
-                    "mp3" | "wav" | "flac" | "ogg" | "mp4" | "mov" => 3,  // 媒体
-                    "zip" | "rar" | "7z" | "gz" | "tar" => 4,             // 压缩文件
-                    "exe" | "dmg" | "app" | "msi" => 5,                   // 可执行文件
-                    "js" | "ts" | "py" | "rs" | "go" | "java" | "c" | "cpp" | "h" => 6, // 代码
-                    _ => 0, // 未知类型
-                };
-                if category_id > 0 {
-                    metadata.category_id = Some(category_id);
-                    extra_data.insert("file_type_fallback".to_string(), serde_json::Value::String(match category_id {
-                        1 => "image".to_string(),
-                        2 => "document".to_string(),
-                        3 => "media".to_string(),
-                        4 => "archive".to_string(),
-                        5 => "executable".to_string(),
-                        6 => "code".to_string(),
-                        _ => "unknown".to_string(),
-                    }));
-                     println!("[APPLY_RULES] Applied category {} from fallback for ext: {}", category_id, ext);
                 }
             }
 
@@ -498,24 +646,70 @@ impl FileMonitor {
             if !filter_rule.enabled {
                 continue;
             }
-            // Placeholder for actual pattern matching logic (regex, glob, keyword)
-            // This will be expanded in the next step.
+            // 实现正则表达式、关键字和通配符匹配逻辑
             let mut matched_this_rule = false;
             match filter_rule.rule_type {
                 RuleTypeRust::Filename => {
-                    if filter_rule.pattern_type == "keyword" && filename.contains(&filter_rule.pattern) {
-                        matched_this_rule = true;
-                         println!("[APPLY_RULES] Matched filename keyword rule '{}' for: {}", filter_rule.name, filename);
+                    if filter_rule.pattern_type == "keyword" {
+                        // 关键字匹配 - 检查文件名是否包含关键字
+                        if filename.contains(&filter_rule.pattern.to_lowercase()) {
+                            matched_this_rule = true;
+                            println!("[APPLY_RULES] Matched filename keyword rule '{}' for: {}", filter_rule.name, filename);
+                        }
+                    } else if filter_rule.pattern_type == "regex" {
+                        // 正则表达式匹配
+                        match regex::Regex::new(&filter_rule.pattern) {
+                            Ok(regex) => {
+                                if regex.is_match(&filename) {
+                                    matched_this_rule = true;
+                                    println!("[APPLY_RULES] Matched filename regex rule '{}' for: {}", filter_rule.name, filename);
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("[APPLY_RULES] Invalid regex pattern in rule '{}': {}", filter_rule.name, e);
+                            }
+                        }
                     }
-                    // Add regex/glob matching here if pattern_type dictates
+                }
+                RuleTypeRust::OSBundle => {
+                    // 检查文件名是否匹配macOS Bundle模式
+                    if filter_rule.pattern_type == "regex" {
+                        match regex::Regex::new(&filter_rule.pattern) {
+                            Ok(regex) => {
+                                if regex.is_match(&filename) {
+                                    matched_this_rule = true;
+                                    println!("[APPLY_RULES] Matched OS_BUNDLE regex rule '{}' for: {}", filter_rule.name, filename);
+                                    // 对于OS_BUNDLE类型，我们可以将其标记为排除
+                                    extra_data.insert("excluded_by_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(filter_rule.id)));
+                                    extra_data.insert("excluded_by_rule_name".to_string(), serde_json::Value::String(filter_rule.name.clone()));
+                                    extra_data.insert("is_macos_bundle".to_string(), serde_json::Value::Bool(true));
+                                }
+                            },
+                            Err(e) => {
+                                eprintln!("[APPLY_RULES] Invalid regex pattern in rule '{}': {}", filter_rule.name, e);
+                            }
+                        }
+                    }
                 }
                 RuleTypeRust::Extension => {
                     if let Some(ext_val) = &metadata.extension {
-                        if filter_rule.pattern_type == "keyword" && *ext_val == filter_rule.pattern {
-                             matched_this_rule = true;
-                             println!("[APPLY_RULES] Matched extension rule '{}' for: {}", filter_rule.name, ext_val);
+                        if filter_rule.pattern_type == "keyword" && ext_val.to_lowercase() == filter_rule.pattern.to_lowercase() {
+                            matched_this_rule = true;
+                            println!("[APPLY_RULES] Matched extension rule '{}' for: {}", filter_rule.name, ext_val);
+                        } else if filter_rule.pattern_type == "regex" {
+                            // 扩展名的正则表达式匹配
+                            match regex::Regex::new(&filter_rule.pattern) {
+                                Ok(regex) => {
+                                    if regex.is_match(ext_val) {
+                                        matched_this_rule = true;
+                                        println!("[APPLY_RULES] Matched extension regex rule '{}' for: {}", filter_rule.name, ext_val);
+                                    }
+                                },
+                                Err(e) => {
+                                    eprintln!("[APPLY_RULES] Invalid regex pattern in rule '{}': {}", filter_rule.name, e);
+                                }
+                            }
                         }
-                        // Add regex/glob matching here
                     }
                 }
                 // Folder and Structure rules might need more context than a single FileMetadata
@@ -547,6 +741,12 @@ impl FileMonitor {
                         extra_data.insert("excluded_by_rule_id".to_string(), JsonValue::Number(serde_json::Number::from(filter_rule.id)));
                         extra_data.insert("excluded_by_rule_name".to_string(), JsonValue::String(filter_rule.name.clone()));
                         println!("[APPLY_RULES] Action EXCLUDE for rule '{}'. File will be marked.", filter_rule.name);
+                        
+                        // 更新被过滤的文件统计
+                        if let Ok(mut stats) = self.stats.lock() {
+                            stats.filtered_files += 1;
+                        }
+                        
                         // The caller (process_file_event) will need to check this extra_data field.
                     }
                     RuleActionRust::Include => {
@@ -561,19 +761,6 @@ impl FileMonitor {
                 }
             }
         }
-
-
-        // Fallback for screenshot/temp/draft if not covered by general FileFilterRules
-        // This can be removed if FileFilterRules are comprehensive
-        if filename.contains("screenshot") || filename.contains("screen shot") || filename.contains("截图") || filename.starts_with("截屏") {
-            if !rule_matches.iter().any(|r| r.to_lowercase().contains("screenshot")) { // Avoid duplicate if a rule already tagged it
-                rule_matches.push("screenshot_fallback".to_string());
-                if metadata.tags.is_none() { metadata.tags = Some(Vec::new()); }
-                if let Some(tags) = &mut metadata.tags { tags.push("screenshot".to_string()); }
-                extra_data.insert("is_screenshot_fallback".to_string(), serde_json::Value::Bool(true));
-            }
-        }
-        // ... (similar for temporary and draft, or remove if rules handle them) ...
 
         if !rule_matches.is_empty() {
             metadata.initial_rule_matches = Some(rule_matches);
@@ -636,6 +823,9 @@ impl FileMonitor {
                             .as_secs()
                     });
 
+                // 检查是否为macOS bundle
+                let is_bundle = Self::is_macos_bundle_folder(path);
+                
                 Some(FileMetadata {
                     file_path: path.to_str()?.to_string(),
                     file_name,
@@ -650,6 +840,7 @@ impl FileMonitor {
                     tags: None,
                     initial_rule_matches: None,
                     extra_metadata: None, // 新增字段
+                    is_os_bundle: Some(is_bundle), // 标记是否为macOS bundle
                 })
             }
             Err(_) => None,
@@ -689,7 +880,7 @@ impl FileMonitor {
             "http://{}:{}/file-screening/batch", // Corrected endpoint for batch screening
             self.api_host, self.api_port
         );
-        println!("[TEST_DEBUG] send_batch_metadata_to_api: Sending batch of {} items to URL: {}", metadata_batch.len(), url);
+        // println!("[TEST_DEBUG] send_batch_metadata_to_api: Sending batch of {} items to URL: {}", metadata_batch.len(), url);
 
         // 构建请求体，包含文件元数据和自动创建任务标志
         let mut request_body = serde_json::Map::new();
@@ -701,18 +892,18 @@ impl FileMonitor {
         
         // 打印 request_body 的键
         let keys: Vec<String> = request_body.keys().cloned().collect();
-        println!("[TEST_DEBUG] send_batch_metadata_to_api: Request body for batch keys: {:?}", keys);
+        // println!("[TEST_DEBUG] send_batch_metadata_to_api: Request body for batch keys: {:?}", keys);
 
         match self.client.post(&url).json(&request_body).send().await {
             Ok(response) => {
                 let status = response.status();
-                println!("[TEST_DEBUG] send_batch_metadata_to_api: Received response with status: {}", status);
+                // println!("[TEST_DEBUG] send_batch_metadata_to_api: Received response with status: {}", status);
 
                 if status.is_success() {
                     let response_text = response.text().await.unwrap_or_else(|_| "Failed to read response text".to_string());
                     match serde_json::from_str::<ApiResponse>(&response_text) {
                         Ok(api_resp) => {
-                             println!("[TEST_DEBUG] send_batch_metadata_to_api: Successfully parsed API response: {:?}", api_resp);
+                            //  println!("[TEST_DEBUG] send_batch_metadata_to_api: Successfully parsed API response: {:?}", api_resp);
                              Ok(api_resp)
                         }
                         Err(e) => {
@@ -733,119 +924,136 @@ impl FileMonitor {
         }
     }
 
-    // 告诉API创建分析任务
-    async fn notify_api_for_analysis(&self) -> Result<bool, String> {
-        let url = format!(
-            "http://{}:{}/insights/generate", // Corrected endpoint
-            self.api_host, self.api_port
-        );
-        println!("[TEST_DEBUG] notify_api_for_analysis: Notifying API for analysis at URL: {}", url);
-
-        let _ = HashMap::from([
-            ("task_name", "file_analysis"), // 这些值可以根据你的实际需求调整
-            ("task_type", "insight"), // This matches the PRD and Python logic for insights
-            ("priority", "medium"),
-        ]);
-        
-        let mut data_payload = HashMap::new();
-        data_payload.insert("task_name", serde_json::Value::String("file_analysis".to_string()));
-        data_payload.insert("priority", serde_json::Value::String("medium".to_string()));
-
-        let request_body = serde_json::json!({ "data": data_payload });
-
-        println!("[TEST_DEBUG] notify_api_for_analysis: Task request body: {:?}", request_body);
-
-
-        match self.client.post(&url).json(&request_body).send().await {
-            Ok(response) => {
-                let status = response.status();
-                let response_text = response.text().await.unwrap_or_else(|_| "Failed to read response text".to_string());
-                println!("[TEST_DEBUG] notify_api_for_analysis: Received response with status: {}. Body snippet: {}", status, &response_text[..std::cmp::min(response_text.len(), 200)]);
-                if status.is_success() {
-                    println!("[TEST_DEBUG] notify_api_for_analysis: API notified successfully.");
-                    Ok(true)
-                } else {
-                    eprintln!("[TEST_DEBUG] notify_api_for_analysis: API notification failed with status: {}. Body snippet: {}", status, &response_text[..std::cmp::min(response_text.len(), 200)]);
-                    Ok(false) 
-                }
-            }
-            Err(e) => {
-                eprintln!("[TEST_DEBUG] notify_api_for_analysis: Failed to notify API for analysis: {}", e);
-                Err(format!("Failed to notify API for analysis: {}", e))
-            }
-        }
-    }
-
     // 处理文件变化事件
     async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind) -> Option<FileMetadata> {
-        println!("[PROCESS_EVENT] Processing event {:?} for path {:?}", event_kind, path);
+        // println!("[PROCESS_EVENT] Processing event {:?} for path {:?}", event_kind, path);
 
-        // Check config cache early
-        if self.config_cache.lock().unwrap().is_none() {
-            eprintln!("[PROCESS_EVENT] Config cache is not populated. Cannot process file event for {:?}. Attempting to fetch.", path);
-            if self.fetch_and_store_all_config().await.is_err() {
-                eprintln!("[PROCESS_EVENT] Failed to fetch config. Aborting processing for {:?}", path);
-                return None;
-            }
-             println!("[PROCESS_EVENT] Config fetched successfully. Retrying processing for {:?}", path);
+        // 对于删除事件进行特殊处理 - 现在只能记录不能处理
+        if let notify::EventKind::Remove(_) = event_kind {
+            println!("[PROCESS_EVENT] File removal detected for {:?}. Cannot process removed files directly.", path);
+            // 未来可以考虑查询数据库删除相关记录
+            return None;
         }
 
-        // 忽略黑名单中的路径 - needs to access monitored_dirs from config_cache or self.monitored_dirs
-        // Let's assume self.monitored_dirs is kept up-to-date by fetch_and_store_all_config
+        // 强制检查配置缓存是否存在 - 确保API已就绪
+        if self.config_cache.lock().unwrap().is_none() {
+            eprintln!("[PROCESS_EVENT] Config cache is not populated. Cannot process file event for {:?}. Attempting to fetch.", path);
+            match self.fetch_and_store_all_config().await {
+                Ok(_) => println!("[PROCESS_EVENT] Config fetched successfully. Processing for {:?}", path),
+                Err(e) => {
+                    eprintln!("[PROCESS_EVENT] Failed to fetch config: {}. Aborting processing for {:?}", e, path);
+                    return None;
+                }
+            }
+        }
+
+        // 忽略不存在或无法访问的文件 - 最先检查这个以避免后续无用操作
+        if !path.exists() {
+            // println!("[PROCESS_EVENT] Path {:?} does not exist or is inaccessible. Ignoring.", path);
+            return None;
+        }
+
+        // 忽略系统隐藏文件，如 .DS_Store - 次优先检查
+        if Self::is_hidden_file(&path) {
+            println!("[PROCESS_EVENT] Path {:?} is a hidden file. Ignoring.", path);
+            return None;
+        }
+        
+        // 检查macOS bundle文件夹 - 这是高优先级过滤，应该在黑名单检查前执行
+        if Self::is_macos_bundle_folder(&path) {
+            println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by extension). Ignoring.", path);
+            // 增加统计计数器，记录过滤掉的bundle数量
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.filtered_bundles += 1;
+            }
+            return None;
+        }
+        
+        // 检查是否位于bundle内部
+        if Self::is_inside_macos_bundle(&path) {
+            println!("[PROCESS_EVENT] Path {:?} is inside a macOS bundle. Ignoring.", path);
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.filtered_files += 1;
+            }
+            return None;
+        }
+        
+        // 其次，针对macOS，如果是目录，检查是否有隐藏的Info.plist文件，这是典型的macOS bundle标志
+        if path.is_dir() && cfg!(target_os = "macos") {
+            let info_plist = path.join("Contents/Info.plist");
+            if info_plist.exists() {
+                println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by Info.plist). Ignoring.", path);
+                if let Ok(mut stats) = self.stats.lock() {
+                    stats.filtered_bundles += 1;
+                }
+                return None;
+            }
+            
+            // 额外检查：如果目录里有许多以"."开头的文件，可能是macOS包文件的典型特征
+            let dot_files_count = std::fs::read_dir(path.clone())
+                .map(|entries| {
+                    entries.filter_map(Result::ok)
+                           .filter(|entry| 
+                               entry.file_name().to_string_lossy().starts_with(".")
+                           ).count()
+                })
+                .unwrap_or(0);
+                
+            if dot_files_count > 5 {  // 如果有超过5个隐藏文件，可能是一个macOS包
+                println!("[PROCESS_EVENT] Path {:?} contains many hidden files ({}). Likely a macOS bundle. Ignoring.", path, dot_files_count);
+                if let Ok(mut stats) = self.stats.lock() {
+                    stats.filtered_bundles += 1;
+                }
+                return None;
+            }
+        }
+        
+        // 忽略黑名单中的路径 - 需要在bundle检查之后执行
         if self.is_in_blacklist(&path) {
             println!("[PROCESS_EVENT] Path {:?} is in blacklist. Ignoring.", path);
             return None;
         }
-
-        // 忽略不存在或无法访问的文件
-        if !path.exists() {
-            println!("[TEST_DEBUG] process_file_event: Path {:?} does not exist or is inaccessible. Ignoring.", path);
-            return None;
-        }
-        println!("[TEST_DEBUG] process_file_event: Path {:?} exists.", path);
+        // println!("[TEST_DEBUG] process_file_event: Path {:?} exists.", path);
 
 
         // 获取基本文件元数据
-        println!("[TEST_DEBUG] process_file_event: Getting metadata for path {:?}", path);
+        // println!("[TEST_DEBUG] process_file_event: Getting metadata for path {:?}", path);
         let mut metadata = match Self::get_file_metadata(&path).await {
             Some(meta) => {
-                println!("[TEST_DEBUG] process_file_event: Initial metadata for {:?}: {:?}", path, meta);
+                // println!("[TEST_DEBUG] process_file_event: Initial metadata for {:?}: {:?}", path, meta);
                 meta
             }
             None => {
-                println!("[TEST_DEBUG] process_file_event: Failed to get metadata for path {:?}. Ignoring.", path);
+                // println!("[TEST_DEBUG] process_file_event: Failed to get metadata for path {:?}. Ignoring.", path);
                 return None;
             }
         };
 
         // 仅为文件计算哈希，不为目录计算
         if !metadata.is_dir {
-            println!("[TEST_DEBUG] process_file_event: Calculating hash for file {:?}", path);
+            // println!("[TEST_DEBUG] process_file_event: Calculating hash for file {:?}", path);
             metadata.hash_value = Self::calculate_simple_hash(&path, 4096).await;
-            println!("[TEST_DEBUG] process_file_event: Calculated hash for {:?}: {:?}", path, metadata.hash_value.as_deref().unwrap_or("N/A"));
+            // println!("[TEST_DEBUG] process_file_event: Calculated hash for {:?}: {:?}", path, metadata.hash_value.as_deref().unwrap_or("N/A"));
         } else {
-            println!("[TEST_DEBUG] process_file_event: Path {:?} is a directory, skipping hash calculation.", path);
+            // println!("[TEST_DEBUG] process_file_event: Path {:?} is a directory, skipping hash calculation.", path);
         }
         
-        println!("[TEST_DEBUG] process_file_event: Metadata BEFORE applying rules for {:?}: {:?}", path, metadata);
+        // println!("[TEST_DEBUG] process_file_event: Metadata BEFORE applying rules for {:?}: {:?}", path, metadata);
 
         // 应用初步规则进行分类
-        println!("[TEST_DEBUG] process_file_event: Applying initial rules for metadata of {:?}", path);
+        // println!("[TEST_DEBUG] process_file_event: Applying initial rules for metadata of {:?}", path);
         self.apply_initial_rules(&mut metadata).await; 
         
         // Check if the file was marked for exclusion by rules
         if let Some(extra_meta) = &metadata.extra_metadata {
             if extra_meta.get("excluded_by_rule_id").is_some() {
-                 println!("[PROCESS_EVENT] File {:?} was excluded by rule: {:?}. Not processing further.", metadata.file_path, extra_meta.get("excluded_by_rule_name"));
-                // Depending on design, we might still want to return the metadata for logging, 
-                // but batch_processor will skip sending it.
-                // For now, let's return it so it can be logged by the caller if needed,
-                // but it won't be sent to the API.
-                // Or, to strictly prevent further processing: return None;
+                println!("[PROCESS_EVENT] File {:?} was excluded by rule: {:?}. Not processing further.", metadata.file_path, extra_meta.get("excluded_by_rule_name"));
+                // 如果文件被标记为排除，直接返回None，不进行进一步处理
+                return None;
             }
         }
         
-        println!("[TEST_DEBUG] process_file_event: Metadata AFTER applying rules for {:?}: {:?}", path, metadata); // "粗筛"结果
+        // println!("[TEST_DEBUG] process_file_event: Metadata AFTER applying rules for {:?}: {:?}", path, metadata); // "粗筛"结果
 
         Some(metadata)
     }
@@ -857,6 +1065,7 @@ impl FileMonitor {
         batch_size: usize,
         batch_interval: Duration
     ) {
+        // println!("[BATCH_PROC] Started batch processor with size={}, interval={:?}", batch_size, batch_interval);
         let mut batch = Vec::with_capacity(batch_size);
         let mut last_send = tokio::time::Instant::now();
 
@@ -864,23 +1073,42 @@ impl FileMonitor {
             tokio::select! {
                 maybe_metadata = rx.recv() => {
                     if let Some(metadata) = maybe_metadata {
-                        // Check if file was marked for exclusion by apply_initial_rules
+                        // 跳过隐藏文件
+                        if metadata.is_hidden {
+                            println!("[BATCH_PROC] 跳过隐藏文件: {:?}", metadata.file_path);
+                            continue;
+                        }
+                        
+                        // 检查文件是否被规则排除
                         if let Some(extra) = &metadata.extra_metadata {
                             if extra.get("excluded_by_rule_id").is_some() {
-                                println!("[BATCH_PROC] Skipping excluded file: {:?} (Rule: {:?})", metadata.file_path, extra.get("excluded_by_rule_name"));
-                                continue; // Skip adding to batch
+                                println!("[BATCH_PROC] 跳过已排除的文件: {:?} (规则: {:?})", metadata.file_path, extra.get("excluded_by_rule_name"));
+                                continue; // 跳过添加到批处理
                             }
                         }
+                        
+                        // 检查文件名是否包含 .DS_Store (额外检查)
+                        if metadata.file_name.contains(".DS_Store") {
+                            println!("[BATCH_PROC] 跳过 .DS_Store 文件: {:?}", metadata.file_path);
+                            continue;
+                        }
+
+                        // 跳过目录，只处理文件
+                        if metadata.is_dir {
+                            println!("[BATCH_PROC] 跳过目录: {:?}", metadata.file_path);
+                            continue;
+                        }
+                        
                         batch.push(metadata);
                         if batch.len() >= batch_size {
-                            println!("[BATCH_PROC] Batch size reached ({} items). Logging batch.", batch.len());
-                            for item in &batch {
-                                println!("[BATCH_CONTENT] {:?}", item);
-                            }
-                            // TEMPORARILY DISABLED SENDING TO API
-                            // if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                            //     eprintln!("[BATCH_PROC] Error sending batch: {}", e);
+                            // println!("[BATCH_PROC] Batch size reached ({} items). Logging batch.", batch.len());
+                            // for item in &batch {
+                            //     println!("[BATCH_CONTENT] {:?}", item);
                             // }
+                            // ENABLED SENDING TO API
+                            if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
+                                eprintln!("[BATCH_PROC] Error sending batch: {}", e);
+                            }
                             batch.clear();
                             last_send = tokio::time::Instant::now();
                         }
@@ -888,13 +1116,13 @@ impl FileMonitor {
                         // Channel closed
                         if !batch.is_empty() {
                             println!("[BATCH_PROC] Channel closed. Logging remaining batch ({} items).", batch.len());
-                             for item in &batch {
-                                println!("[BATCH_CONTENT] {:?}", item);
-                            }
-                            // TEMPORARILY DISABLED SENDING TO API
-                            // if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                            //     eprintln!("[BATCH_PROC] Error sending final batch: {}", e);
+                            // for item in &batch {
+                            //     println!("[BATCH_CONTENT] {:?}", item);
                             // }
+                            // TEMPORARILY DISABLED SENDING TO API
+                            if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
+                                eprintln!("[BATCH_PROC] Error sending final batch: {}", e);
+                            }
                             batch.clear();
                         }
                         println!("[BATCH_PROC] Metadata channel closed. Exiting batch processor.");
@@ -904,13 +1132,13 @@ impl FileMonitor {
                 _ = sleep(batch_interval) => {
                     if !batch.is_empty() && tokio::time::Instant::now().duration_since(last_send) >= batch_interval {
                         println!("[BATCH_PROC] Batch interval reached. Logging batch ({} items).", batch.len());
-                        for item in &batch {
-                            println!("[BATCH_CONTENT] {:?}", item);
-                        }
-                        // TEMPORARILY DISABLED SENDING TO API
-                        // if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                        //     eprintln!("[BATCH_PROC] Error sending batch due to interval: {}", e);
+                        // for item in &batch {
+                        //     println!("[BATCH_CONTENT] {:?}", item);
                         // }
+                        // ENABLED SENDING TO API
+                        if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
+                            eprintln!("[BATCH_PROC] Error sending batch due to interval: {}", e);
+                        }
                         batch.clear();
                         last_send = tokio::time::Instant::now();
                     }
@@ -925,34 +1153,120 @@ impl FileMonitor {
         mut rx: Receiver<(PathBuf, notify::EventKind)>,
         tx_metadata: Sender<FileMetadata>,
     ) {
+        println!("[EVENT_HANDLER] Started event handler");
         while let Some((path, kind)) = rx.recv().await {
-            if let Some(metadata) = self.process_file_event(path, kind).await {
-                let _ = tx_metadata.send(metadata).await;
+            println!("[EVENT_HANDLER] Received event {:?} for path {:?}", kind, path);
+            if let Some(metadata) = self.process_file_event(path.clone(), kind).await {
+                println!("[EVENT_HANDLER] Processed metadata for {:?}, sending to batch processor", path);
+                if let Err(e) = tx_metadata.send(metadata).await {
+                    eprintln!("[EVENT_HANDLER] Error sending metadata to batch processor: {}", e);
+                } else {
+                    println!("[EVENT_HANDLER] Successfully sent metadata to batch processor");
+                }
+            } else {
+                println!("[EVENT_HANDLER] No metadata produced for path {:?}", path);
             }
         }
+        println!("[EVENT_HANDLER] Event handler channel closed, exiting");
     }
 
     // 执行初始扫描
     async fn perform_initial_scan(&self, tx_metadata: &Sender<FileMetadata>) -> Result<(), String> {
         let directories = self.monitored_dirs.lock().unwrap().clone();
         
+        // 获取完全磁盘访问权限状态
+        let full_disk_access = {
+            let cache_guard = self.config_cache.lock().unwrap();
+            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
+        };
+        
+        println!("[INITIAL_SCAN] Full disk access status: {}", full_disk_access);
+        
         for dir in directories {
-            if (dir.auth_status != DirectoryAuthStatus::Authorized) || dir.is_blacklist {
+            // 使用与 start_monitoring 相同的逻辑来决定是否扫描目录
+            let should_scan = if full_disk_access {
+                !dir.is_blacklist
+            } else {
+                dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
+            };
+            
+            if !should_scan {
+                println!("[INITIAL_SCAN] 跳过目录: {}", dir.path);
                 continue;
             }
             
+            println!("[INITIAL_SCAN] 扫描目录: {}", dir.path);
             let path = PathBuf::from(&dir.path);
             if !path.exists() {
+                println!("[INITIAL_SCAN] 目录不存在: {}", dir.path);
                 continue;
             }
 
             // 使用 WalkDir 执行递归扫描
-            let walker = WalkDir::new(&path).into_iter();
-            for entry in walker.filter_map(Result::ok) {
+            // 由于WalkDir不允许动态跳过目录，我们需要使用不同的方法
+            // 首先，创建一个过滤条件来检查路径是否应该被扫描
+            let mut total_files = 0;
+            let mut skipped_files = 0;
+            let mut processed_files = 0;
+            let mut skipped_bundles = 0;
+            
+            println!("[INITIAL_SCAN] 开始递归扫描目录: {}", dir.path);
+            
+            // 修改扫描方法，使用过滤器来排除不需要处理的路径
+            let walker = WalkDir::new(&path).into_iter()
+                .filter_entry(|e| {
+                    // 不扫描隐藏文件
+                    if Self::is_hidden_file(e.path()) {
+                        return false;
+                    }
+                    
+                    // 不扫描macOS bundle以及其内部的所有文件
+                    if Self::is_macos_bundle_folder(e.path()) {
+                        // 只增加bundle计数如果是顶层的bundle（不是bundle内部的文件）
+                        let segments = e.path().to_string_lossy().matches('/').count();
+                        if segments <= 1 { // 顶层目录
+                            skipped_bundles += 1;  // 注意：这是线程安全的，因为在同一线程中
+                            // 不能在这里更新stats，因为这是在过滤器闭包中
+                        }
+                        println!("[INITIAL_SCAN] 跳过Bundle或其内部文件: {:?}", e.path());
+                        return false;
+                    }
+                    
+                    // 检查路径中的任何部分是否包含macOS bundle扩展名
+                    // 这样可以确保bundle内部的所有文件也被跳过
+                    if Self::is_inside_macos_bundle(e.path()) {
+                        println!("[INITIAL_SCAN] 跳过Bundle内部文件: {:?}", e.path());
+                        return false;
+                    }
+                    
+                    // 不扫描包含Info.plist的macOS应用目录
+                    if e.path().is_dir() && cfg!(target_os = "macos") {
+                        let info_plist = e.path().join("Contents/Info.plist");
+                        if info_plist.exists() {
+                            skipped_bundles += 1;
+                            return false;
+                        }
+                    }
+                    
+                    // 默认允许扫描
+                    true
+                });
+            
+            // 正常处理剩下的文件
+            for entry_result in walker {
+                // 忽略错误条目
+                let entry = match entry_result {
+                    Ok(e) => e,
+                    Err(_) => continue,
+                };
+                
+                total_files += 1;
                 let entry_path = entry.path().to_path_buf();
                 
-                // 忽略黑名单中的路径
+                // 过滤黑名单路径 - 现在在内部过滤器后检查，因为优先级更低
                 if self.is_in_blacklist(&entry_path) {
+                    println!("[INITIAL_SCAN] 跳过黑名单路径: {:?}", entry_path);
+                    skipped_files += 1;
                     continue;
                 }
                 
@@ -962,7 +1276,20 @@ impl FileMonitor {
                     notify::EventKind::Create(notify::event::CreateKind::Any),
                 ).await {
                     let _ = tx_metadata.send(metadata).await;
+                    processed_files += 1;
+                } else {
+                    skipped_files += 1;
                 }
+            }
+            
+            println!("[INITIAL_SCAN] 目录 {} 扫描完成: 总文件数 {}, 处理文件数 {}, 跳过文件数 {} (其中macOS包数量: {})", 
+                     dir.path, total_files, processed_files, skipped_files, skipped_bundles);
+                     
+            // 更新全局统计信息
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.processed_files += processed_files as u64;
+                stats.filtered_files += skipped_files as u64;
+                stats.filtered_bundles += skipped_bundles as u64;
             }
         }
         
@@ -971,13 +1298,37 @@ impl FileMonitor {
 
     // 启动文件夹监控
     pub async fn start_monitoring(&mut self) -> Result<(), String> {
-        // 更新受监控的目录列表和所有配置
-        println!("[START_MONITORING] Attempting to fetch all configurations...");
-        self.fetch_and_store_all_config().await.map_err(|e| {
-            eprintln!("[START_MONITORING] Critical error: Failed to fetch initial configuration: {}", e);
-            format!("Failed to fetch initial configuration: {}", e)
-        })?;
-        println!("[START_MONITORING] Initial configuration fetched successfully.");
+        // 确保API就绪 - 重试机制
+        println!("[START_MONITORING] 正在等待API服务就绪...");
+        
+        // 最多尝试60次，每次等待1秒，共计最多等待60秒
+        let max_retries = 60;
+        let mut retries = 0;
+        let mut config_fetched = false;
+        
+        while !config_fetched && retries < max_retries {
+            match self.fetch_and_store_all_config().await {
+                Ok(_) => {
+                    println!("[START_MONITORING] 成功连接到API服务并获取配置！");
+                    config_fetched = true;
+                },
+                Err(e) => {
+                    if retries % 5 == 0 { // 每5次尝试输出一次日志，避免日志过多
+                        println!("[START_MONITORING] API服务尚未就绪，等待中 ({}/{}): {}", retries, max_retries, e);
+                    }
+                    retries += 1;
+                    sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+        
+        if !config_fetched {
+            let error = format!("经过{}秒尝试，无法连接到API服务获取配置", max_retries);
+            eprintln!("[START_MONITORING] {}", error);
+            return Err(error);
+        }
+        
+        println!("[START_MONITORING] API服务连接成功，配置已获取");
 
         // self.update_monitored_directories().await?; // This is now part of fetch_and_store_all_config
 
@@ -992,19 +1343,39 @@ impl FileMonitor {
         // Clone the monitored directories to avoid holding the lock across await points
         let dirs_to_watch = {
             let dirs_guard = self.monitored_dirs.lock().unwrap();
+            
+            // 调试用：打印所有目录及其授权状态
+            println!("[DEBUG_MONITORING] 所有监控目录列表:");
+            for (i, dir) in dirs_guard.iter().enumerate() {
+                println!("[DEBUG_MONITORING] 目录 {}: 路径='{}', 授权状态={:?}, 黑名单={}", 
+                    i, dir.path, dir.auth_status, dir.is_blacklist);
+            }
+            
             dirs_guard.iter()
                 .filter(|d| {
                     // 如果有完全磁盘访问权限，只过滤黑名单文件夹
                     // 否则，需要同时判断授权状态和黑名单状态
-                    if full_disk_access {
+                    let watch_this_dir = if full_disk_access {
                         !d.is_blacklist
                     } else {
                         d.auth_status == DirectoryAuthStatus::Authorized && !d.is_blacklist
-                    }
+                    };
+                    
+                    // 调试日志
+                    println!("[DEBUG_MONITORING] 目录 '{}': {}将被监控", 
+                        d.path, if watch_this_dir { "" } else { "不" });
+                    
+                    watch_this_dir
                 })
                 .cloned()
                 .collect::<Vec<_>>()
         };
+        
+        // 调试用：打印实际监控的目录列表
+        println!("[DEBUG_MONITORING] 以下{}个目录将被监控:", dirs_to_watch.len());
+        for (i, dir) in dirs_to_watch.iter().enumerate() {
+            println!("[DEBUG_MONITORING] 监控目录 {}: '{}'", i+1, dir.path);
+        }
         
         if dirs_to_watch.is_empty() {
             return Err("自动启动文件监控失败: No authorized directories to monitor".into());
@@ -1015,7 +1386,7 @@ impl FileMonitor {
         let (metadata_tx, metadata_rx) = mpsc::channel::<FileMetadata>(100);
         
         self.event_tx = Some(event_tx.clone());
-        
+         
         // 创建元数据发送通道的克隆，用于事件处理器和初始扫描
         let metadata_tx_for_events = metadata_tx.clone();
         let metadata_tx_for_scan = metadata_tx.clone();
@@ -1041,11 +1412,10 @@ impl FileMonitor {
                 eprintln!("Initial scan error: {}", e);
             }
             
-            // 初始扫描后通知API
+            // 初始扫描后批处理器会自动发送数据到API，并设置auto_create_tasks=true
+            // 不需要额外调用notify_api_for_analysis，因为批处理已经包含了任务创建
             sleep(Duration::from_secs(5)).await; // 等待批处理完成
-            if let Err(e) = self_clone_for_scan.notify_api_for_analysis().await {
-                eprintln!("Failed to notify API after initial scan: {}", e);
-            }
+            println!("[INITIAL_SCAN] Initial scan complete and batch processing should have triggered tasks via auto_create_tasks=true");
         });
 
         // 为每个授权目录创建监控器
@@ -1077,7 +1447,7 @@ impl FileMonitor {
 
     // 为单个目录创建监控器
     async fn watch_directory(dir_path: &str, event_tx: Sender<(PathBuf, notify::EventKind)>) -> Result<(), String> {
-        println!("[TEST_DEBUG] watch_directory: Starting for path: {}", dir_path);
+        // println!("[TEST_DEBUG] watch_directory: Starting for path: {}", dir_path);
 
         // 创建通道用于接收文件系统事件
         let (watcher_tx, mut watcher_rx) = mpsc::channel(100);
@@ -1091,7 +1461,7 @@ impl FileMonitor {
         )
         .map_err(|e| format!("Failed to create watcher: {}", e))?;
         
-        println!("[TEST_DEBUG] watch_directory: Watcher created for path: {}", dir_path);
+        // println!("[TEST_DEBUG] watch_directory: Watcher created for path: {}", dir_path);
         
         // 开始监控指定目录
         watcher
@@ -1101,27 +1471,39 @@ impl FileMonitor {
             )
             .map_err(|e| format!("Failed to watch directory: {}", e))?;
         
-        println!("[TEST_DEBUG] watch_directory: Successfully watching path: {}", dir_path);
+        // println!("[TEST_DEBUG] watch_directory: Successfully watching path: {}", dir_path);
         
         // 持续处理文件系统事件
         let task_dir_path = dir_path.to_string(); // Clone dir_path for the async task
         tokio::spawn(async move {
-            println!("[TEST_DEBUG] watch_directory: Event processing task started for path: {}", task_dir_path);
+            // println!("[TEST_DEBUG] watch_directory: Event processing task started for path: {}", task_dir_path);
             while let Some(result) = watcher_rx.recv().await {
-                println!("[TEST_DEBUG] watch_directory: Received event result for path {}: {:?}", task_dir_path, result);
+                // println!("[TEST_DEBUG] watch_directory: Received event result for path {}: {:?}", task_dir_path, result);
                 match result {
                     Ok(event) => {
-                        println!("[TEST_DEBUG] watch_directory: Parsed event for path {}: {:?}", task_dir_path, event);
+                        // println!("[TEST_DEBUG] watch_directory: Parsed event for path {}: {:?}", task_dir_path, event);
                         // 筛选我们关心的事件类型
                         match event.kind {
                             notify::EventKind::Create(_) | 
                             notify::EventKind::Modify(_) | 
                             notify::EventKind::Remove(_) => {
-                                println!("[TEST_DEBUG] watch_directory: Relevant event kind for path {}: {:?}, paths: {:?}", task_dir_path, event.kind, event.paths);
+                                // println!("[TEST_DEBUG] watch_directory: Relevant event kind for path {}: {:?}, paths: {:?}", task_dir_path, event.kind, event.paths);
                                 for path_buf in event.paths { // Renamed path to path_buf to avoid conflict
-                                    println!("[TEST_DEBUG] watch_directory: Sending path {:?} with kind {:?} to event_tx from watcher for {}", path_buf, event.kind, task_dir_path);
-                                    if let Err(e) = event_tx.send((path_buf, event.kind.clone())).await {
-                                        eprintln!("[TEST_DEBUG] watch_directory: Failed to send event to event_tx for path {}: {}", task_dir_path, e);
+                                    // println!("[TEST_DEBUG] watch_directory: Sending path {:?} with kind {:?} to event_tx from watcher for {}", path_buf, event.kind, task_dir_path);
+                                    
+                                    // 确认路径是否与监控目录相关
+                                    // if let Some(path_str) = path_buf.to_str() {
+                                    //     if path_str.starts_with(&task_dir_path) || task_dir_path.starts_with(path_str) {
+                                    //         println!("[TEST_DEBUG] watch_directory: Path {:?} matches monitored directory {}", path_buf, task_dir_path);
+                                    //     } else {
+                                    //         println!("[TEST_DEBUG] watch_directory: WARNING! Path {:?} does not seem to match monitored directory {}", path_buf, task_dir_path);
+                                    //     }
+                                    // }
+                                    
+                                    let path_for_logging = path_buf.clone();
+                                    match event_tx.send((path_buf, event.kind.clone())).await {
+                                        Ok(_) => println!("[TEST_DEBUG] watch_directory: Successfully sent event for {:?}", path_for_logging),
+                                        Err(e) => eprintln!("[TEST_DEBUG] watch_directory: Failed to send event to event_tx for path {}: {}", task_dir_path, e)
                                     }
                                 }
                             }
@@ -1133,9 +1515,83 @@ impl FileMonitor {
                     Err(e) => eprintln!("[TEST_DEBUG] watch_directory: Watch error for path {}: {}", task_dir_path, e),
                 }
             }
-            println!("[TEST_DEBUG] watch_directory: Event processing task finished for path: {}", task_dir_path);
+            // println!("[TEST_DEBUG] watch_directory: Event processing task finished for path: {}", task_dir_path);
         });
         
         Ok(())
+    }
+
+    // 获取监控统计信息
+    pub fn get_monitor_stats(&self) -> MonitorStats {
+        match self.stats.lock() {
+            Ok(stats) => stats.clone(),
+            Err(_) => MonitorStats::default(), // 返回默认统计信息，以防锁定失败
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use super::FileMonitor;
+
+    #[test]
+    fn test_macos_bundle_detection() {
+        let test_paths = vec![
+            // 基础文件类型 - 不应匹配
+            ("/Users/test/Documents/test.txt", false),
+            ("/Users/test/Documents/notes.md", false),
+            
+            // 顶层包文件 - 应匹配
+            ("/Users/test/Applications/App.app", true),
+            ("/Users/test/Projects/MyProject.xcodeproj", true),
+            ("/Users/test/Movies/FinalCutProjects/MyMovie.fcpbundle", true),
+            ("/Users/test/Pictures/Photos Library.photoslibrary", true),
+            ("/Users/test/Documents/Keynote/Presentation.key", true),
+            ("/Users/test/Documents/Pages/Document.pages", true),
+            ("/Users/test/Documents/Numbers/Spreadsheet.numbers", true),
+            ("/Users/test/Library/Application Support/MyApp.bundle", true),
+            ("/Users/test/Library/Frameworks/MyFramework.framework", true),
+            ("/Users/test/Library/en.lproj", true),
+            ("/Users/test/Library/QuickLook/Preview.qlgenerator", true),
+            
+            // 深层路径 - iMovie库内部的文件，应该匹配
+            ("/Users/test/Movies/iMovie 剪辑资源库.imovielibrary/2025-3-16/CurrentVersion.imovieevent", true),
+            ("/Users/test/Movies/iMovie 剪辑资源库.imovielibrary/Shared/Stills.modelDatabase", true),
+            
+            // TV库相关文件 - 应该匹配
+            ("/Users/test/Movies/TV.tvlibrary", true),
+            ("/Users/test/Movies/TV.tvlibrary/Library.json", true),
+            ("/Users/test/Movies/TV.tvlibrary/Metadata/TV Shows/Show.tvshow", true),
+            
+            // 深层路径 - 应用Bundle内部的文件，应该匹配
+            ("/Users/test/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/16.0/DeveloperDiskImage.dmg", true),
+            ("/Users/test/Library/Developer/Xcode/DerivedData/MyApp-abc123/Build/Products/Debug/MyApp.app/Contents/Resources/Base.lproj/Main.nib", true),
+            
+            // 深层路径 - 照片库内部的文件，应该匹配
+            ("/Users/test/Pictures/照片图库.photoslibrary/database/Library.apdb", true),
+            ("/Users/test/Pictures/照片图库.photoslibrary/resources/derivatives/masters/8/867/867ED30F-9780-40EC-A704-0E94BF09E0EF_1_201_a.jpeg", true),
+            
+            // 普通文件夹和文件 - 不应匹配
+            ("/Users/test/Documents/normal_folder", false),
+            ("/Users/test/Projects/rust-project", false),
+            ("/Users/test/Documents/.hidden_file", false),
+            
+            // 特殊情况 - 名称中包含但不完全符合bundle模式的文件/目录 - 不应匹配
+            ("/Users/test/Documents/app_data.json", false),
+            ("/Users/test/Projects/framework_test", false),
+        ];
+
+        for (path_str, expected_result) in test_paths {
+            let path = Path::new(path_str);
+            let is_bundle = FileMonitor::is_macos_bundle_folder(path);
+            assert_eq!(
+                is_bundle, expected_result,
+                "Path '{}' was detected as {} but expected {}",
+                path_str, 
+                if is_bundle { "bundle" } else { "not bundle" },
+                if expected_result { "bundle" } else { "not bundle" }
+            );
+        }
     }
 }

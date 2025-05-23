@@ -101,12 +101,28 @@ class ScreeningManager:
         return self.session.get(FileScreeningResult, result_id)
     
     def get_pending_results(self, limit: int = 100) -> List[FileScreeningResult]:
-        """获取待处理的粗筛结果"""
-        statement = select(FileScreeningResult)\
-            .where(FileScreeningResult.status == FileScreenResult.PENDING.value)\
-            .order_by(FileScreeningResult.modified_time.desc())\
-            .limit(limit)
-        return self.session.exec(statement).all()
+        """获取待处理的粗筛结果
+        
+        Args:
+            limit: 返回结果的最大数量
+            
+        Returns:
+            待处理粗筛结果列表
+        """
+        try:
+            # 使用更优化的查询，避免排序大量数据
+            statement = select(FileScreeningResult)\
+                .where(FileScreeningResult.status == FileScreenResult.PENDING.value)\
+                .limit(limit)
+                
+            results = self.session.exec(statement).all()
+            if results:
+                logger.info(f"获取到 {len(results)} 个待处理粗筛结果")
+            return results
+            
+        except Exception as e:
+            logger.error(f"获取待处理粗筛结果失败: {str(e)}")
+            return []
     
     def get_results_by_category(self, category_id: int, limit: int = 100) -> List[FileScreeningResult]:
         """根据分类ID获取粗筛结果"""

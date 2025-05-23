@@ -1,5 +1,8 @@
 use std::fs;
 use std::path::Path;
+use crate::AppState;
+use tauri::State;
+use serde::Serialize;
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
@@ -33,4 +36,44 @@ pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
         }
         Err(e) => Err(format!("无法读取路径 '{}' 的元数据: {}", path.display(), e)),
     }
+}
+
+#[derive(Serialize)]
+pub struct MonitorStatsResponse {
+    processed_files: u64,
+    filtered_files: u64,
+    filtered_bundles: u64,
+    error_count: u64,
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_file_monitor_stats(state: State<AppState>) -> Result<MonitorStatsResponse, String> {
+    let monitor_state = state.file_monitor.lock().map_err(|e| e.to_string())?;
+    
+    if let Some(monitor) = &*monitor_state {
+        // 获取监控统计信息
+        let stats = monitor.get_monitor_stats();
+        
+        Ok(MonitorStatsResponse {
+            processed_files: stats.processed_files,
+            filtered_files: stats.filtered_files,
+            filtered_bundles: stats.filtered_bundles,
+            error_count: stats.error_count,
+        })
+    } else {
+        Err("文件监控尚未启动".to_string())
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn test_bundle_detection(path: String) -> Result<bool, String> {
+    use crate::file_monitor::FileMonitor;
+    use std::path::Path;
+    
+    // 测试指定路径是否为macOS bundle
+    let path_obj = Path::new(&path);
+    let is_bundle = FileMonitor::is_macos_bundle_folder(path_obj);
+    
+    // 返回结果
+    Ok(is_bundle)
 }

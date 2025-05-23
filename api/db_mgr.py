@@ -108,6 +108,7 @@ class RuleType(str, PyEnum):
     FILENAME = "filename"    # 文件名模式/关键词识别
     FOLDER = "folder"        # 项目文件夹识别
     STRUCTURE = "structure"  # 项目结构特征识别
+    OS_BUNDLE = "os_bundle"  # 操作系统特定的bundle文件夹类型
 
 # 规则优先级
 class RulePriority(str, PyEnum):
@@ -895,6 +896,86 @@ class DBManager:
             }
         ]
         
+        # macOS Bundle文件夹规则
+        macos_bundle_rules = []
+        
+        # 只在macOS平台上添加这些规则
+        if os.name == 'posix' and os.uname().sysname == 'Darwin':  # 检测是否为macOS
+            macos_bundle_rules = [
+                {
+                    "name": "Final Cut Pro项目文件夹",
+                    "description": "识别Final Cut Pro项目bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.fcpbundle",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "iMovie项目文件夹",
+                    "description": "识别iMovie项目bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(imovielibrary|theater|localized|tvlibrary)",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "Photos照片库文件夹",
+                    "description": "识别Photos照片库bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.photoslibrary",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "其他常见macOS应用Bundle",
+                    "description": "识别其他常见macOS应用Bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(app|framework|plugin|bundle|kext)",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "macOS办公和开发工具Bundle",
+                    "description": "识别macOS苹果办公套件和开发工具Bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(pages|numbers|key|logicx|xcodeproj|xcworkspace)",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value, 
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "macOS设计和自动化Bundle",
+                    "description": "识别macOS设计和自动化工具Bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(sketch|lproj|workflow|lbaction|action|qlgenerator)",
+                    "pattern_type": "regex", 
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "macOS其他系统Bundle",
+                    "description": "识别macOS其他系统级Bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(prefpane|appex|component|wdgt|download|xcdatamodeld|scptd|rtfd)",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                },
+                {
+                    "name": "macOS开发相关Bundle",
+                    "description": "识别macOS开发相关Bundle",
+                    "rule_type": RuleType.OS_BUNDLE.value,
+                    "pattern": r"\.(safari-extension|xcassets|playground)",
+                    "pattern_type": "regex",
+                    "action": RuleAction.EXCLUDE.value,
+                    "priority": RulePriority.HIGH.value
+                }
+            ]
+        
         # 合并所有规则
         all_rules = []
         all_rules.extend(status_version_rules)
@@ -902,6 +983,7 @@ class DBManager:
         all_rules.extend(time_indicators_rules)
         all_rules.extend(app_source_rules)
         all_rules.extend(temp_ignore_rules)
+        all_rules.extend(macos_bundle_rules)
         
         # 转换为FileFilterRule对象并批量插入
         rule_objs = []

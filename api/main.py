@@ -12,7 +12,7 @@ import pathlib
 import logging
 from sqlmodel import create_engine, Session, select
 import multiprocessing
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
+from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
@@ -228,7 +228,7 @@ def task_processor(processor_id: int, db_path: str = None):
                     continue
                 
                 # 提交任务到线程池，设置超时时间（秒）
-                TASK_TIMEOUT = 120  # 2分钟超时
+                TASK_TIMEOUT = 600  # 10分钟超时，为批量处理提供充足时间
                 future = executor.submit(process_func)
                 
                 try:
@@ -272,39 +272,65 @@ def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
                 extra_data = json.loads(task.extra_data)
             elif isinstance(task.extra_data, dict):
                 extra_data = task.extra_data
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"解析任务额外数据失败: {str(e)}")
     
     # 检查是否包含粗筛结果ID
     screening_result_id = extra_data.get("screening_result_id")
     if screening_result_id:
         # 处理单个文件
-        logger.info(f"处理单个文件索引任务: 粗筛结果ID {screening_result_id}")
+        logger.info(f"处理单个文件精炼任务: 粗筛结果ID {screening_result_id}")
         refine_result = refine_mgr.process_pending_file(screening_result_id)
         return refine_result is not None
     else:
         # 批量处理
         file_count = extra_data.get("file_count", 0)
-        logger.info(f"处理批量索引任务: 预计 {file_count} 个文件")
+        logger.info(f"处理批量精炼任务: 预计 {file_count} 个文件")
         
-        # 获取一批待处理的粗筛结果
-        batch_size = min(100, max(10, file_count))  # 根据任务规模动态调整批量大小
+        # 获取一批待处理的粗筛结果，增加批量大小
+        batch_size = min(500, max(50, file_count))  # 根据任务规模动态调整批量大小，增加处理能力
         pending_results = screening_mgr.get_pending_results(limit=batch_size)
         
         if not pending_results:
             logger.warning("找不到待处理的粗筛结果")
             return False
         
+        total_count = len(pending_results)
+        logger.info(f"发现 {total_count} 个待处理的粗筛结果")
+        
+        # 进度跟踪变量
         success_count = 0
-        for result in pending_results:
+        processed_count = 0
+        last_progress_log = time.time()
+        progress_interval = 5  # 每5秒记录一次进度
+        
+        # 批量处理文件
+        for index, result in enumerate(pending_results):
             try:
+                # 定期记录进度，避免大批量处理时日志过于冗长
+                current_time = time.time()
+                if current_time - last_progress_log >= progress_interval:
+                    logger.info(f"批量处理进度: {processed_count}/{total_count} 完成，{success_count} 成功")
+                    last_progress_log = current_time
+                    
+                # 处理单个文件
                 refine_result = refine_mgr.process_pending_file(result.id)
+                processed_count += 1
+                
                 if refine_result:
                     success_count += 1
+                    
+                # 每处理100个文件记录一次详细进度
+                if processed_count % 100 == 0:
+                    logger.info(f"已完成 {processed_count}/{total_count} 个文件，成功率: {success_count/processed_count*100:.2f}%")
+                    
             except Exception as e:
-                logger.error(f"处理粗筛结果 {result.id} 失败: {str(e)}")
+                processed_count += 1
+                logger.error(f"处理粗筛结果 {result.id} ({result.file_path}) 失败: {str(e)}")
         
-        logger.info(f"批量处理完成: {success_count}/{len(pending_results)} 个文件成功")
+        # 记录最终处理结果
+        success_rate = 0 if total_count == 0 else (success_count/total_count*100)
+        logger.info(f"批量处理完成: {success_count}/{total_count} 个文件成功，成功率: {success_rate:.2f}%")
         return success_count > 0
 
 def process_insight_task(task, refine_mgr) -> bool:
@@ -379,7 +405,12 @@ def add_file_screening_result(
     - auto_create_task: 是否自动创建任务（默认 True）
     """
     try:
-        # 处理时间字段，将字符串转换为datetime
+        # 处理Unix时间戳（从Rust发送的秒数转换为Python datetime）
+        for time_field in ["created_time", "modified_time", "accessed_time"]:
+            if time_field in data and isinstance(data[time_field], (int, float)):
+                data[time_field] = datetime.fromtimestamp(data[time_field])
+                
+        # 处理字符串格式的时间字段
         for time_field in ["created_time", "modified_time", "accessed_time"]:
             if time_field in data and isinstance(data[time_field], str):
                 try:
@@ -389,6 +420,10 @@ def add_file_screening_result(
                     # 如果是修改时间字段转换失败，设置为当前时间
                     if time_field == "modified_time":
                         data[time_field] = datetime.now()
+        
+        # 确保必填字段有值
+        if "modified_time" not in data or data["modified_time"] is None:
+            data["modified_time"] = datetime.now()
         
         # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
         if "metadata" in data and "extra_metadata" not in data:
@@ -443,7 +478,7 @@ def add_file_screening_result(
 
 @app.post("/file-screening/batch")
 def add_batch_file_screening_results(
-    data_list: List[Dict[str, Any]] = Body(...), 
+    request: Dict[str, Any] = Body(...), 
     screening_mgr: ScreeningManager = Depends(get_screening_manager),
     task_mgr: TaskManager = Depends(lambda session=Depends(get_session): TaskManager(session))
 ):
@@ -451,27 +486,55 @@ def add_batch_file_screening_results(
     
     参数:
     - data_list: 文件粗筛结果列表
-    - auto_create_tasks: 是否自动创建任务（可选，默认 False）
+    - auto_create_tasks: 是否自动创建任务（可选，默认 True）
     """
     try:
-        # 从请求体中提取全局参数
-        if isinstance(data_list, dict):
-            auto_create_tasks = data_list.get("auto_create_tasks", False)
-            data_list = data_list.get("files", [])
-        else:
-            auto_create_tasks = False  # 批量模式默认不自动创建任务
+        # 从请求体中提取数据和参数
+        logger.info(f"接收到批量文件粗筛请求，请求体键名: {list(request.keys())}")
         
-        # 处理时间字段，将字符串转换为datetime
+        # 适配Rust客户端发送的格式: {data_list: [...], auto_create_tasks: true}
+        if "data_list" in request:
+            data_list = request.get("data_list", [])
+            auto_create_tasks = request.get("auto_create_tasks", True)
+        # 兼容旧格式: {files: [...], auto_create_tasks: true} 或者直接是列表
+        elif isinstance(request, dict):
+            auto_create_tasks = request.get("auto_create_tasks", True)
+            data_list = request.get("files", [])
+        else:
+            # 假设请求体本身就是列表
+            data_list = request
+            auto_create_tasks = True
+            
+        # 预处理每个文件记录中的时间戳，转换为Python datetime对象
+        for data in data_list:
+            # 处理Unix时间戳的转换 (从Rust发送的秒数转换为Python datetime)
+            if "created_time" in data and isinstance(data["created_time"], (int, float)):
+                data["created_time"] = datetime.fromtimestamp(data["created_time"])
+                
+            if "modified_time" in data and isinstance(data["modified_time"], (int, float)):
+                data["modified_time"] = datetime.fromtimestamp(data["modified_time"])
+                
+            if "accessed_time" in data and isinstance(data["accessed_time"], (int, float)):
+                data["accessed_time"] = datetime.fromtimestamp(data["accessed_time"])
+        
+        # 处理字符串格式的时间字段（处理之前已经先处理了整数时间戳）
         for data in data_list:
             for time_field in ["created_time", "modified_time", "accessed_time"]:
+                # 只处理仍然是字符串格式的时间字段（整数时间戳已在前一步转换）
                 if time_field in data and isinstance(data[time_field], str):
                     try:
                         data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
                     except Exception as e:
-                        logger.warning(f"转换时间字段 {time_field} 失败: {str(e)}")
+                        logger.warning(f"转换字符串时间字段 {time_field} 失败: {str(e)}")
                         # 如果是修改时间字段转换失败，设置为当前时间
                         if time_field == "modified_time":
                             data[time_field] = datetime.now()
+                
+                # 确保每个时间字段都有值，对于必填字段
+                if time_field == "modified_time" and (time_field not in data or data[time_field] is None):
+                    logger.warning(f"缺少必填时间字段 {time_field}，使用当前时间")
+                    data[time_field] = datetime.now()
+                            
             # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
             if "metadata" in data and "extra_metadata" not in data:
                 data["extra_metadata"] = data.pop("metadata")
@@ -479,24 +542,26 @@ def add_batch_file_screening_results(
         # 批量添加粗筛结果
         result = screening_mgr.add_batch_screening_results(data_list)
         
-        # 如果需要自动创建任务，创建一个批处理任务
-        if auto_create_tasks and result["success"] > 0:
+        # 创建一个批处理任务（只要有成功添加的文件就创建任务）
+        if result["success"] > 0:
             # 创建一个批处理任务
             task_name = f"批量处理文件: {result['success']} 个文件"
             task = task_mgr.add_task(
                 task_name=task_name, 
-                task_type="index",  # 索引任务类型 
-                priority="medium",  # 中等优先级
+                task_type=TaskType.REFINE.value,  # 使用精炼任务类型
+                priority=TaskPriority.MEDIUM.value,  # 中等优先级
                 extra_data={"file_count": result["success"]}
             )
             result["task_id"] = task.id
+            logger.info(f"已创建精炼任务 ID: {task.id}，处理 {result['success']} 个文件")
         
         return {
             "success": result["success"] > 0,
             "processed_count": result["success"],
             "failed_count": result["failed"],
+            "task_id": result.get("task_id"),  # 返回任务ID
             "errors": result.get("errors"),
-            "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个"
+            "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个，并创建精炼任务"
         }
         
     except Exception as e:
@@ -577,15 +642,36 @@ def get_file_screening_results(
 
 @app.get("/file-screening/pending")
 def get_pending_file_screenings(
-    limit: int = 100,
+    limit: int = 500,  # 增加默认返回数量
+    category_id: int = None,  # 添加分类过滤
     screening_mgr: ScreeningManager = Depends(get_screening_manager)
 ):
-    """获取待处理的文件粗筛结果列表"""
+    """获取待处理的文件粗筛结果列表
+    
+    参数:
+    - limit: 最大返回结果数量
+    - category_id: 可选，按文件分类ID过滤
+    """
     try:
+        # 获取待处理结果
         results = screening_mgr.get_pending_results(limit)
         
+        # 如果结果为空，直接返回
+        if not results:
+            return {
+                "success": True,
+                "count": 0,
+                "data": []
+            }
+            
         # 将模型对象列表转换为可序列化的字典列表
         results_dict = [result.model_dump() for result in results]
+        
+        # 按分类过滤（如果指定）
+        if category_id is not None:
+            results_dict = [r for r in results_dict if r.get('category_id') == category_id]
+        
+        logger.info(f"找到 {len(results_dict)} 个待处理的文件粗筛结果")
         
         return {
             "success": True,
@@ -595,9 +681,11 @@ def get_pending_file_screenings(
         
     except Exception as e:
         logger.error(f"获取待处理文件粗筛结果列表失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {
             "success": False,
-            "message": f"获取失败: {str(e)}"
+            "message": f"获取待处理粗筛结果失败: {str(e)}"
         }
 
 # 将带参数的路由移到最后，避免与特定路由冲突
