@@ -148,12 +148,14 @@ class MyFilesManager:
             select(MyFiles).where(MyFiles.is_blacklist == True)
         ).all()
 
-    def add_directory(self, path: str, alias: Optional[str] = None) -> Tuple[bool, Union[MyFiles, str]]:
+    def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False, auth_status: str = None) -> Tuple[bool, Union[MyFiles, str]]:
         """添加新文件夹
         
         Args:
             path (str): 文件夹路径
             alias (Optional[str], optional): 文件夹别名. Defaults to None.
+            is_blacklist (bool, optional): 是否为黑名单文件夹. Defaults to False.
+            auth_status (str, optional): 初始授权状态. Defaults to None (PENDING).
         
         Returns:
             Tuple[bool, Union[MyFiles, str]]: (成功标志, 文件夹对象或错误消息)
@@ -181,8 +183,8 @@ class MyFilesManager:
         new_file = MyFiles(
             path=path,
             alias=alias,
-            auth_status=AuthStatus.PENDING.value,
-            is_blacklist=False
+            auth_status=auth_status or AuthStatus.PENDING.value,
+            is_blacklist=is_blacklist
         )
         
         self.session.add(new_file)
@@ -234,7 +236,7 @@ class MyFilesManager:
         return True, directory
     
     def remove_directory(self, directory_id: int) -> Tuple[bool, str]:
-        """从数据库中删除文件夹记录
+        """从数据库中删除文件夹记录，并清理相关的粗筛记录
         
         Args:
             directory_id (int): 文件夹的ID
@@ -247,9 +249,21 @@ class MyFilesManager:
         
         if not directory:
             return False, f"文件夹ID不存在: {directory_id}"
-            
-        # 删除记录
-        deleted_path = directory.path # 保存路径用于日志或消息
+        
+        # 保存路径用于日志或消息
+        deleted_path = directory.path
+        
+        # 1. 先删除该目录相关的所有粗筛记录
+        try:
+            from screening_mgr import ScreeningManager
+            screening_mgr = ScreeningManager(self.session)
+            deleted_count = screening_mgr.delete_screening_results_by_path_prefix(deleted_path)
+            logger.info(f"已删除文件夹'{deleted_path}'相关的 {deleted_count} 条粗筛记录")
+        except Exception as e:
+            logger.error(f"删除文件夹'{deleted_path}'相关的粗筛记录时出错: {str(e)}")
+            # 继续执行删除目录操作，即使清理粗筛记录失败
+        
+        # 2. 删除目录记录
         self.session.delete(directory)
         self.session.commit()
         

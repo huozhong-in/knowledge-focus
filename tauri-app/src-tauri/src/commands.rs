@@ -5,6 +5,38 @@ use tauri::State;
 use serde::Serialize;
 
 #[tauri::command(rename_all = "snake_case")]
+pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+    println!("[CMD] scan_directory 被调用，路径: {}", path);
+    
+    // 获取对monitor的克隆，避免长时间持有锁
+    let monitor = {
+        let guard = state.file_monitor.lock().unwrap();
+        if let Some(monitor) = &*guard {
+            monitor.clone()
+        } else {
+            return Err("文件监控器未初始化".to_string());
+        }
+    };
+    
+    // 刷新目录列表，确保目录已经添加到监控列表中
+    if let Err(e) = monitor.update_monitored_directories().await {
+        eprintln!("[CMD] scan_directory 无法刷新监控目录: {}", e);
+    }
+    
+    // 执行单个目录扫描
+    monitor.scan_single_directory(&path).await?;
+    
+    // 重要：确保为新添加的目录设置文件监控
+    // 这是修复添加新目录后文件变更不被监控的关键步骤
+    if let Err(e) = monitor.setup_watch_for_directory(&path).await {
+        eprintln!("[CMD] scan_directory 无法为目录 {} 设置监控: {}", path, e);
+    } else {
+        println!("[CMD] scan_directory 成功为目录 {} 设置监控", path);
+    }
+    
+    Ok(())
+}
+#[tauri::command(rename_all = "snake_case")]
 pub fn resolve_directory_from_path(path_str: String) -> Result<String, String> {
     // 检查是否有特殊前缀或协议
     if path_str.starts_with("file://") {

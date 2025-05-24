@@ -26,6 +26,7 @@ class TaskStatus(str, PyEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELED = "canceled"  # 添加取消状态
 
 # 任务结果状态
 class TaskResult(str, PyEnum):

@@ -234,5 +234,49 @@ class TaskManager:
                 
         return pool.apply_async(monitored_func, args=args, callback=callback)
     
+    def cancel_old_tasks(self, task_type: str, created_before=None) -> int:
+        """取消特定类型的旧任务
+        
+        当提交新任务时，可以用此方法取消同类型的旧任务，避免处理过时的数据
+        
+        Args:
+            task_type: 要取消的任务类型
+            created_before: 取消在此时间之前创建的任务，默认为当前时间
+            
+        Returns:
+            取消的任务数量
+        """
+        logger.info(f"取消类型为 {task_type} 的旧任务")
+        
+        if created_before is None:
+            created_before = datetime.now()
+            
+        # 查询待取消的任务
+        statement = (
+            select(Task)
+            .where(
+                Task.task_type == task_type,
+                Task.status == TaskStatus.PENDING.value,
+                Task.created_at < created_before
+            )
+        )
+        
+        tasks = self.session.exec(statement).all()
+        canceled_count = 0
+        
+        for task in tasks:
+            task.status = TaskStatus.CANCELED.value
+            task.result = TaskResult.CANCELLED.value  # 设置任务结果为被取消
+            task.updated_at = datetime.now()
+            task.error_message = "被更新的任务取代"
+            self.session.add(task)
+            canceled_count += 1
+            
+        if canceled_count > 0:
+            self.session.commit()
+            logger.info(f"已取消 {canceled_count} 个类型为 {task_type} 的旧任务")
+            
+        return canceled_count
+    
 if __name__ == '__main__':
     pass

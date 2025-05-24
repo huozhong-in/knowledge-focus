@@ -38,7 +38,9 @@
           "name": "../../../../api/.venv/bin/python",
           "sidecar": true,
           "args": [
-            "../../api/main.py",
+            {
+              "validator": ".*"
+            },
             "--port",
             {
               "validator": "\\d+"

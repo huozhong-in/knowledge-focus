@@ -4,6 +4,7 @@ from db_mgr import FileScreeningResult, FileScreenResult
 from datetime import datetime
 import logging
 import json
+from typing import Dict, Any, Optional, List, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +24,17 @@ class ScreeningManager:
             添加成功返回记录对象，失败返回None
         """
         try:
-            # 检查是否已存在同路径记录
-            existing_record = self.get_by_path(data.get("file_path", ""))
+            # 检查是否已存在相同路径和哈希值的记录
+            file_path = data.get("file_path", "")
+            file_hash = data.get("file_hash")
+            
+            existing_record = self.get_by_path_and_hash(file_path, file_hash)
             if existing_record:
-                # 如果已存在记录，则更新现有记录
-                return self.update_screening_result(existing_record.id, data)
+                # 如果已存在记录，则更新现有记录，同时确保状态为pending
+                update_data = data.copy()
+                update_data["status"] = FileScreenResult.PENDING.value  # 确保状态重置为pending
+                logger.info(f"找到现有记录 ID:{existing_record.id}，更新状态为pending并更新元数据")
+                return self.update_screening_result(existing_record.id, update_data)
             
             # 将字典转换为FileScreeningResult对象
             result = FileScreeningResult(
@@ -94,6 +101,29 @@ class ScreeningManager:
     def get_by_path(self, file_path: str) -> Optional[FileScreeningResult]:
         """根据文件路径获取粗筛结果"""
         statement = select(FileScreeningResult).where(FileScreeningResult.file_path == file_path)
+        return self.session.exec(statement).first()
+    
+    def get_by_path_and_hash(self, file_path: str, file_hash: str = None) -> Optional[FileScreeningResult]:
+        """根据文件路径和哈希值获取粗筛结果
+        
+        如果同时提供路径和哈希值，则进行更严格的匹配；
+        如果只提供路径，则退化为仅路径匹配。
+        
+        Args:
+            file_path: 文件路径
+            file_hash: 文件哈希值（可选）
+            
+        Returns:
+            匹配的记录或None
+        """
+        if not file_hash:
+            return self.get_by_path(file_path)
+            
+        # 同时匹配路径和哈希
+        statement = select(FileScreeningResult).where(
+            (FileScreeningResult.file_path == file_path) & 
+            (FileScreeningResult.file_hash == file_hash)
+        )
         return self.session.exec(statement).first()
     
     def get_by_id(self, result_id: int) -> Optional[FileScreeningResult]:
@@ -186,10 +216,28 @@ class ScreeningManager:
                 logger.warning(f"更新粗筛结果失败: ID {result_id} 不存在")
                 return None
             
+            # 记录原始状态，用于日志记录
+            original_status = result.status
+            
             # 更新字段
             for key, value in data.items():
                 if hasattr(result, key) and key != "id":
                     setattr(result, key, value)
+            
+            # 状态处理逻辑
+            # 只在明确要求更新为pending状态时进行状态重置，不自动根据内容变更重置状态
+            # 因为在当前阶段，精炼主要基于元数据进行，不深入分析文件内容
+            if "status" in data and data["status"] == FileScreenResult.PENDING.value:
+                # 明确设置为pending
+                result.status = FileScreenResult.PENDING.value
+                logger.info(f"文件粗筛结果状态由 {original_status} 明确重置为 {result.status}")
+            
+            # 如果是文件路径变更的情况（如文件重命名），需要重新进行精炼处理
+            # 因为文件名包含的语义信息可能影响聚类结果
+            elif result.status != FileScreenResult.PENDING.value and "file_path" in data and data["file_path"] != result.file_path:
+                # 对于文件名/路径变更的情况，需要重新处理
+                result.status = FileScreenResult.PENDING.value
+                logger.info(f"检测到文件路径变更，将状态由 {original_status} 重置为 {result.status}")
             
             # 更新时间戳
             result.updated_at = datetime.now()
@@ -331,3 +379,107 @@ class ScreeningManager:
             self.session.rollback()
             logger.error(f"清理旧粗筛结果失败: {str(e)}")
             return 0
+
+    def delete_screening_results_by_path_prefix(self, path_prefix: str) -> int:
+        """删除以指定路径前缀开头的所有粗筛记录
+        
+        Args:
+            path_prefix: 路径前缀
+            
+        Returns:
+            删除的记录数
+        """
+        try:
+            # 确保路径以"/"结尾，便于前缀匹配
+            if not path_prefix.endswith("/"):
+                path_prefix = f"{path_prefix}/"
+            
+            # 查询以该路径前缀开头的所有记录
+            statement = delete(FileScreeningResult).where(FileScreeningResult.file_path.like(f"{path_prefix}%"))
+            result = self.session.execute(statement)
+            self.session.commit()
+            
+            deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+            logger.info(f"删除路径前缀为'{path_prefix}'的粗筛结果成功: 删除了 {deleted_count} 条记录")
+            return deleted_count
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"删除路径前缀为'{path_prefix}'的粗筛结果失败: {str(e)}")
+            return 0
+
+    def find_similar_files_by_hash(self, file_hash: str, exclude_path: str = None, limit: int = 10) -> List[FileScreeningResult]:
+        """根据哈希值查找可能的重复文件
+        
+        Args:
+            file_hash: 文件哈希值
+            exclude_path: 排除的文件路径（通常是查询文件自身的路径）
+            limit: 最大返回结果数量
+            
+        Returns:
+            具有相同哈希值的文件列表
+        """
+        try:
+            if not file_hash:
+                return []
+                
+            if exclude_path:
+                # 查找具有相同哈希值但路径不同的文件
+                statement = select(FileScreeningResult)\
+                    .where((FileScreeningResult.file_hash == file_hash) & 
+                           (FileScreeningResult.file_path != exclude_path))\
+                    .order_by(FileScreeningResult.modified_time.desc())\
+                    .limit(limit)
+            else:
+                # 查找所有具有相同哈希值的文件
+                statement = select(FileScreeningResult)\
+                    .where(FileScreeningResult.file_hash == file_hash)\
+                    .order_by(FileScreeningResult.modified_time.desc())\
+                    .limit(limit)
+                
+            return self.session.exec(statement).all()
+            
+        except Exception as e:
+            logger.error(f"根据哈希值查找相似文件失败: {str(e)}")
+            return []
+            
+    def find_similar_files_by_name(self, file_name: str, exclude_path: str = None, limit: int = 10) -> List[FileScreeningResult]:
+        """根据文件名查找可能的相似文件（名称相似度高的文件）
+        
+        Args:
+            file_name: 文件名（不含路径）
+            exclude_path: 排除的文件路径（通常是查询文件自身的路径）
+            limit: 最大返回结果数量
+            
+        Returns:
+            文件名相似的文件列表
+        """
+        try:
+            if not file_name:
+                return []
+                
+            # 去掉扩展名，只匹配文件主名
+            base_name = file_name
+            if '.' in base_name:
+                base_name = base_name[:base_name.rindex('.')]
+            
+            # 查找名称类似的文件
+            name_pattern = f"%{base_name}%"
+            
+            if exclude_path:
+                statement = select(FileScreeningResult)\
+                    .where((FileScreeningResult.file_name.like(name_pattern)) & 
+                           (FileScreeningResult.file_path != exclude_path))\
+                    .order_by(FileScreeningResult.modified_time.desc())\
+                    .limit(limit)
+            else:
+                statement = select(FileScreeningResult)\
+                    .where(FileScreeningResult.file_name.like(name_pattern))\
+                    .order_by(FileScreeningResult.modified_time.desc())\
+                    .limit(limit)
+                
+            return self.session.exec(statement).all()
+            
+        except Exception as e:
+            logger.error(f"根据文件名查找相似文件失败: {str(e)}")
+            return []

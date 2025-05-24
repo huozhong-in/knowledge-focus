@@ -25,9 +25,12 @@ import {
   Settings, 
   Upload } from "lucide-react";
 // UI组件
-import { Button } from "@/components/ui/button";
+import { 
+  Button 
+} from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
   Alert, 
   AlertDescription, 
@@ -130,6 +133,7 @@ function HomeAuthorization() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newDirPath, setNewDirPath] = useState("");
   const [newDirAlias, setNewDirAlias] = useState("");
+  const [newDirBlacklist, setNewDirBlacklist] = useState(false); // 新增：用于跟踪"加入黑名单"复选框状态
   const [activeTab, setActiveTab] = useState("all");
   const [isDraggingOver, setIsDraggingOver] = useState(false); // 新增：用于跟踪拖拽状态
 
@@ -254,6 +258,7 @@ function HomeAuthorization() {
           path: newDirPath,
           alias: newDirAlias || null,
           auth_status: initialAuthStatus, // 添加初始授权状态
+          is_blacklist: newDirBlacklist, // 添加黑名单标志
         }),
       });
       
@@ -265,21 +270,22 @@ function HomeAuthorization() {
         setIsDialogOpen(false);
         setNewDirPath("");
         setNewDirAlias("");
+        setNewDirBlacklist(false); // 重置黑名单状态
         fetchDirectories();
         
-        // 如果没有完全磁盘访问权限且是系统路径，提示用户
-        if (!hasFullDiskAccess && 
-            !newDirPath.includes("/Users") && 
-            !newDirPath.includes("/Documents") && 
-            !newDirPath.includes("/Desktop") && 
-            !newDirPath.includes("/Downloads")) {
-          toast.warning("检测到您添加了系统文件夹，建议开启完全磁盘访问权限", {
-            action: {
-              label: "授权",
-              onClick: requestFullDiskAccess
-            },
-            duration: 8000,
+        // 如果是已授权状态且不是黑名单，立即启动目录扫描
+        if (initialAuthStatus === "authorized" && !newDirBlacklist) {
+          toast.loading(`正在扫描文件夹: ${newDirPath}`, {
+            id: `scan-${result.data?.id || ''}`,
           });
+          
+          // 等待目录列表刷新后再扫描
+          setTimeout(async () => {
+            await scanDirectory(newDirPath);
+            toast.success(`文件夹扫描已启动: ${newDirAlias || newDirPath}`, {
+              id: `scan-${result.data?.id || ''}`,
+            });
+          }, 1000);
         }
       } else {
         toast.error(result.message || "添加文件夹失败");
@@ -310,6 +316,7 @@ function HomeAuthorization() {
           path: dirPath,
           alias: dirAlias || null,
           auth_status: initialAuthStatus, // 添加初始授权状态
+          is_blacklist: false, // 拖拽添加的文件夹默认不加入黑名单
         }),
       });
       
@@ -319,6 +326,21 @@ function HomeAuthorization() {
       if (result.status === "success") {
         toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
         fetchDirectories(); // 刷新列表
+        
+        // 如果是已授权状态且不是黑名单，立即启动目录扫描
+        if (initialAuthStatus === "authorized") {
+          toast.loading(`正在扫描文件夹: ${dirPath}`, {
+            id: `scan-${result.data?.id || ''}`,
+          });
+          
+          // 等待目录列表刷新后再扫描
+          setTimeout(async () => {
+            await scanDirectory(dirPath);
+            toast.success(`文件夹扫描已启动: ${dirAlias || dirPath}`, {
+              id: `scan-${result.data?.id || ''}`,
+            });
+          }, 1000);
+        }
         
         // 如果没有完全磁盘访问权限且是系统路径，提示用户
         if (!hasFullDiskAccess && 
@@ -781,6 +803,9 @@ function HomeAuthorization() {
                           requestDirectoryAccess(tempDir);
                         }, 500);
                       }
+
+                      // 触发目录扫描
+                      await scanDirectory(resolvedDir);
                     } catch (processErr) {
                       info(`处理目录 ${resolvedDir} 时出错: ${processErr}`);
                       toast.error(`处理文件夹时出错: ${processErr}`);
@@ -993,9 +1018,6 @@ function HomeAuthorization() {
                     <Button 
                       variant="destructive" 
                       size="sm"
-                      disabled={hasFullDiskAccess} 
-                      className={hasFullDiskAccess ? "opacity-50 cursor-not-allowed" : ""}
-                      title={hasFullDiskAccess ? "已获得完全磁盘访问权限，无需移除文件夹" : ""}
                     >
                       删除
                     </Button>
@@ -1005,6 +1027,11 @@ function HomeAuthorization() {
                       <AlertDialogTitle>确认删除?</AlertDialogTitle>
                       <AlertDialogDescription>
                         删除后将不再监控此文件夹，但不会删除实际文件。
+                        {hasFullDiskAccess && (
+                          <p className="mt-2 text-amber-600">
+                            注意：虽然您已获得完全磁盘访问权限，删除文件夹仅会从监控列表中移除，但不会影响访问权限。
+                          </p>
+                        )}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -1062,6 +1089,17 @@ function HomeAuthorization() {
     
     // 这里我们不再直接处理，因为应该由Tauri的事件系统接管
     toast.info("拖放事件已触发，等待Tauri处理...");
+  };
+
+  // 添加扫描目录的函数
+  const scanDirectory = async (path: string) => {
+    try {
+      console.log(`触发目录扫描: ${path}`);
+      await invoke('scan_directory', { path });
+      console.log(`目录扫描已启动: ${path}`);
+    } catch (err) {
+      console.error(`扫描目录失败: ${err}`);
+    }
   };
   
   return (
@@ -1141,6 +1179,23 @@ function HomeAuthorization() {
                     placeholder="我的文档"
                     className="col-span-3" 
                   />
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <div className="text-right col-span-1">
+                    <Label htmlFor="blacklist" className="text-right">
+                      黑名单
+                    </Label>
+                  </div>
+                  <div className="col-span-3 flex items-center">
+                    <Checkbox 
+                      id="blacklist" 
+                      checked={newDirBlacklist}
+                      onCheckedChange={(checked) => setNewDirBlacklist(checked === true)}
+                    />
+                    <Label htmlFor="blacklist" className="ml-2">
+                      加入黑名单（不监控此文件夹）
+                    </Label>
+                  </div>
                 </div>
               </div>
               

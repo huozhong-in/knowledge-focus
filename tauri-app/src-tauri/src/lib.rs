@@ -100,19 +100,31 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
             db_path_to_use = api_state_guard.db_path.clone();
         }
 
+        // 获取当前工作目录，用于调试
+        let current_dir = std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "无法获取当前工作目录".to_string());
+        println!("当前工作目录: {}", current_dir);
+        
+        
+        
         // According to dev/production environment, choose different Python paths
         let python_path = if cfg!(debug_assertions) {
-            // Development environment
             "../../../../api/.venv/bin/python"
         } else {
             // Production environment - use Python from venv directory
             "./venv/bin/python" // Assuming venv is bundled relative to the executable
         };
+        println!("Python路径: {}", python_path);
 
         let sidecar_result = app_handle.shell().sidecar(python_path);
 
         let sidecar = match sidecar_result {
-            Ok(s) => s,
+            //打印调试信息，sidecar的绝对路径
+            Ok(s) => {
+                // println!("成功找到sidecar: {:?}", s);
+                s
+            },
             Err(e) => {
                 eprintln!("无法找到sidecar: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
@@ -122,11 +134,17 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                 return;
             }
         };
-
+        
         // Use Tauri's resource path API to handle script path
+        // 检查是否在lldb调试模式下运行 - 因为debug模式和dev模式的当前工作目录不同
         let script_path = if cfg!(debug_assertions) {
-            // Development environment - direct relative path
-            "../../api/main.py".to_string()
+            if std::env::var("LLDB_DEBUGGER").is_ok() {
+                // LLDB调试模式
+                "./api/main.py".to_string()
+            } else {
+                // 普通开发模式
+                "../../api/main.py".to_string()
+            }
         } else {
             // Production environment - use resource path API
             match app_handle
@@ -146,14 +164,9 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
                 }
             }
         };
-
-        println!("Python路径: {}", python_path);
         println!("脚本路径: {}", script_path);
-        println!(
-            "API Port: {}, Host: {}, DB Path: {}",
-            port_to_use, host_to_use, db_path_to_use
-        );
 
+        // 构造参数
         let command = sidecar.args(&[
             &script_path,
             "--port",
@@ -163,6 +176,11 @@ fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<Api
             "--db-path",
             &db_path_to_use,
         ]);
+        // println!(
+        //     "API Port: {}, Host: {}, DB Path: {}",
+        //     port_to_use, host_to_use, db_path_to_use
+        // );
+        println!("命令行: {:?}", command);
 
         match command.spawn() {
             Ok((mut rx, child)) => {
@@ -678,6 +696,7 @@ pub fn run() {
             commands::resolve_directory_from_path,
             commands::get_file_monitor_stats,
             commands::test_bundle_detection,
+            commands::scan_directory, // 新增:添加目录后扫描目录
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
         ])

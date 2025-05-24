@@ -2,7 +2,6 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue; // For extra_data in FileFilterRuleRust
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -18,6 +17,19 @@ pub struct MonitorStats {
     pub filtered_files: u64,      // 被过滤的文件数量
     pub filtered_bundles: u64,    // 被过滤的macOS包数量
     pub error_count: u64,         // 处理错误次数
+}
+
+// 批处理器统计信息
+#[derive(Debug, Default)]
+struct BatchProcessorStats {
+    received_files: u64,           // 接收到的文件总数
+    hidden_files_skipped: u64,     // 跳过的隐藏文件
+    rule_excluded_files_skipped: u64, // 被规则排除的文件
+    invalid_extension_skipped: u64, // 扩展名不在白名单的文件
+    ds_store_skipped: u64,         // 跳过的 .DS_Store 文件
+    directory_skipped: u64,        // 跳过的目录
+    bundle_skipped: u64,           // 跳过的macOS bundle文件
+    processed_files: u64,          // 实际处理的文件数
 }
 
 // --- New Configuration Structs ---
@@ -959,6 +971,42 @@ impl FileMonitor {
             return None;
         }
         
+        // 根据扩展名快速过滤不在白名单中的文件类型
+        if path.is_file() {
+            // 获取配置中的有效扩展名集合
+            let valid_extensions: std::collections::HashSet<String> = {
+                let config_guard = self.config_cache.lock().unwrap();
+                if let Some(config) = config_guard.as_ref() {
+                    config.file_extension_maps.iter()
+                        .map(|map| map.extension.to_lowercase())
+                        .collect()
+                } else {
+                    std::collections::HashSet::new()
+                }
+            };
+            
+            // 如果有效扩展名集合不为空，进行扩展名检查
+            if !valid_extensions.is_empty() {
+                if let Some(ext) = Self::extract_extension(&path) {
+                    let ext_lower = ext.to_lowercase();
+                    if !valid_extensions.contains(&ext_lower) {
+                        println!("[PROCESS_EVENT] File {:?} has extension '{}' which is not in our whitelist. Ignoring.", path, ext_lower);
+                        if let Ok(mut stats) = self.stats.lock() {
+                            stats.filtered_files += 1;
+                        }
+                        return None;
+                    }
+                } else if path.is_file() { // 没有扩展名的文件
+                    // 如果是文件且没有扩展名，也进行过滤（可选，取决于是否要处理无扩展名文件）
+                    println!("[PROCESS_EVENT] File {:?} has no extension. Ignoring.", path);
+                    if let Ok(mut stats) = self.stats.lock() {
+                        stats.filtered_files += 1;
+                    }
+                    return None;
+                }
+            }
+        }
+        
         // 检查macOS bundle文件夹 - 这是高优先级过滤，应该在黑名单检查前执行
         if Self::is_macos_bundle_folder(&path) {
             println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by extension). Ignoring.", path);
@@ -1008,9 +1056,13 @@ impl FileMonitor {
             }
         }
         
-        // 忽略黑名单中的路径 - 需要在bundle检查之后执行
+        // 忽略黑名单中的路径 - 需要在bundle检查之后执行，但在获取元数据前执行
+        // 这样可以避免对黑名单中的路径进行不必要的文件元数据操作
         if self.is_in_blacklist(&path) {
             println!("[PROCESS_EVENT] Path {:?} is in blacklist. Ignoring.", path);
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.filtered_files += 1;
+            }
             return None;
         }
         // println!("[TEST_DEBUG] process_file_event: Path {:?} exists.", path);
@@ -1065,7 +1117,19 @@ impl FileMonitor {
         batch_size: usize,
         batch_interval: Duration
     ) {
-        // println!("[BATCH_PROC] Started batch processor with size={}, interval={:?}", batch_size, batch_interval);
+        // 统计信息
+        let mut stats = BatchProcessorStats {
+            received_files: 0,
+            hidden_files_skipped: 0,
+            rule_excluded_files_skipped: 0,
+            invalid_extension_skipped: 0,
+            ds_store_skipped: 0,
+            directory_skipped: 0,
+            bundle_skipped: 0,
+            processed_files: 0,
+        };
+        
+        println!("[BATCH_PROC] 启动批处理器，批量大小={}, 间隔={:?}", batch_size, batch_interval);
         let mut batch = Vec::with_capacity(batch_size);
         let mut last_send = tokio::time::Instant::now();
 
@@ -1073,74 +1137,154 @@ impl FileMonitor {
             tokio::select! {
                 maybe_metadata = rx.recv() => {
                     if let Some(metadata) = maybe_metadata {
-                        // 跳过隐藏文件
+                        stats.received_files += 1;
+                        
+                        // 跳过隐藏文件 - 高优先级过滤条件
                         if metadata.is_hidden {
+                            stats.hidden_files_skipped += 1;
                             println!("[BATCH_PROC] 跳过隐藏文件: {:?}", metadata.file_path);
                             continue;
                         }
                         
-                        // 检查文件是否被规则排除
+                        // 检查是否为bundle或bundle内部文件（应该在process_file_event中已过滤，这里是双重保证）
+                        if metadata.is_os_bundle.unwrap_or(false) {
+                            stats.bundle_skipped += 1;
+                            println!("[BATCH_PROC] 跳过macOS bundle文件: {:?}", metadata.file_path);
+                            continue;
+                        }
+                        
+                        // 检查文件是否被规则排除（来自apply_initial_rules的结果）
                         if let Some(extra) = &metadata.extra_metadata {
                             if extra.get("excluded_by_rule_id").is_some() {
+                                stats.rule_excluded_files_skipped += 1;
                                 println!("[BATCH_PROC] 跳过已排除的文件: {:?} (规则: {:?})", metadata.file_path, extra.get("excluded_by_rule_name"));
-                                continue; // 跳过添加到批处理
+                                continue;
+                            }
+                        }
+                        
+                        // 白名单扩展名检查（双重保险）
+                        if !metadata.is_dir {
+                            // 获取配置中的有效扩展名集合
+                            let valid_extensions: std::collections::HashSet<String> = {
+                                let config_guard = self.config_cache.lock().unwrap();
+                                if let Some(config) = config_guard.as_ref() {
+                                    config.file_extension_maps.iter()
+                                        .map(|map| map.extension.to_lowercase())
+                                        .collect()
+                                } else {
+                                    std::collections::HashSet::new()
+                                }
+                            };
+                            
+                            if !valid_extensions.is_empty() {
+                                if let Some(ext) = &metadata.extension {
+                                    let ext_lower = ext.to_lowercase();
+                                    if !valid_extensions.contains(&ext_lower) {
+                                        stats.invalid_extension_skipped += 1;
+                                        println!("[BATCH_PROC] 跳过非白名单扩展名的文件: {:?} (扩展名: {})", metadata.file_path, ext_lower);
+                                        continue;
+                                    }
+                                } else {
+                                    stats.invalid_extension_skipped += 1;
+                                    println!("[BATCH_PROC] 跳过无扩展名文件: {:?}", metadata.file_path);
+                                    continue;
+                                }
                             }
                         }
                         
                         // 检查文件名是否包含 .DS_Store (额外检查)
                         if metadata.file_name.contains(".DS_Store") {
+                            stats.ds_store_skipped += 1;
                             println!("[BATCH_PROC] 跳过 .DS_Store 文件: {:?}", metadata.file_path);
                             continue;
                         }
 
                         // 跳过目录，只处理文件
                         if metadata.is_dir {
+                            stats.directory_skipped += 1;
                             println!("[BATCH_PROC] 跳过目录: {:?}", metadata.file_path);
                             continue;
                         }
                         
+                        stats.processed_files += 1;
+                        
                         batch.push(metadata);
                         if batch.len() >= batch_size {
-                            // println!("[BATCH_PROC] Batch size reached ({} items). Logging batch.", batch.len());
-                            // for item in &batch {
-                            //     println!("[BATCH_CONTENT] {:?}", item);
-                            // }
-                            // ENABLED SENDING TO API
+                            println!("[BATCH_PROC] 批处理达到大小限制 ({} 项)，正在发送到API", batch.len());
+                            
+                            // 发送数据到API
                             if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                                eprintln!("[BATCH_PROC] Error sending batch: {}", e);
+                                eprintln!("[BATCH_PROC] 批量发送错误: {}", e);
                             }
+                            
                             batch.clear();
                             last_send = tokio::time::Instant::now();
+                            
+                            // 每次发送后输出统计信息
+                            println!("[BATCH_STATS] 接收: {}, 处理: {}, 跳过: {} (隐藏: {}, 规则排除: {}, 无效扩展名: {}, .DS_Store: {}, 目录: {}, Bundle: {})",
+                                stats.received_files, 
+                                stats.processed_files,
+                                stats.received_files - stats.processed_files,
+                                stats.hidden_files_skipped,
+                                stats.rule_excluded_files_skipped,
+                                stats.invalid_extension_skipped,
+                                stats.ds_store_skipped,
+                                stats.directory_skipped,
+                                stats.bundle_skipped
+                            );
                         }
                     } else {
-                        // Channel closed
-                        if !batch.is_empty() {
-                            println!("[BATCH_PROC] Channel closed. Logging remaining batch ({} items).", batch.len());
-                            // for item in &batch {
-                            //     println!("[BATCH_CONTENT] {:?}", item);
-                            // }
-                            // TEMPORARILY DISABLED SENDING TO API
+                        // 通道关闭
+                        if (!batch.is_empty()) {
+                            println!("[BATCH_PROC] 通道关闭，正在发送剩余批处理 ({} 项)", batch.len());
+                            
+                            // 发送剩余数据到API
                             if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                                eprintln!("[BATCH_PROC] Error sending final batch: {}", e);
+                                eprintln!("[BATCH_PROC] 最终批量发送错误: {}", e);
                             }
                             batch.clear();
                         }
-                        println!("[BATCH_PROC] Metadata channel closed. Exiting batch processor.");
+                        
+                        // 输出最终统计信息
+                        println!("[BATCH_PROC] 最终统计: 接收: {}, 处理: {}, 跳过: {} (隐藏: {}, 规则排除: {}, 无效扩展名: {}, .DS_Store: {}, 目录: {}, Bundle: {})",
+                            stats.received_files, 
+                            stats.processed_files,
+                            stats.received_files - stats.processed_files,
+                            stats.hidden_files_skipped,
+                            stats.rule_excluded_files_skipped,
+                            stats.invalid_extension_skipped,
+                            stats.ds_store_skipped,
+                            stats.directory_skipped,
+                            stats.bundle_skipped
+                        );
+                        
+                        println!("[BATCH_PROC] 元数据通道关闭。退出批处理器。");
                         return;
                     }
                 },
                 _ = sleep(batch_interval) => {
                     if !batch.is_empty() && tokio::time::Instant::now().duration_since(last_send) >= batch_interval {
-                        println!("[BATCH_PROC] Batch interval reached. Logging batch ({} items).", batch.len());
-                        // for item in &batch {
-                        //     println!("[BATCH_CONTENT] {:?}", item);
-                        // }
-                        // ENABLED SENDING TO API
+                                        println!("[BATCH_PROC] 达到批处理间隔，正在发送批处理 ({} 项)", batch.len());
+                        
+                        // 发送数据到API
                         if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
-                            eprintln!("[BATCH_PROC] Error sending batch due to interval: {}", e);
+                            eprintln!("[BATCH_PROC] 批量发送错误: {}", e);
                         }
                         batch.clear();
                         last_send = tokio::time::Instant::now();
+                        
+                        // 每次发送后输出统计信息
+                        println!("[BATCH_STATS] 接收: {}, 处理: {}, 跳过: {} (隐藏: {}, 规则排除: {}, 无效扩展名: {}, .DS_Store: {}, 目录: {}, Bundle: {})",
+                            stats.received_files, 
+                            stats.processed_files,
+                            stats.received_files - stats.processed_files,
+                            stats.hidden_files_skipped,
+                            stats.rule_excluded_files_skipped,
+                            stats.invalid_extension_skipped,
+                            stats.ds_store_skipped,
+                            stats.directory_skipped,
+                            stats.bundle_skipped
+                        );
                     }
                 }
             }
@@ -1197,7 +1341,7 @@ impl FileMonitor {
             
             println!("[INITIAL_SCAN] 扫描目录: {}", dir.path);
             let path = PathBuf::from(&dir.path);
-            if !path.exists() {
+            if (!path.exists()) {
                 println!("[INITIAL_SCAN] 目录不存在: {}", dir.path);
                 continue;
             }
@@ -1220,11 +1364,17 @@ impl FileMonitor {
                         return false;
                     }
                     
+                    // 优先检查黑名单路径 - 将检查移到这里可以更早过滤掉不需要的路径
+                    if self.is_in_blacklist(e.path()) {
+                        println!("[INITIAL_SCAN] 跳过黑名单路径: {:?}", e.path());
+                        return false;
+                    }
+                    
                     // 不扫描macOS bundle以及其内部的所有文件
                     if Self::is_macos_bundle_folder(e.path()) {
                         // 只增加bundle计数如果是顶层的bundle（不是bundle内部的文件）
                         let segments = e.path().to_string_lossy().matches('/').count();
-                        if segments <= 1 { // 顶层目录
+                        if (segments <= 1) { // 顶层目录
                             skipped_bundles += 1;  // 注意：这是线程安全的，因为在同一线程中
                             // 不能在这里更新stats，因为这是在过滤器闭包中
                         }
@@ -1248,7 +1398,35 @@ impl FileMonitor {
                         }
                     }
                     
-                    // 默认允许扫描
+                    // 如果是文件，检查扩展名是否在白名单中
+                    if e.path().is_file() {
+                        // 获取配置中的有效扩展名集合
+                        let valid_extensions: std::collections::HashSet<String> = {
+                            let config_guard = self.config_cache.lock().unwrap();
+                            if let Some(config) = config_guard.as_ref() {
+                                config.file_extension_maps.iter()
+                                    .map(|map| map.extension.to_lowercase())
+                                    .collect()
+                            } else {
+                                std::collections::HashSet::new()
+                            }
+                        };
+                        
+                        if !valid_extensions.is_empty() {
+                            if let Some(ext) = Self::extract_extension(e.path()) {
+                                let ext_lower = ext.to_lowercase();
+                                if !valid_extensions.contains(&ext_lower) {
+                                    // 扩展名不在白名单中，跳过
+                                    return false;
+                                }
+                            } else {
+                                // 没有扩展名的文件，也跳过
+                                return false;
+                            }
+                        }
+                    }
+                    
+                    // 如果通过了所有检查，允许扫描
                     true
                 });
             
@@ -1263,12 +1441,7 @@ impl FileMonitor {
                 total_files += 1;
                 let entry_path = entry.path().to_path_buf();
                 
-                // 过滤黑名单路径 - 现在在内部过滤器后检查，因为优先级更低
-                if self.is_in_blacklist(&entry_path) {
-                    println!("[INITIAL_SCAN] 跳过黑名单路径: {:?}", entry_path);
-                    skipped_files += 1;
-                    continue;
-                }
+                // 黑名单路径已在filter_entry中检查，这里不再需要重复检查
                 
                 // 处理文件事件
                 if let Some(metadata) = self.process_file_event(
@@ -1526,6 +1699,170 @@ impl FileMonitor {
         match self.stats.lock() {
             Ok(stats) => stats.clone(),
             Err(_) => MonitorStats::default(), // 返回默认统计信息，以防锁定失败
+        }
+    }
+
+    // 扫描单个目录
+    pub async fn scan_single_directory(&self, path: &str) -> Result<(), String> {
+        println!("[SINGLE_SCAN] 开始扫描单个目录: {}", path);
+        
+        // 检查配置缓存是否存在
+        if self.config_cache.lock().unwrap().is_none() {
+            eprintln!("[SINGLE_SCAN] 配置缓存为空，尝试获取配置");
+            self.fetch_and_store_all_config().await?;
+        }
+        
+        // 获取完全磁盘访问权限状态
+        let full_disk_access = {
+            let cache_guard = self.config_cache.lock().unwrap();
+            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
+        };
+        
+        // 检查目录是否在黑名单中
+        if self.is_in_blacklist(Path::new(path)) {
+            println!("[SINGLE_SCAN] 目录在黑名单中，跳过扫描: {}", path);
+            return Ok(());
+        }
+        
+        // 创建metadata发送通道
+        let (metadata_tx, metadata_rx) = mpsc::channel::<FileMetadata>(100);
+        
+        // 启动批处理器
+        let batch_size = self.batch_size;
+        let batch_interval = self.batch_interval;
+        let self_clone_for_batch = self.clone();
+        tokio::spawn(async move {
+            self_clone_for_batch.batch_processor(metadata_rx, batch_size, batch_interval).await;
+        });
+        
+        // 扫描目录
+        println!("[SINGLE_SCAN] 开始扫描目录: {}", path);
+        let path_buf = PathBuf::from(path);
+        if (!path_buf.exists()) {
+            return Err(format!("目录不存在: {}", path));
+        }
+
+        let mut total_files = 0;
+        let mut skipped_files = 0;
+        let mut processed_files = 0;
+        let mut skipped_bundles = 0;
+        
+        // 使用 WalkDir 执行递归扫描
+        let walker = WalkDir::new(&path_buf).into_iter()
+            .filter_entry(|e| {
+                // 不扫描隐藏文件
+                if Self::is_hidden_file(e.path()) {
+                    return false;
+                }
+                
+                // 不扫描macOS bundle以及其内部的所有文件
+                if Self::is_macos_bundle_folder(e.path()) {
+                    skipped_bundles += 1;
+                    println!("[SINGLE_SCAN] 跳过Bundle或其内部文件: {:?}", e.path());
+                    return false;
+                }
+                
+                // 检查路径中的任何部分是否包含macOS bundle扩展名
+                if Self::is_inside_macos_bundle(e.path()) {
+                    println!("[SINGLE_SCAN] 跳过Bundle内部文件: {:?}", e.path());
+                    return false;
+                }
+                
+                true
+            });
+        
+        for entry in walker {
+            match entry {
+                Ok(entry) => {
+                    total_files += 1;
+                    
+                    if (total_files % 100 == 0) {
+                        println!("[SINGLE_SCAN] 扫描进度: {} 个文件", total_files);
+                    }
+                    
+                    if !entry.file_type().is_file() {
+                        continue; // 仅处理文件，跳过目录
+                    }
+                    
+                    // 处理单个文件 - 复用现有的 process_file_event 方法
+                    if let Some(metadata) = self.process_file_event(entry.path().to_path_buf(), notify::EventKind::Create(notify::event::CreateKind::Any)).await {
+                        if metadata_tx.send(metadata).await.is_err() {
+                            eprintln!("[SINGLE_SCAN] 无法发送元数据到批处理器，通道可能已关闭");
+                        }
+                        processed_files += 1;
+                    } else {
+                        skipped_files += 1;
+                    }
+                }
+                Err(e) => {
+                    eprintln!("[SINGLE_SCAN] 无法访问项目: {}", e);
+                    skipped_files += 1;
+                }
+            }
+        }
+        
+        println!("[SINGLE_SCAN] 目录 {} 扫描完成: 总文件数 {}, 处理文件数 {}, 跳过文件数 {} (其中macOS包数量: {})", 
+            path, total_files, processed_files, skipped_files, skipped_bundles);
+        
+        // 更新统计信息
+        if let Ok(mut stats) = self.stats.lock() {
+            stats.processed_files += processed_files as u64;
+            stats.filtered_files += skipped_files as u64;
+            stats.filtered_bundles += skipped_bundles as u64;
+        }
+        
+        Ok(())
+    }
+
+    // 监控新添加的目录（在添加目录到监控列表后调用）
+    pub async fn setup_watch_for_directory(&self, path: &str) -> Result<(), String> {
+        println!("[SETUP_WATCH] 为新添加的目录 {} 设置监控", path);
+        
+        // 验证目录是否应该被监控（检查授权状态和黑名单）
+        let full_disk_access = {
+            let cache_guard = self.config_cache.lock().unwrap();
+            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
+        };
+        
+        // 从监控目录列表中查找此目录
+        let should_watch = {
+            let dirs_guard = self.monitored_dirs.lock().unwrap();
+            dirs_guard.iter()
+                .find(|d| d.path == path)
+                .map(|dir| {
+                    if full_disk_access {
+                        !dir.is_blacklist
+                    } else {
+                        dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
+                    }
+                })
+                .unwrap_or(false)
+        };
+        
+        if !should_watch {
+            println!("[SETUP_WATCH] 目录 {} 不需要监控（未授权或在黑名单中）", path);
+            return Ok(());
+        }
+        
+        // 创建一个事件发送者的克隆
+        if let Some(event_tx) = &self.event_tx {
+            let event_tx_clone = event_tx.clone();
+            
+            // 为闭包克隆路径字符串，以便在async move中使用
+            let path_clone = path.to_string();
+            
+            // 启动目录监控
+            tokio::spawn(async move {
+                if let Err(e) = Self::watch_directory(&path_clone, event_tx_clone).await {
+                    eprintln!("[SETUP_WATCH] 为目录 {} 设置监控失败: {}", path_clone, e);
+                } else {
+                    println!("[SETUP_WATCH] 成功为目录 {} 设置监控", path_clone);
+                }
+            });
+            
+            Ok(())
+        } else {
+            Err(format!("无法为目录 {} 设置监控：事件通道未初始化", path))
         }
     }
 }

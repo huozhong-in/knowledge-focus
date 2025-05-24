@@ -27,16 +27,69 @@ import sys  # 添加在文件顶部其他 import 语句附近
 
 # 设置日志记录
 logger = logging.getLogger(__name__) # Use __name__ for logger
-parents_logs_dir = pathlib.Path(__file__).parent / 'logs'
-parents_logs_dir.mkdir(exist_ok=True) # Safer way to create directory
 
-logger.setLevel(logging.INFO)
-# Ensure handler is not added multiple times if script is reloaded or logger is already configured
-if not logger.handlers:
-    handler = logging.FileHandler(parents_logs_dir / 'api_{starttime}.log'.format(starttime=time.strftime('%Y%m%d', time.localtime(time.time()))))
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+# 记录启动时的环境信息
+print(f"环境变量: TAURI_DEBUG={os.environ.get('TAURI_DEBUG')}, VSCODE_DEBUG={os.environ.get('VSCODE_DEBUG')}")
+print(f"调试模式: {sys.argv}")
+print(f"Python 版本: {sys.version}")
+print(f"当前工作目录: {os.getcwd()}")
+
+try:
+    # 确定日志目录 - 尝试多种方式确保找到正确路径
+    script_path = os.path.abspath(__file__)
+    print(f"脚本路径: {script_path}")
+    
+    # 首先尝试直接从脚本路径获取
+    parents_logs_dir = pathlib.Path(script_path).parent / 'logs'
+    
+    # 如果上面的目录不存在，尝试从当前工作目录
+    if not parents_logs_dir.exists():
+        current_dir = pathlib.Path(os.getcwd())
+        if 'api' in str(current_dir):
+            # 如果当前目录包含 'api'
+            parents_logs_dir = current_dir / 'logs'
+        else:
+            # 尝试在当前目录下找 api/logs
+            parents_logs_dir = current_dir / 'api' / 'logs'
+    
+    print(f"日志目录路径: {parents_logs_dir}")
+    # 确保日志目录存在
+    parents_logs_dir.mkdir(exist_ok=True, parents=True)
+    
+    logger.setLevel(logging.INFO)
+    
+    # 添加控制台处理器，确保日志同时输出到终端
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(console_handler)
+    
+    # 添加文件处理器
+    log_filename = f'api_{time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))}.log'
+    log_filepath = parents_logs_dir / log_filename
+    print(f"日志文件路径: {log_filepath}")
+    
+    # 确保不重复添加处理器
+    file_handler_exists = False
+    for handler in logger.handlers:
+        if isinstance(handler, logging.FileHandler):
+            file_handler_exists = True
+            break
+    
+    if not file_handler_exists:
+        try:
+            file_handler = logging.FileHandler(log_filepath)
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(file_handler)
+            print(f"文件日志处理器已添加: {log_filepath}")
+        except Exception as e:
+            print(f"添加文件日志处理器失败: {e}")
+            # 记录详细的错误信息
+            import traceback
+            traceback.print_exc()
+except Exception as e:
+    print(f"设置日志记录时出错: {e}")
+    import traceback
+    traceback.print_exc()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -44,46 +97,95 @@ async def lifespan(app: FastAPI):
     # 在应用启动时执行初始化操作
     logger.info("应用正在启动...")
     
-    # 初始化数据库引擎
-    if hasattr(app.state, "db_path"):
-        sqlite_url = f"sqlite:///{app.state.db_path}"
-        app.state.engine = create_engine(sqlite_url, echo=False)
-        logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
-    else:
-        logger.warning("未设置数据库路径，数据库引擎未初始化")
-    
-    # 先清理可能存在的孤立子进程
-    kill_orphaned_processes("python", "task_processor")
-    
-    # 初始化进程池和任务处理者
-    processes = 1 # if multiprocessing.cpu_count() == 1 else multiprocessing.cpu_count() // 2
-    app.state.process_pool = multiprocessing.Pool(processes=processes)
-    for processor_id in range(processes):
-        app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
-    
-    # 启动通知检查任务
-    asyncio.create_task(check_notifications())
+    try:
+        logger.info(f"调试信息: Python版本 {sys.version}")
+        logger.info(f"调试信息: 当前工作目录 {os.getcwd()}")
+        
+        # 初始化数据库引擎
+        if hasattr(app.state, "db_path"):
+            sqlite_url = f"sqlite:///{app.state.db_path}"
+            logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
+            try:
+                app.state.engine = create_engine(sqlite_url, echo=False)
+                logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
+            except Exception as db_err:
+                logger.error(f"初始化数据库引擎失败: {str(db_err)}", exc_info=True)
+                raise
+        else:
+            logger.warning("未设置数据库路径，数据库引擎未初始化")
+        
+        # 先清理可能存在的孤立子进程
+        try:
+            logger.info("清理可能存在的孤立子进程...")
+            kill_orphaned_processes("python", "task_processor")
+        except Exception as proc_err:
+            logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
+        
+        # 初始化进程池和任务处理者
+        try:
+            # 强制使用单worker模式，以确保文件处理过程中具有全局一致的视角
+            # 这对于精炼过程中的文件关联分析和聚类功能至关重要
+            # 多worker可能导致处理过程中的全局状态不一致，影响分析质量
+            from config import FORCE_SINGLE_WORKER
+            processes = 1 if FORCE_SINGLE_WORKER else max(1, multiprocessing.cpu_count() // 2)
+            logger.info(f"初始化进程池，强制单worker模式: {FORCE_SINGLE_WORKER}, 工作进程数: {processes}")
+            app.state.process_pool = multiprocessing.Pool(processes=processes)
+            
+            for processor_id in range(processes):
+                logger.info(f"启动工作进程 {processor_id}...")
+                app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
+            logger.info(f"所有 {processes} 个工作进程已启动")
+        except Exception as pool_err:
+            logger.error(f"初始化进程池失败: {str(pool_err)}", exc_info=True)
+            raise
+        
+        # 启动通知检查任务
+        try:
+            logger.info("启动通知检查任务...")
+            asyncio.create_task(check_notifications())
+        except Exception as notify_err:
+            logger.error(f"启动通知检查任务失败: {str(notify_err)}", exc_info=True)
+            
+        # Start monitor can kill self process if parent process is dead or exit
+        try:
+            logger.info("启动父进程监控线程...")
+            monitor_thread = threading.Thread(target=monitor_parent, daemon=True)
+            monitor_thread.start()
+            logger.info("父进程监控线程已启动")
+        except Exception as monitor_err:
+            logger.error(f"启动父进程监控线程失败: {str(monitor_err)}", exc_info=True)
 
-    # Start monitor can kill self process if parent process is dead or exit
-    monitor_thread = threading.Thread(target=monitor_parent, daemon=True)
-    monitor_thread.start()
-
-    # 正式开始服务
-    yield
-    
-    # 退出前的清理工作
-    if hasattr(app.state, "process_pool") and app.state.process_pool is not None:
-        app.state.process_pool.close()
-        app.state.process_pool.terminate()  # 终止所有工作进程
-        app.state.process_pool.join()
-        logger.info("进程池已关闭")
-    
-    # 在应用关闭时执行清理操作
-    if hasattr(app.state, "engine") and app.state.engine is not None:
-        app.state.engine.dispose()  # 释放数据库连接池
-        logger.info("数据库连接池已释放")
-    
-    logger.info("应用正在关闭...")
+        # 正式开始服务
+        logger.info("应用初始化完成，开始提供服务...")
+        yield
+    except Exception as e:
+        logger.critical(f"应用启动过程中发生严重错误: {str(e)}", exc_info=True)
+        # 确保异常传播，这样FastAPI会知道启动失败
+        raise
+    finally:
+        # 退出前的清理工作
+        logger.info("应用开始关闭...")
+        
+        try:
+            if hasattr(app.state, "process_pool") and app.state.process_pool is not None:
+                logger.info("关闭进程池...")
+                app.state.process_pool.close()
+                app.state.process_pool.terminate()  # 终止所有工作进程
+                app.state.process_pool.join()
+                logger.info("进程池已关闭")
+        except Exception as pool_close_err:
+            logger.error(f"关闭进程池失败: {str(pool_close_err)}", exc_info=True)
+        
+        # 在应用关闭时执行清理操作
+        try:
+            if hasattr(app.state, "engine") and app.state.engine is not None:
+                logger.info("释放数据库连接池...")
+                app.state.engine.dispose()  # 释放数据库连接池
+                logger.info("数据库连接池已释放")
+        except Exception as db_close_err:
+            logger.error(f"关闭数据库连接失败: {str(db_close_err)}", exc_info=True)
+        
+        logger.info("应用已完全关闭")
 
 app = FastAPI(lifespan=lifespan)
 origins = [
@@ -443,10 +545,13 @@ def add_file_screening_result(
         if auto_create_task and result.status == "pending":
             # 创建一个处理此文件的任务
             task_name = f"处理文件: {result.file_name}"
+            
+            # 这里我们使用精炼任务类型统一处理
+            # 并将单一文件任务也设置为高优先级，确保优先处理单一文件任务
             task = task_mgr.add_task(
                 task_name=task_name, 
-                task_type="index",  # 索引任务类型
-                priority="medium",  # 中等优先级
+                task_type=TaskType.REFINE.value,  # 使用精炼任务类型，与批处理保持一致
+                priority=TaskPriority.HIGH.value,  # 高优先级
                 extra_data={"screening_result_id": result.id}  # 关联粗筛结果ID
             )
             
@@ -544,12 +649,18 @@ def add_batch_file_screening_results(
         
         # 创建一个批处理任务（只要有成功添加的文件就创建任务）
         if result["success"] > 0:
-            # 创建一个批处理任务
+            # 取消之前的批量精炼任务（如果有）
+            # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
+            canceled_tasks = task_mgr.cancel_old_tasks(TaskType.REFINE.value)
+            if canceled_tasks > 0:
+                logger.info(f"已取消 {canceled_tasks} 个旧的精炼任务")
+                
+            # 创建一个新的批处理任务，使用高优先级确保及时处理
             task_name = f"批量处理文件: {result['success']} 个文件"
             task = task_mgr.add_task(
                 task_name=task_name, 
                 task_type=TaskType.REFINE.value,  # 使用精炼任务类型
-                priority=TaskPriority.MEDIUM.value,  # 中等优先级
+                priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
                 extra_data={"file_count": result["success"]}
             )
             result["task_id"] = task.id
@@ -764,6 +875,60 @@ def update_file_screening_status(
         return {
             "success": False,
             "message": f"更新失败: {str(e)}"
+        }
+
+@app.get("/file-screening/similar")
+def find_similar_files(
+    file_hash: str = None,
+    file_name: str = None,
+    exclude_path: str = None,
+    limit: int = 10,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """查找相似文件
+    
+    可以根据文件哈希值或文件名查找相似文件。优先使用哈希值查找，如果没有指定哈希值则使用文件名。
+    
+    参数:
+    - file_hash: 文件哈希值（可选）
+    - file_name: 文件名（可选，当file_hash未提供时使用）
+    - exclude_path: 要排除的文件路径（通常是原始文件路径）
+    - limit: 返回结果的最大数量
+    """
+    try:
+        if not file_hash and not file_name:
+            return {
+                "success": False,
+                "message": "必须提供file_hash或file_name参数"
+            }
+        
+        # 优先使用哈希值查找（精确匹配）
+        if file_hash:
+            results = screening_mgr.find_similar_files_by_hash(file_hash, exclude_path, limit)
+            search_type = "hash"
+        else:
+            results = screening_mgr.find_similar_files_by_name(file_name, exclude_path, limit)
+            search_type = "name"
+        
+        # 转换为可序列化字典列表
+        results_dict = [result.model_dump() for result in results]
+        
+        logger.info(f"根据{search_type}查找到 {len(results_dict)} 个相似文件")
+        
+        return {
+            "success": True,
+            "count": len(results_dict),
+            "search_type": search_type,
+            "data": results_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"查找相似文件失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "message": f"查找失败: {str(e)}"
         }
 
 @app.get("/")
@@ -1069,11 +1234,13 @@ def add_directory(
     try:
         path = data.get("path", "")
         alias = data.get("alias", "")
+        is_blacklist = data.get("is_blacklist", False)
+        auth_status = data.get("auth_status", None)
         
         if not path: # 修正：之前是 if name或not path:
             return {"status": "error", "message": "路径不能为空"}
         
-        success, message_or_dir = myfiles_mgr.add_directory(path, alias)
+        success, message_or_dir = myfiles_mgr.add_directory(path, alias, is_blacklist, auth_status)
         
         if success:
             # 检查返回值是否是字符串或MyFiles对象
@@ -1081,6 +1248,13 @@ def add_directory(
                 return {"status": "success", "message": message_or_dir}
             else:
                 # 如果是MyFiles对象，调用model_dump()
+                
+                # 如果不是黑名单且设置了auth_status为authorized，立即启动Rust监控
+                if not is_blacklist and auth_status == "authorized":
+                    # 添加Rust监控的触发信号（通过WebSocket通知前端或通过某种机制）
+                    # 此处日志记录即可，实际监控由前端Tauri通过fetch_and_store_all_config获取最新配置
+                    logger.info(f"[MONITOR] 新文件夹已添加且已授权，需要立即启动监控: {path}")
+                    
                 return {"status": "success", "data": message_or_dir.model_dump(), "message": "文件夹添加成功"}
         else:
             return {"status": "error", "message": message_or_dir}
@@ -1247,19 +1421,44 @@ def check_full_disk_access_status(
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=60000, help="API服务监听端口")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
-    parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
-    
-    args = parser.parse_args()
-    
-    # 检查端口是否被占用，如果被占用则终止占用进程
-    kill_process_on_port(args.port)
-    time.sleep(2)  # 等待端口释放
-    
-    # 设置数据库路径
-    app.state.db_path = args.db_path
-    
-    logging.info(f"API服务启动在: http://{args.host}:{args.port}")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    try:
+        logger.info("API服务程序启动")
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--port", type=int, default=60000, help="API服务监听端口")
+        parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
+        parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
+        
+        args = parser.parse_args()
+        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
+        
+        # 检查数据库路径是否存在
+        db_dir = os.path.dirname(os.path.abspath(args.db_path))
+        if db_dir and not os.path.exists(db_dir):
+            logger.warning(f"数据库目录 {db_dir} 不存在，尝试创建...")
+            try:
+                os.makedirs(db_dir, exist_ok=True)
+                logger.info(f"已创建数据库目录 {db_dir}")
+            except Exception as e:
+                logger.error(f"创建数据库目录失败: {str(e)}", exc_info=True)
+        
+        # 检查端口是否被占用，如果被占用则终止占用进程
+        try:
+            logger.info(f"检查端口 {args.port} 是否被占用...")
+            kill_process_on_port(args.port)
+            time.sleep(2)  # 等待端口释放
+            logger.info(f"端口 {args.port} 已释放或本来就没被占用")
+        except Exception as e:
+            logger.error(f"释放端口 {args.port} 失败: {str(e)}", exc_info=True)
+            # 继续执行，端口可能本来就没有被占用
+        
+        # 设置数据库路径
+        app.state.db_path = args.db_path
+        logger.info(f"设置数据库路径: {args.db_path}")
+        
+        # 启动服务器
+        logger.info(f"API服务启动在: http://{args.host}:{args.port}")
+        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    except Exception as e:
+        logger.critical(f"API服务启动失败: {str(e)}", exc_info=True)
+        # 返回退出码2，表示发生错误
+        sys.exit(2)

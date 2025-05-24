@@ -66,6 +66,86 @@ fn get_file_extension(file_path: &Path) -> Option<String> {
         .map(|ext| ext.to_lowercase())
 }
 
+// 检查文件是否隐藏
+fn is_hidden_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name.starts_with("."))
+        .unwrap_or(false)
+}
+
+// 检查是否为macOS bundle文件夹
+fn is_macos_bundle_folder(path: &Path) -> bool {
+    // 首先处理可能为null的情况
+    if path.as_os_str().is_empty() {
+        return false;
+    }
+    
+    // 设置常用的bundle扩展名
+    let fallback_bundle_extensions = [
+        ".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", 
+        ".imovielibrary", ".tvlibrary", ".theater"
+    ];
+    
+    // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
+    if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+        let lowercase_name = file_name.to_lowercase();
+        
+        // 检查文件名是否匹配bundle扩展名
+        if fallback_bundle_extensions.iter().any(|ext| lowercase_name.ends_with(ext)) {
+            return true;
+        }
+    }
+    
+    // 2. 检查路径中的任何部分是否包含bundle
+    if let Some(path_str) = path.to_str() {
+        let path_components: Vec<&str> = path_str.split('/').collect();
+        
+        for component in path_components {
+            let lowercase_component = component.to_lowercase();
+            if fallback_bundle_extensions.iter().any(|ext| {
+                lowercase_component.ends_with(ext)
+            }) {
+                return true;
+            }
+        }
+    }
+    
+    // 3. 如果是目录，检查是否有典型的macOS bundle目录结构
+    if path.is_dir() && cfg!(target_os = "macos") {
+        let info_plist = path.join("Contents/Info.plist");
+        if info_plist.exists() {
+            return true;
+        }
+    }
+    
+    false
+}
+
+// 检查文件是否在macOS bundle内部
+fn is_inside_macos_bundle(path: &Path) -> bool {
+    if let Some(path_str) = path.to_str() {
+        // 检查常见bundle扩展
+        let bundle_extensions = [".app/", ".bundle/", ".framework/", ".fcpbundle/", 
+                                ".photoslibrary/", ".imovielibrary/", ".tvlibrary/", ".theater/"];
+        for ext in bundle_extensions.iter() {
+            if path_str.contains(ext) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[derive(Debug, Default)]
+struct ScanStats {
+    total_discovered: u64,  // 发现的所有文件数
+    hidden_filtered: u64,   // 被过滤的隐藏文件数
+    extension_filtered: u64, // 被扩展名过滤的文件数
+    bundle_filtered: u64,   // 被过滤的bundle文件数
+    total_included: u64,    // 最终包含的文件数
+}
+
 // 根据文件类型枚举获取对应的分类ID列表
 fn get_category_ids_for_file_type(file_type: &FileType) -> Vec<i32> {
     match file_type {
@@ -215,6 +295,15 @@ async fn scan_files_with_filter(
         valid_extensions.insert(map.extension.to_lowercase());
     }
 
+    // 统计扫描和过滤信息
+    let mut stats = ScanStats {
+        total_discovered: 0,
+        hidden_filtered: 0,
+        extension_filtered: 0,
+        bundle_filtered: 0,
+        total_included: 0,
+    };
+
     for monitored_dir in &config.monitored_folders {
         // Only scan authorized and non-blacklisted directories
         let should_scan = if config.full_disk_access {
@@ -224,7 +313,7 @@ async fn scan_files_with_filter(
         };
 
         if !should_scan {
-            println!("Skipping directory {:?} (auth_status: {:?}, is_blacklist: {})", monitored_dir.path, monitored_dir.auth_status, monitored_dir.is_blacklist);
+            println!("[SCAN] 跳过目录 {:?} (auth_status: {:?}, is_blacklist: {})", monitored_dir.path, monitored_dir.auth_status, monitored_dir.is_blacklist);
             continue;
         }
 
@@ -237,33 +326,53 @@ async fn scan_files_with_filter(
             .follow_links(true)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                // 过滤掉以点开头的目录和文件
-                let file_name = e.file_name().to_string_lossy();
-                if file_name.starts_with(".") {
-                    return false;
-                }
-                
-                // 检查完整路径中的每个组件
-                let path = e.path();
-                for component in path.components() {
-                    if let std::path::Component::Normal(name) = component {
-                        if let Some(name_str) = name.to_str() {
-                            // 过滤掉路径中包含以点开头的目录
-                            if name_str.starts_with(".") && name_str != "." && name_str != ".." {
-                                return false; 
-                            }
-                            // 过滤掉Cache目录 (大小写不敏感)
-                            if name_str.eq_ignore_ascii_case("Cache") {
-                                return false;
-                            }
+        {
+            stats.total_discovered += 1;
+
+            // 首先，最高优先级过滤 - 隐藏文件
+            if is_hidden_file(entry.path()) {
+                stats.hidden_filtered += 1;
+                continue;
+            }
+            
+            // 检查是否为macOS bundle或位于bundle内部（高优先级过滤）
+            if is_macos_bundle_folder(entry.path()) {
+                stats.bundle_filtered += 1;
+                continue;
+            }
+            
+            if is_inside_macos_bundle(entry.path()) {
+                stats.bundle_filtered += 1;
+                continue;
+            }
+            
+            // 路径级别过滤 - 检查路径中是否包含需要过滤的目录
+            let path = entry.path();
+            let mut should_skip = false;
+            
+            for component in path.components() {
+                if let std::path::Component::Normal(name) = component {
+                    if let Some(name_str) = name.to_str() {
+                        // 过滤掉路径中包含以点开头的目录（隐藏目录）
+                        if name_str.starts_with(".") && name_str != "." && name_str != ".." {
+                            stats.hidden_filtered += 1;
+                            should_skip = true;
+                            break;
+                        }
+                        // 过滤掉Cache目录 (大小写不敏感)
+                        if name_str.eq_ignore_ascii_case("Cache") {
+                            should_skip = true;
+                            break;
                         }
                     }
                 }
-                
-                true // 其他情况都保留
-            })
-        {
+            }
+            
+            if should_skip {
+                continue;
+            }
+
+            // 只处理文件（不处理目录）
             if !entry.file_type().is_file() {
                 continue;
             }
@@ -271,32 +380,40 @@ async fn scan_files_with_filter(
             let file_path = entry.path();
             let extension = get_file_extension(file_path);
             
-            // 只处理有扩展名且扩展名在配置中的文件
+            // 白名单扩展名过滤：只处理有扩展名且扩展名在配置白名单中的文件
             if let Some(ref ext) = extension {
                 let ext_lower = ext.to_lowercase();
                 if !valid_extensions.contains(&ext_lower) {
-                    // 扩展名不在配置列表中，跳过
+                    // 扩展名不在白名单中，跳过并记录
+                    stats.extension_filtered += 1;
+                    println!("[SCAN] 跳过非白名单扩展名文件: {} (扩展名: {})", file_path.display(), ext_lower);
                     continue;
                 }
             } else if file_type != Some(FileType::All) {
                 // 没有扩展名且不是查找所有文件类型，跳过
+                stats.extension_filtered += 1;
+                println!("[SCAN] 跳过无扩展名文件: {}", file_path.display());
                 continue;
             }
 
-            // Check file type filter
+            // 应用文件类型过滤器
             if let Some(ref ft) = file_type {
                 if !is_file_of_type(&extension, ft, extension_maps) {
+                    println!("[SCAN] 跳过不匹配类型过滤器的文件: {} (期望类型: {:?})", file_path.display(), ft);
                     continue;
                 }
             }
 
-            // Get file metadata
+            // 获取文件元数据
             let metadata = match std::fs::metadata(file_path) {
                 Ok(meta) => meta,
-                Err(_) => continue,
+                Err(e) => {
+                    println!("[SCAN] 无法获取文件元数据: {} (错误: {})", file_path.display(), e);
+                    continue;
+                }
             };
 
-            // Get modified time
+            // 获取修改时间
             let modified_time = match metadata.modified() {
                 Ok(time) => time,
                 Err(_) => continue,
@@ -307,30 +424,31 @@ async fn scan_files_with_filter(
                 Err(_) => continue,
             };
 
-            // Check time range filter
+            // 应用时间范围过滤器
             if let Some(ref tr) = time_range {
                 if !is_file_in_time_range(modified_time_secs, tr) {
+                    println!("[SCAN] 跳过不在时间范围内的文件: {} (范围: {:?})", file_path.display(), tr);
                     continue;
                 }
             }
 
-            // Get created time
+            // 获取创建时间
             let created_time = metadata
                 .created()
                 .ok()
                 .map(|time| system_time_to_iso_string(time));
 
-            // Calculate file size
+            // 计算文件大小
             let file_size = metadata.len();
 
-            // Get file name
+            // 获取文件名
             let file_name = file_path
                 .file_name()
                 .and_then(|name| name.to_str())
                 .unwrap_or("")
                 .to_string();
 
-            // Match category ID based on extension maps
+            // 根据扩展名匹配分类ID
             let category_id = extension.as_ref().and_then(|ext| {
                 extension_maps
                     .iter()
@@ -338,6 +456,7 @@ async fn scan_files_with_filter(
                     .map(|map| map.category_id)
             });
 
+            // 文件通过了所有过滤器，添加到结果列表
             files.push(FileInfo {
                 file_path: file_path.to_string_lossy().into_owned(),
                 file_name,
@@ -347,12 +466,26 @@ async fn scan_files_with_filter(
                 modified_time: system_time_to_iso_string(modified_time),
                 category_id,
             });
+            
+            stats.total_included += 1;
+            
             // 返回前500个文件
             if files.len() >= 500 {
+                println!("[SCAN] 已达到500个文件的限制，停止扫描");
                 break;
             }
         }
     }
+
+    // 打印扫描统计信息
+    println!("[SCAN] 扫描统计: 发现文件总数: {}, 包含文件数: {}, 被过滤文件数: {} (隐藏: {}, 扩展名: {}, Bundle: {})", 
+        stats.total_discovered, 
+        stats.total_included,
+        stats.hidden_filtered + stats.extension_filtered + stats.bundle_filtered,
+        stats.hidden_filtered,
+        stats.extension_filtered,
+        stats.bundle_filtered
+    );
 
     Ok(files)
 }
