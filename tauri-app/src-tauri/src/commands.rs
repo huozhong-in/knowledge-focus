@@ -1,20 +1,68 @@
 use std::fs;
 use std::path::Path;
 use crate::AppState;
-use tauri::State;
+use tauri::{State, Manager}; // 添加Manager以使用app_handle方法
 use serde::Serialize;
 
-#[tauri::command(rename_all = "snake_case")]
-pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppState>, app_handle: tauri::AppHandle) -> Result<(), String> {
     println!("[CMD] scan_directory 被调用，路径: {}", path);
     
     // 获取对monitor的克隆，避免长时间持有锁
+    // 获取监控器或初始化一个新的，所有MutexGuard必须在任何await之前释放
     let monitor = {
-        let guard = state.file_monitor.lock().unwrap();
-        if let Some(monitor) = &*guard {
-            monitor.clone()
+        // 作用域1：尝试获取现有监控器
+        let existing_monitor = {
+            let guard = state.file_monitor.lock().unwrap();
+            if let Some(monitor) = &*guard {
+                println!("[CMD] scan_directory 文件监控器已就绪，继续扫描");
+                let monitor_clone = monitor.clone();
+                // 在作用域结束时guard会自动释放
+                Some(monitor_clone)
+            } else {
+                None
+            }
+        }; // guard在这里自动释放
+        
+        // 如果已有监控器，直接返回
+        if let Some(monitor) = existing_monitor {
+            monitor
         } else {
-            return Err("文件监控器未初始化".to_string());
+            println!("[CMD] scan_directory 文件监控器未初始化，尝试启动监控...");
+            
+            // 尝试启动文件监控
+            use crate::{ApiState, file_monitor::FileMonitor};
+            
+            // 获取API信息
+            let api_host;
+            let api_port;
+            {
+                let api_state = app_handle.state::<ApiState>();
+                let api_state_guard = api_state.0.lock().unwrap();
+                
+                if api_state_guard.process_child.is_none() {
+                    return Err("API服务未运行，无法启动文件监控".to_string());
+                }
+                
+                api_host = api_state_guard.host.clone();
+                api_port = api_state_guard.port;
+            }
+            
+            // 创建并启动监控
+            let mut monitor = FileMonitor::new(api_host, api_port);
+            if let Err(e) = monitor.start_monitoring().await {
+                return Err(format!("文件监控器启动失败: {}", e));
+            }
+            // 保存监控实例
+            {
+                let mut monitor_guard = state.file_monitor.lock().unwrap();
+                *monitor_guard = Some(monitor.clone());
+                println!("[CMD] scan_directory 已自动启动文件监控器");
+                // 确保锁在这个作用域结束时被释放
+            }
+            
+            monitor
+            
         }
     };
     
