@@ -143,7 +143,7 @@ function HomeAuthorization() {
       setLoading(true);
       
       // 调用API获取文件夹列表
-      const response = await fetch("http://127.0.0.1:60000/directories");
+      const response = await fetch("http://127.0.0.1:60315/directories");
       const responseJson = await response.json();
       const result = responseJson as ApiResponse;
       
@@ -185,7 +185,7 @@ function HomeAuthorization() {
   // 获取macOS权限提示信息
   const fetchMacOSPermissionsHint = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:60000/macos-permissions-hint");
+      const response = await fetch("http://127.0.0.1:60315/macos-permissions-hint");
       const responseJson = await response.json();
       const result = responseJson as ApiResponse;
       
@@ -208,8 +208,8 @@ function HomeAuthorization() {
     try {
       // 如果有完全磁盘访问权限，传递此信息给后端
       const url = hasFullDiskAccess 
-        ? "http://127.0.0.1:60000/directories/default?has_full_disk_access=true" 
-        : "http://127.0.0.1:60000/directories/default";
+        ? "http://127.0.0.1:60315/directories/default?has_full_disk_access=true" 
+        : "http://127.0.0.1:60315/directories/default";
       
       const response = await fetch(url);
       const responseJson = await response.json();
@@ -249,7 +249,7 @@ function HomeAuthorization() {
       // 如果有完全磁盘访问权限，直接设置为已授权状态
       const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
       
-      const response = await fetch("http://127.0.0.1:60000/directories", {
+      const response = await fetch("http://127.0.0.1:60315/directories", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -307,7 +307,7 @@ function HomeAuthorization() {
       // 如果有完全磁盘访问权限，直接设置为已授权状态
       const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
       
-      const response = await fetch("http://127.0.0.1:60000/directories", {
+      const response = await fetch("http://127.0.0.1:60315/directories", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -384,7 +384,7 @@ function HomeAuthorization() {
         
         try {
           // 调用后端API尝试读取目录，这将触发系统授权对话框
-          const testResponse = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/test-access`, {
+          const testResponse = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/test-access`, {
             method: "GET",
           });
           const testResult = await testResponse.json() as ApiResponse;
@@ -408,7 +408,7 @@ function HomeAuthorization() {
       }
       
       // 更新后端状态
-      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/auth_status`, {
+      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/auth_status`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -443,7 +443,7 @@ function HomeAuthorization() {
       toast.loading(`请求访问"${directory.alias || directory.path}"权限...`, {id: `auth-req-${directory.id}`});
       
       // 调用后端API尝试读取目录，这将触发系统授权对话框
-      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/request-access`, {
+      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/request-access`, {
         method: "POST",
       });
       
@@ -477,7 +477,7 @@ function HomeAuthorization() {
     // 创建一个循环检查函数
     const checkAccess = async (): Promise<boolean> => {
       try {
-        const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/access-status`);
+        const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/access-status`);
         const result = await response.json() as ApiResponse;
         
         if (result.status === "success") {
@@ -520,7 +520,7 @@ function HomeAuthorization() {
   // 仅更新目录授权状态到数据库而不触发读取操作
   const updateDirectoryAuthStatus = async (directory: Directory, newStatus: string) => {
     try {
-      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/auth_status`, {
+      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/auth_status`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -547,7 +547,7 @@ function HomeAuthorization() {
   // 切换黑名单状态
   const toggleBlacklist = async (directory: Directory, isBlacklist: boolean) => {
     try {
-      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}/blacklist`, {
+      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/blacklist`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -576,7 +576,7 @@ function HomeAuthorization() {
   // 删除文件夹
   const removeDirectory = async (directory: Directory) => {
     try {
-      const response = await fetch(`http://127.0.0.1:60000/directories/${directory.id}`, {
+      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}`, {
         method: "DELETE",
       });
       
@@ -625,7 +625,7 @@ function HomeAuthorization() {
         info("检测到开发环境，将向后端查询磁盘访问状态");
         // 在开发环境中，通过API查询权限状态
         try {
-          const response = await fetch("http://127.0.0.1:60000/system/full-disk-access-status");
+          const response = await fetch("http://127.0.0.1:60315/system/full-disk-access-status");
           const result = await response.json() as ApiResponse;
           
           if (result.status === "success" && result.data) {

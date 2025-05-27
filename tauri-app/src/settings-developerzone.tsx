@@ -11,9 +11,9 @@ function SettingsDeveloperZone() {
     // API服务状态
     const [apiStatus, setApiStatus] = useState({
       running: false,
-      port: 60000,
+      port: 60315,
       host: "127.0.0.1",
-      url: "http://127.0.0.1:60000"
+      url: "http://127.0.0.1:60315"
     });
     const [apiLogs, setApiLogs] = useState<string[]>([]);
     

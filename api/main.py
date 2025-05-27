@@ -1424,7 +1424,7 @@ if __name__ == "__main__":
     try:
         logger.info("API服务程序启动")
         parser = argparse.ArgumentParser()
-        parser.add_argument("--port", type=int, default=60000, help="API服务监听端口")
+        parser.add_argument("--port", type=int, default=60315, help="API服务监听端口")
         parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
         parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
         

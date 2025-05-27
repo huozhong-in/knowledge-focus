@@ -231,7 +231,7 @@ impl FileMonitor {
         let url = format!("http://{}:{}/config/all", self.api_host, self.api_port);
         println!("[CONFIG_FETCH] Fetching all configurations from URL: {}", url);
 
-        match self.client.get(&url).send().await {
+        match self.client.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
             Ok(response) => {
                 if response.status().is_success() {
                     match response.json::<AllConfigurations>().await {
@@ -395,35 +395,12 @@ impl FileMonitor {
 
     // 更新监控目录列表
     pub async fn update_monitored_directories(&self) -> Result<(), String> {
-        // This function might become less critical if /config/all is the primary source
-        // For now, let's keep its existing logic but also ensure config is fetched.
-        // Alternatively, this could just call fetch_and_store_all_config if that's preferred.
-        // For simplicity, let's assume fetch_and_store_all_config is called at start_monitoring
-        // and potentially periodically. If a more immediate update is needed, this could trigger it.
-        
-        // Let's try to fetch from the old /directories endpoint first, then merge or prioritize.
-        // Or, even better, rely on /config/all to be the single source of truth for monitored_folders.
-        // The fetch_and_store_all_config already updates self.monitored_dirs.
-        // So, this function could potentially just call that, or be deprecated if /config/all is sufficient.
-
-        // For now, let's make it also call fetch_and_store_all_config to ensure configs are fresh
-        // if this method is called independently.
         println!("[DEBUG] update_monitored_directories called. It will now attempt to refresh all config.");
         self.fetch_and_store_all_config().await?; // This will update self.monitored_dirs
-
-        // The original logic of fetching from /directories is now redundant if /config/all provides monitored_folders
-        // match self.fetch_authorized_directories().await {
-        //     Ok(dirs) => {
-        //         let mut current_dirs = self.monitored_dirs.lock().unwrap();
-        //         *current_dirs = dirs; // This would be overwritten by fetch_and_store_all_config
-        //         Ok(())
-        //     }
-        //     Err(e) => Err(e),
-        // }
         Ok(())
     }
 
-    // 计算简单文件哈希（使用文件前几KB内容）
+    // 计算简单文件哈希（使用文件前4KB内容）
     async fn calculate_simple_hash(path: &Path, max_bytes: usize) -> Option<String> {
         match fs::File::open(path).await {
             Ok(mut file) => {
@@ -544,22 +521,6 @@ impl FileMonitor {
         
         // 获取当前路径的规范化字符串表示
         let path_str = path.to_string_lossy().to_string();
-        
-        // 打印当前检查的路径（调试信息）
-        // println!("[BLACKLIST_CHECK] 正在检查路径: {:?}", path_str);
-        
-        // 打印所有黑名单文件夹（调试信息）
-        // println!("[BLACKLIST_DEBUG] 当前黑名单文件夹列表:");
-        // let mut has_blacklist = false;
-        // for (i, dir) in dirs.iter().enumerate() {
-        //     // 不需要再检查is_blacklist，因为blacklist_dirs中的所有文件夹都是黑名单文件夹
-        //     has_blacklist = true;
-        //     // println!("[BLACKLIST_DEBUG] 黑名单 #{}: {}", i, dir.path);
-        // }
-        
-        // if !has_blacklist {
-        //     // println!("[BLACKLIST_DEBUG] 警告：没有找到任何黑名单文件夹!");
-        // }
         
         // 检查路径是否在任何黑名单文件夹内
         for dir in dirs.iter() {
@@ -1429,9 +1390,9 @@ impl FileMonitor {
     pub async fn start_monitoring_setup_and_initial_scan(&mut self) -> Result<(), String> {
         // 确保API就绪 - 重试机制
         println!("[START_MONITORING] 正在等待API服务就绪...");
-        
-        // 最多尝试60次，每次等待1秒，共计最多等待60秒
-        let max_retries = 60;
+
+        // 最多尝试30次，每次等待1秒，共计最多等待30秒
+        let max_retries = 30;
         let mut retries = 0;
         let mut config_fetched = false;
         

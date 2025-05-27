@@ -94,7 +94,7 @@ export default function Page() {
         while (retries < maxRetries && !isApiAvailable) {
           console.log(`App.tsx: Checking API availability (attempt ${retries + 1}/${maxRetries})...`);
           try {
-            const response = await fetch('http://127.0.0.1:60000/health', { 
+            const response = await fetch('http://127.0.0.1:60315/health', { 
               method: 'GET',
               signal: AbortSignal.timeout(2000) // 2秒超时
             });
@@ -177,7 +177,7 @@ export default function Page() {
         wsInstance.onclose = null; 
         wsInstance.close();
       }
-      wsInstance = new WebSocket("ws://127.0.0.1:60000/ws");
+      wsInstance = new WebSocket("ws://127.0.0.1:60315/ws");
       wsInstance.onopen = (event) => {
         console.log("WebSocket连接已建立", event);
       };

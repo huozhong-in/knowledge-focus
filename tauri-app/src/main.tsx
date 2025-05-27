@@ -84,6 +84,9 @@ export const useAppStore = create<AppGlobalState>((set) => ({
 // Root组件用于响应式地处理页面切换
 const Root: React.FC = () => {
   const showIntroPage = useAppStore(state => state.showIntroPage);
+  
+  // 由于我们通过 splashscreen.html 处理了启动流程
+  // 这里只需渲染当前状态下应该显示的组件
   return showIntroPage ? <Intro /> : <App />;
 };
 
@@ -98,7 +101,8 @@ export const ensureDatabaseInitialized = async (): Promise<boolean> => {
   while (retries < maxRetries && !dbInitialized) {
     try {
       console.log(`Attempting database initialization (Attempt ${retries + 1}/${maxRetries})...`);
-      const response = await fetch('http://127.0.0.1:60000/init_db', {
+      const response = await fetch('http://127.0.0.1:60315/init_db', {
+
         method: 'POST', // Assuming POST is still correct
       });
 

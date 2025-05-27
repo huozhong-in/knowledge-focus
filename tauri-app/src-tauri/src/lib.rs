@@ -1,7 +1,5 @@
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tauri::path::BaseDirectory;
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::{
@@ -18,9 +16,7 @@ mod setup_file_monitor;
 mod api_startup; // 新增API启动模块
 use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
 use file_monitor::FileMonitor;
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
-// 导入reqwest用于API健康检查
-use reqwest;
+use reqwest; // 导入reqwest用于API健康检查
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -28,6 +24,30 @@ struct ApiProcessState {
     port: u16,
     host: String,
     db_path: String,
+}
+
+// 新增：API进程管理器，用于应用退出时自动清理资源
+struct ApiProcessManager {
+    api_state: Arc<Mutex<ApiProcessState>>,
+}
+
+// 实现 Drop trait，在应用退出时自动终止 API 进程
+impl Drop for ApiProcessManager {
+    fn drop(&mut self) {
+        println!("应用程序退出，ApiProcessManager.drop() 被调用");
+        // 尝试获取并终止 API 进程
+        if let Ok(mut api_state) = self.api_state.lock() {
+            if let Some(child) = api_state.process_child.take() {
+                println!("通过 Drop trait 自动终止 Python API 进程");
+                let _ = child.kill();
+                println!("Python API 进程已终止");
+            } else {
+                println!("没有需要终止的 Python API 进程");
+            }
+        } else {
+            eprintln!("无法获取 API 状态互斥锁");
+        }
+    }
 }
 
 // API状态包装为线程安全类型
@@ -129,6 +149,13 @@ pub fn run() {
             let app_handle = app.handle();
             let api_state_instance = app.state::<ApiState>();
             
+            // 创建 ApiProcessManager 并注册到应用，用于应用退出时自动清理 API 进程
+            let api_manager = ApiProcessManager {
+                api_state: api_state_instance.0.clone(),
+            };
+            app_handle.manage(api_manager);
+            println!("已注册 ApiProcessManager，将在应用退出时自动清理 API 进程");
+            
             // Start the Python API service automatically
             let db_path_str = app_handle
                 .path()
@@ -140,7 +167,7 @@ pub fn run() {
             {
                 // Scope for MutexGuard
                 let mut api_state_guard = api_state_instance.0.lock().unwrap();
-                api_state_guard.port = 60000;
+                api_state_guard.port = 60315;
                 api_state_guard.host = "127.0.0.1".to_string();
                 api_state_guard.db_path = db_path_str;
             }
@@ -215,6 +242,37 @@ pub fn run() {
                     if let Some(sender) = lock.take() {
                         let _ = sender.send(api_ready);
                         println!("已发送API就绪信号: {}", api_ready);
+                        
+                        // API 准备就绪，通知 splashscreen 并处理窗口切换
+                        if api_ready {
+                            // 获取窗口句柄
+                            let splashscreen_window = app_handle_for_api.get_webview_window("splashscreen");
+                            let main_window = app_handle_for_api.get_webview_window("main");
+                            
+                            if let (Some(splash), Some(main)) = (splashscreen_window, main_window) {
+                                // 向 splashscreen 发送就绪事件
+                                let _ = splash.emit("api-ready", true);
+                                
+                                // 延迟一小段时间后关闭 splashscreen 并显示主窗口
+                                let splash_clone = splash.clone();
+                                let main_clone = main.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    // 给 splashscreen 一点时间展示 API 已就绪的消息
+                                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+                                    
+                                    // 显示主窗口并关闭 splashscreen
+                                    if let Err(e) = main_clone.show() {
+                                        eprintln!("显示主窗口失败: {}", e);
+                                    }
+                                    
+                                    // 再延迟一点时间后关闭 splashscreen，确保主窗口已显示
+                                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                                    if let Err(e) = splash_clone.close() {
+                                        eprintln!("关闭 splashscreen 失败: {}", e);
+                                    }
+                                });
+                            }
+                        }
                     }
                 }
             });
@@ -246,15 +304,20 @@ pub fn run() {
                 }
             });
 
+            
+            
             // 设置托盘图标和菜单
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&quit_i])?;
+            // 在托盘菜单事件中处理退出操作
             let tray_icon = TrayIconBuilder::new()
                 .menu(&menu)
                 .show_menu_on_left_click(false) // Changed to false for right-click menu
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
-                        println!("quit menu item was clicked");
+                        println!("退出菜单项被点击");
+                        
+                        // 终止所有资源并退出应用
                         app.exit(0);
                     }
                     _ => {
@@ -304,7 +367,7 @@ pub fn run() {
         // 管理API进程状态
         .manage(ApiState(Arc::new(Mutex::new(ApiProcessState {
             process_child: None,
-            port: 60000,
+            port: 60315,
             host: "127.0.0.1".to_string(),
             db_path: String::new(),
         }))))
@@ -312,7 +375,6 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(Option::<FileMonitor>::None)))
         .invoke_handler(tauri::generate_handler![
             get_api_status,
-            // start_file_monitoring,
             commands::resolve_directory_from_path,
             commands::get_file_monitor_stats,
             commands::test_bundle_detection,
@@ -322,30 +384,48 @@ pub fn run() {
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {
-                // When window is destroyed, kill the Python process
-                let app = window.app_handle();
-                if let Ok(mut api_state) = app.state::<ApiState>().0.lock() {
-                    if let Some(child) = api_state.process_child.take() {
-                        let _ = child.kill();
-                    }
-                }
+                // 获取窗口的标签，区分是哪个窗口被销毁
+                let window_label = window.label();
+                
+                // 我们不再需要在这里手动终止 API 进程，因为 ApiProcessManager 的 Drop 实现会在应用退出时自动处理
+                // 只记录窗口被销毁的事件
+                println!("窗口被销毁: {}", window_label);
             }
             WindowEvent::CloseRequested { api, .. } => {
-                #[cfg(target_os = "macos")]
-                {
-                    // Prevent the default window close behavior
-                    api.prevent_close();
-                    // Hide the window
-                    window.hide().unwrap();
-                    let _ = window
-                        .app_handle()
-                        .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    // On other OS, default behavior is usually fine (exit/hide based on config),
-                    // but explicitly exiting might be desired if default is hide.
-                    window.app_handle().exit(0);
+                // 获取窗口的标签，用于区分不同窗口
+                let window_label = window.label();
+                
+                // 针对不同窗口采取不同的关闭策略
+                match window_label {
+                    // 对于启动画面，允许正常关闭
+                    "splashscreen" => {
+                        // 不阻止默认关闭行为，让 splashscreen 能够正常关闭
+                        println!("关闭启动画面");
+                    }
+                    // 对于主窗口，使用隐藏而不是关闭的逻辑
+                    "main" => {
+                        #[cfg(target_os = "macos")]
+                        {
+                            // Prevent the default window close behavior
+                            api.prevent_close();
+                            // Hide the window
+                            println!("隐藏主窗口而不是关闭");
+                            window.hide().unwrap();
+                            let _ = window
+                                .app_handle()
+                                .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            // On other OS, default behavior is usually fine (exit/hide based on config),
+                            // but explicitly exiting might be desired if default is hide.
+                            window.app_handle().exit(0);
+                        }
+                    }
+                    // 对于其他窗口，采用默认行为
+                    _ => {
+                        println!("关闭其他窗口: {}", window_label);
+                    }
                 }
             }
             _ => {}

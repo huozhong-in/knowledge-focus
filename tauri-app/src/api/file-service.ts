@@ -1,6 +1,6 @@
 import { FileScreeningResult } from "../types/file-types";
 
-const API_BASE_URL = 'http://127.0.0.1:60000';
+const API_BASE_URL = 'http://127.0.0.1:60315';
 
 /**
  * 文件服务API接口

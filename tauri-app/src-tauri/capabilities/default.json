@@ -74,7 +74,7 @@
       "identifier": "http:default",
       "allow": [
         {
-          "url": "http://127.0.0.1:60000"
+          "url": "http://127.0.0.1:60315"
         }
       ]
     },
