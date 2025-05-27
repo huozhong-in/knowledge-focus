@@ -15,9 +15,12 @@ mod file_monitor;
 mod file_monitor_debounced; // 新增防抖动文件监控模块
 mod file_scanner; // 新增文件扫描模块
 mod setup_file_monitor;
+mod api_startup; // 新增API启动模块
 use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
 use file_monitor::FileMonitor;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+// 导入reqwest用于API健康检查
+use reqwest;
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -88,279 +91,6 @@ fn get_api_status(
     Ok(response)
 }
 
-// Helper function to start the Python API service
-fn start_python_api(app_handle: tauri::AppHandle, api_state_mutex: Arc<Mutex<ApiProcessState>>) {
-    tauri::async_runtime::spawn(async move {
-        let port_to_use: u16;
-        let host_to_use: String;
-        let db_path_to_use: String;
-
-        {
-            // Scope to ensure lock is released
-            let api_state_guard = api_state_mutex.lock().unwrap();
-            port_to_use = api_state_guard.port;
-            host_to_use = api_state_guard.host.clone();
-            db_path_to_use = api_state_guard.db_path.clone();
-        }
-
-        // 获取当前工作目录，用于调试
-        let current_dir = std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "无法获取当前工作目录".to_string());
-        println!("当前工作目录: {}", current_dir);
-        
-        
-        
-        // According to dev/production environment, choose different Python paths
-        let python_path = if cfg!(debug_assertions) {
-            "../../../../api/.venv/bin/python"
-        } else {
-            // Production environment - use Python from venv directory
-            "./venv/bin/python" // Assuming venv is bundled relative to the executable
-        };
-        println!("Python路径: {}", python_path);
-
-        let sidecar_result = app_handle.shell().sidecar(python_path);
-
-        let sidecar = match sidecar_result {
-            //打印调试信息，sidecar的绝对路径
-            Ok(s) => {
-                // println!("成功找到sidecar: {:?}", s);
-                s
-            },
-            Err(e) => {
-                eprintln!("无法找到sidecar: {}", e);
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ =
-                        window.emit("api-process-error", Some(format!("无法找到sidecar: {}", e)));
-                }
-                return;
-            }
-        };
-        
-        // Use Tauri's resource path API to handle script path
-        // 检查是否在lldb调试模式下运行 - 因为debug模式和dev模式的当前工作目录不同
-        let script_path = if cfg!(debug_assertions) {
-            if std::env::var("LLDB_DEBUGGER").is_ok() {
-                // LLDB调试模式
-                "./api/main.py".to_string()
-            } else {
-                // 普通开发模式
-                "../../api/main.py".to_string()
-            }
-        } else {
-            // Production environment - use resource path API
-            match app_handle
-                .path()
-                .resolve("api/main.py", BaseDirectory::Resource)
-            {
-                Ok(p) => p.to_string_lossy().to_string(),
-                Err(e) => {
-                    eprintln!("无法解析资源路径: {}", e);
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit(
-                            "api-process-error",
-                            Some(format!("无法解析资源路径: {}", e)),
-                        );
-                    }
-                    return;
-                }
-            }
-        };
-        println!("脚本路径: {}", script_path);
-
-        // 构造参数
-        let command = sidecar.args(&[
-            &script_path,
-            "--port",
-            &port_to_use.to_string(),
-            "--host",
-            &host_to_use,
-            "--db-path",
-            &db_path_to_use,
-        ]);
-        // println!(
-        //     "API Port: {}, Host: {}, DB Path: {}",
-        //     port_to_use, host_to_use, db_path_to_use
-        // );
-        println!("命令行: {:?}", command);
-
-        match command.spawn() {
-            Ok((mut rx, child)) => {
-                {
-                    // Scope to ensure lock is released
-                    let mut api_state_guard = api_state_mutex.lock().unwrap();
-                    api_state_guard.process_child = Some(child);
-                }
-                println!(
-                    "API服务已启动. Port: {}, Host: {}",
-                    port_to_use, host_to_use
-                );
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit(
-                        "api-log",
-                        Some(format!(
-                            "API服务已启动. Port: {}, Host: {}",
-                            port_to_use, host_to_use
-                        )),
-                    );
-                }
-
-                let app_handle_clone = app_handle.clone();
-                let api_state_mutex_clone = api_state_mutex.clone();
-                tauri::async_runtime::spawn(async move {
-                    while let Some(event) = rx.recv().await {
-                        if let Some(window) = app_handle_clone.get_webview_window("main") {
-                            match event {
-                                CommandEvent::Stdout(line) => {
-                                    let line_str = String::from_utf8_lossy(&line);
-                                    // println!("Python API: {}", line_str);
-                                    let _ = window.emit("api-log", Some(line_str.to_string()));
-                                }
-                                CommandEvent::Stderr(line) => {
-                                    let line_str = String::from_utf8_lossy(&line);
-                                    // eprintln!("Python API Debug: {}", line_str);
-                                    let _ = window.emit("api-error", Some(line_str.to_string()));
-                                }
-                                CommandEvent::Error(err) => {
-                                    eprintln!("Python API进程错误: {}", err);
-                                    let _ = window.emit("api-process-error", Some(err.to_string()));
-                                    if let Ok(mut state) = api_state_mutex_clone.lock() {
-                                        state.process_child = None;
-                                    }
-                                }
-                                CommandEvent::Terminated(status) => {
-                                    println!(
-                                        "API进程已终止，状态码: {}",
-                                        status.code.unwrap_or(-1)
-                                    );
-                                    let _ = window.emit("api-terminated", Some(status.code));
-                                    if let Ok(mut state) = api_state_mutex_clone.lock() {
-                                        state.process_child = None;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                });
-            }
-            Err(e) => {
-                eprintln!("启动API服务失败: {}", e);
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ =
-                        window.emit("api-process-error", Some(format!("启动API服务失败: {}", e)));
-                }
-            }
-        }
-    });
-}
-
-// #[tauri::command]
-// fn start_file_monitoring(
-//     app_handle: tauri::AppHandle,
-//     state: tauri::State<Arc<Mutex<Option<FileMonitor>>>>,
-//     api_state: tauri::State<ApiState>,
-// ) -> Result<HashMap<String, serde_json::Value>, String> {
-//     // 检查API是否在运行，只有在API运行后才能启动文件监控
-//     let api_running = {
-//         let api_state_guard = api_state.0.lock().unwrap();
-//         api_state_guard.process_child.is_some()
-//     };
-
-//     if !api_running {
-//         return Err("API服务未运行，无法启动文件监控".into());
-//     }
-
-//     let api_host;
-//     let api_port;
-//     {
-//         let api_state_guard = api_state.0.lock().unwrap();
-//         api_host = api_state_guard.host.clone();
-//         api_port = api_state_guard.port;
-//     }
-
-//     // 检查是否已经在运行
-//     let already_running = {
-//         let monitor_guard = state.lock().unwrap();
-//         monitor_guard.is_some()
-//     };
-
-//     if already_running {
-//         return Err("文件监控已经在运行".into());
-//     }
-    
-//     // 创建文件监控
-//     let mut monitor_for_spawn = FileMonitor::new(api_host, api_port);
-    
-//     // 提取共享状态和应用句柄以传递给异步任务
-//     let state_arc: Arc<Mutex<Option<FileMonitor>>> = Arc::clone(&*state);
-//     let app_handle_clone = app_handle.clone();
-    
-//     // 在新线程中启动监控
-//     tauri::async_runtime::spawn(async move {
-//         // 异步开始监控
-//         let monitoring_result = monitor_for_spawn.start_monitoring().await;
-        
-//         match monitoring_result {
-//             Ok(_) => {
-//                 println!("文件监控已成功启动");
-//                 if let Some(window) = app_handle_clone.get_webview_window("main") {
-//                     let _ = window.emit("file-monitor-started", ());
-//                 }
-                
-//                 // 保存监控实例 - 在同步块中完成锁定和修改操作
-//                 {
-//                     let mut monitor_guard = state_arc.lock().unwrap();
-//                     *monitor_guard = Some(monitor_for_spawn);
-//                 }
-//             }
-//             Err(e) => {
-//                 eprintln!("启动文件监控失败: {}", e);
-//                 if let Some(window) = app_handle_clone.get_webview_window("main") {
-//                     let _ = window.emit("file-monitor-error", e.to_string());
-//                 }
-//             }
-//         }
-//     });
-
-//     let mut response = HashMap::new();
-//     response.insert("success".into(), serde_json::Value::Bool(true));
-//     response.insert(
-//         "message".into(),
-//         serde_json::Value::String("文件监控启动中...".into()),
-//     );
-//     Ok(response)
-// }
-
-// #[tauri::command]
-// fn get_monitoring_status(
-//     state: tauri::State<Arc<Mutex<Option<FileMonitor>>>>,
-// ) -> Result<HashMap<String, serde_json::Value>, String> {
-//     let is_running = {
-//         let monitor_guard = state.lock().unwrap();
-//         monitor_guard.is_some()
-//     };
-
-//     let mut response = HashMap::new();
-//     response.insert("running".into(), serde_json::Value::Bool(is_running));
-    
-//     if (is_running) {
-//         let dirs = {
-//             let monitor_guard = state.lock().unwrap();
-//             if let Some(monitor) = &*monitor_guard {
-//                 serde_json::to_value(monitor.get_monitored_directories()).unwrap_or(serde_json::Value::Array(Vec::new()))
-//             } else {
-//                 serde_json::Value::Array(Vec::new())
-//             }
-//         };
-        
-//         response.insert("directories".into(), dirs);
-//     }
-    
-//     Ok(response)
-// }
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -414,19 +144,107 @@ pub fn run() {
                 api_state_guard.host = "127.0.0.1".to_string();
                 api_state_guard.db_path = db_path_str;
             }
-            start_python_api(app_handle.clone(), api_state_instance.0.clone());
+            
+            // 启动Python API
+            let app_handle_for_api = app_handle.clone();
+            let api_state_for_api = api_state_instance.0.clone();
+            
+            // 创建一个通信通道，实现API就绪后再开始文件监控
+            let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+            let tx = Arc::new(Mutex::new(Some(tx)));
+            
+            // 启动Python API服务
+            tauri::async_runtime::spawn(async move {
+                let tx_for_api = Arc::clone(&tx);
+                
+                // 调用api_startup模块中的start_python_api函数
+                // 但我们不使用它返回的接收端，因为我们已经创建了自己的通信通道
+                let _ = crate::api_startup::start_python_api(app_handle_for_api.clone(), api_state_for_api.clone());
+                
+                // 获取API主机和端口
+                let (api_host, api_port) = {
+                    let api_state_guard = api_state_for_api.lock().unwrap();
+                    (api_state_guard.host.clone(), api_state_guard.port)
+                };
+                
+                // 构建API健康检查URL
+                let api_url = format!("http://{}:{}/health", api_host, api_port);
+                println!("开始检查API是否就绪，API健康检查地址: {}", api_url);
+                
+                // 使用reqwest客户端检查API健康状态
+                let client = reqwest::Client::new();
+                let max_retries = 30; // 最多尝试30次
+                let retry_interval = std::time::Duration::from_millis(500); // 每500ms检查一次
+                let mut api_ready = false;
+                
+                for i in 0..max_retries {
+                    // 首先检查API进程是否运行
+                    let api_running = {
+                        let api_state_guard = api_state_for_api.lock().unwrap();
+                        api_state_guard.process_child.is_some()
+                    };
+                    
+                    if !api_running {
+                        // 如果进程不存在，等待短暂时间后再次检查
+                        tokio::time::sleep(retry_interval).await;
+                        continue;
+                    }
+                    
+                    // 尝试访问API健康检查端点
+                    match client.get(&api_url)
+                        .timeout(std::time::Duration::from_secs(1))
+                        .send().await {
+                        Ok(response) if response.status().is_success() => {
+                            println!("第{}次尝试: API健康检查成功，API已就绪", i + 1);
+                            api_ready = true;
+                            break;
+                        },
+                        _ => {
+                            // API尚未准备好，等待后重试
+                            if (i + 1) % 5 == 0 { // 每5次打印一次，避免日志过多
+                                println!("第{}次尝试: API尚未就绪，继续等待...", i + 1);
+                            }
+                            tokio::time::sleep(retry_interval).await;
+                        }
+                    }
+                }
+                
+                // 发送API就绪信号
+                {
+                    let mut lock = tx_for_api.lock().unwrap();
+                    if let Some(sender) = lock.take() {
+                        let _ = sender.send(api_ready);
+                        println!("已发送API就绪信号: {}", api_ready);
+                    }
+                }
+            });
             
             // 在API启动后延迟启动文件监控
             let app_handle_for_monitor = app_handle.clone();
             let monitor_state = Arc::clone(&app.state::<Arc<Mutex<Option<FileMonitor>>>>());
-            
             let api_state_for_monitor = api_state_instance.0.clone();
-            // 使用setup_file_monitor模块中的函数启动文件监控，并传递AppState用于更新配置
-            crate::setup_file_monitor::setup_auto_file_monitoring(
-                app_handle_for_monitor,
-                monitor_state,
-                api_state_for_monitor,
-            );
+            
+            // 等待API就绪信号后再启动文件监控
+            tauri::async_runtime::spawn(async move {
+                // 等待API就绪信号
+                match rx.await {
+                    Ok(true) => {
+                        println!("收到API就绪信号，开始启动文件监控...");
+                        // 使用setup_file_monitor模块中的函数启动文件监控，不再传递API就绪信号
+                        crate::setup_file_monitor::setup_auto_file_monitoring(
+                            app_handle_for_monitor,
+                            monitor_state,
+                            api_state_for_monitor,
+                        );
+                    },
+                    _ => {
+                        eprintln!("API未能成功启动，无法启动文件监控");
+                        if let Some(window) = app_handle_for_monitor.get_webview_window("main") {
+                            let _ = window.emit("file-monitor-error", "API未就绪，无法启动文件监控");
+                        }
+                    }
+                }
+            });
 
             // 设置托盘图标和菜单
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
