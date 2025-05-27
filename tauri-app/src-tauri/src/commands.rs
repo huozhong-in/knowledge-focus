@@ -50,7 +50,7 @@ pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppStat
             
             // 创建并启动监控
             let mut monitor = FileMonitor::new(api_host, api_port);
-            if let Err(e) = monitor.start_monitoring().await {
+            if let Err(e) = monitor.start_monitoring_setup_and_initial_scan().await {
                 return Err(format!("文件监控器启动失败: {}", e));
             }
             // 保存监控实例
@@ -74,14 +74,31 @@ pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppStat
     // 执行单个目录扫描
     monitor.scan_single_directory(&path).await?;
     
-    // 重要：确保为新添加的目录设置文件监控
-    // 这是修复添加新目录后文件变更不被监控的关键步骤
-    if let Err(e) = monitor.setup_watch_for_directory(&path).await {
-        eprintln!("[CMD] scan_directory 无法为目录 {} 设置监控: {}", path, e);
-    } else {
-        println!("[CMD] scan_directory 成功为目录 {} 设置监控", path);
-    }
+    // 为新添加的目录设置防抖动监控
+    let debounced_monitor_state = app_handle.state::<AppState>().debounced_file_monitor.clone();
     
+    // Scope the lock so it's dropped before any await points
+    let deb_monitor_clone = {
+        let deb_monitor_guard = debounced_monitor_state.lock().unwrap();
+        if let Some(deb_monitor) = &*deb_monitor_guard {
+            // Clone the monitor before dropping the guard
+            Some(deb_monitor.clone())
+        } else {
+            eprintln!("[CMD] scan_directory: DebouncedFileMonitor not found in state. Cannot set up new watch for {}.", path);
+            None
+        }
+        // Guard is automatically dropped here at end of scope
+    };
+
+    // Now use the cloned monitor if available
+    if let Some(monitor) = deb_monitor_clone {
+        let debounce_duration = std::time::Duration::from_millis(500); // Or get from config
+        if let Err(e) = monitor.add_directory_to_watch(path.clone(), debounce_duration).await {
+             eprintln!("[CMD] scan_directory: Failed to set up debounced watch for {}: {}", path, e);
+        } else {
+             println!("[CMD] scan_directory: Successfully set up debounced watch for {}", path);
+        }
+    }
     Ok(())
 }
 #[tauri::command(rename_all = "snake_case")]

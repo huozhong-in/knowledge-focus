@@ -63,7 +63,8 @@
         "Resources/mac-tray-icon.png": "../mac-tray-icon.png"
       },
       "hardenedRuntime": true,
-      "minimumSystemVersion": "10.13"
+      "minimumSystemVersion": "10.13",
+      "entitlements": "entitlements.plist"
     }
   },
   "plugins": {

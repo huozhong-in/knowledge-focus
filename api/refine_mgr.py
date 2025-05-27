@@ -46,7 +46,7 @@ class RefineManager:
             # 检查文件是否存在
             if not os.path.exists(screening_result.file_path):
                 logger.warning(f"处理失败: 文件路径不存在 {screening_result.file_path}")
-                self.screening_mgr.update_status(screening_id, FileScreenResult.FAILED, "文件路径不存在")
+                self.screening_mgr.delete_screening_result(screening_id) # 删除粗筛结果，因为可能是上次启动前用户手动删除了对应文件，导致不一致
                 return None
             
             # 创建精炼结果记录

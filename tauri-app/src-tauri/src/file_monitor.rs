@@ -1,5 +1,3 @@
-use futures::stream::{FuturesUnordered, StreamExt};
-use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue; // For extra_data in FileFilterRuleRust
 use std::path::{Path, PathBuf};
@@ -198,8 +196,8 @@ pub struct FileMonitor {
     api_port: u16,
     // HTTP 客户端
     client: reqwest::Client,
-    // 事件发送通道
-    event_tx: Option<Sender<(PathBuf, notify::EventKind)>>,
+    // 元数据发送通道 - 公开以供防抖动监控器使用
+    metadata_tx: Option<Sender<FileMetadata>>,
     // 批处理大小
     batch_size: usize,
     // 批处理间隔
@@ -222,7 +220,7 @@ impl FileMonitor {
                 .build()
                 .expect("Failed to create HTTP client"),
             stats: Arc::new(Mutex::new(MonitorStats::default())),
-            event_tx: None,
+            metadata_tx: None,
             batch_size: 50,
             batch_interval: Duration::from_secs(5),
         }
@@ -323,6 +321,12 @@ impl FileMonitor {
     pub fn get_monitored_directories(&self) -> Vec<MonitoredDirectory> {
         let dirs = self.monitored_dirs.lock().unwrap();
         dirs.clone()
+    }
+    
+    // 获取元数据发送通道
+    pub fn get_metadata_sender(&self) -> Option<Sender<FileMetadata>> {
+        // 克隆当前的metadata_tx通道（如果存在）
+        self.metadata_tx.clone()
     }
 
     // 更新监控目录状态
@@ -546,16 +550,16 @@ impl FileMonitor {
         
         // 打印所有黑名单文件夹（调试信息）
         // println!("[BLACKLIST_DEBUG] 当前黑名单文件夹列表:");
-        let mut has_blacklist = false;
-        for (i, dir) in dirs.iter().enumerate() {
-            // 不需要再检查is_blacklist，因为blacklist_dirs中的所有文件夹都是黑名单文件夹
-            has_blacklist = true;
-            // println!("[BLACKLIST_DEBUG] 黑名单 #{}: {}", i, dir.path);
-        }
+        // let mut has_blacklist = false;
+        // for (i, dir) in dirs.iter().enumerate() {
+        //     // 不需要再检查is_blacklist，因为blacklist_dirs中的所有文件夹都是黑名单文件夹
+        //     has_blacklist = true;
+        //     // println!("[BLACKLIST_DEBUG] 黑名单 #{}: {}", i, dir.path);
+        // }
         
-        if !has_blacklist {
-            // println!("[BLACKLIST_DEBUG] 警告：没有找到任何黑名单文件夹!");
-        }
+        // if !has_blacklist {
+        //     // println!("[BLACKLIST_DEBUG] 警告：没有找到任何黑名单文件夹!");
+        // }
         
         // 检查路径是否在任何黑名单文件夹内
         for dir in dirs.iter() {
@@ -859,27 +863,6 @@ impl FileMonitor {
         }
     }
 
-    // 发送文件元数据到API
-    async fn send_metadata_to_api(&self, metadata: &FileMetadata) -> Result<bool, String> {
-        let url = format!(
-            "http://{}:{}/file-screening",
-            self.api_host, self.api_port
-        );
-
-        match self.client.post(&url).json(metadata).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    Ok(true)
-                } else {
-                    let status = response.status();
-                    let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                    Err(format!("API request failed with status: {}, error: {}", status, error_text))
-                }
-            }
-            Err(e) => Err(format!("Failed to send data to API: {}", e)),
-        }
-    }
-
     // 批量发送文件元数据到API
     async fn send_batch_metadata_to_api(&self, metadata_batch: Vec<FileMetadata>) -> Result<ApiResponse, String> {
         if metadata_batch.is_empty() {
@@ -903,7 +886,7 @@ impl FileMonitor {
         request_body.insert("auto_create_tasks".to_string(), serde_json::Value::Bool(true));
         
         // 打印 request_body 的键
-        let keys: Vec<String> = request_body.keys().cloned().collect();
+        // let keys: Vec<String> = request_body.keys().cloned().collect();
         // println!("[TEST_DEBUG] send_batch_metadata_to_api: Request body for batch keys: {:?}", keys);
 
         match self.client.post(&url).json(&request_body).send().await {
@@ -936,8 +919,8 @@ impl FileMonitor {
         }
     }
 
-    // 处理文件变化事件
-    async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind) -> Option<FileMetadata> {
+    // 处理文件变化事件 - 公开给防抖动监控器使用
+    pub async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind) -> Option<FileMetadata> {
         // println!("[PROCESS_EVENT] Processing event {:?} for path {:?}", event_kind, path);
 
         // 对于删除事件进行特殊处理 - 现在只能记录不能处理
@@ -1083,11 +1066,7 @@ impl FileMonitor {
 
         // 仅为文件计算哈希，不为目录计算
         if !metadata.is_dir {
-            // println!("[TEST_DEBUG] process_file_event: Calculating hash for file {:?}", path);
             metadata.hash_value = Self::calculate_simple_hash(&path, 4096).await;
-            // println!("[TEST_DEBUG] process_file_event: Calculated hash for {:?}: {:?}", path, metadata.hash_value.as_deref().unwrap_or("N/A"));
-        } else {
-            // println!("[TEST_DEBUG] process_file_event: Path {:?} is a directory, skipping hash calculation.", path);
         }
         
         // println!("[TEST_DEBUG] process_file_event: Metadata BEFORE applying rules for {:?}: {:?}", path, metadata);
@@ -1235,7 +1214,7 @@ impl FileMonitor {
                         }
                     } else {
                         // 通道关闭
-                        if (!batch.is_empty()) {
+                        if !batch.is_empty() {
                             println!("[BATCH_PROC] 通道关闭，正在发送剩余批处理 ({} 项)", batch.len());
                             
                             // 发送剩余数据到API
@@ -1291,29 +1270,6 @@ impl FileMonitor {
         }
     }
 
-    // 事件处理器
-    async fn event_handler(
-        &self,
-        mut rx: Receiver<(PathBuf, notify::EventKind)>,
-        tx_metadata: Sender<FileMetadata>,
-    ) {
-        println!("[EVENT_HANDLER] Started event handler");
-        while let Some((path, kind)) = rx.recv().await {
-            println!("[EVENT_HANDLER] Received event {:?} for path {:?}", kind, path);
-            if let Some(metadata) = self.process_file_event(path.clone(), kind).await {
-                println!("[EVENT_HANDLER] Processed metadata for {:?}, sending to batch processor", path);
-                if let Err(e) = tx_metadata.send(metadata).await {
-                    eprintln!("[EVENT_HANDLER] Error sending metadata to batch processor: {}", e);
-                } else {
-                    println!("[EVENT_HANDLER] Successfully sent metadata to batch processor");
-                }
-            } else {
-                println!("[EVENT_HANDLER] No metadata produced for path {:?}", path);
-            }
-        }
-        println!("[EVENT_HANDLER] Event handler channel closed, exiting");
-    }
-
     // 执行初始扫描
     async fn perform_initial_scan(&self, tx_metadata: &Sender<FileMetadata>) -> Result<(), String> {
         let directories = self.monitored_dirs.lock().unwrap().clone();
@@ -1341,7 +1297,7 @@ impl FileMonitor {
             
             println!("[INITIAL_SCAN] 扫描目录: {}", dir.path);
             let path = PathBuf::from(&dir.path);
-            if (!path.exists()) {
+            if !path.exists() {
                 println!("[INITIAL_SCAN] 目录不存在: {}", dir.path);
                 continue;
             }
@@ -1374,7 +1330,7 @@ impl FileMonitor {
                     if Self::is_macos_bundle_folder(e.path()) {
                         // 只增加bundle计数如果是顶层的bundle（不是bundle内部的文件）
                         let segments = e.path().to_string_lossy().matches('/').count();
-                        if (segments <= 1) { // 顶层目录
+                        if segments <= 1 { // 顶层目录
                             skipped_bundles += 1;  // 注意：这是线程安全的，因为在同一线程中
                             // 不能在这里更新stats，因为这是在过滤器闭包中
                         }
@@ -1470,7 +1426,7 @@ impl FileMonitor {
     }
 
     // 启动文件夹监控
-    pub async fn start_monitoring(&mut self) -> Result<(), String> {
+    pub async fn start_monitoring_setup_and_initial_scan(&mut self) -> Result<(), String> {
         // 确保API就绪 - 重试机制
         println!("[START_MONITORING] 正在等待API服务就绪...");
         
@@ -1503,67 +1459,10 @@ impl FileMonitor {
         
         println!("[START_MONITORING] API服务连接成功，配置已获取");
 
-        // self.update_monitored_directories().await?; // This is now part of fetch_and_store_all_config
-
-        // 获取完全磁盘访问权限状态
-        let full_disk_access = {
-            let cache_guard = self.config_cache.lock().unwrap();
-            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
-        };
-        
-        println!("[START_MONITORING] Full disk access status: {}", full_disk_access);
-        
-        // Clone the monitored directories to avoid holding the lock across await points
-        let dirs_to_watch = {
-            let dirs_guard = self.monitored_dirs.lock().unwrap();
-            
-            // 调试用：打印所有目录及其授权状态
-            println!("[DEBUG_MONITORING] 所有监控目录列表:");
-            for (i, dir) in dirs_guard.iter().enumerate() {
-                println!("[DEBUG_MONITORING] 目录 {}: 路径='{}', 授权状态={:?}, 黑名单={}", 
-                    i, dir.path, dir.auth_status, dir.is_blacklist);
-            }
-            
-            dirs_guard.iter()
-                .filter(|d| {
-                    // 如果有完全磁盘访问权限，只过滤黑名单文件夹
-                    // 否则，需要同时判断授权状态和黑名单状态
-                    let watch_this_dir = if full_disk_access {
-                        !d.is_blacklist
-                    } else {
-                        d.auth_status == DirectoryAuthStatus::Authorized && !d.is_blacklist
-                    };
-                    
-                    // 调试日志
-                    println!("[DEBUG_MONITORING] 目录 '{}': {}将被监控", 
-                        d.path, if watch_this_dir { "" } else { "不" });
-                    
-                    watch_this_dir
-                })
-                .cloned()
-                .collect::<Vec<_>>()
-        };
-        
-        // 调试用：打印实际监控的目录列表
-        println!("[DEBUG_MONITORING] 以下{}个目录将被监控:", dirs_to_watch.len());
-        for (i, dir) in dirs_to_watch.iter().enumerate() {
-            println!("[DEBUG_MONITORING] 监控目录 {}: '{}'", i+1, dir.path);
-        }
-        
-        if dirs_to_watch.is_empty() {
-            return Err("自动启动文件监控失败: No authorized directories to monitor".into());
-        }
-
-        // 创建事件通道
-        let (event_tx, event_rx) = mpsc::channel::<(PathBuf, notify::EventKind)>(100);
+        // 创建元数据通道
         let (metadata_tx, metadata_rx) = mpsc::channel::<FileMetadata>(100);
-        
-        self.event_tx = Some(event_tx.clone());
+        self.metadata_tx = Some(metadata_tx.clone());
          
-        // 创建元数据发送通道的克隆，用于事件处理器和初始扫描
-        let metadata_tx_for_events = metadata_tx.clone();
-        let metadata_tx_for_scan = metadata_tx.clone();
-        
         // 启动批处理器
         let batch_size = self.batch_size;
         let batch_interval = self.batch_interval;
@@ -1571,124 +1470,17 @@ impl FileMonitor {
         tokio::spawn(async move {
             self_clone_for_batch.batch_processor(metadata_rx, batch_size, batch_interval).await;
         });
-        
-        // 启动事件处理器
-        let self_clone_for_events = self.clone();
-        tokio::spawn(async move {
-            self_clone_for_events.event_handler(event_rx, metadata_tx_for_events).await;
-        });
 
         // 准备初始扫描
         let self_clone_for_scan = self.clone();
+        let metadata_tx_for_scan = metadata_tx; // Pass ownership of this clone
         tokio::spawn(async move {
             if let Err(e) = self_clone_for_scan.perform_initial_scan(&metadata_tx_for_scan).await {
-                eprintln!("Initial scan error: {}", e);
+                eprintln!("[INITIAL_SCAN] Error: {}", e);
             }
             
-            // 初始扫描后批处理器会自动发送数据到API，并设置auto_create_tasks=true
-            // 不需要额外调用notify_api_for_analysis，因为批处理已经包含了任务创建
-            sleep(Duration::from_secs(5)).await; // 等待批处理完成
-            println!("[INITIAL_SCAN] Initial scan complete and batch processing should have triggered tasks via auto_create_tasks=true");
-        });
-
-        // 为每个授权目录创建监控器
-        let mut watcher_futures = FuturesUnordered::new();
-        
-        for dir in dirs_to_watch {
-            let dir_path = dir.path.clone();
-            let event_tx = event_tx.clone();
-            
-            watcher_futures.push(tokio::spawn(async move {
-                if let Err(e) = Self::watch_directory(&dir_path, event_tx).await {
-                    eprintln!("Error watching directory {}: {}", dir_path, e);
-                    Err(e)
-                } else {
-                    Ok(())
-                }
-            }));
-        }
-        
-        // 等待所有监控器启动
-        while let Some(result) = watcher_futures.next().await {
-            if let Err(e) = result {
-                eprintln!("Watcher task failed: {}", e);
-            }
-        }
-        
-        Ok(())
-    }
-
-    // 为单个目录创建监控器
-    async fn watch_directory(dir_path: &str, event_tx: Sender<(PathBuf, notify::EventKind)>) -> Result<(), String> {
-        // println!("[TEST_DEBUG] watch_directory: Starting for path: {}", dir_path);
-
-        // 创建通道用于接收文件系统事件
-        let (watcher_tx, mut watcher_rx) = mpsc::channel(100);
-        
-        // 创建推荐的监控器
-        let mut watcher = RecommendedWatcher::new(
-            move |res| {
-                let _ = watcher_tx.blocking_send(res);
-            },
-            Config::default(),
-        )
-        .map_err(|e| format!("Failed to create watcher: {}", e))?;
-        
-        // println!("[TEST_DEBUG] watch_directory: Watcher created for path: {}", dir_path);
-        
-        // 开始监控指定目录
-        watcher
-            .watch(
-                Path::new(dir_path),
-                RecursiveMode::Recursive,
-            )
-            .map_err(|e| format!("Failed to watch directory: {}", e))?;
-        
-        // println!("[TEST_DEBUG] watch_directory: Successfully watching path: {}", dir_path);
-        
-        // 持续处理文件系统事件
-        let task_dir_path = dir_path.to_string(); // Clone dir_path for the async task
-        tokio::spawn(async move {
-            // println!("[TEST_DEBUG] watch_directory: Event processing task started for path: {}", task_dir_path);
-            while let Some(result) = watcher_rx.recv().await {
-                // println!("[TEST_DEBUG] watch_directory: Received event result for path {}: {:?}", task_dir_path, result);
-                match result {
-                    Ok(event) => {
-                        // println!("[TEST_DEBUG] watch_directory: Parsed event for path {}: {:?}", task_dir_path, event);
-                        // 筛选我们关心的事件类型
-                        match event.kind {
-                            notify::EventKind::Create(_) | 
-                            notify::EventKind::Modify(_) | 
-                            notify::EventKind::Remove(_) => {
-                                // println!("[TEST_DEBUG] watch_directory: Relevant event kind for path {}: {:?}, paths: {:?}", task_dir_path, event.kind, event.paths);
-                                for path_buf in event.paths { // Renamed path to path_buf to avoid conflict
-                                    // println!("[TEST_DEBUG] watch_directory: Sending path {:?} with kind {:?} to event_tx from watcher for {}", path_buf, event.kind, task_dir_path);
-                                    
-                                    // 确认路径是否与监控目录相关
-                                    // if let Some(path_str) = path_buf.to_str() {
-                                    //     if path_str.starts_with(&task_dir_path) || task_dir_path.starts_with(path_str) {
-                                    //         println!("[TEST_DEBUG] watch_directory: Path {:?} matches monitored directory {}", path_buf, task_dir_path);
-                                    //     } else {
-                                    //         println!("[TEST_DEBUG] watch_directory: WARNING! Path {:?} does not seem to match monitored directory {}", path_buf, task_dir_path);
-                                    //     }
-                                    // }
-                                    
-                                    let path_for_logging = path_buf.clone();
-                                    match event_tx.send((path_buf, event.kind.clone())).await {
-                                        Ok(_) => println!("[TEST_DEBUG] watch_directory: Successfully sent event for {:?}", path_for_logging),
-                                        Err(e) => eprintln!("[TEST_DEBUG] watch_directory: Failed to send event to event_tx for path {}: {}", task_dir_path, e)
-                                    }
-                                }
-                            }
-                            _ => {
-                                // println!("[TEST_DEBUG] watch_directory: Ignoring event kind for path {}: {:?}", task_dir_path, event.kind);
-                            }
-                        }
-                    }
-                    Err(e) => eprintln!("[TEST_DEBUG] watch_directory: Watch error for path {}: {}", task_dir_path, e),
-                }
-            }
-            // println!("[TEST_DEBUG] watch_directory: Event processing task finished for path: {}", task_dir_path);
+            // 初始扫描后批处理器会自动发送数据到API
+            println!("[INITIAL_SCAN] Initial scan process initiated. Batch processor will handle API submission.");
         });
         
         Ok(())
@@ -1713,7 +1505,7 @@ impl FileMonitor {
         }
         
         // 获取完全磁盘访问权限状态
-        let full_disk_access = {
+        let _full_disk_access = {
             let cache_guard = self.config_cache.lock().unwrap();
             cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
         };
@@ -1738,7 +1530,7 @@ impl FileMonitor {
         // 扫描目录
         println!("[SINGLE_SCAN] 开始扫描目录: {}", path);
         let path_buf = PathBuf::from(path);
-        if (!path_buf.exists()) {
+        if !path_buf.exists() {
             return Err(format!("目录不存在: {}", path));
         }
 
@@ -1776,7 +1568,7 @@ impl FileMonitor {
                 Ok(entry) => {
                     total_files += 1;
                     
-                    if (total_files % 100 == 0) {
+                    if total_files % 100 == 0 {
                         println!("[SINGLE_SCAN] 扫描进度: {} 个文件", total_files);
                     }
                     
@@ -1812,58 +1604,6 @@ impl FileMonitor {
         }
         
         Ok(())
-    }
-
-    // 监控新添加的目录（在添加目录到监控列表后调用）
-    pub async fn setup_watch_for_directory(&self, path: &str) -> Result<(), String> {
-        println!("[SETUP_WATCH] 为新添加的目录 {} 设置监控", path);
-        
-        // 验证目录是否应该被监控（检查授权状态和黑名单）
-        let full_disk_access = {
-            let cache_guard = self.config_cache.lock().unwrap();
-            cache_guard.as_ref().map_or(false, |config| config.full_disk_access)
-        };
-        
-        // 从监控目录列表中查找此目录
-        let should_watch = {
-            let dirs_guard = self.monitored_dirs.lock().unwrap();
-            dirs_guard.iter()
-                .find(|d| d.path == path)
-                .map(|dir| {
-                    if full_disk_access {
-                        !dir.is_blacklist
-                    } else {
-                        dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
-                    }
-                })
-                .unwrap_or(false)
-        };
-        
-        if !should_watch {
-            println!("[SETUP_WATCH] 目录 {} 不需要监控（未授权或在黑名单中）", path);
-            return Ok(());
-        }
-        
-        // 创建一个事件发送者的克隆
-        if let Some(event_tx) = &self.event_tx {
-            let event_tx_clone = event_tx.clone();
-            
-            // 为闭包克隆路径字符串，以便在async move中使用
-            let path_clone = path.to_string();
-            
-            // 启动目录监控
-            tokio::spawn(async move {
-                if let Err(e) = Self::watch_directory(&path_clone, event_tx_clone).await {
-                    eprintln!("[SETUP_WATCH] 为目录 {} 设置监控失败: {}", path_clone, e);
-                } else {
-                    println!("[SETUP_WATCH] 成功为目录 {} 设置监控", path_clone);
-                }
-            });
-            
-            Ok(())
-        } else {
-            Err(format!("无法为目录 {} 设置监控：事件通道未初始化", path))
-        }
     }
 }
 

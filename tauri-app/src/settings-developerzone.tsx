@@ -16,8 +16,6 @@ function SettingsDeveloperZone() {
       url: "http://127.0.0.1:60000"
     });
     const [apiLogs, setApiLogs] = useState<string[]>([]);
-    // const [customPort, setCustomPort] = useState("60000");
-    // const [isPortChanged, setIsPortChanged] = useState(false);
     
     // 获取API状态
     async function checkApiStatus() {
@@ -30,55 +28,11 @@ function SettingsDeveloperZone() {
       }
     }
   
-    // 保存端口设置
-    // async function savePortSetting() {
-    //   try {
-    //     const port = parseInt(customPort, 10);
-    //     if (isNaN(port) || port < 1024 || port > 65535) {
-    //       toast.error("请输入有效的端口号 (1024-65535)");
-    //       return;
-    //     }
-        
-    //     const response = await invoke("update_api_port", { port });
-    //     toast.success((response as any).message);
-    //   } catch (error) {
-    //     console.error("保存端口设置失败:", error);
-    //     toast.error(`保存端口设置失败: ${error}`);
-    //   }
-    // }
     
-    // // 监听输入变化
-    // function handlePortChange(e: React.ChangeEvent<HTMLInputElement>) {
-    //   const newPort = e.target.value;
-    //   setCustomPort(newPort);
-    //   setIsPortChanged(parseInt(newPort, 10) !== apiStatus.port);
-    // }
   
     // 组件加载时检查API状态与监听API日志事件
     useEffect(() => {
       checkApiStatus();
-      
-      // 加载存储的端口设置
-      // const loadStoredPort = async () => {
-      //   try {
-      //     const appDataPath = await appDataDir();
-      //     const storePath = await join(appDataPath, 'settings.json');
-          
-      //     // 使用正确的 Store API
-      //     const store = await Store.load(storePath);
-          
-      //     const storedPort = await store.get('api_port');
-          
-      //     if (storedPort && typeof storedPort === 'number') {
-      //       setCustomPort(String(storedPort));
-      //     }
-      //   } catch (error) {
-      //     // 如果是首次使用，store可能不存在
-      //     console.log("加载存储的端口设置失败 (可能是首次使用):", error);
-      //   }
-      // };
-      
-      // loadStoredPort();
       
       // 监听API日志事件
       const unlistenApiLog = listen('api-log', (event) => {
