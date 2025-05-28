@@ -174,3 +174,51 @@ pub fn test_bundle_detection(path: String) -> Result<bool, String> {
     // 返回结果
     Ok(is_bundle)
 }
+
+/// 停止监控指定ID的目录
+/// 该命令会从监控列表中移除目录，使Rust端停止对该目录的监控
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn stop_monitoring_directory(directory_id: i32, state: tauri::State<'_, crate::AppState>) -> Result<(), String> {
+    println!("[CMD] stop_monitoring_directory 被调用，目录ID: {}", directory_id);
+    
+    // 获取文件监控器
+    let monitor = {
+        let guard = state.file_monitor.lock().unwrap();
+        match &*guard {
+            Some(monitor) => monitor.clone(),
+            None => return Err("文件监控器未初始化".to_string()),
+        }
+    };
+    
+    // 先获取目录的路径，用于后续停止防抖动监控
+    let directory_path: Option<String> = {
+        let dirs = monitor.get_monitored_directories();
+        dirs.iter()
+            .find(|dir| dir.id == Some(directory_id))
+            .map(|dir| dir.path.clone())
+    };
+    
+    // 调用监控器的停止监控方法
+    monitor.stop_monitoring_directory(directory_id).await?;
+    
+    // 如果找到目录路径，同时停止防抖动监控
+    if let Some(path) = directory_path {
+        // 尝试获取防抖动监控器
+        let debounced_monitor = {
+            let guard = state.debounced_file_monitor.lock().unwrap();
+            match &*guard {
+                Some(deb_monitor) => Some(deb_monitor.clone()),
+                None => None,
+            }
+        };
+        
+        // 如果防抖动监控器存在，停止对该路径的监控
+        if let Some(deb_monitor) = debounced_monitor {
+            println!("[CMD] 同时停止防抖动监控: {}", path);
+            deb_monitor.stop_monitoring_path(&path);
+        }
+    }
+    
+    // 返回成功
+    Ok(())
+}

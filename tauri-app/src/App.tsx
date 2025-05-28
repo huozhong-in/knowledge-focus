@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+import IntroDialog from "./components/IntroDialog";
 import HomeKnowledgeBase from "./home-knowledgebase";
 import HomeAuthorization from "./home-authorization";
 import HomeWiseFolders from "./home-wisefolders";
@@ -54,10 +55,7 @@ export const usePageStore = create<PageState>((set) => ({
 }));
 
 export default function Page() {
-  const { currentPage, 
-    // currentTitle, 
-    // currentSubtitle 
-  } = usePageStore();
+  const { currentPage } = usePageStore();
   const {
     isFirstLaunchDbCheckPending,
     isDbInitializing,
@@ -65,9 +63,19 @@ export default function Page() {
     setIsDbInitializing,
     setDbInitializationError,
     setFirstLaunchDbCheckPending,
+    showIntroPage,  // 获取是否显示介绍页面的状态
   } = useAppStore();
 
   const [apiServiceStarted, setApiServiceStarted] = useState(false);
+  const [showIntroDialog, setShowIntroDialog] = useState(false);
+
+  // 当应用成功加载并且需要显示介绍页时，显示 IntroDialog
+  useEffect(() => {
+    // 确保应用已经成功加载（API服务已启动且没有初始化错误）再显示介绍对话框
+    if (apiServiceStarted && !isDbInitializing && !dbInitializationError && showIntroPage) {
+      setShowIntroDialog(true);
+    }
+  }, [apiServiceStarted, isDbInitializing, dbInitializationError, showIntroPage]);
 
   // Effect for the entire startup sequence (API + DB init if needed)
   useEffect(() => {
@@ -311,6 +319,7 @@ export default function Page() {
           </div>
         </header> */}
         {renderContent()}
+        <IntroDialog open={showIntroDialog} onOpenChange={setShowIntroDialog} />
         <Toaster />
       </SidebarInset>
     </SidebarProvider>

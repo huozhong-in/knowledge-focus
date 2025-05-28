@@ -4,7 +4,6 @@ import { create } from 'zustand';
 import { load } from '@tauri-apps/plugin-store';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
-import Intro from "./Intro";
 import App from "./App";
 
 interface AppGlobalState {
@@ -81,13 +80,10 @@ export const useAppStore = create<AppGlobalState>((set) => ({
   setDbInitializationError: (error: string | null) => set({ dbInitializationError: error }),
 }));
 
-// Root组件用于响应式地处理页面切换
+// Root组件现在直接渲染主应用，不再条件渲染Intro页面
 const Root: React.FC = () => {
-  const showIntroPage = useAppStore(state => state.showIntroPage);
-  
-  // 由于我们通过 splashscreen.html 处理了启动流程
-  // 这里只需渲染当前状态下应该显示的组件
-  return showIntroPage ? <Intro /> : <App />;
+  // 直接渲染App组件，欢迎信息已改为Dialog形式
+  return <App />;
 };
 
 // Exported function to handle database initialization with retries

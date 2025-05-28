@@ -253,24 +253,17 @@ pub fn run() {
                                 // 向 splashscreen 发送就绪事件
                                 let _ = splash.emit("api-ready", true);
                                 
-                                // 延迟一小段时间后关闭 splashscreen 并显示主窗口
-                                let splash_clone = splash.clone();
-                                let main_clone = main.clone();
-                                tauri::async_runtime::spawn(async move {
-                                    // 给 splashscreen 一点时间展示 API 已就绪的消息
-                                    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-                                    
-                                    // 显示主窗口并关闭 splashscreen
-                                    if let Err(e) = main_clone.show() {
-                                        eprintln!("显示主窗口失败: {}", e);
-                                    }
-                                    
-                                    // 再延迟一点时间后关闭 splashscreen，确保主窗口已显示
-                                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                                    if let Err(e) = splash_clone.close() {
-                                        eprintln!("关闭 splashscreen 失败: {}", e);
-                                    }
-                                });
+                                // API就绪后立即显示主窗口并关闭splashscreen
+                                println!("API就绪，立即显示主窗口并关闭splashscreen");
+                                
+                                // 显示主窗口成功后关闭splashscreen
+                                if let Err(e) = main.show() {
+                                    eprintln!("显示主窗口失败: {}", e);
+                                }else{
+                                    splash.close().unwrap_or_else(|e| {
+                                        eprintln!("关闭splashscreen失败: {}", e);
+                                    });
+                                }
                             }
                         }
                     }
@@ -379,6 +372,7 @@ pub fn run() {
             commands::get_file_monitor_stats,
             commands::test_bundle_detection,
             commands::scan_directory, // 新增:添加目录后扫描目录
+            commands::stop_monitoring_directory, // 新增:停止监控指定目录
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
         ])

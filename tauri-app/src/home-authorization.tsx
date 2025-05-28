@@ -576,8 +576,23 @@ function HomeAuthorization() {
   // 删除文件夹
   const removeDirectory = async (directory: Directory) => {
     try {
+      info(`尝试删除文件夹: ${directory.path}, ID: ${directory.id}, 黑名单状态: ${directory.is_blacklist ? "是" : "否"}`);
+      
+      // 1. 首先通知Rust端停止监控此文件夹
+      try {
+        await invoke('stop_monitoring_directory', { directory_id: directory.id });
+        info(`已通知Rust停止监控文件夹: ${directory.path}`);
+      } catch (rustErr) {
+        // 如果Rust端报错（例如文件夹不在监控列表中），记录错误但继续执行删除
+        info(`通知Rust停止监控时出现警告: ${rustErr}，继续尝试删除文件夹`);
+      }
+      
+      // 2. 然后通知Python API删除文件夹
       const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}`, {
         method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
       
       const responseJson = await response.json();
@@ -587,10 +602,13 @@ function HomeAuthorization() {
         toast.success(result.message || `成功删除"${directory.alias || directory.path}"`);
         fetchDirectories();
       } else {
+        // 如果后端返回错误，可能是文件夹已在黑名单中或其他原因
+        info(`删除文件夹失败: ${result.message}`);
         toast.error(result.message || "删除文件夹失败");
       }
     } catch (err) {
       console.error("删除文件夹失败", err);
+      info(`删除文件夹异常: ${err}`);
       toast.error("删除文件夹失败，请检查API服务是否启动");
     }
   };

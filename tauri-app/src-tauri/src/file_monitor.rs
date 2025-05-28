@@ -890,6 +890,18 @@ impl FileMonitor {
             // 未来可以考虑查询数据库删除相关记录
             return None;
         }
+        
+        // 检查路径是否属于当前监控目录，忽略已删除目录的事件
+        let path_str = path.to_string_lossy().to_string();
+        let belongs_to_monitored_dir = {
+            let dirs = self.monitored_dirs.lock().unwrap();
+            dirs.iter().any(|dir| path_str.starts_with(&dir.path))
+        };
+        
+        if !belongs_to_monitored_dir {
+            println!("[PROCESS_EVENT] Path {:?} 不属于任何当前监控的目录，忽略事件", path);
+            return None;
+        }
 
         // 强制检查配置缓存是否存在 - 确保API已就绪
         if self.config_cache.lock().unwrap().is_none() {
@@ -1452,6 +1464,44 @@ impl FileMonitor {
         match self.stats.lock() {
             Ok(stats) => stats.clone(),
             Err(_) => MonitorStats::default(), // 返回默认统计信息，以防锁定失败
+        }
+    }
+    
+    // 停止监控指定目录（从监控列表中移除）
+    pub async fn stop_monitoring_directory(&self, directory_id: i32) -> Result<(), String> {
+        println!("[MONITOR] 尝试停止监控目录 ID: {}", directory_id);
+        
+        // 1. 从监控目录列表中移除该目录
+        let mut directory_to_remove: Option<MonitoredDirectory> = None;
+        {
+            let mut dirs = self.monitored_dirs.lock().unwrap();
+            
+            // 查找对应ID的目录
+            if let Some(index) = dirs.iter().position(|dir| dir.id == Some(directory_id)) {
+                // 保存要移除的目录信息，用于日志
+                directory_to_remove = Some(dirs[index].clone());
+                // 从列表中移除
+                dirs.remove(index);
+                println!("[MONITOR] 已从监控列表中移除目录 ID: {}", directory_id);
+            } else {
+                println!("[MONITOR] 未找到ID为{}的目录，可能已被移除", directory_id);
+            }
+        }
+        
+        // 2. 如果目录存在且在黑名单中，确保其也从黑名单中移除
+        if let Some(directory) = &directory_to_remove {
+            let mut blacklist = self.blacklist_dirs.lock().unwrap();
+            if let Some(index) = blacklist.iter().position(|dir| dir.id == Some(directory_id)) {
+                blacklist.remove(index);
+                println!("[MONITOR] 已从黑名单中移除目录: {}", directory.path);
+            }
+        }
+        
+        // 3. 返回结果
+        if directory_to_remove.is_some() {
+            Ok(())
+        } else {
+            Err(format!("未找到ID为{}的目录", directory_id))
         }
     }
 

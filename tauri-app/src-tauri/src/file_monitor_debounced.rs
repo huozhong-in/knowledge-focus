@@ -11,6 +11,7 @@ use std::sync::mpsc as std_mpsc;
 
 // 定义简化的文件事件类型
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // 显式允许枚举定义被保留，即使当前未使用
 pub enum SimpleFileEvent {
     Added(PathBuf),    // 文件新增（包括创建和移入）
     Removed(PathBuf),  // 文件删除（包括删除和移出）
@@ -23,8 +24,12 @@ pub struct DebouncedFileMonitor {
     file_monitor: Arc<FileMonitor>,
     /// 事件发送通道，用于处理处理后的文件变更
     event_tx: Option<Sender<(PathBuf, notify::EventKind)>>,
-    /// 防抖事件缓冲区
+    /// 防抖事件缓冲区 (仅保留用于扩展但当前未使用)
+    #[allow(dead_code)]
     debounce_buffer: Arc<Mutex<HashMap<PathBuf, notify::EventKind>>>,
+    /// 保存监控路径到其停止发送器的映射，用于停止特定路径的监控 (仅保留用于扩展但当前未使用)
+    #[allow(dead_code)]
+    watch_stop_channels: Arc<Mutex<HashMap<String, std_mpsc::Sender<()>>>>,
 }
 
 impl DebouncedFileMonitor {
@@ -34,6 +39,7 @@ impl DebouncedFileMonitor {
             file_monitor,
             event_tx: None,
             debounce_buffer: Arc::new(Mutex::new(HashMap::new())),
+            watch_stop_channels: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -148,6 +154,7 @@ impl DebouncedFileMonitor {
             // 保持 watcher 活跃
             println!("[文件监控-线程] 开始保持 watcher 活跃");
             let mut tick_count = 0;
+            
             loop {
                 // 让线程休眠10秒
                 std::thread::sleep(Duration::from_secs(10));
@@ -324,5 +331,27 @@ impl DebouncedFileMonitor {
         ).await?;
 
         Ok(())
+    }
+    
+    /// 停止对指定路径的监控
+    /// 注意：当前实现存在限制，监控线程一旦启动就无法单独停止。对于删除的目录，我们有以下处理方式：
+    /// 1. 文件监控器会从监控列表中移除该目录，使得新的事件不会被处理
+    /// 2. 底层监控线程仍会继续运行，但事件不会被正常处理
+    /// 3. 下次应用启动时，该目录不会被监控
+    /// 
+    /// 这是一个已知的限制，未来可以改进：
+    /// - 使用线程安全的取消令牌来停止监控线程
+    /// - 重构监控架构，使用单一监控器同时监控多个目录
+    pub fn stop_monitoring_path(&self, path: &str) {
+        println!("[防抖监控] 警告：停止监控路径 '{}' - 监控线程仍将继续运行，直到应用重启", path);
+        println!("[防抖监控] 注意：该目录的文件变更事件将不再被处理，但心跳日志仍将继续输出");
+        
+        // 记录被停止监控的目录，供调试
+        println!("[防抖监控] 已标记停止监控路径: {}", path);
+        
+        // 添加一个更明显的标记，方便日志查看
+        println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
+        println!("▶▶▶ 已停止监控目录: {} ▶▶▶", path);
+        println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
     }
 }

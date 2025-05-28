@@ -12,9 +12,9 @@
       display: flex;
       justify-content: center;
       align-items: center;
-      height: 100vh;
-      background-color: #f6f8fa;
-      color: #333;
+      min-height: 100vh; /* 使用 min-height 保证内容不足时也能撑满 */
+      background-color: #FBF7F1; /* 非常浅的奶茶/米白底色 */
+      color: #7B4331; /* 默认文字颜色，柔和棕色 */
       flex-direction: column;
       user-select: none;
     }
@@ -25,16 +25,19 @@
       animation: spin 1.5s linear infinite;
       width: 48px;
       height: 48px;
+      /* stroke: currentColor; /* 默认使用父元素的 color */
+      stroke: #D29B71; /* 加载图标使用主奶茶色 */
       margin-bottom: 20px;
     }
     .title {
       font-size: 18px;
       font-weight: 600;
+      color: #64382A; /* 标题使用深一点的棕色 */
       margin-bottom: 8px;
     }
     .subtitle {
       font-size: 14px;
-      color: #666;
+      color: #985036; /* 副标题使用柔和的棕褐色 */
     }
     @keyframes spin {
       0% { transform: rotate(0deg); }
@@ -45,7 +48,7 @@
 <body>
   <div class="container">
     <!-- 简单的加载图标 SVG -->
-    <svg class="loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <svg class="loader" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="12" y1="2" x2="12" y2="6"></line>
       <line x1="12" y1="18" x2="12" y2="22"></line>
       <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
@@ -56,7 +59,7 @@
       <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
     </svg>
     <div class="title">Knowledge Focus 正在启动</div>
-    <div class="subtitle">正在初始化 Python API...</div>
+    <div class="subtitle">正在初始化后端系统...</div>
   </div>
 
   <script>
@@ -74,7 +77,7 @@
       // 更新状态文本
       const subtitle = document.querySelector('.subtitle');
       if (subtitle) {
-        subtitle.textContent = "API 就绪，即将进入应用...";
+        subtitle.textContent = "后端系统就绪，即将进入应用...";
         subtitle.style.color = "#4CAF50";  // 绿色表示成功
       }
       
