@@ -233,7 +233,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </div>
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
-        {/* Pass the simplified definitions to NavPinned */}
         <NavPinned folders={pinnedFolderDefinitions} />
         <NavMain items={data.navMain} />
       </SidebarContent>

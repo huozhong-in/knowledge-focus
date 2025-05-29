@@ -207,18 +207,24 @@ class FileScreenResult(str, PyEnum):
 # 粗筛结果表 - 存储Rust进行初步规则匹配后的结果
 class FileScreeningResult(SQLModel, table=True):
     __tablename__ = "t_file_screening_results"
+    # 在SQLAlchemy中，__table_args__需要是一个元组，最后一个元素可以是包含选项的字典
+    __table_args__ = ({
+        "sqlite_autoincrement": True,
+        "schema": None,
+        "sqlite_with_rowid": True,
+    },)
     id: int = Field(default=None, primary_key=True)
     file_path: str            # 文件完整路径
-    file_name: str            # 文件名（含扩展名）
+    file_name: str = Field(index=True)  # 文件名（含扩展名），增加索引以优化文件名搜索
     file_size: int            # 文件大小（字节）
-    extension: str | None = Field(default=None)  # 文件扩展名（不含点）
-    file_hash: str | None = Field(default=None)  # 文件哈希值（部分哈希: 大于4k的部分，小于4k则是整个文件）
+    extension: str | None = Field(default=None, index=True)  # 文件扩展名（不含点），增加索引以优化按扩展名过滤
+    file_hash: str | None = Field(default=None, index=True)  # 文件哈希值（部分哈希: 大于4k的部分，小于4k则是整个文件），增加索引以优化重复文件查找
     created_time: datetime | None = Field(default=None)  # 文件创建时间
-    modified_time: datetime   # 文件最后修改时间
+    modified_time: datetime = Field(index=True)  # 文件最后修改时间，增加索引以优化时间范围查询
     accessed_time: datetime | None = Field(default=None)  # 文件最后访问时间
     
     # 粗筛分类结果
-    category_id: int | None = Field(default=None)  # 根据扩展名或规则确定的分类ID
+    category_id: int | None = Field(default=None, index=True)  # 根据扩展名或规则确定的分类ID（已有索引）
     matched_rules: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 匹配的规则ID列表
     
     # 额外元数据和特征
@@ -226,13 +232,19 @@ class FileScreeningResult(SQLModel, table=True):
     tags: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标签
     
     # 处理状态
-    status: str = Field(sa_column=Column(Enum(FileScreenResult, values_callable=lambda obj: [e.value for e in obj]), default=FileScreenResult.PENDING.value))
+    status: str = Field(
+        sa_column=Column(
+            Enum(FileScreenResult, values_callable=lambda obj: [e.value for e in obj]), 
+            default=FileScreenResult.PENDING.value,
+            index=True  # 增加索引以优化状态过滤
+        )
+    )
     error_message: str | None = Field(default=None)  # 错误信息，如果有
     
     # 任务关联和时间戳
-    task_id: int | None = Field(default=None)  # 关联的处理任务ID（如果有）
+    task_id: int | None = Field(default=None, index=True)  # 关联的处理任务ID（如果有），增加索引以优化任务关联查询
     created_at: datetime = Field(default=datetime.now())  # 记录创建时间
-    updated_at: datetime = Field(default=datetime.now())  # 记录更新时间
+    updated_at: datetime = Field(default=datetime.now(), index=True)  # 记录更新时间，增加索引以优化按更新时间排序
     
     class Config:
         json_encoders = {

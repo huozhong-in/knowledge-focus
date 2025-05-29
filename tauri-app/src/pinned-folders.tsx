@@ -2,6 +2,7 @@ import React,{ useEffect, useState } from "react";
 import { format } from "date-fns";
 import { zhCN } from "date-fns/locale";
 import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
+import { PinnedFoldersService } from "./api/pinned-folders-service";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { 
   File, FileText, Image, Music, Video, FileArchive, FileCode, FilePenLine, 
@@ -82,9 +83,7 @@ const getFileIcon = (extension?: string) => {
   return <File size={18} className="text-gray-500" />;
 };
 
-// Simple in-memory cache
-const fileCache: Map<string, { data: FileInfo[], timestamp: number }> = new Map();
-const CACHE_DURATION = 5 * 60 * 1000; // Cache for 5 minutes
+// 缓存由PinnedFoldersService内部管理
 
 // Hook to fetch data for a single pinned folder
 export const usePinnedFolderData = (folderId: string) => {
@@ -92,35 +91,14 @@ export const usePinnedFolderData = (folderId: string) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // 使用以下状态跟踪数据加载时间和性能信息
+  const [fetchDuration, setFetchDuration] = useState<number | null>(null);
 
-  const fetchFolderData = async (showLoading = false) => {
+  const fetchFolderData = async (showLoading = false, forceRefresh = false) => {
     if (!folderId) {
       setFolderData(null);
       setLoading(false);
       return;
-    }
-
-    // Check cache first
-    const cached = fileCache.get(folderId);
-    if (cached && (Date.now() - cached.timestamp < CACHE_DURATION)) {
-      console.log(`[CACHE] Using cached data for folder: ${folderId}`);
-      // Reconstruct FullDiskFolder from cached data and definition
-      const definition = getFolderDefinition(folderId); // Need a way to get definition by ID
-      if (definition) {
-         setFolderData({
-            id: folderId,
-            title: definition.name, // Use name from definition for title
-            files: cached.data,
-            count: cached.data.length,
-            icon: definition.icon, // Use icon from definition
-            timeRange: definition.timeRange,
-            fileType: definition.fileType,
-         });
-         setLastUpdated(new Date(cached.timestamp));
-         setError(null);
-         setLoading(false);
-         return;
-      }
     }
 
     try {
@@ -128,57 +106,59 @@ export const usePinnedFolderData = (folderId: string) => {
         setLoading(true);
       }
 
+      const startTime = performance.now();
       let files: FileInfo[] = [];
       let title = "";
       let icon = "";
       let timeRange: TimeRange | undefined;
       let fileType: FileType | undefined;
 
-      // Determine which scanner function to call based on folderId
+      // 使用PinnedFoldersService从数据库中获取文件数据
+      // 服务内部已经实现了缓存机制
       switch (folderId) {
         case "today":
-          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Today);
-          // 修改：文件数为500时显示为500+
+          // 使用服务从粗筛表中获取今日文件
+          files = await PinnedFoldersService.getFilesByTimeRange("today", forceRefresh);
           const todayFileCount = files.length === 500 ? "500+" : files.length;
           title = `今日更新: ${format(new Date(), "yyyy年MM月dd日", { locale: zhCN })}修改了${todayFileCount}个文件`;
           icon = "📆";
           timeRange = TimeRange.Today;
           break;
         case "last7days":
-          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last7Days);
-          // 修改：文件数为500时显示为500+
+          // 使用服务从粗筛表中获取最近7天文件
+          files = await PinnedFoldersService.getFilesByTimeRange("last7days", forceRefresh);
           const last7daysFileCount = files.length === 500 ? "500+" : files.length;
           title = `本周动态: 近7天有${last7daysFileCount}个文件更新`;
           icon = "📊";
           timeRange = TimeRange.Last7Days;
           break;
         case "last30days":
-          files = await FileScannerService.scanFilesByTimeRange(TimeRange.Last30Days);
-          // 修改：文件数为500时显示为500+
+          // 使用服务从粗筛表中获取最近30天文件
+          files = await PinnedFoldersService.getFilesByTimeRange("last30days", forceRefresh);
           const last30daysFileCount = files.length === 500 ? "500+" : files.length;
           title = `本月回顾: 近30天有${last30daysFileCount}个文件更新`;
           icon = "📅";
           timeRange = TimeRange.Last30Days;
           break;
-        case "image": // Corresponds to FileType.Image
-          files = await FileScannerService.scanFilesByType(FileType.Image);
-          // 修改：文件数为500时显示为500+
+        case "image": 
+          // 使用服务从粗筛表中获取图片文件
+          files = await PinnedFoldersService.getFilesByCategory("image", forceRefresh);
           const imageFileCount = files.length === 500 ? "500+" : files.length;
           title = `图片文件: 共${imageFileCount}个图片文件`;
           icon = "🖼️";
           fileType = FileType.Image;
           break;
-        case "audio-video": // Corresponds to FileType.AudioVideo
-          files = await FileScannerService.scanFilesByType(FileType.AudioVideo);
-          // 修改：文件数为500时显示为500+
+        case "audio-video": 
+          // 使用服务从粗筛表中获取音视频文件
+          files = await PinnedFoldersService.getFilesByCategory("audio-video", forceRefresh);
           const audioVideoFileCount = files.length === 500 ? "500+" : files.length;
           title = `音视频文件: 共${audioVideoFileCount}个音视频文件`;
           icon = "🎬";
           fileType = FileType.AudioVideo;
           break;
-        case "archive": // Corresponds to FileType.Archive
-          files = await FileScannerService.scanFilesByType(FileType.Archive);
-          // 修改：文件数为500时显示为500+
+        case "archive": 
+          // 使用服务从粗筛表中获取归档文件
+          files = await PinnedFoldersService.getFilesByCategory("archive", forceRefresh);
           const archiveFileCount = files.length === 500 ? "500+" : files.length;
           title = `压缩包文件: 共${archiveFileCount}个压缩包文件`;
           icon = "🗃️";
@@ -189,6 +169,11 @@ export const usePinnedFolderData = (folderId: string) => {
           setLoading(false);
           return;
       }
+
+      // 计算获取数据的总耗时
+      const endTime = performance.now();
+      const fetchTime = Math.round(endTime - startTime);
+      setFetchDuration(fetchTime);
 
       const fetchedData: FullDiskFolder = {
         id: folderId,
@@ -205,48 +190,29 @@ export const usePinnedFolderData = (folderId: string) => {
       setLastUpdated(now);
       setError(null);
 
-      // Cache the fetched data
-      fileCache.set(folderId, { data: files, timestamp: now.getTime() });
-      console.log(`[CACHE] Cached data for folder: ${folderId}`);
+      // 记录性能信息
+      console.log(`[性能] 文件夹 ${folderId} 数据获取耗时: ${fetchTime}ms, 文件数: ${files.length}`);
 
     } catch (err) {
       console.error(`扫描文件夹 ${folderId} 失败:`, err);
-      setError(`扫描文件夹失败: ${err}`);
+      setError(`获取文件夹数据失败: ${err}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Need a way to get the folder definition (name, icon, type/range) by ID
-  // This could be passed as a prop or fetched from a central place.
-  // For now, let's define a helper function based on the definitions in app-sidebar.tsx
-  const getFolderDefinition = (id: string) => {
-      // This should ideally come from a shared place or prop,
-      // but for now, hardcoding based on app-sidebar definitions
-      const definitions = [
-          { id: "today", name: "今日更新", icon: "📆", timeRange: TimeRange.Today },
-          { id: "last7days", name: "最近7天", icon: "📊", timeRange: TimeRange.Last7Days },
-          { id: "last30days", name: "最近30天", icon: "📅", timeRange: TimeRange.Last30Days },
-          { id: "image", name: "图片文件", icon: "🖼️", fileType: FileType.Image },
-          { id: "audio-video", name: "音视频文件", icon: "🎬", fileType: FileType.AudioVideo },
-          { id: "archive", name: "归档文件", icon: "🗃️", fileType: FileType.Archive },
-      ];
-      // Map icon strings to LucideIcon components if needed for FullDiskFolderView
-      // For now, assuming icon is just a string or handled by the view component
-      return definitions.find(def => def.id === id);
-  };
+  // 不再需要getFolderDefinition函数，因为我们直接从API中获取所有信息
 
 
   useEffect(() => {
     fetchFolderData(true); // Fetch data when folderId changes or component mounts
   }, [folderId]); // Re-fetch when folderId changes
 
-  // Manual refresh function
+  // Manual refresh function - 强制刷新数据，会绕过缓存
   const refreshData = () => {
-      // Invalidate cache for this folder before fetching
-      fileCache.delete(folderId);
-      console.log(`[CACHE] Invalidated cache for folder: ${folderId}`);
-      fetchFolderData(true);
+      console.log(`[刷新] 强制刷新文件夹数据: ${folderId}`);
+      // 使用forceRefresh=true来绕过服务缓存
+      fetchFolderData(true, true);
   };
 
 
@@ -256,6 +222,7 @@ export const usePinnedFolderData = (folderId: string) => {
     error,
     refreshData,
     lastUpdated,
+    fetchDuration, // 添加加载时间信息，可用于性能展示
   };
 };
 

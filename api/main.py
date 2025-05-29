@@ -466,8 +466,8 @@ def process_insight_task(task, refine_mgr) -> bool:
     #             extra_data = json.loads(task.extra_data)
     #         elif isinstance(task.extra_data, dict):
     #             extra_data = task.extra_data
-    #     except Exception:
-    #         pass
+    #     except Exception as e:
+    #         logger.error(f"解析任务额外数据失败: {str(e)}")
     
     # # 获取分析天数
     # days = extra_data.get("days", 7)
@@ -729,7 +729,7 @@ def get_file_screening_results(
         filtered_results = results_dict
         
         # 按分类过滤
-        if category_id is not None:
+        if (category_id is not None):
             filtered_results = [r for r in filtered_results if r.get('category_id') == category_id]
         
         # 按时间范围过滤
@@ -809,6 +809,114 @@ def get_pending_file_screenings(
         return {
             "success": False,
             "message": f"获取待处理粗筛结果失败: {str(e)}"
+        }
+
+# 添加在适当的位置，比如在 get_file_screening_results 函数后面
+
+@app.get("/file-screening/by-time-range/{time_range}")
+def get_files_by_time_range(
+    time_range: str,
+    limit: int = 500,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """根据时间范围获取文件
+    
+    参数:
+    - time_range: 时间范围 ("today", "last7days", "last30days")
+    - limit: 最大返回结果数量
+    """
+    try:
+        # 验证时间范围参数
+        valid_time_ranges = ["today", "last7days", "last30days"]
+        if time_range not in valid_time_ranges:
+            logger.warning(f"请求了无效的时间范围: {time_range}")
+            return {
+                "success": False,
+                "message": f"无效的时间范围: {time_range}，有效值为: {valid_time_ranges}"
+            }
+            
+        # 开始计时，用于性能监控
+        start_time = time.time()
+        
+        # 调用 ScreeningManager 中的方法获取数据
+        files = screening_mgr.get_files_by_time_range(time_range, limit)
+        
+        # 计算查询耗时
+        query_time = time.time() - start_time
+        
+        logger.info(f"按时间范围 {time_range} 查询到 {len(files)} 个文件，耗时 {query_time:.3f} 秒")
+        
+        return {
+            "success": True,
+            "count": len(files),
+            "query_time_ms": int(query_time * 1000),
+            "data": files
+        }
+    except Exception as e:
+        logger.error(f"按时间范围获取文件失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "message": f"查询失败: {str(e)}"
+        }
+
+@app.get("/file-screening/by-category/{category_type}")
+def get_files_by_category(
+    category_type: str,
+    limit: int = 500,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """根据文件分类类型获取文件
+    
+    参数:
+    - category_type: 分类类型 ("image", "audio-video", "archive", 等)
+    - limit: 最大返回结果数量
+    """
+    try:
+        # 文件类型和分类ID的映射
+        category_mapping = {
+            "image": 2,       # 图片的分类ID
+            "audio-video": 3, # 音视频的分类ID
+            "archive": 4,     # 归档文件的分类ID
+            "document": 1     # 文档的分类ID
+        }
+        
+        # 检查类型是否有效
+        if category_type not in category_mapping:
+            logger.warning(f"请求了无效的分类类型: {category_type}")
+            return {
+                "success": False,
+                "message": f"无效的分类类型: {category_type}，有效值为: {list(category_mapping.keys())}"
+            }
+            
+        # 开始计时，用于性能监控
+        start_time = time.time()
+        
+        # 获取对应的分类ID
+        category_id = category_mapping[category_type]
+        
+        # 调用 ScreeningManager 中的方法获取数据
+        files = screening_mgr.get_files_by_category_id(category_id, limit)
+        
+        # 计算查询耗时
+        query_time = time.time() - start_time
+        
+        logger.info(f"按分类 {category_type} (ID: {category_id}) 查询到 {len(files)} 个文件，耗时 {query_time:.3f} 秒")
+        
+        return {
+            "success": True,
+            "count": len(files),
+            "query_time_ms": int(query_time * 1000),
+            "data": files
+        }
+    except Exception as e:
+        logger.error(f"按分类获取文件失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "message": f"查询失败: {str(e)}"
         }
 
 # 将带参数的路由移到最后，避免与特定路由冲突

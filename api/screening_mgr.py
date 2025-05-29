@@ -1,10 +1,10 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Union
 from sqlmodel import Session, select, delete, update
 from db_mgr import FileScreeningResult, FileScreenResult
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import json
-from typing import Dict, Any, Optional, List, Tuple, Union
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ScreeningManager:
             file_hash = data.get("file_hash")
             
             existing_record = self.get_by_path_and_hash(file_path, file_hash)
-            if existing_record:
+            if (existing_record):
                 # 如果已存在记录，则更新现有记录，同时确保状态为pending
                 update_data = data.copy()
                 update_data["status"] = FileScreenResult.PENDING.value  # 确保状态重置为pending
@@ -483,3 +483,159 @@ class ScreeningManager:
         except Exception as e:
             logger.error(f"根据文件名查找相似文件失败: {str(e)}")
             return []
+
+    def get_files_by_time_range(self, time_range: str, limit: int = 500) -> List[Dict[str, Any]]:
+        """根据时间范围获取文件
+        
+        Args:
+            time_range: 时间范围 ("today", "last7days", "last30days")
+            limit: 最大返回结果数量，默认500
+            
+        Returns:
+            文件信息字典列表
+        """
+        # 记录开始时间，用于性能监控
+        query_start = time.time()
+        
+        now = datetime.now()
+        
+        # 确定开始时间
+        if time_range == "today":
+            start_time = datetime(now.year, now.month, now.day)  # 今天的开始 (00:00:00)
+        elif time_range == "last7days":
+            start_time = now - timedelta(days=7)  # 7天前
+        elif time_range == "last30days":
+            start_time = now - timedelta(days=30)  # 30天前
+        else:
+            raise ValueError(f"无效的时间范围: {time_range}")
+        
+        try:
+            # 优化查询：
+            # 1. 添加状态过滤，忽略被标记为ignored的文件
+            # 2. 确保使用modified_time的索引
+            statement = (
+                select(FileScreeningResult)
+                .where(
+                    (FileScreeningResult.modified_time >= start_time) &
+                    (FileScreeningResult.status != 'ignored')
+                )
+                .order_by(FileScreeningResult.modified_time.desc())
+                .limit(limit)
+            )
+            
+            # 执行查询，并记录时间
+            query_exec_start = time.time()
+            results = self.session.execute(statement).scalars().all()
+            query_exec_time = time.time() - query_exec_start
+            
+            # 将结果转换为字典列表
+            conversion_start = time.time()
+            result_dicts = [self._result_to_dict(result) for result in results]
+            conversion_time = time.time() - conversion_start
+            
+            # 记录总耗时和组件耗时
+            total_time = time.time() - query_start
+            
+            # 记录查询性能信息
+            logger.info(
+                f"时间范围查询 [{time_range}] 性能: "
+                f"总耗时={total_time:.3f}秒, "
+                f"查询执行={query_exec_time:.3f}秒, "
+                f"结果转换={conversion_time:.3f}秒, "
+                f"结果数={len(results)}"
+            )
+            
+            return result_dicts
+            
+        except Exception as e:
+            logger.error(f"时间范围查询失败: {str(e)}")
+            # 返回空列表而不是抛出异常，以确保API的健壮性
+            return []
+    
+    def get_files_by_category_id(self, category_id: int, limit: int = 500) -> List[Dict[str, Any]]:
+        """根据分类ID获取文件
+        
+        Args:
+            category_id: 分类ID
+            limit: 最大返回结果数量，默认500
+            
+        Returns:
+            文件信息字典列表
+        """
+        # 记录开始时间，用于性能监控
+        query_start = time.time()
+        
+        try:
+            # 优化查询：
+            # 1. 添加状态过滤，忽略被标记为ignored的文件
+            # 2. 使用category_id索引（已在SQLModel中定义）
+            statement = (
+                select(FileScreeningResult)
+                .where(
+                    (FileScreeningResult.category_id == category_id) &
+                    (FileScreeningResult.status != 'ignored')
+                )
+                .order_by(FileScreeningResult.modified_time.desc())
+                .limit(limit)
+            )
+            
+            # 执行查询，并记录时间
+            query_exec_start = time.time()
+            results = self.session.execute(statement).scalars().all()
+            query_exec_time = time.time() - query_exec_start
+            
+            # 将结果转换为字典列表
+            conversion_start = time.time()
+            result_dicts = [self._result_to_dict(result) for result in results]
+            conversion_time = time.time() - conversion_start
+            
+            # 记录总耗时和组件耗时
+            total_time = time.time() - query_start
+            
+            # 记录查询性能信息
+            logger.info(
+                f"分类查询 [ID: {category_id}] 性能: "
+                f"总耗时={total_time:.3f}秒, "
+                f"查询执行={query_exec_time:.3f}秒, "
+                f"结果转换={conversion_time:.3f}秒, "
+                f"结果数={len(results)}"
+            )
+            
+            return result_dicts
+            
+        except Exception as e:
+            logger.error(f"分类查询失败 [ID: {category_id}]: {str(e)}")
+            # 返回空列表而不是抛出异常，以确保API的健壮性
+            return []
+    
+    def _result_to_dict(self, result: FileScreeningResult) -> Dict[str, Any]:
+        """将 FileScreeningResult 对象转换为适合前端使用的字典格式
+        
+        Args:
+            result: FileScreeningResult 对象
+            
+        Returns:
+            前端友好的字典格式
+        """
+        # 对于高频调用的方法，可以手动构造字典而不是使用model_dump()来提高性能
+        file_info = {
+            "file_path": result.file_path,
+            "file_name": result.file_name,
+            "file_size": result.file_size,
+            "extension": result.extension,
+            "modified_time": result.modified_time,
+            "created_time": result.created_time,
+            "category_id": result.category_id
+        }
+        
+        # 确保时间字段是字符串格式
+        for time_field in ["modified_time", "created_time"]:
+            if time_field in file_info and file_info[time_field] is not None:
+                if isinstance(file_info[time_field], datetime):
+                    file_info[time_field] = file_info[time_field].strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 可以额外添加更多前端需要的字段
+        if hasattr(result, 'id'):
+            file_info['id'] = result.id
+            
+        return file_info

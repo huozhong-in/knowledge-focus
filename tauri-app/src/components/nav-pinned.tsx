@@ -46,21 +46,21 @@ export function NavPinned({
       <SidebarMenu className="px-1">
         {folders.map((item) => (
           // Use item.id as the key
-          <SidebarMenuItem key={item.id} onClick={(e) => { // Added onClick here
-                  e.preventDefault();
-                  // 使用usePageStore来切换页面
-                  // Use item.pageId for navigation and item.name for display
-                  if (item.pageId) {
-                    usePageStore.getState().setPage(item.pageId, "PINNED", item.name);
-                  }
-              }}>
-            <SidebarMenuButton> {/* Removed onClick from here */}
-              {/* Moved className and onClick to the a tag */}
-              <a href="#" className="flex items-center gap-2 text-whiskey-700 hover:bg-whiskey-100 hover:text-whiskey-800"> {/* onClick removed from here */}
-                {/* Assuming item.icon is a LucideIcon component */}
-                <item.icon className="text-whiskey-400" />
-                <span>{item.name}</span> {/* Use item.name for display */}
-              </a>
+          <SidebarMenuItem key={item.id}>
+            <SidebarMenuButton 
+              className="text-whiskey-700 hover:bg-whiskey-200 hover:text-whiskey-900"
+              onClick={(e) => {
+                e.preventDefault();
+                // 使用usePageStore来切换页面
+                // Use item.pageId for navigation and item.name for display
+                if (item.pageId) {
+                  usePageStore.getState().setPage(item.pageId, "PINNED", item.name);
+                }
+              }}
+            >
+              {/* Assuming item.icon is a LucideIcon component */}
+              <item.icon className="mr-2 h-4 w-4 text-whiskey-500" />
+              <span>{item.name}</span> {/* Use item.name for display */}
             </SidebarMenuButton>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
