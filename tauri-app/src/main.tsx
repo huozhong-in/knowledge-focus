@@ -10,9 +10,9 @@ interface AppGlobalState {
   showIntroPage: boolean;
   setShowIntroPage: (show: boolean) => Promise<void>; // Make it explicitly Promise
 
-  // For first launch DB initialization process
-  isFirstLaunchDbCheckPending: boolean; // True when app starts, set by initializeApp if it's a first launch
-  isDbInitializing: boolean; // True when App.tsx is actively running init_db
+  // For UI state management during first launch
+  isFirstLaunchDbCheckPending: boolean;
+  isDbInitializing: boolean; 
   dbInitializationError: string | null;
 
   // Actions
@@ -49,7 +49,7 @@ async function setTrayIcon() {
 // 创建 Zustand store
 export const useAppStore = create<AppGlobalState>((set) => ({
   showIntroPage: true, // 默认显示介绍页
-  isFirstLaunchDbCheckPending: false, // Will be set true if actually first launch
+  isFirstLaunchDbCheckPending: false,
   isDbInitializing: false,
   dbInitializationError: null,
 
@@ -67,7 +67,6 @@ export const useAppStore = create<AppGlobalState>((set) => ({
         await store.set('isFirstLaunch', false);
         await store.save();
         console.log('settings.json updated: isFirstLaunch=false.');
-        // isFirstLaunchDbCheckPending remains true; App.tsx will consume and clear it after DB init.
       }
     } catch (error) {
       console.error('Failed to update store in setShowIntroPage:', error);
@@ -84,47 +83,6 @@ export const useAppStore = create<AppGlobalState>((set) => ({
 const Root: React.FC = () => {
   // 直接渲染App组件，欢迎信息已改为Dialog形式
   return <App />;
-};
-
-// Exported function to handle database initialization with retries
-export const ensureDatabaseInitialized = async (): Promise<boolean> => {
-  console.log('Attempting to initialize database upon user action...');
-  const maxRetries = 10; // Increased retries, as sidecar might be starting up
-  const retryDelay = 2500; // Slightly increased delay (2.5 seconds)
-  let retries = 0;
-  let dbInitialized = false;
-
-  while (retries < maxRetries && !dbInitialized) {
-    try {
-      console.log(`Attempting database initialization (Attempt ${retries + 1}/${maxRetries})...`);
-      const response = await fetch('http://127.0.0.1:60315/init_db', {
-
-        method: 'POST', // Assuming POST is still correct
-      });
-
-      if (response.ok) { // HTTP 状态码 200-299
-        console.log('Database initialization successful.');
-        dbInitialized = true;
-      } else {
-        console.error(`Database initialization API request failed (Attempt ${retries + 1}/${maxRetries}): ${response.status} ${response.statusText}`);
-        if (retries < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, retryDelay));
-        }
-      }
-    } catch (error) {
-      console.error(`Error calling init_db API (Attempt ${retries + 1}/${maxRetries}):`, error);
-      if (retries < maxRetries - 1) {
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
-      }
-    }
-    retries++;
-  }
-
-  if (!dbInitialized) {
-    console.error(`Database initialization failed after ${maxRetries} attempts. Please check sidecar service.`);
-    alert("数据库初始化失败。Sidecar服务可能未能正确启动或响应。请尝试重启应用。如果问题持续，请检查后台服务。");
-  }
-  return dbInitialized;
 };
 
 // 初始化检查是否首次启动
@@ -144,7 +102,7 @@ const initializeApp = async () => {
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
       showIntroPage: isActuallyFirstLaunch,
-      isFirstLaunchDbCheckPending: isActuallyFirstLaunch // Signal to App.tsx if it needs to run the init sequence
+      isFirstLaunchDbCheckPending: isActuallyFirstLaunch
     });
 
     // 渲染应用
@@ -155,12 +113,6 @@ const initializeApp = async () => {
     );
   } catch (error) {
     console.error('Failed to initialize app:', error);
-    // 如果初始化失败，仍然渲染应用，默认显示介绍页
-    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-      <React.StrictMode>
-        <Root />
-      </React.StrictMode>
-    );
   }
 };
 

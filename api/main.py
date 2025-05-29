@@ -108,6 +108,18 @@ async def lifespan(app: FastAPI):
             try:
                 app.state.engine = create_engine(sqlite_url, echo=False)
                 logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
+                
+                # 初始化数据库结构
+                try:
+                    logger.info("开始初始化数据库结构...")
+                    with Session(app.state.engine) as session:
+                        db_mgr = DBManager(session)
+                        db_mgr.init_db()
+                    logger.info("数据库结构初始化完成")
+                except Exception as init_err:
+                    logger.error(f"初始化数据库结构失败: {str(init_err)}", exc_info=True)
+                    # 继续运行应用，不要因为初始化失败而中断
+                    # 可能是因为表已经存在，这种情况是正常的
             except Exception as db_err:
                 logger.error(f"初始化数据库引擎失败: {str(db_err)}", exc_info=True)
                 raise

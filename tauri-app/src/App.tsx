@@ -33,7 +33,7 @@ import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
 import { FullDiskFolderView } from './pinned-folders';
 import { create } from 'zustand';
-import { useAppStore, ensureDatabaseInitialized } from './main';
+import { useAppStore } from './main';
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -77,13 +77,11 @@ export default function Page() {
     }
   }, [apiServiceStarted, isDbInitializing, dbInitializationError, showIntroPage]);
 
-  // Effect for the entire startup sequence (API + DB init if needed)
   useEffect(() => {
     const startupSequence = async () => {
+      // 检查是否是首次启动
       if (isFirstLaunchDbCheckPending) {
-        setIsDbInitializing(true); // Show full-screen loading for DB init
-        setDbInitializationError(null);
-        console.log("App.tsx: First launch detected. Starting full initialization sequence.");
+        console.log("App.tsx: First launch detected.");
       } else {
         console.log("App.tsx: Normal launch. Ensuring API service is running.");
       }
@@ -92,8 +90,6 @@ export default function Page() {
         // Step 1: 检查 API 服务是否可用
         console.log("App.tsx: Checking API service availability...");
         
-        // 跳过调用 start_api_service，直接检测API是否可用
-        // FastAPI 服务已经在应用启动时自动启动了
         const maxRetries = 20; // 最多等待20次
         const retryDelay = 500; // 每次等待500ms
         let isApiAvailable = false;
@@ -128,40 +124,23 @@ export default function Page() {
         // API服务已确认可用
         setApiServiceStarted(true);
 
-        // Step 2: Initialize Database if it's the first launch
+        // 不再需要前端主动初始化数据库
+        // 数据库初始化现在由Python API服务在启动时自动完成
         if (isFirstLaunchDbCheckPending) {
-          console.log("App.tsx: API service available. Now initializing database...");
-          const dbReady = await ensureDatabaseInitialized(); // This has retries
-
-          if (dbReady) {
-            console.log("App.tsx: Database initialization successful.");
-            setFirstLaunchDbCheckPending(false); // Clear the flag, init is done for this session
-          } else {
-            console.error("App.tsx: Database initialization failed after retries.");
-            // The alert is already in ensureDatabaseInitialized, but we set error for UI
-            setDbInitializationError("数据库关键初始化失败。请检查后台服务并尝试重启应用。");
-            setIsDbInitializing(false); // Stop loading
-            return; // Stop further sequence
-          }
+          console.log("App.tsx: API service available. First launch DB initialization is now handled by the API server.");
+          setFirstLaunchDbCheckPending(false); // 清除首次启动标记
         }
       } catch (error) {
         console.error("App.tsx: Error during API availability check:", error);
         const errorMessage = `API服务不可用: ${error instanceof Error ? error.message : String(error)}`;
         
-        if (isFirstLaunchDbCheckPending) {
-          setDbInitializationError(errorMessage);
-        } else {
-          // 非首次启动也需要显示关键错误，并阻止进入主界面
-          setDbInitializationError(errorMessage);
-          toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
-        }
-        
         // 无论是否首次启动，都将API服务标记为未启动
         setApiServiceStarted(false);
+        setDbInitializationError(errorMessage);
+        toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
       } finally {
-        if (isFirstLaunchDbCheckPending) { // Only manage this loading state if it was a first launch init
-          setIsDbInitializing(false); // Stop full-screen loading
-        }
+        // 无论结果如何，都设置为非初始化状态
+        setIsDbInitializing(false);
       }
     };
 
