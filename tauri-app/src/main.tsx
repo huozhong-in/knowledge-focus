@@ -7,18 +7,18 @@ import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import App from "./App";
 
 interface AppGlobalState {
-  showIntroPage: boolean;
-  setShowIntroPage: (show: boolean) => Promise<void>; // Make it explicitly Promise
+  showWelcomeDialog: boolean;
+  setShowWelcomeDialog: (show: boolean) => Promise<void>;
 
   // For UI state management during first launch
-  isFirstLaunchDbCheckPending: boolean;
-  isDbInitializing: boolean; 
-  dbInitializationError: string | null;
+  isFirstLaunch: boolean;
+  isInitializing: boolean; 
+  initializationError: string | null;
 
   // Actions
-  setFirstLaunchDbCheckPending: (pending: boolean) => void;
-  setIsDbInitializing: (initializing: boolean) => void;
-  setDbInitializationError: (error: string | null) => void;
+  setFirstLaunch: (pending: boolean) => void;
+  setIsInitializing: (initializing: boolean) => void;
+  setInitializationError: (error: string | null) => void;
 }
 
 
@@ -48,35 +48,35 @@ async function setTrayIcon() {
 
 // 创建 Zustand store
 export const useAppStore = create<AppGlobalState>((set) => ({
-  showIntroPage: true, // 默认显示介绍页
-  isFirstLaunchDbCheckPending: false,
-  isDbInitializing: false,
-  dbInitializationError: null,
+  showWelcomeDialog: true, // 默认显示介绍页
+  isFirstLaunch: false,
+  isInitializing: false,
+  initializationError: null,
 
-  setShowIntroPage: async (show: boolean) => {
+  setShowWelcomeDialog: async (show: boolean) => {
     try {
       const appDataPath = await appDataDir();
       const storePath = await join(appDataPath, 'settings.json');
       const store = await load(storePath, { autoSave: false });
       
       // 先更新zustand状态
-      set({ showIntroPage: show });
+      set({ showWelcomeDialog: show });
       
-      if (!show) { // Means user is leaving intro, first launch "acknowledged"
-        // Update the persistent store to reflect that the app has been launched at least once.
+      if (!show) { // 用户关闭欢迎对话框，标记首次启动已完成
+        // 更新持久化存储，标记应用已至少启动过一次
         await store.set('isFirstLaunch', false);
         await store.save();
         console.log('settings.json updated: isFirstLaunch=false.');
       }
     } catch (error) {
-      console.error('Failed to update store in setShowIntroPage:', error);
+      console.error('Failed to update store in setShowWelcomeDialog:', error);
       // Even if store op fails, update UI state.
-      set({ showIntroPage: show });
+      set({ showWelcomeDialog: show });
     }
   },
-  setFirstLaunchDbCheckPending: (pending: boolean) => set({ isFirstLaunchDbCheckPending: pending }),
-  setIsDbInitializing: (initializing: boolean) => set({ isDbInitializing: initializing }),
-  setDbInitializationError: (error: string | null) => set({ dbInitializationError: error }),
+  setFirstLaunch: (pending: boolean) => set({ isFirstLaunch: pending }),
+  setIsInitializing: (initializing: boolean) => set({ isInitializing: initializing }),
+  setInitializationError: (error: string | null) => set({ initializationError: error }),
 }));
 
 // Root组件现在直接渲染主应用，不再条件渲染Intro页面
@@ -101,8 +101,8 @@ const initializeApp = async () => {
     
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
-      showIntroPage: isActuallyFirstLaunch,
-      isFirstLaunchDbCheckPending: isActuallyFirstLaunch
+      showWelcomeDialog: isActuallyFirstLaunch,
+      isFirstLaunch: isActuallyFirstLaunch
     });
 
     // 渲染应用

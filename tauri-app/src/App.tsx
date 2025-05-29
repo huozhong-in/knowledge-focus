@@ -57,30 +57,30 @@ export const usePageStore = create<PageState>((set) => ({
 export default function Page() {
   const { currentPage } = usePageStore();
   const {
-    isFirstLaunchDbCheckPending,
-    isDbInitializing,
-    dbInitializationError,
-    setIsDbInitializing,
-    setDbInitializationError,
-    setFirstLaunchDbCheckPending,
-    showIntroPage,  // 获取是否显示介绍页面的状态
+    isFirstLaunch,
+    isInitializing,
+    initializationError,
+    setIsInitializing,
+    setInitializationError,
+    setFirstLaunch,
+    showWelcomeDialog,  // 获取是否显示欢迎对话框的状态
   } = useAppStore();
 
   const [apiServiceStarted, setApiServiceStarted] = useState(false);
   const [showIntroDialog, setShowIntroDialog] = useState(false);
 
-  // 当应用成功加载并且需要显示介绍页时，显示 IntroDialog
+  // 当应用成功加载并且需要显示欢迎对话框时，显示 IntroDialog
   useEffect(() => {
-    // 确保应用已经成功加载（API服务已启动且没有初始化错误）再显示介绍对话框
-    if (apiServiceStarted && !isDbInitializing && !dbInitializationError && showIntroPage) {
+    // 确保应用已经成功加载（API服务已启动且没有初始化错误）再显示欢迎对话框
+    if (apiServiceStarted && !isInitializing && !initializationError && showWelcomeDialog) {
       setShowIntroDialog(true);
     }
-  }, [apiServiceStarted, isDbInitializing, dbInitializationError, showIntroPage]);
+  }, [apiServiceStarted, isInitializing, initializationError, showWelcomeDialog]);
 
   useEffect(() => {
     const startupSequence = async () => {
       // 检查是否是首次启动
-      if (isFirstLaunchDbCheckPending) {
+      if (isFirstLaunch) {
         console.log("App.tsx: First launch detected.");
       } else {
         console.log("App.tsx: Normal launch. Ensuring API service is running.");
@@ -124,11 +124,10 @@ export default function Page() {
         // API服务已确认可用
         setApiServiceStarted(true);
 
-        // 不再需要前端主动初始化数据库
-        // 数据库初始化现在由Python API服务在启动时自动完成
-        if (isFirstLaunchDbCheckPending) {
-          console.log("App.tsx: API service available. First launch DB initialization is now handled by the API server.");
-          setFirstLaunchDbCheckPending(false); // 清除首次启动标记
+        // 初始化过程由服务端自动完成
+        if (isFirstLaunch) {
+          console.log("App.tsx: API service available. First launch initialization is now handled by the API server.");
+          setFirstLaunch(false); // 清除首次启动标记
         }
       } catch (error) {
         console.error("App.tsx: Error during API availability check:", error);
@@ -136,11 +135,11 @@ export default function Page() {
         
         // 无论是否首次启动，都将API服务标记为未启动
         setApiServiceStarted(false);
-        setDbInitializationError(errorMessage);
+        setInitializationError(errorMessage);
         toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
       } finally {
         // 无论结果如何，都设置为非初始化状态
-        setIsDbInitializing(false);
+        setIsInitializing(false);
       }
     };
 
@@ -149,10 +148,10 @@ export default function Page() {
 
   // WebSocket connection effect
   useEffect(() => {
-    const canConnectWebSocket = apiServiceStarted && !isDbInitializing && !dbInitializationError;
+    const canConnectWebSocket = apiServiceStarted && !isInitializing && !initializationError;
 
     if (!canConnectWebSocket) {
-      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", apiServiceStarted, ", DB initializing:", isDbInitializing, ", DB error:", dbInitializationError,")");
+      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", apiServiceStarted, ", initializing:", isInitializing, ", error:", initializationError,")");
       return;
     }
 
@@ -205,28 +204,28 @@ export default function Page() {
 
       }
     };
-  }, [apiServiceStarted, isDbInitializing, dbInitializationError]); // Re-evaluate when these conditions change
+  }, [apiServiceStarted, isInitializing, initializationError]); // Re-evaluate when these conditions change
 
 
   // Conditional Rendering based on initialization state
-  if (isDbInitializing) { // This is true only during first launch's DB init phase
+  if (isInitializing) { // 首次启动时的初始化阶段
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-background text-foreground">
         <div className="text-center">
           {/* You can add a spinner icon here */}
           <p className="text-xl font-semibold animate-pulse">正在为首次使用准备应用...</p>
-          <p className="text-muted-foreground">请稍候，正在初始化数据。</p>
+          <p className="text-muted-foreground">请稍候，正在初始化...</p>
         </div>
       </div>
     );
   }
 
-  if (dbInitializationError) { // This error is critical from first launch
+  if (initializationError) { // 初始化错误
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-background text-foreground p-4">
         <div className="text-center bg-card p-8 rounded-lg shadow-lg border border-destructive">
           <h2 className="text-2xl font-bold text-destructive mb-4">应用初始化失败</h2>
-          <p className="text-card-foreground mb-6">{dbInitializationError}</p>
+          <p className="text-card-foreground mb-6">{initializationError}</p>
           <Button onClick={() => window.location.reload()} className="bg-primary hover:bg-primary/90 text-primary-foreground">
             重新加载应用
           </Button>

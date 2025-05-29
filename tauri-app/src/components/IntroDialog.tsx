@@ -17,7 +17,7 @@ interface IntroDialogProps {
 }
 
 const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
-  const setShowIntroPage = useAppStore(state => state.setShowIntroPage);
+  const setShowWelcomeDialog = useAppStore(state => state.setShowWelcomeDialog);
   const setPage = usePageStore(state => state.setPage);
 
   const handleEnterApp = async () => {
@@ -25,7 +25,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       // 关闭对话框
       onOpenChange(false);
       // 更新状态以便将来不再显示
-      await setShowIntroPage(false);
+      await setShowWelcomeDialog(false);
       // 导航到文件夹授权页面
       setPage("home-authorization", "Home", "Authorization");
       console.log('欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
