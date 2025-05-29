@@ -17,6 +17,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { toast } from "sonner";
 
 // 文件类型定义
@@ -237,7 +249,6 @@ const FileActionMenu: React.FC<FileActionMenuProps> = ({ file }) => {
   const openContainingFolder = async () => {
     try {
       // 获取文件所在的目录后让文件被选中
-      // const folderPath = file.file_path.substring(0, file.file_path.lastIndexOf('/'));
       await revealItemInDir(file.file_path);
     } catch (error) {
       console.error("打开文件夹失败:", error);
@@ -268,23 +279,23 @@ const FileActionMenu: React.FC<FileActionMenuProps> = ({ file }) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="ml-auto flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-transparent p-0 text-gray-500 hover:bg-gray-100 hover:text-gray-600 focus:outline-none">
+        <button className="ml-auto flex h-8 w-8 items-center justify-center rounded-md border border-amber-100 bg-transparent p-0 text-amber-500 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-200 focus:outline-none transition-colors">
           <span className="sr-only">打开菜单</span>
           <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
           </svg>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-[200px]">
         <DropdownMenuLabel>文件操作</DropdownMenuLabel>
-        <DropdownMenuItem onClick={openFileDirectly} className="flex items-center gap-2 cursor-pointer">
+        <DropdownMenuItem onClick={openFileDirectly} className="flex items-center gap-2 cursor-pointer hover:bg-amber-50 focus:bg-amber-50">
           <ExternalLink size={16} /> 打开文件
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={openContainingFolder} className="flex items-center gap-2 cursor-pointer">
+        <DropdownMenuItem onClick={openContainingFolder} className="flex items-center gap-2 cursor-pointer hover:bg-amber-50 focus:bg-amber-50">
           <Folder size={16} /> 打开所在文件夹
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={copyFilePath} className="flex items-center gap-2 cursor-pointer">
+        <DropdownMenuItem onClick={copyFilePath} className="flex items-center gap-2 cursor-pointer hover:bg-amber-50 focus:bg-amber-50">
           <Copy size={16} /> 复制文件路径
         </DropdownMenuItem>
       </DropdownMenuContent>
@@ -298,6 +309,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
   const [filterExtension, setFilterExtension] = useState<string>('all');
   const [uniqueExtensions, setUniqueExtensions] = useState<string[]>([]);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
 
   // 提取所有唯一的文件扩展名
   useEffect(() => {
@@ -357,7 +369,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
       <div className="text-red-500 text-lg">出现错误</div>
       <p className="mt-2 text-gray-600">{error}</p>
       <button
-        className="mt-4 px-4 py-2 bg-primary text-white rounded hover:bg-primary/80 transition-colors"
+        className="mt-4 px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors"
         onClick={() => refreshData()}
       >
         重试
@@ -367,7 +379,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
 
   // If folderData is null (e.g., invalid folderId)
   if (!folderData) return (
-      <div className="p-8 text-center text-gray-500">
+      <div className="p-8 text-center text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
         <div className="text-2xl mb-2">⚠️</div>
         未找到此文件夹或数据
       </div>
@@ -377,14 +389,14 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   // Folder exists but file list is empty
   if (folderData.files.length === 0) {
     return (
-      <div className="p-8 text-center">
-        <div className="text-gray-500 mb-4">暂无文件</div>
-        <p className="mb-4">此文件夹中没有匹配的文件</p>
-        <div className="text-xs text-gray-400">
+      <div className="p-8 text-center bg-amber-50/50 rounded-lg border border-amber-100">
+        <div className="text-amber-700 mb-4">暂无文件</div>
+        <p className="mb-4 text-amber-800">此文件夹中没有匹配的文件</p>
+        <div className="text-xs text-amber-600">
           {lastUpdated && `最后更新于 ${format(lastUpdated, 'yyyy-MM-dd HH:mm:ss', { locale: zhCN })}`}
         </div>
         <button
-          className="mt-4 px-4 py-2 bg-primary text-white rounded hover:bg-primary/80 transition-colors"
+          className="mt-4 px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors"
           onClick={() => refreshData()}
         >
           刷新
@@ -412,7 +424,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
             {/* 文件类型过滤器 */}
             {uniqueExtensions.length > 1 && (
               <select
-                className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-sm"
+                className="px-3 py-1.5 border border-amber-200 rounded-md bg-white text-sm hover:border-amber-300 focus:border-amber-400 focus:ring-amber-300 transition-colors"
                 value={filterExtension}
                 onChange={(e) => setFilterExtension(e.target.value)}
                 title="按文件类型过滤"
@@ -425,7 +437,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
             )}
 
             <button
-              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-600 disabled:opacity-50"
+              className="p-1.5 rounded-full hover:bg-amber-100 text-amber-600 disabled:opacity-50 transition-colors"
               onClick={refreshData}
               disabled={loading}
               title="刷新"
@@ -436,7 +448,7 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
             </button>
 
             <select
-              className="px-3 py-1.5 border border-gray-200 rounded-md bg-white text-sm"
+              className="px-3 py-1.5 border border-amber-200 rounded-md bg-white text-sm hover:border-amber-300 focus:border-amber-400 focus:ring-amber-300 transition-colors"
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value as any)}
             >
@@ -459,47 +471,86 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
       {processedFiles.length > 0 ? (
         <div className="grid gap-3">
           {processedFiles.map((file, index) => (
-            <div
-              key={file.file_path + '_' + index}
-              className="p-4 bg-white rounded-lg shadow hover:shadow-md transition-shadow border border-gray-100 group"
-              onDoubleClick={() => openPath(file.file_path).catch(err => toast.error("无法打开文件: " + err))}
-            >
-              <div className="flex justify-between">
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="flex-shrink-0 inline-flex items-center justify-center">
-                    {getFileIcon(file.extension)}
-                  </span>
-                  <h3 className="font-medium truncate" title={file.file_name}>
-                    {file.file_name}
-                  </h3>
+            <ContextMenu key={file.file_path + '_' + index}>
+              <ContextMenuTrigger>
+                <div
+                  className={`p-4 bg-white rounded-lg shadow border transition-all cursor-pointer
+                    ${selectedFile === file.file_path 
+                      ? 'ring-2 ring-amber-300 border-amber-300 bg-amber-50' 
+                      : 'border-gray-100 hover:border-amber-200 hover:bg-amber-50/40 hover:shadow-md'}
+                  `}
+                  onClick={() => setSelectedFile(file.file_path)}
+                  onDoubleClick={() => openPath(file.file_path).catch(err => toast.error("无法打开文件: " + err))}
+                >
+                  <div className="flex justify-between">
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      <span className="flex-shrink-0 inline-flex items-center justify-center">
+                        {getFileIcon(file.extension)}
+                      </span>
+                      <HoverCard>
+                        <HoverCardTrigger asChild>
+                          <h3 className="font-medium truncate max-w-[70%]" title={file.file_name}>
+                            {file.file_name}
+                          </h3>
+                        </HoverCardTrigger>
+                        <HoverCardContent className="w-80">
+                          <div className="space-y-1">
+                            <h4 className="text-sm font-semibold">{file.file_name}</h4>
+                            <div className="text-xs text-muted-foreground">
+                              <p><strong>路径:</strong> {file.file_path}</p>
+                              <p><strong>大小:</strong> {FileScannerService.formatFileSize(file.file_size)}</p>
+                              <p><strong>修改时间:</strong> {format(new Date(file.modified_time), "yyyy-MM-dd HH:mm:ss")}</p>
+                              {file.extension && <p><strong>类型:</strong> {file.extension}</p>}
+                            </div>
+                          </div>
+                        </HoverCardContent>
+                      </HoverCard>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {format(new Date(file.modified_time), "yyyy-MM-dd HH:mm")}
+                      </span>
+                      <FileActionMenu file={file} />
+                    </div>
+                  </div>
+                  <div className="text-sm text-gray-600 truncate mt-1 ml-6" title={file.file_path}>
+                    {file.file_path}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between ml-6">
+                    {file.extension && (
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        {file.extension}
+                      </Badge>
+                    )}
+                    <span className="text-xs text-gray-500">
+                      {FileScannerService.formatFileSize(file.file_size)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 whitespace-nowrap">
-                    {format(new Date(file.modified_time), "yyyy-MM-dd HH:mm")}
-                  </span>
-                  <FileActionMenu file={file} />
-                </div>
-              </div>
-              <div className="text-sm text-gray-600 truncate mt-1 ml-6" title={file.file_path}>
-                {file.file_path}
-              </div>
-              <div className="mt-2 flex items-center justify-between ml-6">
-                {file.extension && (
-                  <Badge variant="secondary" className="text-xs font-normal">
-                    {file.extension}
-                  </Badge>
-                )}
-                <span className="text-xs text-gray-500">
-                  {FileScannerService.formatFileSize(file.file_size)}
-                </span>
-              </div>
-            </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-64">
+                <ContextMenuItem onClick={() => openPath(file.file_path).catch(err => toast.error("无法打开文件: " + err))}>
+                  <ExternalLink size={16} className="mr-2" /> 打开文件
+                </ContextMenuItem>
+                <ContextMenuItem onClick={() => revealItemInDir(file.file_path).catch(err => toast.error("打开文件夹失败: " + err))}>
+                  <Folder size={16} className="mr-2" /> 打开所在文件夹
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onClick={() => {
+                  navigator.clipboard.writeText(file.file_path)
+                    .then(() => toast.success("文件路径已复制到剪贴板"))
+                    .catch(_err => toast.error("复制文件路径失败"));
+                }}>
+                  <Copy size={16} className="mr-2" /> 复制文件路径
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-center py-16 bg-amber-50/50 rounded-lg border border-amber-100">
           <div className="text-4xl mb-2">📂</div>
-          <div className="text-gray-500">未找到符合条件的文件</div>
+          <div className="text-amber-700">未找到符合条件的文件</div>
         </div>
       )}
     </div>
