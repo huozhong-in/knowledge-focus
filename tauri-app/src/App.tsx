@@ -33,7 +33,8 @@ import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
 import { FullDiskFolderView } from './pinned-folders';
 import { create } from 'zustand';
-import { useAppStore } from './main';
+import { useAppStore } from './main'; // Correct import
+import { listen } from '@tauri-apps/api/event'; // Added for api-ready listener
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -44,9 +45,9 @@ interface PageState {
 }
 
 export const usePageStore = create<PageState>((set) => ({
-  currentPage: "home-knowledgebase",
-  currentTitle: "Home",
-  currentSubtitle: "Knowledge Base",
+  currentPage: "today", // 默认为today页面，会在组件中根据是否首次启动进行调整
+  currentTitle: "今日更新",
+  currentSubtitle: "最近修改的文件",
   setPage: (page, title, subtitle) => set({ 
     currentPage: page, 
     currentTitle: title,
@@ -55,30 +56,82 @@ export const usePageStore = create<PageState>((set) => ({
 }));
 
 export default function Page() {
-  const { currentPage } = usePageStore();
+  const { currentPage, setPage } = usePageStore();
   const {
     isFirstLaunch,
     isInitializing,
     initializationError,
     setIsInitializing,
     setInitializationError,
-    setFirstLaunch,
-    showWelcomeDialog,  // 获取是否显示欢迎对话框的状态
+    showWelcomeDialog,
+    isApiReady, // Get global API ready state
+    setApiReady,   // Get action to set API ready state
   } = useAppStore();
 
-  const [apiServiceStarted, setApiServiceStarted] = useState(false);
+  const [apiServiceChecked, setApiServiceChecked] = useState(false); // Tracks if initial API health check is done
   const [showIntroDialog, setShowIntroDialog] = useState(false);
+
+  // Listen for 'api-ready' event from backend ONCE
+  useEffect(() => {
+    console.log("App.tsx: Setting up 'api-ready' event listener.");
+    let unlistenFn: (() => void) | undefined;
+
+    listen('api-ready', (event) => {
+      console.log("App.tsx: Received 'api-ready' event from backend.", event);
+      setApiReady(true); // Update global state
+    }).then(fn => {
+      unlistenFn = fn;
+    }).catch(err => {
+      console.error("App.tsx: Failed to listen for 'api-ready' event", err);
+      // Fallback: if event listening fails, consider API ready after a delay
+      // This might be hit if the event was emitted before listener was attached
+      // Or if there's an issue with Tauri's event system.
+      setTimeout(() => {
+        // Check global state before setting to avoid unnecessary updates if already true
+        if (!useAppStore.getState().isApiReady) { 
+          console.warn("App.tsx: Fallback - 'api-ready' event likely missed or listener failed. Setting API ready.");
+          setApiReady(true);
+        }
+      }, 3000); // 3-second fallback delay
+    });
+
+    return () => {
+      if (unlistenFn) {
+        console.log("App.tsx: Cleaning up 'api-ready' event listener.");
+        unlistenFn();
+      }
+    };
+  }, [setApiReady]); // setApiReady is stable, so this runs once
+
+  // 根据是否首次启动设置初始页面, dependent on global isApiReady
+  useEffect(() => {
+    if (!isApiReady) { // Use global isApiReady
+      console.log("App.tsx: Global API not ready yet, delaying page initialization");
+      return;
+    }
+
+    if (isFirstLaunch) {
+      console.log("App.tsx: First launch & API ready, setting page to authorization");
+      setPage("home-authorization", "Home", "授权管理");
+    } else {
+      console.log("App.tsx: Normal launch & API ready, setting page to today");
+      setPage("today", "今日更新", "最近修改的文件");
+    }
+  }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
 
   // 当应用成功加载并且需要显示欢迎对话框时，显示 IntroDialog
   useEffect(() => {
-    // 确保应用已经成功加载（API服务已启动且没有初始化错误）再显示欢迎对话框
-    if (apiServiceStarted && !isInitializing && !initializationError && showWelcomeDialog) {
+    // Ensure API is ready, health check passed, not initializing, no errors, and dialog is requested
+    if (apiServiceChecked && isApiReady && !isInitializing && !initializationError && showWelcomeDialog) {
       setShowIntroDialog(true);
     }
-  }, [apiServiceStarted, isInitializing, initializationError, showWelcomeDialog]);
+  }, [apiServiceChecked, isApiReady, isInitializing, initializationError, showWelcomeDialog]);
 
   useEffect(() => {
     const startupSequence = async () => {
+      // isInitializing is set to true in main.tsx's initializeApp
+      // useAppStore.setState({ isInitializing: true }); // This ensures we are in initializing state
+
       // 检查是否是首次启动
       if (isFirstLaunch) {
         console.log("App.tsx: First launch detected.");
@@ -88,15 +141,15 @@ export default function Page() {
 
       try {
         // Step 1: 检查 API 服务是否可用
-        console.log("App.tsx: Checking API service availability...");
+        console.log("App.tsx: Checking API service health...");
         
         const maxRetries = 20; // 最多等待20次
         const retryDelay = 500; // 每次等待500ms
-        let isApiAvailable = false;
+        let isHealthCheckOk = false;
         let retries = 0;
         
-        while (retries < maxRetries && !isApiAvailable) {
-          console.log(`App.tsx: Checking API availability (attempt ${retries + 1}/${maxRetries})...`);
+        while (retries < maxRetries && !isHealthCheckOk) {
+          console.log(`App.tsx: Checking API health (attempt ${retries + 1}/${maxRetries})...`);
           try {
             const response = await fetch('http://127.0.0.1:60315/health', { 
               method: 'GET',
@@ -104,54 +157,62 @@ export default function Page() {
             });
             
             if (response.ok) {
-              console.log("App.tsx: API service is available!");
-              isApiAvailable = true;
+              console.log("App.tsx: API service health check OK!");
+              isHealthCheckOk = true;
             } else {
-              console.log(`App.tsx: API service responded with status ${response.status}`);
+              console.log(`App.tsx: API service health check responded with status ${response.status}`);
               await new Promise(resolve => setTimeout(resolve, retryDelay));
             }
           } catch (error) {
-            console.log(`App.tsx: API service not available yet: ${error}`);
+            console.log(`App.tsx: API service health check not ok yet: ${error}`);
             await new Promise(resolve => setTimeout(resolve, retryDelay));
           }
           retries++;
         }
         
-        if (!isApiAvailable) {
-          throw new Error(`无法连接到API服务，已尝试${maxRetries}次。请检查API服务是否正确启动。`);
+        if (!isHealthCheckOk) {
+          throw new Error(`无法连接到API服务或服务不健康，已尝试${maxRetries}次。请检查API服务是否正确启动。`);
         }
         
-        // API服务已确认可用
-        setApiServiceStarted(true);
+        setApiServiceChecked(true); // Mark that the health check has passed
 
         // 初始化过程由服务端自动完成
+        // The 'api-ready' event listener (setup elsewhere) will set the global isApiReady state.
+        // No need to set it directly here.
+
         if (isFirstLaunch) {
           console.log("App.tsx: API service available. First launch initialization is now handled by the API server.");
-          setFirstLaunch(false); // 清除首次启动标记
+          // 注意：我们保留首次启动标记，直到用户完成授权流程后再在授权页面中清除
+          // 这样可以确保用户在首次启动时一定会看到授权页面
+          // setFirstLaunch(false);
         }
       } catch (error) {
-        console.error("App.tsx: Error during API availability check:", error);
+        console.error("App.tsx: Error during API health check:", error);
         const errorMessage = `API服务不可用: ${error instanceof Error ? error.message : String(error)}`;
         
-        // 无论是否首次启动，都将API服务标记为未启动
-        setApiServiceStarted(false);
+        setApiServiceChecked(false); // API check failed
         setInitializationError(errorMessage);
+        setApiReady(false); // Ensure API is marked as not ready globally
         toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
       } finally {
         // 无论结果如何，都设置为非初始化状态
-        setIsInitializing(false);
+        setIsInitializing(false); // Mark initialization phase as complete
       }
     };
-
-    startupSequence();
-  }, []); // Run once on mount, reads initial state from Zustand
+    // Only run startupSequence if not already run (e.g. if isInitializing is true from store)
+    if (isInitializing) {
+        startupSequence();
+    }
+  }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady, isInitializing]); // Added isInitializing
 
   // WebSocket connection effect
   useEffect(() => {
-    const canConnectWebSocket = apiServiceStarted && !isInitializing && !initializationError;
+    const canConnectWebSocket = isApiReady && !isInitializing && !initializationError;
 
     if (!canConnectWebSocket) {
-      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", apiServiceStarted, ", initializing:", isInitializing, ", error:", initializationError,")");
+      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", isApiReady, ", initializing:", isInitializing, ", error:", initializationError,")");
+      // Corrected log to use isApiReady
+      console.log("App.tsx: Conditions not met for WebSocket connection (isApiReady:", isApiReady, ", initializing:", isInitializing, ", error:", initializationError,")");
       return;
     }
 
@@ -204,7 +265,7 @@ export default function Page() {
 
       }
     };
-  }, [apiServiceStarted, isInitializing, initializationError]); // Re-evaluate when these conditions change
+  }, [isApiReady, isInitializing, initializationError]); // Depend on global isApiReady
 
 
   // Conditional Rendering based on initialization state
@@ -212,8 +273,7 @@ export default function Page() {
     return (
       <div className="flex items-center justify-center h-screen w-screen bg-background text-foreground">
         <div className="text-center">
-          {/* You can add a spinner icon here */}
-          <p className="text-xl font-semibold animate-pulse">正在为首次使用准备应用...</p>
+          <p className="text-xl font-semibold animate-pulse">正在准备应用...</p>
           <p className="text-muted-foreground">请稍候，正在初始化...</p>
         </div>
       </div>
@@ -238,6 +298,11 @@ export default function Page() {
   // 根据currentPage返回对应的组件
   const renderContent = () => {
     console.log("App.tsx: Rendering content for page:", currentPage);
+    // Ensure API is ready before rendering content that might depend on it
+    // However, some pages like settings might not need API ready.
+    // For now, we'll let individual components handle their "API not ready" state if needed.
+    // The FullDiskFolderView already does this.
+
     switch (currentPage) {
       case "home-knowledgebase":
         return <HomeKnowledgeBase />;
@@ -269,7 +334,12 @@ export default function Page() {
         // Pass the currentPage (which is the folderId) as a prop
         return <FullDiskFolderView folderId={currentPage} />;
       default:
-        return <HomeKnowledgeBase />;
+        // Fallback to a safe page if API is not ready, or a default page
+        return isApiReady ? <HomeKnowledgeBase /> : (
+          <div className="flex items-center justify-center h-full">
+            <p>等待API服务就绪...</p>
+          </div>
+        );
     }
   };
 

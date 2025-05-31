@@ -15,10 +15,14 @@ interface AppGlobalState {
   isInitializing: boolean; 
   initializationError: string | null;
 
+  // API readiness state
+  isApiReady: boolean; // New state
+
   // Actions
   setFirstLaunch: (pending: boolean) => void;
   setIsInitializing: (initializing: boolean) => void;
   setInitializationError: (error: string | null) => void;
+  setApiReady: (ready: boolean) => void; // New action
 }
 
 
@@ -50,8 +54,9 @@ async function setTrayIcon() {
 export const useAppStore = create<AppGlobalState>((set) => ({
   showWelcomeDialog: true, // 默认显示介绍页
   isFirstLaunch: false,
-  isInitializing: false,
+  isInitializing: false, // Will be set to true by initializeApp
   initializationError: null,
+  isApiReady: false, // Initialize API as not ready
 
   setShowWelcomeDialog: async (show: boolean) => {
     try {
@@ -77,6 +82,7 @@ export const useAppStore = create<AppGlobalState>((set) => ({
   setFirstLaunch: (pending: boolean) => set({ isFirstLaunch: pending }),
   setIsInitializing: (initializing: boolean) => set({ isInitializing: initializing }),
   setInitializationError: (error: string | null) => set({ initializationError: error }),
+  setApiReady: (ready: boolean) => set({ isApiReady: ready }), // Implement new action
 }));
 
 // Root组件现在直接渲染主应用，不再条件渲染Intro页面
@@ -102,7 +108,9 @@ const initializeApp = async () => {
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
       showWelcomeDialog: isActuallyFirstLaunch,
-      isFirstLaunch: isActuallyFirstLaunch
+      isFirstLaunch: isActuallyFirstLaunch,
+      isInitializing: true, // Start in initializing state
+      isApiReady: false     // API is not ready at this point
     });
 
     // 渲染应用

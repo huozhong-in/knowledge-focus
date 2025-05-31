@@ -236,34 +236,63 @@ pub fn run() {
                     }
                 }
                 
-                // 发送API就绪信号
-                {
+                // 发送API就绪信号并准备窗口切换
+                let api_ready_sent = {
                     let mut lock = tx_for_api.lock().unwrap();
                     if let Some(sender) = lock.take() {
-                        let _ = sender.send(api_ready);
+                        let send_result = sender.send(api_ready);
                         println!("已发送API就绪信号: {}", api_ready);
+                        send_result.is_ok() && api_ready
+                    } else {
+                        false
+                    }
+                };
+                
+                // 在 MutexGuard 释放后处理窗口切换
+                if api_ready_sent {
+                    println!("Python API 已完全就绪，准备切换窗口");
+                    
+                    // 添加短暂延迟，确保 API 完全可用
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    
+                    // 获取窗口句柄
+                    let splashscreen_window = app_handle_for_api.get_webview_window("splashscreen");
+                    
+                    if let Some(splash) = splashscreen_window {
+                        // 向 splashscreen 发送就绪事件
+                        let _ = splash.emit("api-ready", true);
+                        println!("已向 splashscreen 发送 API 就绪信号");
                         
-                        // API 准备就绪，通知 splashscreen 并处理窗口切换
-                        if api_ready {
-                            // 获取窗口句柄
-                            let splashscreen_window = app_handle_for_api.get_webview_window("splashscreen");
-                            let main_window = app_handle_for_api.get_webview_window("main");
-                            
-                            if let (Some(splash), Some(main)) = (splashscreen_window, main_window) {
-                                // 向 splashscreen 发送就绪事件
-                                let _ = splash.emit("api-ready", true);
-                                
-                                // API就绪后立即显示主窗口并关闭splashscreen
-                                println!("API就绪，立即显示主窗口并关闭splashscreen");
-                                
-                                // 显示主窗口成功后关闭splashscreen
-                                if let Err(e) = main.show() {
-                                    eprintln!("显示主窗口失败: {}", e);
-                                }else{
-                                    splash.close().unwrap_or_else(|e| {
-                                        eprintln!("关闭splashscreen失败: {}", e);
-                                    });
-                                }
+                        // 先关闭 splashscreen
+                        println!("准备关闭 splashscreen");
+                        splash.close().unwrap_or_else(|e| {
+                            eprintln!("关闭 splashscreen 失败: {}", e);
+                        });
+                        
+                        // 添加短暂延迟，等待 splashscreen 完全关闭
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        
+                        // splashscreen 关闭后再获取并显示主窗口
+                        let main_window = app_handle_for_api.get_webview_window("main");
+                        
+                        if let Some(main) = main_window {
+                            println!("splashscreen 已关闭，准备显示主窗口");
+                            if let Err(e) = main.show() {
+                                eprintln!("显示主窗口失败: {}", e);
+                            } else {
+                                println!("主窗口显示成功");
+                            }
+                        } else {
+                            eprintln!("找不到主窗口");
+                        }
+                    } else {
+                        eprintln!("找不到 splashscreen 窗口");
+                        
+                        // 尝试直接显示主窗口
+                        if let Some(main) = app_handle_for_api.get_webview_window("main") {
+                            println!("找不到 splashscreen，直接显示主窗口");
+                            if let Err(e) = main.show() {
+                                eprintln!("显示主窗口失败: {}", e);
                             }
                         }
                     }

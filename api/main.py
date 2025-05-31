@@ -11,7 +11,9 @@ from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 import pathlib
 import logging
 from sqlmodel import create_engine, Session, select
-import multiprocessing
+from sqlalchemy import event, create_engine # Modified import
+from sqlalchemy.engine import Engine # Added import
+import multiprocessing # No change
 from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
@@ -64,7 +66,7 @@ try:
     logger.addHandler(console_handler)
     
     # 添加文件处理器
-    log_filename = f'api_{time.strftime("%Y%m%d_%H%M%S", time.localtime(time.time()))}.log'
+    log_filename = f'api_{time.strftime("%Y%m%d", time.localtime(time.time()))}.log'
     log_filepath = parents_logs_dir / log_filename
     print(f"日志文件路径: {log_filepath}")
     
@@ -91,6 +93,26 @@ except Exception as e:
     import traceback
     traceback.print_exc()
 
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    # Only apply these PRAGMAs if the dialect is SQLite and the dialect attribute exists
+    if hasattr(connection_record, 'dialect') and connection_record.dialect and connection_record.dialect.name == "sqlite":
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            logger.info("SQLite journal_mode set to WAL.")
+            cursor.execute("PRAGMA busy_timeout = 5000;") # Wait 5 seconds if DB is locked
+            logger.info("SQLite busy_timeout set to 5000ms.")
+            cursor.execute("PRAGMA foreign_keys=ON;")
+            logger.info("SQLite foreign_keys set to ON.")
+        except Exception as e:
+            logger.error(f"Failed to set SQLite PRAGMAs: {e}", exc_info=True)
+        finally:
+            cursor.close()
+    elif not hasattr(connection_record, 'dialect'):
+        logger.warning("ConnectionRecord does not have 'dialect' attribute. Skipping PRAGMA setup for this connection event.")
+    # If dialect exists but is not sqlite, we correctly do nothing.
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理器"""
@@ -106,7 +128,10 @@ async def lifespan(app: FastAPI):
             sqlite_url = f"sqlite:///{app.state.db_path}"
             logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
             try:
-                app.state.engine = create_engine(sqlite_url, echo=False)
+                # For SQLite, especially when accessed by FastAPI (which can use threads for async routes)
+                # and potentially by background tasks, 'check_same_thread': False is often needed.
+                # The set_sqlite_pragma event listener will configure WAL mode.
+                app.state.engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False})
                 logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
                 
                 # 初始化数据库结构
@@ -295,15 +320,24 @@ def get_all_configuration(
         }
     except Exception as e:
         logger.error(f"Error fetching all configuration: {e}", exc_info=True)
-        # Consider raising HTTPException for client feedback
-        return {"error": str(e)}
+        # Return a default structure in case of error to prevent client-side parsing issues.
+        # The client can check for the presence of 'error_message' or if data arrays are empty.
+        return {
+            "file_categories": [],
+            "file_filter_rules": [],
+            "file_extension_maps": [],
+            "project_recognition_rules": [],
+            "monitored_folders": [],
+            "full_disk_access": False,  # Default to false on error
+            "error_message": f"Failed to fetch configuration: {str(e)}"
+        }
 
 # 任务处理者
 def task_processor(processor_id: int, db_path: str = None):
     """处理任务的工作进程(实现了超时控制)"""
     logger.info(f"{processor_id}号任务处理者已启动")
     sqlite_url = f"sqlite:///{db_path}"
-    engine = create_engine(sqlite_url, echo=False)
+    engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False}) # Added connect_args
     session = Session(engine)
     
     # 初始化各种管理器

@@ -30,8 +30,6 @@ import { AskMeForm } from "@/components/askme-form"
 import { Switch } from "@/components/ui/switch"
 import { useState } from "react"
 import { toast } from "sonner"
-// Removed import of usePinnedFolders and FullDiskFolder
-// import usePinnedFolders, { FullDiskFolder } from "../pinned-folders"
 
 // This is sample data.
 const data = {

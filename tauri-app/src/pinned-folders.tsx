@@ -4,6 +4,7 @@ import { zhCN } from "date-fns/locale";
 import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
 import { PinnedFoldersService } from "./api/pinned-folders-service";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+// import { listen } from '@tauri-apps/api/event'; // No longer needed here
 import { 
   File, FileText, Image, Music, Video, FileArchive, FileCode, FilePenLine, 
   FileSpreadsheet, FileX, Copy, Folder, ExternalLink 
@@ -30,6 +31,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { toast } from "sonner";
+import { useAppStore } from './main'; // Import global store
 
 // 文件类型定义
 export interface FullDiskFolder {
@@ -98,15 +100,24 @@ const getFileIcon = (extension?: string) => {
 // 缓存由PinnedFoldersService内部管理
 
 // Hook to fetch data for a single pinned folder
-export const usePinnedFolderData = (folderId: string) => {
+export const usePinnedFolderData = (folderId: string, isApiReady: boolean) => {
   const [folderData, setFolderData] = useState<FullDiskFolder | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(true); // Default to true, will be set by isApiReady effect
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   // 使用以下状态跟踪数据加载时间和性能信息
   const [fetchDuration, setFetchDuration] = useState<number | null>(null);
 
   const fetchFolderData = async (showLoading = false, forceRefresh = false) => {
+    if (!isApiReady) {
+      // This case should ideally be handled by the useEffect dependency on isApiReady,
+      // or by the FullDiskFolderView component's own loading state for API readiness.
+      setLoading(true);
+      setError("等待后端服务初始化..."); // This message might not be shown if FullDiskFolderView handles it
+      setFolderData(null); // Ensure data is cleared while waiting
+      return;
+    }
+
     if (!folderId) {
       setFolderData(null);
       setLoading(false);
@@ -117,7 +128,7 @@ export const usePinnedFolderData = (folderId: string) => {
       if (showLoading) {
         setLoading(true);
       }
-
+      setError(null); // Clear previous errors before fetching
       const startTime = performance.now();
       let files: FileInfo[] = [];
       let title = "";
@@ -200,14 +211,15 @@ export const usePinnedFolderData = (folderId: string) => {
       setFolderData(fetchedData);
       const now = new Date();
       setLastUpdated(now);
-      setError(null);
+      // setError(null); // Already cleared at the start of try block
 
       // 记录性能信息
       console.log(`[性能] 文件夹 ${folderId} 数据获取耗时: ${fetchTime}ms, 文件数: ${files.length}`);
 
     } catch (err) {
-      console.error(`扫描文件夹 ${folderId} 失败:`, err);
-      setError(`获取文件夹数据失败: ${err}`);
+      console.error(`获取文件夹 ${folderId} 数据失败:`, err);
+      setError(`获取文件夹数据失败: ${err instanceof Error ? err.message : String(err)}`);
+      setFolderData(null); // Clear data on error
     } finally {
       setLoading(false);
     }
@@ -217,16 +229,30 @@ export const usePinnedFolderData = (folderId: string) => {
 
 
   useEffect(() => {
-    fetchFolderData(true); // Fetch data when folderId changes or component mounts
-  }, [folderId]); // Re-fetch when folderId changes
+    if (!isApiReady) {
+      setLoading(true);
+      setFolderData(null);
+      setError(null); 
+      console.log(`[API Wait] Hook for ${folderId}: Waiting for API to be ready.`);
+      return;
+    }
+
+    // API is ready, proceed to fetch
+    console.log(`[API Ready] Hook for ${folderId}: API is ready, fetching data.`);
+    fetchFolderData(true); 
+  }, [folderId, isApiReady]); // Re-fetch when folderId or isApiReady changes
 
   // Manual refresh function - 强制刷新数据，会绕过缓存
   const refreshData = () => {
+      if (!isApiReady) {
+        toast.info("后端服务尚未就绪，请稍后再试。");
+        setLoading(true); 
+        return;
+      }
       console.log(`[刷新] 强制刷新文件夹数据: ${folderId}`);
       // 使用forceRefresh=true来绕过服务缓存
       fetchFolderData(true, true);
   };
-
 
   return {
     folderData,
@@ -304,12 +330,14 @@ const FileActionMenu: React.FC<FileActionMenuProps> = ({ file }) => {
 };
 
 export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
-  // Use the new hook to fetch data for the specific folderId
-  const { folderData, loading, error, refreshData, lastUpdated } = usePinnedFolderData(folderId);
+  const { isApiReady } = useAppStore(); // Get global API ready state
+  const { folderData, loading, error, refreshData, lastUpdated } = usePinnedFolderData(folderId, isApiReady);
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
   const [filterExtension, setFilterExtension] = useState<string>('all');
   const [uniqueExtensions, setUniqueExtensions] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+
+  // Removed local isApiReady state and useEffect for 'api-ready' event listener
 
   // 提取所有唯一的文件扩展名
   useEffect(() => {
@@ -317,10 +345,11 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
       const extensions = folderData.files
         .map(file => file.extension || '未知')
         .filter(Boolean);
-      
       // 获取唯一的扩展名并排序
       const uniqueExts = Array.from(new Set(extensions)).sort();
       setUniqueExtensions(uniqueExts);
+    } else {
+      setUniqueExtensions([]); // Clear extensions if no folder data or files
     }
   }, [folderData?.files]);
 
@@ -355,8 +384,18 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
     });
   }, [folderData?.files, sortOrder, filterExtension]);
 
-  // Show loading state if data is being fetched and no previous data exists
-  if (loading && !folderData) return (
+  // Show specific loading message if API is not ready yet
+  if (!isApiReady) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary" role="status" aria-label="等待后端服务启动"></div>
+        <span className="ml-3">等待后端服务启动...</span>
+      </div>
+    );
+  }
+
+  // Show data loading state if API is ready, data is being fetched, and no previous data exists
+  if (loading && !folderData) return ( // This loading is for data fetching after API is ready
     <div className="flex justify-center items-center h-64">
       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
       <span className="ml-3">加载中...</span>
@@ -377,8 +416,8 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
     </div>
   );
 
-  // If folderData is null (e.g., invalid folderId)
-  if (!folderData) return (
+  // If folderData is null (e.g., invalid folderId or fetch failed after API is ready)
+  if (!folderData) return ( // Handles cases like invalid folderId after API is ready but fetch failed to produce data
       <div className="p-8 text-center text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
         <div className="text-2xl mb-2">⚠️</div>
         未找到此文件夹或数据
@@ -557,5 +596,5 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   );
 };
 
-// Export the new hook as default
-export default usePinnedFolderData;
+// Export the new hook as default (or FullDiskFolderView if it's the main export)
+export default usePinnedFolderData; // Default export remains the hook for potential other uses

@@ -11,14 +11,15 @@ logger = logging.getLogger(__name__)
 class ScreeningManager:
     """文件粗筛结果管理类，提供增删改查方法"""
     
-    def __init__(self, session: Session):
+    def __init__(self, session: Session): # No change to __init__
         self.session = session
     
-    def add_screening_result(self, data: Dict[str, Any]) -> Optional[FileScreeningResult]:
+    def add_screening_result(self, data: Dict[str, Any], commit_session: bool = True) -> Optional[FileScreeningResult]:
         """添加一条文件粗筛结果
         
         Args:
             data: 包含文件元数据和初步分类信息的字典
+            commit_session: 是否在此方法内提交会话 (用于批量操作时设为False)
             
         Returns:
             添加成功返回记录对象，失败返回None
@@ -56,14 +57,16 @@ class ScreeningManager:
             
             # 添加到数据库
             self.session.add(result)
-            self.session.commit()
-            self.session.refresh(result)
+            if commit_session: # Only commit if flag is true
+                self.session.commit()
+                self.session.refresh(result)
             
             logger.info(f"添加文件粗筛结果成功: {result.file_path}")
             return result
             
         except Exception as e:
-            self.session.rollback()
+            if commit_session: # Only rollback if we were supposed to commit
+                self.session.rollback()
             logger.error(f"添加文件粗筛结果失败: {str(e)}")
             return None
     
@@ -79,25 +82,44 @@ class ScreeningManager:
         success_count = 0
         failed_count = 0
         errors = []
+        added_results_for_refresh = [] # Store results to refresh after commit
         
-        for data in results_data:
+        for data_item in results_data: # Renamed 'data' to 'data_item' to avoid conflict
             try:
-                result = self.add_screening_result(data)
+                # Call add_screening_result with commit_session=False
+                result = self.add_screening_result(data_item, commit_session=False)
                 if result:
                     success_count += 1
+                    added_results_for_refresh.append(result) # Add to list for refresh
                 else:
                     failed_count += 1
-                    errors.append(f"添加文件失败: {data.get('file_path', 'unknown path')}")
+                    errors.append(f"添加文件失败: {data_item.get('file_path', 'unknown path')}")
             except Exception as e:
                 failed_count += 1
-                errors.append(f"处理文件出错: {data.get('file_path', 'unknown path')} - {str(e)}")
+                errors.append(f"处理文件出错: {data_item.get('file_path', 'unknown path')} - {str(e)}")
+        
+        if success_count > 0:
+            try:
+                self.session.commit() # Commit once after all additions
+                for res in added_results_for_refresh:
+                    self.session.refresh(res) # Refresh all added objects
+                logger.info(f"批量添加 {success_count} 条记录成功提交。")
+            except Exception as e:
+                self.session.rollback()
+                logger.error(f"批量提交失败: {str(e)}")
+                # Mark all as failed if commit fails
+                failed_count += success_count
+                success_count = 0
+                errors.append(f"批量提交数据库失败: {str(e)}")
+        elif failed_count > 0 : # If only failures, still good to rollback any session changes
+             self.session.rollback()
         
         return {
             "success": success_count,
             "failed": failed_count,
             "errors": errors if errors else None
         }
-    
+
     def get_by_path(self, file_path: str) -> Optional[FileScreeningResult]:
         """根据文件路径获取粗筛结果"""
         statement = select(FileScreeningResult).where(FileScreeningResult.file_path == file_path)
