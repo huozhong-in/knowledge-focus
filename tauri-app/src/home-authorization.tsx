@@ -206,18 +206,34 @@ function HomeAuthorization() {
   // 初始化默认文件夹
   const initializeDefaultDirectories = async () => {
     try {
-      // 如果有完全磁盘访问权限，传递此信息给后端
-      const url = hasFullDiskAccess 
-        ? "http://127.0.0.1:60315/directories/default?has_full_disk_access=true" 
-        : "http://127.0.0.1:60315/directories/default";
-      
-      const response = await fetch(url);
+      // 首先获取默认文件夹列表
+      const response = await fetch("http://127.0.0.1:60315/directories/default-list");
       const responseJson = await response.json();
       const result = responseJson as ApiResponse;
       
-      if (result.status === "success") {
-        toast.success("默认文件夹初始化成功");
-        fetchDirectories(); // 重新获取文件夹列表
+      if (result.status === "success" && result.data) {
+        const defaultDirectories = result.data as Array<{name: string, path: string}>;
+        
+        toast.loading("正在添加默认文件夹...", { id: "default-folders-init" });
+        
+        let successCount = 0;
+        let failedCount = 0;
+        
+        // 逐个添加默认文件夹，使用handleAddDirectoryWithPath来确保扫描
+        for (const directory of defaultDirectories) {
+          try {
+            console.log(`正在添加默认文件夹: ${directory.name} - ${directory.path}`);
+            await handleAddDirectoryWithPath(directory.path, directory.name, true); // 使用静默模式
+            successCount++;
+          } catch (err) {
+            console.error(`添加默认文件夹失败: ${directory.name}`, err);
+            failedCount++;
+          }
+        }
+        
+        toast.success(`默认文件夹恢复完成: 成功 ${successCount} 个${failedCount > 0 ? `, 失败 ${failedCount} 个` : ""}`, {
+          id: "default-folders-init"
+        });
         
         // 如果没有完全磁盘访问权限，提示用户
         if (!hasFullDiskAccess) {
@@ -230,11 +246,11 @@ function HomeAuthorization() {
           });
         }
       } else {
-        toast.error(result.message || "初始化默认文件夹失败");
+        toast.error(result.message || "获取默认文件夹列表失败");
       }
     } catch (err) {
       console.error("初始化默认文件夹失败", err);
-      toast.error("初始化默认文件夹失败，请检查API服务是否启动");
+      toast.error("初始化默认文件夹失败，请检查API服务是否启动", { id: "default-folders-init" });
     }
   };
 
@@ -297,9 +313,9 @@ function HomeAuthorization() {
   };
 
   // 通过路径添加文件夹（用于拖放操作）
-  const handleAddDirectoryWithPath = async (dirPath: string, dirAlias?: string) => {
+  const handleAddDirectoryWithPath = async (dirPath: string, dirAlias?: string, silent = false) => {
     if (!dirPath) {
-      toast.error("文件夹路径不能为空");
+      if (!silent) toast.error("文件夹路径不能为空");
       return null;
     }
 
@@ -324,26 +340,32 @@ function HomeAuthorization() {
       const result = responseJson as ApiResponse;
       
       if (result.status === "success") {
-        toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
+        if (!silent) {
+          toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
+        }
         fetchDirectories(); // 刷新列表
         
         // 如果是已授权状态且不是黑名单，立即启动目录扫描
         if (initialAuthStatus === "authorized") {
-          toast.loading(`正在扫描文件夹: ${dirPath}`, {
-            id: `scan-${result.data?.id || ''}`,
-          });
+          if (!silent) {
+            toast.loading(`正在扫描文件夹: ${dirPath}`, {
+              id: `scan-${result.data?.id || ''}`,
+            });
+          }
           
           // 等待目录列表刷新后再扫描
           setTimeout(async () => {
             await scanDirectory(dirPath);
-            toast.success(`文件夹扫描已启动: ${dirAlias || dirPath}`, {
-              id: `scan-${result.data?.id || ''}`,
-            });
+            if (!silent) {
+              toast.success(`文件夹扫描已启动: ${dirAlias || dirPath}`, {
+                id: `scan-${result.data?.id || ''}`,
+              });
+            }
           }, 1000);
         }
         
         // 如果没有完全磁盘访问权限且是系统路径，提示用户
-        if (!hasFullDiskAccess && 
+        if (!silent && !hasFullDiskAccess && 
             !dirPath.includes("/Users") && 
             !dirPath.includes("/Documents") && 
             !dirPath.includes("/Desktop") && 
@@ -363,12 +385,12 @@ function HomeAuthorization() {
         }
         return { success: true };
       } else {
-        toast.error(result.message || "添加文件夹失败");
+        if (!silent) toast.error(result.message || "添加文件夹失败");
         return null;
       }
     } catch (err) {
       console.error("添加文件夹失败", err);
-      toast.error("添加文件夹失败，请检查API服务是否启动");
+      if (!silent) toast.error("添加文件夹失败，请检查API服务是否启动");
       return null;
     }
   };

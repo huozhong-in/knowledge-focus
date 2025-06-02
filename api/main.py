@@ -11,8 +11,6 @@ from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 import pathlib
 import logging
 from sqlmodel import create_engine, Session, select
-from sqlalchemy import event, create_engine # Modified import
-from sqlalchemy.engine import Engine # Added import
 import multiprocessing # No change
 from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
 from task_mgr import TaskManager
@@ -92,26 +90,6 @@ except Exception as e:
     print(f"设置日志记录时出错: {e}")
     import traceback
     traceback.print_exc()
-
-@event.listens_for(Engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    # Only apply these PRAGMAs if the dialect is SQLite and the dialect attribute exists
-    if hasattr(connection_record, 'dialect') and connection_record.dialect and connection_record.dialect.name == "sqlite":
-        cursor = dbapi_connection.cursor()
-        try:
-            cursor.execute("PRAGMA journal_mode=WAL;")
-            logger.info("SQLite journal_mode set to WAL.")
-            cursor.execute("PRAGMA busy_timeout = 5000;") # Wait 5 seconds if DB is locked
-            logger.info("SQLite busy_timeout set to 5000ms.")
-            cursor.execute("PRAGMA foreign_keys=ON;")
-            logger.info("SQLite foreign_keys set to ON.")
-        except Exception as e:
-            logger.error(f"Failed to set SQLite PRAGMAs: {e}", exc_info=True)
-        finally:
-            cursor.close()
-    elif not hasattr(connection_record, 'dialect'):
-        logger.warning("ConnectionRecord does not have 'dialect' attribute. Skipping PRAGMA setup for this connection event.")
-    # If dialect exists but is not sqlite, we correctly do nothing.
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1506,6 +1484,16 @@ def initialize_default_directories_endpoint(myfiles_mgr: MyFilesManager = Depend
     except Exception as e:
         logger.error(f"初始化默认文件夹失败: {str(e)}")
         return {"status": "error", "message": f"初始化默认文件夹失败: {str(e)}"}
+
+@app.get("/directories/default-list")
+def get_default_directories_list(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    """获取默认系统文件夹列表（不进行数据库操作）"""
+    try:
+        directories = myfiles_mgr.get_default_directories()
+        return {"status": "success", "data": directories}
+    except Exception as e:
+        logger.error(f"获取默认文件夹列表失败: {str(e)}")
+        return {"status": "error", "message": f"获取默认文件夹列表失败: {str(e)}"}
 
 @app.get("/macos-permissions-hint")
 def get_macos_permissions_hint_endpoint(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
