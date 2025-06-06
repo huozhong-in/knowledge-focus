@@ -17,8 +17,6 @@ from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
 from myfiles_mgr import MyFilesManager
-# 导入智能文件夹API路由器
-from wise_folders_api import router as wise_folders_router
 from contextlib import asynccontextmanager
 import asyncio
 import threading
@@ -238,29 +236,6 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 # 周期性检查新通知并广播
-
-# 智能文件夹API端点添加
-app.include_router(wise_folders_router, prefix="/wise-folders", tags=["wise-folders"])
-
-# 定义智能文件夹获取函数
-@app.get("/wise-folders-legacy/{task_id}")
-async def get_wise_folders_legacy(task_id: int):
-    try:
-        refine_mgr = RefineManager(get_session())
-        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
-        return {
-            "success": True,
-            "task_id": task_id,
-            "folders_count": len(wise_folders),
-            "folders": wise_folders
-        }
-    except Exception as e:
-        logger.error(f"获取智能文件夹失败: {str(e)}")
-    logger.error(traceback.format_exc())
-    return {
-        "success": False,
-        "message": f"获取智能文件夹失败: {str(e)}"
-    }
 async def check_notifications():
     while True:
         # 广播消息
@@ -275,6 +250,31 @@ def get_session():
     
     with Session(app.state.engine) as session:
         yield session
+
+# 智慧文件夹API端点添加 - 传递 main.py 的 get_session 函数
+from wise_folders_api import get_router as get_wise_folders_router
+wise_folders_router = get_wise_folders_router(external_get_session=get_session)
+app.include_router(wise_folders_router, prefix="/wise-folders", tags=["wise-folders"])
+
+# 定义智慧文件夹获取函数
+@app.get("/wise-folders-legacy/{task_id}")
+async def get_wise_folders_legacy(task_id: int):
+    try:
+        refine_mgr = RefineManager(get_session())
+        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
+        return {
+            "success": True,
+            "task_id": task_id,
+            "folders_count": len(wise_folders),
+            "folders": wise_folders
+        }
+    except Exception as e:
+        logger.error(f"获取智慧文件夹失败: {str(e)}")
+    logger.error(traceback.format_exc())
+    return {
+        "success": False,
+        "message": f"获取智慧文件夹失败: {str(e)}"
+    }
 
 # 获取 MyFilesManager 的依赖函数
 def get_myfiles_manager(session: Session = Depends(get_session)):
@@ -474,16 +474,16 @@ def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
             try:
                 refine_result = refine_mgr.process_pending_file(screening_result_id)
                 
-                # 如果文件处理成功，生成智能文件夹
+                # 如果文件处理成功，生成智慧文件夹
                 if refine_result is not None:
-                    logger.info(f"单个文件处理成功，生成智能文件夹，任务ID: {task.id}")
+                    logger.info(f"单个文件处理成功，生成智慧文件夹，任务ID: {task.id}")
                     try:
                         wise_folders = refine_mgr.generate_wise_folders(str(task.id))
-                        logger.info(f"成功生成 {len(wise_folders)} 个智能文件夹")
+                        logger.info(f"成功生成 {len(wise_folders)} 个智慧文件夹")
                     except Exception as e:
-                        logger.error(f"生成智能文件夹失败: {str(e)}")
+                        logger.error(f"生成智慧文件夹失败: {str(e)}")
                         logger.error(traceback.format_exc())
-                        # 即使生成智能文件夹失败，单个文件处理仍视为成功
+                        # 即使生成智慧文件夹失败，单个文件处理仍视为成功
                         
                 return refine_result is not None
             except Exception as e:
@@ -529,13 +529,13 @@ def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
                         if refine_result:
                             success_count += 1
                             
-                            # 处理完成后，每10个文件或最后一个文件生成一次智能文件夹
+                            # 处理完成后，每10个文件或最后一个文件生成一次智慧文件夹
                             if index % 10 == 0 or index == total_count - 1:
                                 try:
-                                    logger.info(f"为任务 {task.id} 生成智能文件夹")
+                                    logger.info(f"为任务 {task.id} 生成智慧文件夹")
                                     refine_mgr.generate_wise_folders(str(task.id))
                                 except Exception as folder_err:
-                                    logger.error(f"批处理中生成智能文件夹失败: {str(folder_err)}")
+                                    logger.error(f"批处理中生成智慧文件夹失败: {str(folder_err)}")
                                     logger.error(traceback.format_exc())
                                     # 继续处理剩余文件，不中断批处理
                             
@@ -554,14 +554,14 @@ def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
                 success_rate = 0 if total_count == 0 else (success_count/total_count*100)
                 logger.info(f"批量处理完成: {success_count}/{total_count} 个文件成功，成功率: {success_rate:.2f}%")
                 
-                # 在批处理完成后，确保再次生成一次完整的智能文件夹，包括所有文件
+                # 在批处理完成后，确保再次生成一次完整的智慧文件夹，包括所有文件
                 if success_count > 0:
-                    logger.info(f"批量处理完成后生成智能文件夹，任务ID: {task.id}")
+                    logger.info(f"批量处理完成后生成智慧文件夹，任务ID: {task.id}")
                     try:
                         wise_folders = refine_mgr.generate_wise_folders(str(task.id))
-                        logger.info(f"成功生成 {len(wise_folders)} 个智能文件夹")
+                        logger.info(f"成功生成 {len(wise_folders)} 个智慧文件夹")
                     except Exception as e:
-                        logger.error(f"批量处理完成后生成智能文件夹失败: {str(e)}")
+                        logger.error(f"批量处理完成后生成智慧文件夹失败: {str(e)}")
                         logger.error(traceback.format_exc())
                 
                 return success_count > 0
@@ -584,19 +584,19 @@ def get_refine_manager(session: Session = Depends(get_session)):
     """获取文件精炼管理类实例"""
     return RefineManager(session)
 
-# 智能文件夹相关的API端点
+# 智慧文件夹相关的API端点
 @app.get("/wise-folders/{task_id}")
 def get_wise_folders(
     task_id: str,
     refine_mgr: RefineManager = Depends(get_refine_manager)
 ):
-    """获取指定任务的智能文件夹
+    """获取指定任务的智慧文件夹
     
     Args:
         task_id: 任务ID
         
     Returns:
-        智能文件夹列表
+        智慧文件夹列表
     """
     try:
         wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
@@ -607,11 +607,11 @@ def get_wise_folders(
             "folders": wise_folders
         }
     except Exception as e:
-        logger.error(f"获取智能文件夹失败: {str(e)}")
+        logger.error(f"获取智慧文件夹失败: {str(e)}")
         logger.error(traceback.format_exc())
         return {
             "success": False,
-            "message": f"获取智能文件夹失败: {str(e)}"
+            "message": f"获取智慧文件夹失败: {str(e)}"
         }
 
 # 添加用于处理文件粗筛结果的 API 接口

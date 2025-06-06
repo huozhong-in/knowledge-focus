@@ -18,7 +18,7 @@ import hashlib
 logger = logging.getLogger(__name__)
 
 class RefineManager:
-    """文件精细化管理类，提供智能文件夹生成和文件分析功能"""
+    """文件精细化管理类，提供智慧文件夹生成和文件分析功能"""
     
     def __init__(self, session: Session):
         self.session = session
@@ -59,7 +59,7 @@ class RefineManager:
                     logger.error(f"处理文件 {file_record.file_path} 时出错: {str(e)}")
                     continue
             
-            # 生成智能文件夹
+            # 生成智慧文件夹
             wise_folders = self.generate_wise_folders(task_id)
             
             return {
@@ -421,7 +421,7 @@ class RefineManager:
             logger.error(f"保存实体信息时出错: {str(e)}")
     
     def generate_wise_folders(self, task_id: str) -> List[Dict[str, Any]]:
-        """生成智能文件夹"""
+        """生成智慧文件夹"""
         try:
             # 获取任务中的所有文件
             stmt = select(FileScreeningResult).where(FileScreeningResult.task_id == task_id)
@@ -456,17 +456,17 @@ class RefineManager:
             # 8. 按状态分组
             wise_folders.extend(self._generate_status_wise_folders(files))
             
-            # 保存智能文件夹到数据库
+            # 保存智慧文件夹到数据库
             self._save_wise_folders(task_id, wise_folders)
             
             return wise_folders
             
         except Exception as e:
-            logger.error(f"生成智能文件夹时出错: {str(e)}")
+            logger.error(f"生成智慧文件夹时出错: {str(e)}")
             return []
     
     def _generate_category_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按文件类别生成智能文件夹"""
+        """按文件类别生成智慧文件夹"""
         category_groups = defaultdict(list)
         
         for file in files:
@@ -491,7 +491,7 @@ class RefineManager:
         return folders
     
     def _generate_tag_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按标签生成智能文件夹"""
+        """按标签生成智慧文件夹"""
         tag_groups = defaultdict(list)
         
         for file in files:
@@ -515,7 +515,7 @@ class RefineManager:
         return folders
     
     def _generate_project_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按项目生成智能文件夹"""
+        """按项目生成智慧文件夹"""
         project_groups = defaultdict(list)
         
         for file in files:
@@ -546,7 +546,7 @@ class RefineManager:
         return folders
     
     def _generate_topic_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按主题生成智能文件夹"""
+        """按主题生成智慧文件夹"""
         topic_groups = defaultdict(list)
         
         for file in files:
@@ -570,7 +570,7 @@ class RefineManager:
         return folders
     
     def _generate_entity_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按实体生成智能文件夹"""
+        """按实体生成智慧文件夹"""
         entity_groups = defaultdict(list)
         
         for file in files:
@@ -594,7 +594,7 @@ class RefineManager:
         return folders
     
     def _generate_similarity_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按相似性生成智能文件夹"""
+        """按相似性生成智慧文件夹"""
         folders = []
         processed_files = set()
         
@@ -628,7 +628,7 @@ class RefineManager:
         return folders
     
     def _generate_metadata_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按元数据生成智能文件夹"""
+        """按元数据生成智慧文件夹"""
         folders = []
         
         # 按时间分组
@@ -669,7 +669,7 @@ class RefineManager:
         return folders
     
     def _generate_status_wise_folders(self, files: List[FileScreeningResult]) -> List[Dict[str, Any]]:
-        """按处理状态生成智能文件夹"""
+        """按处理状态生成智慧文件夹"""
         status_groups = defaultdict(list)
         
         for file in files:
@@ -691,20 +691,20 @@ class RefineManager:
         return folders
     
     def _save_wise_folders(self, task_id: str, folders: List[Dict[str, Any]]):
-        """保存智能文件夹到数据库
+        """保存智慧文件夹到数据库
         
-        使用任务的extra_data字段存储智能文件夹信息，将任务的更新时间设为当前时间
+        使用任务的extra_data字段存储智慧文件夹信息，将任务的更新时间设为当前时间
         """
         try:
             from db_mgr import Task
             from datetime import datetime
             
             # 记录生成的文件夹数
-            logger.info(f"任务 {task_id} 生成了 {len(folders)} 个智能文件夹:")
+            logger.info(f"任务 {task_id} 生成了 {len(folders)} 个智慧文件夹:")
             for folder in folders:
                 logger.info(f"  - {folder['name']}: {folder['file_count']} 个文件")
             
-            # 使用任务的extra_data字段存储智能文件夹数据
+            # 使用任务的extra_data字段存储智慧文件夹数据
             try:
                 # 获取任务
                 stmt = select(Task).where(Task.id == int(task_id))
@@ -742,15 +742,15 @@ class RefineManager:
                     self.session.add(task)
                     self.session.commit()
                     
-                    logger.info(f"已将 {len(folders)} 个智能文件夹数据保存到任务 {task_id} 的extra_data字段")
+                    logger.info(f"已将 {len(folders)} 个智慧文件夹数据保存到任务 {task_id} 的extra_data字段")
                 else:
-                    logger.warning(f"找不到任务ID: {task_id}，无法保存智能文件夹数据")
+                    logger.warning(f"找不到任务ID: {task_id}，无法保存智慧文件夹数据")
             except Exception as e:
-                logger.error(f"保存智能文件夹数据到任务失败: {str(e)}")
+                logger.error(f"保存智慧文件夹数据到任务失败: {str(e)}")
                 logger.error(traceback.format_exc())
                 
         except Exception as e:
-            logger.error(f"保存智能文件夹时出错: {str(e)}")
+            logger.error(f"保存智慧文件夹时出错: {str(e)}")
             logger.error(traceback.format_exc())
     
     # 辅助方法
@@ -865,20 +865,20 @@ class RefineManager:
     
     # 查询方法实现
     def get_wise_folders_by_task(self, task_id: str) -> List[Dict[str, Any]]:
-        """获取任务的智能文件夹
+        """获取任务的智慧文件夹
         
-        首先尝试从任务的extra_data字段获取保存的智能文件夹数据
+        首先尝试从任务的extra_data字段获取保存的智慧文件夹数据
         如果没有找到或数据不完整，则重新生成
         """
         try:
             from db_mgr import Task
             
-            # 尝试从任务的extra_data字段获取智能文件夹数据
+            # 尝试从任务的extra_data字段获取智慧文件夹数据
             stmt = select(Task).where(Task.id == int(task_id))
             task = self.session.exec(stmt).first()
             
             if task and task.extra_data:
-                # 从任务的extra_data字段获取智能文件夹数据
+                # 从任务的extra_data字段获取智慧文件夹数据
                 extra_data = task.extra_data
                 if isinstance(extra_data, str):
                     try:
@@ -886,24 +886,24 @@ class RefineManager:
                     except Exception:
                         extra_data = {}
                 
-                # 检查是否有智能文件夹数据
+                # 检查是否有智慧文件夹数据
                 if isinstance(extra_data, dict) and 'wise_folders' in extra_data:
                     wise_folders = extra_data.get('wise_folders', [])
                     if wise_folders and isinstance(wise_folders, list) and len(wise_folders) > 0:
-                        logger.info(f"从任务 {task_id} 的extra_data字段获取到 {len(wise_folders)} 个智能文件夹")
+                        logger.info(f"从任务 {task_id} 的extra_data字段获取到 {len(wise_folders)} 个智慧文件夹")
                         return wise_folders
             
-            # 如果没有找到保存的智能文件夹数据或数据不完整，重新生成
-            logger.info(f"重新生成任务 {task_id} 的智能文件夹")
+            # 如果没有找到保存的智慧文件夹数据或数据不完整，重新生成
+            logger.info(f"重新生成任务 {task_id} 的智慧文件夹")
             return self.generate_wise_folders(task_id)
             
         except Exception as e:
-            logger.error(f"获取智能文件夹时出错: {str(e)}")
+            logger.error(f"获取智慧文件夹时出错: {str(e)}")
             logger.error(traceback.format_exc())
             return []
     
     def get_files_in_wise_folder(self, task_id: str, folder_type: str, criteria: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """获取智能文件夹中的文件"""
+        """获取智慧文件夹中的文件"""
         try:
             # 根据不同的文件夹类型和条件查询文件
             if folder_type == "category":

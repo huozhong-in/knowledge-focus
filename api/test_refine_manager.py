@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-测试RefineManager智能文件夹生成功能
+测试RefineManager智慧文件夹生成功能
 """
 
 import logging
@@ -60,7 +60,7 @@ class RefineManagerTester:
         
         # 创建一个测试任务
         task = self.task_mgr.add_task(
-            task_name="智能文件夹测试",
+            task_name="智慧文件夹测试",
             task_type="refine",
         )
         task_id = str(task.id)  # 确保使用任务的ID（字符串）
@@ -199,13 +199,13 @@ class RefineManagerTester:
         return task_id
     
     def test_smart_folder_generation(self, task_id: str):
-        """测试智能文件夹生成功能"""
-        logger.info("开始测试智能文件夹生成...")
+        """测试智慧文件夹生成功能"""
+        logger.info("开始测试智慧文件夹生成...")
         
-        # 生成所有智能文件夹
-        logger.info("\n=== 生成智能文件夹 ===")
+        # 生成所有智慧文件夹
+        logger.info("\n=== 生成智慧文件夹 ===")
         wise_folders = self.refine_mgr.generate_wise_folders(task_id)
-        logger.info(f"总共生成了 {len(wise_folders)} 个智能文件夹")
+        logger.info(f"总共生成了 {len(wise_folders)} 个智慧文件夹")
         
         # 按文件夹类型分组显示
         folder_types = {}
@@ -229,9 +229,9 @@ class RefineManagerTester:
         result = self.refine_mgr.process_files_for_task(task_id)
         logger.info(f"精炼处理结果: {result}")
         
-        # 获取所有智能文件夹
+        # 获取所有智慧文件夹
         all_folders = self.refine_mgr.get_wise_folders_by_task(task_id)
-        logger.info(f"\n生成的智能文件夹总数: {len(all_folders)}")
+        logger.info(f"\n生成的智慧文件夹总数: {len(all_folders)}")
         
         for folder in all_folders[:10]:  # 只显示前10个
             logger.info(f"  - {folder['name']} ({folder['type']}) - {folder['file_count']}个文件")
@@ -255,6 +255,85 @@ class RefineManagerTester:
         # 测试相似文件查询
         similar_files = self.refine_mgr.get_files_by_similarity(task_id, "/test/docs/python_tutorial.pdf")
         logger.info(f"相似文件数量: {len(similar_files)}")
+        
+    def test_direct_refine_results_creation(self, task_id: str):
+        """直接创建精炼结果记录，测试智能文件夹生成逻辑"""
+        from db_mgr import FileRefineResult, FileRefineStatus
+        
+        logger.info("\n=== 测试直接创建精炼结果记录 ===")
+        
+        # 获取任务关联的所有粗筛结果
+        from sqlmodel import select
+        from db_mgr import FileScreeningResult
+        
+        stmt = select(FileScreeningResult).where(FileScreeningResult.task_id == task_id)
+        file_screenings = self._session.exec(stmt).all()
+        
+        logger.info(f"找到 {len(file_screenings)} 个粗筛结果记录，准备创建精炼结果")
+        
+        # 为每个粗筛结果创建一个精炼结果记录
+        created_count = 0
+        for screening in file_screenings:
+            # 检查是否已存在精炼结果
+            check_stmt = select(FileRefineResult).where(
+                FileRefineResult.screening_result_id == screening.id
+            )
+            existing = self._session.exec(check_stmt).first()
+            
+            if existing:
+                logger.info(f"文件 {screening.file_name} 已存在精炼结果，跳过")
+                continue
+                
+            # 生成样本数据
+            refine_result = FileRefineResult(
+                task_id=task_id,
+                screening_result_id=screening.id,
+                file_path=screening.file_path,
+                status=FileRefineStatus.COMPLETED.value,
+                
+                # 添加一些测试用的分析结果
+                content_summary=f"这是{screening.file_name}的内容摘要，用于测试智能文件夹生成功能。",
+                language="zh-CN" if ".zh." in screening.file_name else "en",
+                topics=["技术", "编程", "测试"] if ".py" in screening.file_name else ["文档", "报告"],
+                key_phrases=["Python编程", "测试驱动开发"] if ".py" in screening.file_name else ["项目管理", "需求分析"],
+                named_entities={
+                    "PERSON": ["张三", "李四"] if ".zh." in screening.file_name else ["John", "Mary"],
+                    "ORG": ["ABC公司"] if ".zh." in screening.file_name else ["XYZ Corp"],
+                    "LOC": ["北京", "上海"] if ".zh." in screening.file_name else ["New York", "London"]
+                },
+                sentiment={"positive": 0.8, "negative": 0.2} if "good" in screening.file_name.lower() else {"positive": 0.3, "negative": 0.7},
+                
+                # 项目信息
+                project_id=1 if "myapp" in screening.file_path else (2 if "webapp" in screening.file_path else None),
+                
+                # 处理统计
+                processing_time=1.5,
+                tokens_processed=1000,
+                
+                # 创建和更新时间
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            
+            # 添加到数据库
+            self._session.add(refine_result)
+            created_count += 1
+            
+        # 提交更改
+        self._session.commit()
+        logger.info(f"成功创建 {created_count} 条精炼结果记录")
+        
+        # 现在生成智能文件夹
+        wise_folders = self.refine_mgr.generate_wise_folders(task_id)
+        logger.info(f"生成了 {len(wise_folders)} 个智能文件夹")
+        
+        # 存储智能文件夹到数据库（如果RefineManager没有这样做）
+        # 这里假设RefineManager.generate_wise_folders不会自动存储结果到数据库
+        # 通常需要一个额外步骤来存储，或者在generate_wise_folders内部实现存储
+        
+        # 显示一些文件夹的细节
+        for folder in wise_folders[:5]:  # 只显示前5个文件夹
+            logger.info(f"文件夹: {folder['name']} ({folder['type']}) - {folder['file_count']}个文件")
 
 def main():
     """主测试函数"""
@@ -281,7 +360,12 @@ def main():
         file_count = len(tester._session.exec(stmt).all())
         logger.info(f"该任务关联的文件数量: {file_count}")
         
-        # 测试智能文件夹生成
+        # 直接创建精炼结果并测试智能文件夹生成
+        logger.info("=== 开始直接创建精炼结果并测试 ===")
+        tester.test_direct_refine_results_creation(task_id)
+        
+        # 测试智慧文件夹生成
+        logger.info("\n=== 开始测试原有的智慧文件夹生成 ===")
         tester.test_smart_folder_generation(task_id)
         
         # 测试完整精炼处理流程

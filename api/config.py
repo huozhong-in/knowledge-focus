@@ -14,5 +14,5 @@ DEFAULT_BATCH_SIZE = 100  # 默认批处理大小
 MAX_BATCH_SIZE = 500  # 最大批处理大小
 
 # 特性开关
-ENABLE_SMART_FOLDERS = True  # 启用智能文件夹功能
+ENABLE_SMART_FOLDERS = True  # 启用智慧文件夹功能
 ENABLE_FILE_DEDUPLICATION = True  # 启用文件去重功能
