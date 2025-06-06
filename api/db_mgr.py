@@ -43,8 +43,9 @@ class TaskPriority(str, PyEnum):
 
 # 2种任务类型
 class TaskType(str, PyEnum):
-    REFINE = "refine"  # 精炼任务
-    INSIGHT = "insight"  # 洞察任务(暂不实现)
+    SCREENING = "screening"
+    REFINE = "refine"  # Added for refinement tasks
+    MAINTENANCE = "maintenance"
 
 # 供worker使用的tasks表
 class Task(SQLModel, table=True):
@@ -268,7 +269,7 @@ class FileAnalysisType(str, PyEnum):
     RELATIONSHIP = "relationship"  # 关联分析（文件间关系）
     PROJECT = "project"       # 项目识别分析
 
-# 文件精炼结果表 - 存储Python对文件进行深度分析后的结果
+# 文件精炼结果表
 class FileRefineResult(SQLModel, table=True):
     __tablename__ = "t_file_refine_results"
     id: int = Field(default=None, primary_key=True)
@@ -281,27 +282,29 @@ class FileRefineResult(SQLModel, table=True):
     status: str = Field(sa_column=Column(Enum(FileRefineStatus, values_callable=lambda obj: [e.value for e in obj]), default=FileRefineStatus.PENDING.value))
     
     # 处理结果
-    content_summary: str | None = Field(default=None)  # 文件内容摘要
-    extracted_text: str | None = Field(default=None)   # 提取的文本（可能部分）
-    language: str | None = Field(default=None)         # 检测到的语言
-    topics: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 主题标签
-    named_entities: Dict[str, List[str]] | None = Field(default=None, sa_column=Column(JSON))  # 命名实体（人名、地点、组织等）
-    key_phrases: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 关键短语
-    sentiment: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))  # 情感分析结果
-    readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 可读性指标
+    # --- Fields requiring content reading or LLM are commented out for this phase ---
+    # content_summary: str | None = Field(default=None)
+    # extracted_text: str | None = Field(default=None)
+    # language: str | None = Field(default=None)
+    # topics: List[str] | None = Field(default=None, sa_column=Column(JSON))
+    # named_entities: Dict[str, List[str]] | None = Field(default=None, sa_column=Column(JSON))
+    # key_phrases: List[str] | None = Field(default=None, sa_column=Column(JSON))
+    # sentiment: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))
+    # readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     
-    # 额外特征和元数据
-    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
-    features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征
+    # 额外特征和元数据 (从文件名、路径和元数据派生)
+    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据 from screening + basic derivations
+    features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征 (e.g., is_backup, versioned_file)
     
     # 项目和关联信息
-    project_id: int | None = Field(default=None)  # 关联的项目ID（如果已识别）
-    related_files: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件ID列表
-    similar_files: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 相似文件和相似度
+    project_id: int | None = Field(default=None, foreign_key="t_projects.id")  # 关联的项目ID（如果已识别）
+    # project: Optional["Project"] = Relationship(back_populates="refine_results") # Uncomment if using bidirectional relationship
+    related_files: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件ID列表 (metadata-based)
+    similar_files: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 相似文件和相似度 (metadata-based, simple)
     
     # 处理统计
     processing_time: float | None = Field(default=None)  # 处理耗时（秒）
-    tokens_processed: int | None = Field(default=None)   # 处理的token数量
+    # tokens_processed: int | None = Field(default=None) # Related to LLM
     error_message: str | None = Field(default=None)      # 错误信息（如果有）
     
     # 时间戳

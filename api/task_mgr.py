@@ -314,6 +314,66 @@ class TaskManager:
             
         return canceled_count
     
+    def get_latest_completed_task(self, task_type: str) -> Optional[Task]:
+        """获取最新的已完成任务
+        
+        Args:
+            task_type: 任务类型
+            
+        Returns:
+            最新的已完成任务对象，如果没有则返回None
+        """
+        try:
+            return self.session.exec(
+                select(Task)
+                .where(Task.task_type == task_type, Task.status == TaskStatus.COMPLETED.value)
+                .order_by(desc(Task.created_at))
+                .limit(1)
+            ).first()
+        except Exception as e:
+            logger.error(f"获取最新已完成任务失败: {e}")
+            return None
+    
+    def get_latest_running_task(self, task_type: str) -> Optional[Task]:
+        """获取最新的运行中任务
+        
+        Args:
+            task_type: 任务类型
+            
+        Returns:
+            最新的运行中任务对象，如果没有则返回None
+        """
+        try:
+            return self.session.exec(
+                select(Task)
+                .where(Task.task_type == task_type, Task.status == TaskStatus.RUNNING.value)
+                .order_by(desc(Task.created_at))
+                .limit(1)
+            ).first()
+        except Exception as e:
+            logger.error(f"获取最新运行任务失败: {e}")
+            return None
+    
+    def get_latest_task(self, task_type: str) -> Optional[Task]:
+        """获取最新的任务，无论状态如何
+        
+        Args:
+            task_type: 任务类型
+            
+        Returns:
+            最新的任务对象，如果没有则返回None
+        """
+        try:
+            return self.session.exec(
+                select(Task)
+                .where(Task.task_type == task_type)
+                .order_by(desc(Task.created_at))
+                .limit(1)
+            ).first()
+        except Exception as e:
+            logger.error(f"获取最新任务失败: {e}")
+            return None
+
 if __name__ == '__main__':
     from sqlmodel import (
         create_engine, 

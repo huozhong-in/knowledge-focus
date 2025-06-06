@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional # Ensure Optional is imported
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import uvicorn
 import argparse
@@ -11,8 +11,12 @@ from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 import pathlib
 import logging
 from sqlmodel import create_engine, Session, select
-import multiprocessing # No change
-from db_mgr import DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
+import multiprocessing
+from db_mgr import (
+    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, 
+    MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule,
+    Task, FileRefineResult, FileRefineStatus # Added Task, FileRefineResult, FileRefineStatus
+)
 from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
@@ -254,7 +258,7 @@ def get_session():
 # 智慧文件夹API端点添加 - 传递 main.py 的 get_session 函数
 from wise_folders_api import get_router as get_wise_folders_router
 wise_folders_router = get_wise_folders_router(external_get_session=get_session)
-app.include_router(wise_folders_router, prefix="/wise-folders", tags=["wise-folders"])
+app.include_router(wise_folders_router, prefix="", tags=["wise-folders"])
 
 # 定义智慧文件夹获取函数
 @app.get("/wise-folders-legacy/{task_id}")
@@ -341,238 +345,108 @@ def task_processor(processor_id: int, db_path: str = None):
     """处理任务的工作进程(实现了超时控制)"""
     logger.info(f"{processor_id}号任务处理者已启动")
     sqlite_url = f"sqlite:///{db_path}"
-    engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False}) # Added connect_args
+    # Ensure connect_args is correctly formatted for SQLAlchemy, typically a dictionary.
+    engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False})
     session = Session(engine)
     
-    # 初始化各种管理器
     _task_mgr = TaskManager(session)
-    _screening_mgr = ScreeningManager(session)
+    _screening_mgr = ScreeningManager(session) # 保留以备将来扩展
     _refine_mgr = RefineManager(session)
     
-    # 创建线程池用于执行任务，便于实现超时控制
     with ThreadPoolExecutor(max_workers=1) as executor:
         try:
             while True:
-                # 获取下一个待处理任务
+                time.sleep(5)
+                task: Optional[Task] = None
                 try:
                     task = _task_mgr.get_next_task()
                 except Exception as task_err:
                     logger.error(f"获取任务失败: {str(task_err)}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    time.sleep(2)
                     continue
                 
                 if not task:
-                    time.sleep(2)  # 没有任务时等待
                     continue
                 
-                # 将任务状态更新为运行中
+                logger.info(f"{processor_id}号处理者接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
+                future = None
                 try:
                     _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-                    logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
-                except Exception as status_err:
-                    logger.error(f"更新任务状态失败: {str(status_err)}")
-                    import traceback
-                    logger.error(traceback.format_exc())
-                    time.sleep(1)
-                    continue
-                
-                try:
-                    # 根据任务类型确定处理函数
+                    session.commit() # Commit status update immediately
+                    
                     if task.task_type == TaskType.REFINE.value:
-                        process_func = lambda: process_refine_task(task, _screening_mgr, _refine_mgr)
+                        logger.info(f"开始批量精炼任务 (Task ID: {task.id})")
+                        future = executor.submit(_refine_mgr.process_all_pending_screening_results)
                     else:
-                        logger.warning(f"未知任务类型: {task.task_type}")
-                        _task_mgr.update_task_status(
-                            task.id, 
-                            TaskStatus.FAILED, 
-                            TaskResult.FAILURE, 
-                            f"未知任务类型: {task.task_type}"
-                        )
+                        logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
+                        session.commit()
                         continue
-                    
-                    # 提交任务到线程池，设置超时时间（秒）
-                    TASK_TIMEOUT = 600  # 10分钟超时，为批量处理提供充足时间
-                    future = executor.submit(process_func)
-                    
-                    try:
-                        # 等待任务完成，最多等待TASK_TIMEOUT秒
-                        result = future.result(timeout=TASK_TIMEOUT)
-                        # 更新任务状态
-                        if result:
-                            _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
-                            logger.info(f"{processor_id}号任务 {task.id} 处理完成")
+
+                    if not future:
+                        continue
+
+                    task_result_data = future.result(timeout=300) # 5分钟超时
+
+                    if task.task_type == TaskType.REFINE.value:
+                        # 批量处理返回的不再是单个 FileRefineResult，而是处理结果统计
+                        if isinstance(task_result_data, dict):
+                            if task_result_data.get("success", False):
+                                _task_mgr.update_task_status(
+                                    task.id, 
+                                    TaskStatus.COMPLETED, 
+                                    result=TaskResult.SUCCESS, 
+                                    message=f"成功处理 {task_result_data.get('processed', 0)} 个粗筛结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
+                                )
+                            else:
+                                _task_mgr.update_task_status(
+                                    task.id, 
+                                    TaskStatus.FAILED, 
+                                    result=TaskResult.FAILURE, 
+                                    message=f"批量精炼失败: {task_result_data.get('error', '未知错误')}"
+                                )
+                        elif task_result_data is None:
+                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼失败: 没有找到可处理的粗筛结果")
                         else:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, "任务处理失败")
-                            logger.error(f"{processor_id}号任务 {task.id} 处理失败")
-                    except TimeoutError:
-                        # 任务超时处理
-                        logger.error(f"{processor_id}号任务 {task.id} 处理超时")
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
-                    except Exception as e:
-                        # 任务异常处理
-                        logger.error(f"{processor_id}号任务 {task.id} 处理异常: {str(e)}")
-                        import traceback
-                        logger.error(f"详细异常信息: {traceback.format_exc()}")
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
-                except Exception as task_type_err:
-                    # 任务类型处理失败
-                    logger.error(f"{processor_id}号任务类型处理失败: {str(task_type_err)}")
-                    import traceback
-                    logger.error(f"详细异常信息: {traceback.format_exc()}")
-                    try:
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(task_type_err))
-                    except Exception:
-                        # 如果连更新状态都失败，记录日志但继续处理其他任务
-                        logger.error("更新任务状态失败")
-            
+                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼返回了意外的数据类型")
+                
+                except TimeoutError:
+                    logger.error(f"任务 {task.id} ({task.task_name}) 超时")
+                    if task and task.id:
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.TIMEOUT, message="Task execution timed out")
+                except Exception as e:
+                    logger.error(f"处理任务 {task.id} ({task.task_name}) 失败: {str(e)}")
+                    # Ensure traceback is imported if you uncomment its usage
+                    # import traceback
+                    logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
+                    if task and task.id:
+                        try:
+                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(e))
+                        except Exception as update_err:
+                            logger.error(f"更新失败任务 {task.id} 状态时再次发生错误: {update_err}")
+                finally:
+                    if future and not future.done():
+                        future.cancel()
+                    if session.is_active: # Check if session is still active before committing
+                        try:
+                            session.commit() # Commit any final status updates
+                        except Exception as commit_err:
+                            logger.error(f"Task processor final commit failed for task {task.id if task else 'Unknown'}: {commit_err}")
+                            session.rollback()
+
+        except KeyboardInterrupt:
+            logger.info(f"{processor_id}号任务处理者被中断，正在关闭...")
         except Exception as e:
-            logger.error(f"{processor_id}号任务处理失败: {str(e)}")
-            import traceback
-            logger.error(f"详细异常信息: {traceback.format_exc()}")
-            # 尝试休眠一段时间以避免无限循环消耗资源
-            time.sleep(5)
+            logger.error(f"{processor_id}号任务处理者发生意外错误，正在关闭: {e}")
+            logger.error(traceback.format_exc())
+        finally:
+            if session.is_active:
+                session.close()
+            logger.info(f"{processor_id}号任务处理者已关闭")
 
 def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
-    """处理文件精炼任务
-    
-    Args:
-        task: 任务对象
-        screening_mgr: 粗筛管理器
-        refine_mgr: 精炼管理器
-        
-    Returns:
-        处理成功返回True，失败返回False
-    """
-    try:
-        # 获取任务额外数据
-        extra_data = {}
-        if hasattr(task, 'extra_data') and task.extra_data:
-            try:
-                if isinstance(task.extra_data, str):
-                    # 如果是JSON字符串，解析为字典
-                    extra_data = json.loads(task.extra_data)
-                elif isinstance(task.extra_data, dict):
-                    # 如果已经是字典，创建一个新的字典避免直接使用SQLModel对象
-                    extra_data = dict(task.extra_data)
-                else:
-                    # 其他类型尝试转换为字典
-                    extra_data = dict(task.extra_data) if task.extra_data else {}
-                logger.info(f"任务 {task.id} 额外数据解析成功: {list(extra_data.keys())}")
-            except Exception as e:
-                logger.error(f"解析任务额外数据失败: {str(e)}")
-                logger.error(traceback.format_exc())
-                # 确保extra_data是一个字典，即使解析失败
-                extra_data = {}
-    
-        # 检查是否包含粗筛结果ID
-        screening_result_id = extra_data.get("screening_result_id")
-        if screening_result_id:
-            # 处理单个文件
-            logger.info(f"处理单个文件精炼任务: 粗筛结果ID {screening_result_id}")
-            try:
-                refine_result = refine_mgr.process_pending_file(screening_result_id)
-                
-                # 如果文件处理成功，生成智慧文件夹
-                if refine_result is not None:
-                    logger.info(f"单个文件处理成功，生成智慧文件夹，任务ID: {task.id}")
-                    try:
-                        wise_folders = refine_mgr.generate_wise_folders(str(task.id))
-                        logger.info(f"成功生成 {len(wise_folders)} 个智慧文件夹")
-                    except Exception as e:
-                        logger.error(f"生成智慧文件夹失败: {str(e)}")
-                        logger.error(traceback.format_exc())
-                        # 即使生成智慧文件夹失败，单个文件处理仍视为成功
-                        
-                return refine_result is not None
-            except Exception as e:
-                logger.error(f"处理单个文件失败: {str(e)}")
-                logger.error(traceback.format_exc())
-                return False
-        else:
-            # 批量处理
-            file_count = extra_data.get("file_count", 0)
-            logger.info(f"处理批量精炼任务: 预计 {file_count} 个文件")
-            
-            try:
-                # 获取一批待处理的粗筛结果，增加批量大小
-                batch_size = min(500, max(50, file_count))  # 根据任务规模动态调整批量大小，增加处理能力
-                pending_results = screening_mgr.get_pending_results(limit=batch_size)
-                
-                if not pending_results:
-                    logger.warning("找不到待处理的粗筛结果")
-                    return False
-                
-                total_count = len(pending_results)
-                logger.info(f"发现 {total_count} 个待处理的粗筛结果")
-                
-                # 进度跟踪变量
-                success_count = 0
-                processed_count = 0
-                last_progress_log = time.time()
-                progress_interval = 5  # 每5秒记录一次进度
-                
-                # 批量处理文件
-                for index, result in enumerate(pending_results):
-                    try:
-                        # 定期记录进度，避免大批量处理时日志过于冗长
-                        current_time = time.time()
-                        if current_time - last_progress_log >= progress_interval:
-                            logger.info(f"批量处理进度: {processed_count}/{total_count} 完成，{success_count} 成功")
-                            last_progress_log = current_time
-                            
-                        # 处理单个文件
-                        refine_result = refine_mgr.process_pending_file(result.id)
-                        processed_count += 1
-                        
-                        if refine_result:
-                            success_count += 1
-                            
-                            # 处理完成后，每10个文件或最后一个文件生成一次智慧文件夹
-                            if index % 10 == 0 or index == total_count - 1:
-                                try:
-                                    logger.info(f"为任务 {task.id} 生成智慧文件夹")
-                                    refine_mgr.generate_wise_folders(str(task.id))
-                                except Exception as folder_err:
-                                    logger.error(f"批处理中生成智慧文件夹失败: {str(folder_err)}")
-                                    logger.error(traceback.format_exc())
-                                    # 继续处理剩余文件，不中断批处理
-                            
-                        # 每处理100个文件记录一次详细进度
-                        if processed_count % 100 == 0:
-                            success_rate = 0 if processed_count == 0 else (success_count/processed_count*100)
-                            logger.info(f"已完成 {processed_count}/{total_count} 个文件，成功率: {success_rate:.2f}%")
-                            
-                    except Exception as file_err:
-                        processed_count += 1
-                        logger.error(f"处理粗筛结果 {result.id} ({result.file_path}) 失败: {str(file_err)}")
-                        logger.error(traceback.format_exc())
-                        # 继续处理下一个文件，不中断批处理
-                
-                # 记录最终处理结果
-                success_rate = 0 if total_count == 0 else (success_count/total_count*100)
-                logger.info(f"批量处理完成: {success_count}/{total_count} 个文件成功，成功率: {success_rate:.2f}%")
-                
-                # 在批处理完成后，确保再次生成一次完整的智慧文件夹，包括所有文件
-                if success_count > 0:
-                    logger.info(f"批量处理完成后生成智慧文件夹，任务ID: {task.id}")
-                    try:
-                        wise_folders = refine_mgr.generate_wise_folders(str(task.id))
-                        logger.info(f"成功生成 {len(wise_folders)} 个智慧文件夹")
-                    except Exception as e:
-                        logger.error(f"批量处理完成后生成智慧文件夹失败: {str(e)}")
-                        logger.error(traceback.format_exc())
-                
-                return success_count > 0
-            except Exception as batch_err:
-                logger.error(f"批量处理任务失败: {str(batch_err)}")
-                logger.error(traceback.format_exc())
-                return False
-    except Exception as e:
-        logger.error(f"处理精炼任务时发生错误: {str(e)}")
-        logger.error(traceback.format_exc())
-        return False
+    """旧的精炼任务处理函数 - 此函数现在的功能已合并到 task_processor 中，可以考虑移除。"""
+    logger.warning("process_refine_task is deprecated and should be removed. Logic moved to task_processor.")
+    return False
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
@@ -583,6 +457,73 @@ def get_screening_manager(session: Session = Depends(get_session)):
 def get_refine_manager(session: Session = Depends(get_session)):
     """获取文件精炼管理类实例"""
     return RefineManager(session)
+
+# 获取 TaskManager 的依赖函数
+def get_task_manager(session: Session = Depends(get_session)):
+    """获取任务管理器实例"""
+    return TaskManager(session)
+
+# 获取最新的指定类型任务
+@app.get("/tasks/latest/{task_type}")
+def get_latest_task(
+    task_type: str,
+    task_mgr: TaskManager = Depends(get_task_manager)
+):
+    """获取最新的指定类型任务
+    
+    Args:
+        task_type: 任务类型 (refine, screening)
+        
+    Returns:
+        最新任务信息
+    """
+    try:
+        if task_type not in [t.value for t in TaskType]:
+            raise ValueError(f"不支持的任务类型: {task_type}")
+        
+        # 查询最新的已完成任务
+        latest_task = task_mgr.get_latest_completed_task(task_type)
+        
+        if not latest_task:
+            # 如果没有已完成的任务，尝试查找正在运行的任务
+            running_task = task_mgr.get_latest_running_task(task_type)
+            if running_task:
+                return {
+                    "success": True,
+                    "task_id": str(running_task.id),
+                    "status": running_task.status,
+                    "created_at": running_task.created_at,
+                    "message": "任务正在运行中"
+                }
+            else:
+                # 如果没有正在运行的任务，查找最新的任务（无论状态如何）
+                any_task = task_mgr.get_latest_task(task_type)
+                if any_task:
+                    return {
+                        "success": True,
+                        "task_id": str(any_task.id),
+                        "status": any_task.status,
+                        "created_at": any_task.created_at,
+                        "message": f"找到一个状态为 {any_task.status} 的任务"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"未找到任何 {task_type} 类型的任务"
+                    }
+        
+        return {
+            "success": True,
+            "task_id": str(latest_task.id),
+            "status": latest_task.status,
+            "created_at": latest_task.created_at
+        }
+    except Exception as e:
+        logger.error(f"获取最新任务时出错: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "message": f"获取最新任务失败: {str(e)}"
+        }
 
 # 智慧文件夹相关的API端点
 @app.get("/wise-folders/{task_id}")
