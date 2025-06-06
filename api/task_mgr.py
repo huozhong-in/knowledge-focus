@@ -13,11 +13,12 @@ from sqlmodel import (
     Session, 
     select, 
     asc, 
-    desc, 
+    desc,
+    text,
 )
 from datetime import datetime
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 class TaskManager:
     """任务管理器，负责任务的添加、获取、更新等操作"""
@@ -50,7 +51,8 @@ class TaskManager:
             priority=priority,
             status=TaskStatus.PENDING.value,
             created_at=datetime.now(),
-            updated_at=datetime.now()
+            updated_at=datetime.now(),
+            extra_data=extra_data
         )
         
         self.session.add(task)
@@ -90,28 +92,45 @@ class TaskManager:
         Returns:
             任务对象，如果没有待处理任务则返回None
         """
-        # 定义优先级顺序映射
-        priority_order = {
-            TaskPriority.HIGH.value: 1,
-            TaskPriority.MEDIUM.value: 2,
-            TaskPriority.LOW.value: 3
-        }
-        
-        # 查询待处理任务
-        statement = (
-            select(Task)
-            .where(Task.status == TaskStatus.PENDING.value)
-            .order_by(
-                # 按优先级排序（高优先级在前）
-                asc(Task.priority.cast(priority_order)),
-                # 创建时间早的在前
-                asc(Task.created_at)
+        try:
+            # 查询待处理任务，使用SQL表达式直接设置优先级排序
+            # 避免使用cast，而是使用CASE表达式定义优先级顺序
+            statement = (
+                select(Task)
+                .where(Task.status == TaskStatus.PENDING.value)
+                .order_by(
+                    # 按优先级排序（高优先级在前）
+                    text("CASE "
+                         f"WHEN priority = '{TaskPriority.HIGH.value}' THEN 1 "
+                         f"WHEN priority = '{TaskPriority.MEDIUM.value}' THEN 2 "
+                         f"WHEN priority = '{TaskPriority.LOW.value}' THEN 3 "
+                         "ELSE 4 END"),
+                    # 创建时间早的在前
+                    asc(Task.created_at)
+                )
+                .limit(1)
             )
-            .limit(1)
-        )
-        
-        results = self.session.exec(statement).all()
-        return results[0] if results else None
+            
+            results = self.session.exec(statement).all()
+            task = results[0] if results else None
+            
+            # 如果找到任务，确保所有字段都是可序列化的
+            if task:                
+                # 确保task对象是可序列化的
+                # 将datetime对象转换为ISO格式字符串
+                if hasattr(task, 'created_at') and isinstance(task.created_at, datetime):
+                    task.created_at = task.created_at.isoformat()
+                if hasattr(task, 'updated_at') and isinstance(task.updated_at, datetime):
+                    task.updated_at = task.updated_at.isoformat()
+                if hasattr(task, 'start_time') and isinstance(task.start_time, datetime):
+                    task.start_time = task.start_time.isoformat()
+            
+            return task
+        except Exception as e:
+            logger.error(f"获取下一个待处理任务失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
     
     def update_task_status(self, task_id: int, status: TaskStatus, 
                           result: TaskResult = None, message: str = None) -> bool:
@@ -128,27 +147,44 @@ class TaskManager:
         """
         logger.info(f"更新任务 {task_id} 状态: {status.name}")
         
-        task = self.session.get(Task, task_id)
-        if not task:
-            logger.error(f"任务 {task_id} 不存在")
+        try:
+            task = self.session.get(Task, task_id)
+            if not task:
+                logger.error(f"任务 {task_id} 不存在")
+                return False
+            
+            # 设置状态值
+            task.status = status.value
+            task.updated_at = datetime.now()
+            
+            if status == TaskStatus.RUNNING:
+                task.start_time = datetime.now()
+            
+            if result:
+                task.result = result.value
+                
+            if message:
+                task.error_message = message
+                
+            # 确保所有日期时间字段都是 datetime 对象
+            # 如果已经是字符串格式，则转换回 datetime 对象
+            if hasattr(task, 'created_at') and isinstance(task.created_at, str):
+                try:
+                    task.created_at = datetime.fromisoformat(task.created_at)
+                except Exception as e:
+                    logger.error(f"转换 created_at 字段失败: {str(e)}")
+                    # 如果转换失败，使用当前时间
+                    task.created_at = datetime.now()
+            
+            self.session.add(task)
+            self.session.commit()
+            
+            return True
+        except Exception as e:
+            logger.error(f"更新任务状态失败: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
-        
-        task.status = status.value
-        task.updated_at = datetime.now()
-        
-        if status == TaskStatus.RUNNING:
-            task.start_time = datetime.now()
-        
-        if result:
-            task.result = result.value
-            
-        if message:
-            task.error_message = message
-            
-        self.session.add(task)
-        self.session.commit()
-        
-        return True
     
     def start_task_worker(self, worker_func, args=(), daemon=True) -> threading.Thread:
         """启动任务处理线程
@@ -279,4 +315,12 @@ class TaskManager:
         return canceled_count
     
 if __name__ == '__main__':
-    pass
+    from sqlmodel import (
+        create_engine, 
+        Session, 
+        select, 
+    )
+    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    session = Session(create_engine(f'sqlite:///{db_file}'))
+    task_mgr = TaskManager(session)
+    print(task_mgr.get_next_task())

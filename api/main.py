@@ -17,6 +17,8 @@ from task_mgr import TaskManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
 from myfiles_mgr import MyFilesManager
+# 导入智能文件夹API路由器
+from wise_folders_api import router as wise_folders_router
 from contextlib import asynccontextmanager
 import asyncio
 import threading
@@ -24,6 +26,7 @@ from datetime import datetime
 import json
 from enum import Enum
 import sys  # 添加在文件顶部其他 import 语句附近
+import traceback  # 用于记录详细的错误堆栈信息
 
 # 设置日志记录
 logger = logging.getLogger(__name__) # Use __name__ for logger
@@ -235,6 +238,29 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 # 周期性检查新通知并广播
+
+# 智能文件夹API端点添加
+app.include_router(wise_folders_router, prefix="/wise-folders", tags=["wise-folders"])
+
+# 定义智能文件夹获取函数
+@app.get("/wise-folders-legacy/{task_id}")
+async def get_wise_folders_legacy(task_id: int):
+    try:
+        refine_mgr = RefineManager(get_session())
+        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
+        return {
+            "success": True,
+            "task_id": task_id,
+            "folders_count": len(wise_folders),
+            "folders": wise_folders
+        }
+    except Exception as e:
+        logger.error(f"获取智能文件夹失败: {str(e)}")
+    logger.error(traceback.format_exc())
+    return {
+        "success": False,
+        "message": f"获取智能文件夹失败: {str(e)}"
+    }
 async def check_notifications():
     while True:
         # 广播消息
@@ -328,56 +354,85 @@ def task_processor(processor_id: int, db_path: str = None):
         try:
             while True:
                 # 获取下一个待处理任务
-                task = _task_mgr.get_next_task()
+                try:
+                    task = _task_mgr.get_next_task()
+                except Exception as task_err:
+                    logger.error(f"获取任务失败: {str(task_err)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    time.sleep(2)
+                    continue
                 
                 if not task:
                     time.sleep(2)  # 没有任务时等待
                     continue
                 
                 # 将任务状态更新为运行中
-                _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-                logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
-                
-                # 根据任务类型确定处理函数
-                if task.task_type == TaskType.REFINE.value:
-                    process_func = lambda: process_refine_task(task, _screening_mgr, _refine_mgr)
-                elif task.task_type == TaskType.INSIGHT.value:
-                    process_func = lambda: process_insight_task(task, _refine_mgr)
-                else:
-                    logger.warning(f"未知任务类型: {task.task_type}")
-                    _task_mgr.update_task_status(
-                        task.id, 
-                        TaskStatus.FAILED, 
-                        TaskResult.FAILURE, 
-                        f"未知任务类型: {task.task_type}"
-                    )
+                try:
+                    _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+                    logger.info(f"{processor_id}号处理任务: {task.id} - {task.task_name}")
+                except Exception as status_err:
+                    logger.error(f"更新任务状态失败: {str(status_err)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    time.sleep(1)
                     continue
                 
-                # 提交任务到线程池，设置超时时间（秒）
-                TASK_TIMEOUT = 600  # 10分钟超时，为批量处理提供充足时间
-                future = executor.submit(process_func)
-                
                 try:
-                    # 等待任务完成，最多等待TASK_TIMEOUT秒
-                    result = future.result(timeout=TASK_TIMEOUT)
-                    # 更新任务状态
-                    if result:
-                        _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
-                        logger.info(f"{processor_id}号任务 {task.id} 处理完成")
+                    # 根据任务类型确定处理函数
+                    if task.task_type == TaskType.REFINE.value:
+                        process_func = lambda: process_refine_task(task, _screening_mgr, _refine_mgr)
                     else:
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, "任务处理失败")
-                        logger.error(f"{processor_id}号任务 {task.id} 处理失败")
-                except TimeoutError:
-                    # 任务超时处理
-                    logger.error(f"{processor_id}号任务 {task.id} 处理超时")
-                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
-                except Exception as e:
-                    # 任务异常处理
-                    logger.error(f"{processor_id}号任务 {task.id} 处理异常: {str(e)}")
-                    _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
+                        logger.warning(f"未知任务类型: {task.task_type}")
+                        _task_mgr.update_task_status(
+                            task.id, 
+                            TaskStatus.FAILED, 
+                            TaskResult.FAILURE, 
+                            f"未知任务类型: {task.task_type}"
+                        )
+                        continue
+                    
+                    # 提交任务到线程池，设置超时时间（秒）
+                    TASK_TIMEOUT = 600  # 10分钟超时，为批量处理提供充足时间
+                    future = executor.submit(process_func)
+                    
+                    try:
+                        # 等待任务完成，最多等待TASK_TIMEOUT秒
+                        result = future.result(timeout=TASK_TIMEOUT)
+                        # 更新任务状态
+                        if result:
+                            _task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, TaskResult.SUCCESS)
+                            logger.info(f"{processor_id}号任务 {task.id} 处理完成")
+                        else:
+                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, "任务处理失败")
+                            logger.error(f"{processor_id}号任务 {task.id} 处理失败")
+                    except TimeoutError:
+                        # 任务超时处理
+                        logger.error(f"{processor_id}号任务 {task.id} 处理超时")
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.TIMEOUT, f"任务处理超时（{TASK_TIMEOUT}秒）")
+                    except Exception as e:
+                        # 任务异常处理
+                        logger.error(f"{processor_id}号任务 {task.id} 处理异常: {str(e)}")
+                        import traceback
+                        logger.error(f"详细异常信息: {traceback.format_exc()}")
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(e))
+                except Exception as task_type_err:
+                    # 任务类型处理失败
+                    logger.error(f"{processor_id}号任务类型处理失败: {str(task_type_err)}")
+                    import traceback
+                    logger.error(f"详细异常信息: {traceback.format_exc()}")
+                    try:
+                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, TaskResult.FAILURE, str(task_type_err))
+                    except Exception:
+                        # 如果连更新状态都失败，记录日志但继续处理其他任务
+                        logger.error("更新任务状态失败")
             
         except Exception as e:
             logger.error(f"{processor_id}号任务处理失败: {str(e)}")
+            import traceback
+            logger.error(f"详细异常信息: {traceback.format_exc()}")
+            # 尝试休眠一段时间以避免无限循环消耗资源
+            time.sleep(5)
 
 def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
     """处理文件精炼任务
@@ -390,121 +445,174 @@ def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
     Returns:
         处理成功返回True，失败返回False
     """
-    # 获取任务额外数据
-    extra_data = {}
-    if hasattr(task, 'extra_data') and task.extra_data:
-        try:
-            if isinstance(task.extra_data, str):
-                extra_data = json.loads(task.extra_data)
-            elif isinstance(task.extra_data, dict):
-                extra_data = task.extra_data
-        except Exception as e:
-            logger.error(f"解析任务额外数据失败: {str(e)}")
-    
-    # 检查是否包含粗筛结果ID
-    screening_result_id = extra_data.get("screening_result_id")
-    if screening_result_id:
-        # 处理单个文件
-        logger.info(f"处理单个文件精炼任务: 粗筛结果ID {screening_result_id}")
-        refine_result = refine_mgr.process_pending_file(screening_result_id)
-        return refine_result is not None
-    else:
-        # 批量处理
-        file_count = extra_data.get("file_count", 0)
-        logger.info(f"处理批量精炼任务: 预计 {file_count} 个文件")
-        
-        # 获取一批待处理的粗筛结果，增加批量大小
-        batch_size = min(500, max(50, file_count))  # 根据任务规模动态调整批量大小，增加处理能力
-        pending_results = screening_mgr.get_pending_results(limit=batch_size)
-        
-        if not pending_results:
-            logger.warning("找不到待处理的粗筛结果")
-            return False
-        
-        total_count = len(pending_results)
-        logger.info(f"发现 {total_count} 个待处理的粗筛结果")
-        
-        # 进度跟踪变量
-        success_count = 0
-        processed_count = 0
-        last_progress_log = time.time()
-        progress_interval = 5  # 每5秒记录一次进度
-        
-        # 批量处理文件
-        for index, result in enumerate(pending_results):
+    try:
+        # 获取任务额外数据
+        extra_data = {}
+        if hasattr(task, 'extra_data') and task.extra_data:
             try:
-                # 定期记录进度，避免大批量处理时日志过于冗长
-                current_time = time.time()
-                if current_time - last_progress_log >= progress_interval:
-                    logger.info(f"批量处理进度: {processed_count}/{total_count} 完成，{success_count} 成功")
-                    last_progress_log = current_time
-                    
-                # 处理单个文件
-                refine_result = refine_mgr.process_pending_file(result.id)
-                processed_count += 1
-                
-                if refine_result:
-                    success_count += 1
-                    
-                # 每处理100个文件记录一次详细进度
-                if processed_count % 100 == 0:
-                    logger.info(f"已完成 {processed_count}/{total_count} 个文件，成功率: {success_count/processed_count*100:.2f}%")
-                    
+                if isinstance(task.extra_data, str):
+                    # 如果是JSON字符串，解析为字典
+                    extra_data = json.loads(task.extra_data)
+                elif isinstance(task.extra_data, dict):
+                    # 如果已经是字典，创建一个新的字典避免直接使用SQLModel对象
+                    extra_data = dict(task.extra_data)
+                else:
+                    # 其他类型尝试转换为字典
+                    extra_data = dict(task.extra_data) if task.extra_data else {}
+                logger.info(f"任务 {task.id} 额外数据解析成功: {list(extra_data.keys())}")
             except Exception as e:
-                processed_count += 1
-                logger.error(f"处理粗筛结果 {result.id} ({result.file_path}) 失败: {str(e)}")
-        
-        # 记录最终处理结果
-        success_rate = 0 if total_count == 0 else (success_count/total_count*100)
-        logger.info(f"批量处理完成: {success_count}/{total_count} 个文件成功，成功率: {success_rate:.2f}%")
-        return success_count > 0
-
-def process_insight_task(task, refine_mgr) -> bool:
-    """处理洞察生成任务
+                logger.error(f"解析任务额外数据失败: {str(e)}")
+                logger.error(traceback.format_exc())
+                # 确保extra_data是一个字典，即使解析失败
+                extra_data = {}
     
-    Args:
-        task: 任务对象
-        refine_mgr: 精炼管理器
-        
-    Returns:
-        处理成功返回True，失败返回False
-    """
-    return False
-    # 获取任务额外数据
-    # extra_data = {}
-    # if hasattr(task, 'extra_data') and task.extra_data:
-    #     try:
-    #         if isinstance(task.extra_data, str):
-    #             extra_data = json.loads(task.extra_data)
-    #         elif isinstance(task.extra_data, dict):
-    #             extra_data = task.extra_data
-    #     except Exception as e:
-    #         logger.error(f"解析任务额外数据失败: {str(e)}")
-    
-    # # 获取分析天数
-    # days = extra_data.get("days", 7)
-    
-    # # 生成洞察
-    # logger.info(f"生成洞察任务: 分析最近 {days} 天的文件")
-    # insights = refine_mgr.generate_insights(days)
-    
-    # # 检查结果
-    # if insights:
-    #     insight_types = {}
-    #     for insight in insights:
-    #         insight_type = insight.insight_type
-    #         insight_types[insight_type] = insight_types.get(insight_type, 0) + 1
-        
-    #     logger.info(f"生成了 {len(insights)} 条洞察: {insight_types}")
-    #     return True
-    # else:
-    #     logger.warning("没有生成任何洞察")
-    #     return False
+        # 检查是否包含粗筛结果ID
+        screening_result_id = extra_data.get("screening_result_id")
+        if screening_result_id:
+            # 处理单个文件
+            logger.info(f"处理单个文件精炼任务: 粗筛结果ID {screening_result_id}")
+            try:
+                refine_result = refine_mgr.process_pending_file(screening_result_id)
+                
+                # 如果文件处理成功，生成智能文件夹
+                if refine_result is not None:
+                    logger.info(f"单个文件处理成功，生成智能文件夹，任务ID: {task.id}")
+                    try:
+                        wise_folders = refine_mgr.generate_wise_folders(str(task.id))
+                        logger.info(f"成功生成 {len(wise_folders)} 个智能文件夹")
+                    except Exception as e:
+                        logger.error(f"生成智能文件夹失败: {str(e)}")
+                        logger.error(traceback.format_exc())
+                        # 即使生成智能文件夹失败，单个文件处理仍视为成功
+                        
+                return refine_result is not None
+            except Exception as e:
+                logger.error(f"处理单个文件失败: {str(e)}")
+                logger.error(traceback.format_exc())
+                return False
+        else:
+            # 批量处理
+            file_count = extra_data.get("file_count", 0)
+            logger.info(f"处理批量精炼任务: 预计 {file_count} 个文件")
+            
+            try:
+                # 获取一批待处理的粗筛结果，增加批量大小
+                batch_size = min(500, max(50, file_count))  # 根据任务规模动态调整批量大小，增加处理能力
+                pending_results = screening_mgr.get_pending_results(limit=batch_size)
+                
+                if not pending_results:
+                    logger.warning("找不到待处理的粗筛结果")
+                    return False
+                
+                total_count = len(pending_results)
+                logger.info(f"发现 {total_count} 个待处理的粗筛结果")
+                
+                # 进度跟踪变量
+                success_count = 0
+                processed_count = 0
+                last_progress_log = time.time()
+                progress_interval = 5  # 每5秒记录一次进度
+                
+                # 批量处理文件
+                for index, result in enumerate(pending_results):
+                    try:
+                        # 定期记录进度，避免大批量处理时日志过于冗长
+                        current_time = time.time()
+                        if current_time - last_progress_log >= progress_interval:
+                            logger.info(f"批量处理进度: {processed_count}/{total_count} 完成，{success_count} 成功")
+                            last_progress_log = current_time
+                            
+                        # 处理单个文件
+                        refine_result = refine_mgr.process_pending_file(result.id)
+                        processed_count += 1
+                        
+                        if refine_result:
+                            success_count += 1
+                            
+                            # 处理完成后，每10个文件或最后一个文件生成一次智能文件夹
+                            if index % 10 == 0 or index == total_count - 1:
+                                try:
+                                    logger.info(f"为任务 {task.id} 生成智能文件夹")
+                                    refine_mgr.generate_wise_folders(str(task.id))
+                                except Exception as folder_err:
+                                    logger.error(f"批处理中生成智能文件夹失败: {str(folder_err)}")
+                                    logger.error(traceback.format_exc())
+                                    # 继续处理剩余文件，不中断批处理
+                            
+                        # 每处理100个文件记录一次详细进度
+                        if processed_count % 100 == 0:
+                            success_rate = 0 if processed_count == 0 else (success_count/processed_count*100)
+                            logger.info(f"已完成 {processed_count}/{total_count} 个文件，成功率: {success_rate:.2f}%")
+                            
+                    except Exception as file_err:
+                        processed_count += 1
+                        logger.error(f"处理粗筛结果 {result.id} ({result.file_path}) 失败: {str(file_err)}")
+                        logger.error(traceback.format_exc())
+                        # 继续处理下一个文件，不中断批处理
+                
+                # 记录最终处理结果
+                success_rate = 0 if total_count == 0 else (success_count/total_count*100)
+                logger.info(f"批量处理完成: {success_count}/{total_count} 个文件成功，成功率: {success_rate:.2f}%")
+                
+                # 在批处理完成后，确保再次生成一次完整的智能文件夹，包括所有文件
+                if success_count > 0:
+                    logger.info(f"批量处理完成后生成智能文件夹，任务ID: {task.id}")
+                    try:
+                        wise_folders = refine_mgr.generate_wise_folders(str(task.id))
+                        logger.info(f"成功生成 {len(wise_folders)} 个智能文件夹")
+                    except Exception as e:
+                        logger.error(f"批量处理完成后生成智能文件夹失败: {str(e)}")
+                        logger.error(traceback.format_exc())
+                
+                return success_count > 0
+            except Exception as batch_err:
+                logger.error(f"批量处理任务失败: {str(batch_err)}")
+                logger.error(traceback.format_exc())
+                return False
+    except Exception as e:
+        logger.error(f"处理精炼任务时发生错误: {str(e)}")
+        logger.error(traceback.format_exc())
+        return False
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
     """获取文件粗筛结果管理类实例"""
     return ScreeningManager(session)
+
+# 获取 RefineManager 的依赖函数
+def get_refine_manager(session: Session = Depends(get_session)):
+    """获取文件精炼管理类实例"""
+    return RefineManager(session)
+
+# 智能文件夹相关的API端点
+@app.get("/wise-folders/{task_id}")
+def get_wise_folders(
+    task_id: str,
+    refine_mgr: RefineManager = Depends(get_refine_manager)
+):
+    """获取指定任务的智能文件夹
+    
+    Args:
+        task_id: 任务ID
+        
+    Returns:
+        智能文件夹列表
+    """
+    try:
+        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
+        return {
+            "success": True,
+            "task_id": task_id,
+            "folders_count": len(wise_folders),
+            "folders": wise_folders
+        }
+    except Exception as e:
+        logger.error(f"获取智能文件夹失败: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "message": f"获取智能文件夹失败: {str(e)}"
+        }
 
 # 添加用于处理文件粗筛结果的 API 接口
 @app.post("/file-screening")
@@ -619,7 +727,7 @@ def add_batch_file_screening_results(
     """
     try:
         # 从请求体中提取数据和参数
-        logger.info(f"接收到批量文件粗筛请求，请求体键名: {list(request.keys())}")
+        logger.info(f"接收到批量文件粗筛结果，请求体键名: {list(request.keys())}")
         
         # 适配Rust客户端发送的格式: {data_list: [...], auto_create_tasks: true}
         if "data_list" in request:
@@ -1083,151 +1191,6 @@ async def websocket_endpoint(websocket: WebSocket):
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-
-# 洞察相关API
-@app.post("/insights/generate")
-def generate_insights(
-    data: Dict[str, Any] = Body(...),
-    session: Session = Depends(get_session),
-    task_mgr: TaskManager = Depends(lambda session=Depends(get_session): TaskManager(session))
-):
-    """创建洞察生成任务"""
-    try:
-        days = data.get("days", 7)
-        
-
-        if not isinstance(days, int) or days <= 0:
-            return {
-                "success": False,
-                "message": "无效的参数: days 必须是一个正整数"
-            }
-        # 创建洞察生成任务
-        task = task_mgr.add_task(
-            task_name=f"生成文件洞察 (最近{days}天)",
-            task_type=TaskType.INSIGHT.value,
-            priority=data.get("priority", "medium"),
-            extra_data={"days": days}
-        )
-        
-        return {
-            "success": True,
-            "task_id": task.id,
-            "message": f"已创建洞察生成任务，将分析最近 {days} 天的文件"
-        }
-        
-    except Exception as e:
-        logger.error(f"创建洞察生成任务失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"创建洞察生成任务失败: {str(e)}"
-        }
-
-@app.get("/insights")
-def get_insights(
-    limit: int = 10,
-    only_unread: bool = False,
-    insight_type: str = None,
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """获取洞察列表"""
-    try:
-        insights = refine_mgr.get_insights(limit, only_unread, insight_type)
-        
-        # 转换为可序列化的字典
-        insights_data = []
-        for insight in insights:
-            insight_dict = insight.model_dump()
-            insights_data.append(insight_dict)
-        
-        return {
-            "success": True,
-            "count": len(insights_data),
-            "data": insights_data
-        }
-        
-    except Exception as e:
-        logger.error(f"获取洞察列表失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"获取洞察列表失败: {str(e)}"
-        }
-
-# @app.get("/insight-types")
-# def get_insight_types():
-#     """获取可用的洞察类型"""
-#     try:
-#         insight_types = [
-#             {"value": InsightType.FILE_ACTIVITY.value, "label": "文件活动"},
-#             {"value": InsightType.PROJECT_UPDATE.value, "label": "项目更新"},
-#             {"value": InsightType.CLEANUP.value, "label": "清理建议"},
-#             {"value": InsightType.CONTENT_HIGHLIGHT.value, "label": "内容亮点"},
-#             {"value": InsightType.USAGE_PATTERN.value, "label": "使用模式"},
-#             {"value": InsightType.CUSTOM.value, "label": "自定义洞察"}
-#         ]
-        
-#         return {
-#             "success": True,
-#             "data": insight_types
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"获取洞察类型失败: {str(e)}")
-#         return {
-#             "success": False,
-#             "message": f"获取洞察类型失败: {str(e)}"
-#         }
-
-# @app.put("/insights/{insight_id}/read")
-# def mark_insight_as_read(
-#     insight_id: int,
-#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-# ):
-#     """将洞察标记为已读"""
-#     try:
-#         success = refine_mgr.mark_insight_as_read(insight_id)
-#         if not success:
-#             return {
-#                 "success": False,
-#                 "message": f"标记洞察 {insight_id} 为已读失败"
-#             }
-        
-#         return {
-#             "success": True,
-#             "message": f"已将洞察 {insight_id} 标记为已读"
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"标记洞察为已读失败: {str(e)}")
-#         return {
-#             "success": False,
-#             "message": f"标记洞察为已读失败: {str(e)}"
-#         }
-
-# @app.put("/insights/{insight_id}/dismiss")
-# def dismiss_insight(
-#     insight_id: int,
-#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-# ):
-#     """忽略洞察"""
-#     try:
-#         success = refine_mgr.dismiss_insight(insight_id)
-#         if not success:
-#             return {
-#                 "success": False,
-#                 "message": f"忽略洞察 {insight_id} 失败"
-#             }
-        
-#         return {
-#             "success": True,
-#             "message": f"已忽略洞察 {insight_id}"
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"忽略洞察失败: {str(e)}")
-#         return {
-#             "success": False,
-#             "message": f"忽略洞察失败: {str(e)}"
-#         }
 
 # 项目相关API
 @app.post("/projects")

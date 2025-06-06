@@ -59,6 +59,7 @@ class Task(SQLModel, table=True):
     start_time: datetime | None = Field(default=None)  # 任务开始时间
     result: str | None = Field(sa_column=Column(Enum(TaskResult, values_callable=lambda obj: [e.value for e in obj]), default=None))
     error_message: str | None = Field(default=None)  # 错误信息
+    extra_data: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 任务额外数据
     
     class Config:
         json_encoders = {

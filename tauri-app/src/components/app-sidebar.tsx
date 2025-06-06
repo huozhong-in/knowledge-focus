@@ -111,6 +111,11 @@ const data = {
           url: "#",
           pageId: "prompts-library",
         },
+        {
+          title: "MCP Hub",
+          url: "#",
+          pageId: "prompts-mcp-hub",
+        },
       ],
     },
     {
