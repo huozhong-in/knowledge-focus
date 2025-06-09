@@ -33,6 +33,7 @@
     "@tauri-apps/plugin-process": "~2",
     "@tauri-apps/plugin-store": "~2",
     "@tauri-apps/plugin-window-state": "~2",
+    "axios": "^1.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -40,6 +41,7 @@
     "i18next": "^25.2.1",
     "i18next-browser-languagedetector": "^8.1.0",
     "i18next-http-backend": "^3.0.2",
+    "lodash": "^4.17.21",
     "lucide-react": "^0.510.0",
     "next-themes": "^0.4.6",
     "react": "^18.3.1",
@@ -57,6 +59,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.6",
     "@tauri-apps/cli": "^2",
+    "@types/lodash": "^4.17.17",
     "@types/node": "^22.15.2",
     "@types/react": "^18.3.1",
     "@types/react-dom": "^18.3.1",

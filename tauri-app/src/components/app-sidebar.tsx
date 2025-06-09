@@ -42,28 +42,28 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
   const { t } = useTranslation();
   const data = {
-    user: {
-      name: "Tom Cruise",
-      email: "tom.cruise@email.com",
-      avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
-    },
-    teams: [
-      {
-        name: "Acme Inc",
-        logo: GalleryVerticalEnd,
-        plan: "Enterprise",
-      },
-      {
-        name: "Acme Corp.",
-        logo: AudioWaveform,
-        plan: "Startup",
-      },
-      {
-        name: "Evil Corp.",
-        logo: Command,
-        plan: "Free",
-      },
-    ],
+    // user: {
+    //   name: "Tom Cruise",
+    //   email: "tom.cruise@email.com",
+    //   avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
+    // },
+    // teams: [
+    //   {
+    //     name: "Acme Inc",
+    //     logo: GalleryVerticalEnd,
+    //     plan: "Enterprise",
+    //   },
+    //   {
+    //     name: "Acme Corp.",
+    //     logo: AudioWaveform,
+    //     plan: "Startup",
+    //   },
+    //   {
+    //     name: "Evil Corp.",
+    //     logo: Command,
+    //     plan: "Free",
+    //   },
+    // ],
     navMain: [
       {
         title: t('home'),

@@ -83,7 +83,7 @@ try:
     if not file_handler_exists:
         try:
             file_handler = logging.FileHandler(log_filepath)
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levellevel)s - %(message)s'))
             logger.addHandler(file_handler)
             print(f"文件日志处理器已添加: {log_filepath}")
         except Exception as e:
@@ -1465,6 +1465,47 @@ def check_full_disk_access_status(
     except Exception as e:
         logger.error(f"Error in check_full_disk_access_status: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
+
+@app.get("/api/files/search", response_model=List[Dict[str, Any]])
+async def search_files(
+    query: str,
+    limit: int = 100,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """
+    搜索文件路径包含指定子字符串的文件
+    
+    Args:
+        query: 搜索查询字符串
+        limit: 返回结果数量限制
+        
+    Returns:
+        匹配的文件列表
+    """
+    try:
+        logger.info(f"搜索文件路径，查询: '{query}'")
+        results = screening_mgr.search_files_by_path_substring(query, limit)
+        
+        # 将结果转换为字典列表，以便返回给前端
+        file_list = []
+        for result in results:
+            file_dict = {
+                "id": result.id,
+                "file_path": result.file_path,
+                "file_name": result.file_name,
+                "file_size": result.file_size,
+                "extension": result.extension,
+                "modified_time": result.modified_time.strftime("%Y-%m-%d %H:%M:%S") if result.modified_time else None,
+                "category_id": result.category_id,
+                "tags": result.tags,
+                "status": result.status
+            }
+            file_list.append(file_dict)
+            
+        return file_list
+    except Exception as e:
+        logger.error(f"搜索文件路径时出错: {str(e)}")
+        return []
 
 if __name__ == "__main__":
     try:

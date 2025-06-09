@@ -3,7 +3,7 @@ from sqlmodel import Session, select, delete, update
 from db_mgr import FileScreeningResult, FileScreenResult
 from datetime import datetime, timedelta
 import logging
-import json
+import os
 import time
 
 logger = logging.getLogger(__name__)
@@ -661,3 +661,36 @@ class ScreeningManager:
             file_info['id'] = result.id
             
         return file_info
+
+    def search_files_by_path_substring(self, substring: str, limit: int = 100) -> List[FileScreeningResult]:
+        """根据路径子字符串搜索文件
+        
+        搜索文件全路径中含有指定子字符串的所有文件
+        
+        Args:
+            substring: 要搜索的子字符串
+            limit: 最大返回结果数量
+            
+        Returns:
+            匹配的文件列表
+        """
+        try:
+            if not substring:
+                # 如果子字符串为空，返回空列表
+                return []
+            
+            # 使用LIKE操作符进行子字符串匹配
+            # 在子字符串前后添加%表示匹配任意字符
+            statement = select(FileScreeningResult)\
+                .where(FileScreeningResult.file_path.like(f"%{substring}%"))\
+                .order_by(FileScreeningResult.modified_time.desc())\
+                .limit(limit)
+            
+            results = self.session.exec(statement).all()
+            # 判断结果中的每个文件是否存在
+            existing_files = [file for file in results if os.path.exists(file.file_path)]
+            logger.debug(f"按路径子字符串'{substring}'搜索到{len(existing_files)}个文件结果")
+            return existing_files
+        except Exception as e:
+            logger.error(f"按路径子字符串搜索文件失败: {e}")
+            return []

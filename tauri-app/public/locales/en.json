@@ -27,5 +27,7 @@
     "settings": "Settings",
     "general": "General",
     "theme": "Theme Settings",
-    "developer-zone": "Developer Zone"
+    "developer-zone": "Developer Zone",
+    "search": "Search",
+    "file-search": "File Search"
 }

@@ -28,6 +28,7 @@ import ModelsLocal from "./models-local";
 import ModelsDomestic from "./models-domestic";
 import ModelsOverseas from "./models-overseas";
 import PromptsLibrary from "./prompts-library";
+import SearchPage from "./search-page";
 import SettingsGeneral from "./settings-general";
 import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
@@ -318,6 +319,8 @@ export default function Page() {
         return <ModelsOverseas />;
       case "prompts-library":
         return <PromptsLibrary />;
+      case "file-search":
+        return <SearchPage />;
       case "settings-general":
         return <SettingsGeneral />;
       case "settings-theme":
