@@ -5,6 +5,7 @@ import { load } from '@tauri-apps/plugin-store';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import App from "./App";
+import { setupI18nWithStore } from './i18n';
 
 interface AppGlobalState {
   showWelcomeDialog: boolean;
@@ -17,12 +18,18 @@ interface AppGlobalState {
 
   // API readiness state
   isApiReady: boolean; // New state
-
+  
+  // 语言设置
+  language: string;
+  
   // Actions
   setFirstLaunch: (pending: boolean) => void;
   setIsInitializing: (initializing: boolean) => void;
   setInitializationError: (error: string | null) => void;
   setApiReady: (ready: boolean) => void; // New action
+  
+  // 语言相关操作
+  setLanguage: (lang: string) => Promise<void>;
 }
 
 
@@ -57,6 +64,7 @@ export const useAppStore = create<AppGlobalState>((set) => ({
   isInitializing: false, // Will be set to true by initializeApp
   initializationError: null,
   isApiReady: false, // Initialize API as not ready
+  language: 'zh', // 默认使用中文
 
   setShowWelcomeDialog: async (show: boolean) => {
     try {
@@ -83,6 +91,26 @@ export const useAppStore = create<AppGlobalState>((set) => ({
   setIsInitializing: (initializing: boolean) => set({ isInitializing: initializing }),
   setInitializationError: (error: string | null) => set({ initializationError: error }),
   setApiReady: (ready: boolean) => set({ isApiReady: ready }), // Implement new action
+  
+  // 设置语言并保存到设置文件中
+  setLanguage: async (lang: string) => {
+    try {
+      // 首先更新state
+      set({ language: lang });
+      
+      // 保存到settings.json
+      const appDataPath = await appDataDir();
+      const storePath = await join(appDataPath, 'settings.json');
+      const store = await load(storePath, { autoSave: false });
+      
+      await store.set('language', lang);
+      await store.save();
+      console.log(`Language preference saved to settings.json: ${lang}`);
+      
+    } catch (error) {
+      console.error('Failed to save language preference:', error);
+    }
+  }
 }));
 
 // Root组件现在直接渲染主应用，不再条件渲染Intro页面
@@ -103,15 +131,24 @@ const initializeApp = async () => {
     const isFirstLaunchValue = await store.get('isFirstLaunch');
     const isActuallyFirstLaunch = isFirstLaunchValue === null || isFirstLaunchValue === undefined || isFirstLaunchValue === true;
     
+    // 获取保存的语言设置
+    const savedLanguage = await store.get('language') as string | null;
+    const language = savedLanguage || 'zh'; // 如果没有保存语言设置，默认使用中文
+    
     console.log(`initializeApp: isFirstLaunchValue from store: ${isFirstLaunchValue}, isActuallyFirstLaunch: ${isActuallyFirstLaunch}`);
+    console.log(`initializeApp: Loaded language preference: ${language}`);
     
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
       showWelcomeDialog: isActuallyFirstLaunch,
       isFirstLaunch: isActuallyFirstLaunch,
       isInitializing: true, // Start in initializing state
-      isApiReady: false     // API is not ready at this point
+      isApiReady: false,    // API is not ready at this point
+      language: language    // 设置语言
     });
+
+    // 设置 i18n 和 Zustand store 的集成
+    setupI18nWithStore(useAppStore);
 
     // 渲染应用
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(

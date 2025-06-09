@@ -24,8 +24,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-// Removed import of FullDiskFolder
-// import { FullDiskFolder } from "../pinned-folders"
+import { useTranslation } from 'react-i18next';
 
 export function NavPinned({
   folders: folders,
@@ -39,10 +38,11 @@ export function NavPinned({
   }[];
 }) {
   const { isMobile } = useSidebar()
+  const { t } = useTranslation();
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden mt-2 mb-1">
-      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">PINNED My Files<Pin className="mr-2" /></SidebarGroupLabel>
+      <SidebarGroupLabel className="text-whiskey-600 font-medium px-3">{t('files-view')} <Pin className="mr-2" /></SidebarGroupLabel>
       <SidebarMenu className="px-1">
         {folders.map((item) => (
           // Use item.id as the key
@@ -66,7 +66,7 @@ export function NavPinned({
               <DropdownMenuTrigger asChild>
                 <SidebarMenuAction showOnHover className="hover:bg-whiskey-200 text-whiskey-500">
                   <MoreHorizontal />
-                  <span className="sr-only">更多</span>
+                  <span className="sr-only">{t('more')}</span>
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -100,7 +100,7 @@ export function NavPinned({
             }}
           >
             <MoreHorizontal className="text-whiskey-400" />
-            <span>更多</span>
+            <span>{t('more')}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
       </SidebarMenu>
