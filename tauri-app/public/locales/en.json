@@ -1,10 +1,11 @@
 {
+    "search-ask": "Search & Ask",
     "network-switch": "Network Switch",
     "online": "Online",
     "offline": "Offline",
     "network-mode-enabled": "Network Mode Enabled",
     "switched-to-local-mode": "Switched to Local Mode",
-    "files-view": "Files View",
+    "pinned": "Pinned",
     "today-updates": "Today Updates",
     "last-7-days": "Last 7 Days",
     "last-30-days": "Last 30 Days",

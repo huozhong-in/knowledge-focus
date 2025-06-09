@@ -1,10 +1,11 @@
 {
+    "search-ask": "搜索与提问",
     "network-switch": "网络开关",
     "online": "在线",
     "offline": "离线",
     "network-mode-enabled": "已启用网络模式",
     "switched-to-local-mode": "已切换到本地模式",
-    "files-view": "文件视图",
+    "pinned": "已固定",
     "today-updates": "今日更新",
     "last-7-days": "最近7天",
     "last-30-days": "最近30天",

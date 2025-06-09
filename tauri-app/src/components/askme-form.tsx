@@ -6,6 +6,7 @@ import {
   SidebarGroupContent,
   SidebarInput,
 } from "@/components/ui/sidebar"
+import { useTranslation } from 'react-i18next';
 
 interface AskMeFormProps extends React.ComponentProps<"form"> {
   collapsed?: boolean
@@ -15,18 +16,19 @@ export function AskMeForm({ collapsed, className, ...props }: AskMeFormProps) {
   if (collapsed) {
     return null
   }
+  const { t } = useTranslation();
 
   return (
     <form className={cn("w-full", className)} {...props}>
       <SidebarGroup className="py-0">
         <SidebarGroupContent className="relative">
           <Label htmlFor="ask" className="sr-only">
-            问答
+        {t('search-ask')}
           </Label>
           <SidebarInput
-            id="ask"
-            placeholder="ask me..."
-            className="pl-6 border-whiskey-300 focus-visible:ring-whiskey-400 bg-whiskey-100 placeholder:text-whiskey-500 text-whiskey-800"
+        id="ask"
+        placeholder={t('search-ask')}
+        className="pl-6 border-whiskey-300 focus-visible:ring-whiskey-400 focus-visible:ring-1 focus-visible:ring-opacity-50 focus-visible:border-whiskey-200 bg-whiskey-100 placeholder:text-whiskey-500 text-whiskey-800"
           />
           <Search className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 select-none text-whiskey-400" />
         </SidebarGroupContent>
