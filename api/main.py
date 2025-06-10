@@ -1,48 +1,43 @@
+import os
+import sys
+import argparse
+import logging
+import time
+import pathlib
+import asyncio
+import threading
+from datetime import datetime
+import traceback
+from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from fastapi import FastAPI, Body, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Dict, Any, Optional # Ensure Optional is imported
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import uvicorn
-import argparse
-import os
-import time
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
-import pathlib
-import logging
 from sqlmodel import create_engine, Session, select
 import multiprocessing
 from db_mgr import (
     DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, 
     MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule,
-    Task, FileRefineResult, FileRefineStatus # Added Task, FileRefineResult, FileRefineStatus
+    Task,
 )
-from task_mgr import TaskManager
+from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
-from myfiles_mgr import MyFilesManager
-from contextlib import asynccontextmanager
-import asyncio
-import threading
-from datetime import datetime
-import json
-from enum import Enum
-import sys  # 添加在文件顶部其他 import 语句附近
-import traceback  # 用于记录详细的错误堆栈信息
+from task_mgr import TaskManager
 
 # 设置日志记录
-logger = logging.getLogger(__name__) # Use __name__ for logger
+logger = logging.getLogger(__name__)
 
-# 记录启动时的环境信息
-print(f"环境变量: TAURI_DEBUG={os.environ.get('TAURI_DEBUG')}, VSCODE_DEBUG={os.environ.get('VSCODE_DEBUG')}")
-print(f"调试模式: {sys.argv}")
-print(f"Python 版本: {sys.version}")
-print(f"当前工作目录: {os.getcwd()}")
+# print(f"调试模式: {sys.argv}")
+# print(f"Python 版本: {sys.version}")
+# print(f"当前工作目录: {os.getcwd()}")
 
 try:
     # 确定日志目录 - 尝试多种方式确保找到正确路径
     script_path = os.path.abspath(__file__)
-    print(f"脚本路径: {script_path}")
+    # print(f"脚本路径: {script_path}")
     
     # 首先尝试直接从脚本路径获取
     parents_logs_dir = pathlib.Path(script_path).parent / 'logs'
@@ -57,11 +52,15 @@ try:
             # 尝试在当前目录下找 api/logs
             parents_logs_dir = current_dir / 'api' / 'logs'
     
-    print(f"日志目录路径: {parents_logs_dir}")
+    # print(f"日志目录路径: {parents_logs_dir}")
     # 确保日志目录存在
     parents_logs_dir.mkdir(exist_ok=True, parents=True)
     
     logger.setLevel(logging.INFO)
+    
+    # 配置日志记录器，避免重复输出
+    # 先设置为不传播到父记录器，这样可以防止消息被记录两次
+    logger.propagate = False
     
     # 添加控制台处理器，确保日志同时输出到终端
     console_handler = logging.StreamHandler()
@@ -71,7 +70,7 @@ try:
     # 添加文件处理器
     log_filename = f'api_{time.strftime("%Y%m%d", time.localtime(time.time()))}.log'
     log_filepath = parents_logs_dir / log_filename
-    print(f"日志文件路径: {log_filepath}")
+    # print(f"日志文件路径: {log_filepath}")
     
     # 确保不重复添加处理器
     file_handler_exists = False
@@ -83,11 +82,11 @@ try:
     if not file_handler_exists:
         try:
             file_handler = logging.FileHandler(log_filepath)
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levellevel)s - %(message)s'))
+            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
             logger.addHandler(file_handler)
-            print(f"文件日志处理器已添加: {log_filepath}")
+            # print(f"文件日志处理器已添加: {log_filepath}")
         except Exception as e:
-            print(f"添加文件日志处理器失败: {e}")
+            # print(f"添加文件日志处理器失败: {e}")
             # 记录详细的错误信息
             import traceback
             traceback.print_exc()
@@ -288,7 +287,7 @@ def get_myfiles_manager(session: Session = Depends(get_session)):
 @app.post("/init_db")
 def init_db(session: Session = Depends(get_session)):
     """首次打开App，初始化数据库结构"""
-    print("初始化数据库结构")
+    logger.info("初始化数据库结构")
     db_mgr = DBManager(session)
     db_mgr.init_db()
 
