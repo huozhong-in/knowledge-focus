@@ -1,5 +1,5 @@
 {
-    "search-ask": "搜索与提问",
+    "search-ask": "搜索文件名",
     "network-switch": "网络开关",
     "online": "在线",
     "offline": "离线",
@@ -27,7 +27,5 @@
     "settings": "设置",
     "general": "常规设置",
     "theme": "主题设置",
-    "developer-zone": "开发者区域",
-    "search": "搜索",
-    "file-search": "文件搜索"
+    "developer-zone": "开发者区域"
 }
