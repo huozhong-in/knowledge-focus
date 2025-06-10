@@ -4,7 +4,6 @@ import { zhCN } from "date-fns/locale";
 import { FileScannerService, FileInfo, TimeRange, FileType } from "./api/file-scanner-service";
 import { PinnedFoldersService } from "./api/pinned-folders-service";
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
-// import { listen } from '@tauri-apps/api/event'; // No longer needed here
 import { 
   File, FileText, Image, Music, Video, FileArchive, FileCode, FilePenLine, 
   FileSpreadsheet, FileX, Copy, Folder, ExternalLink 

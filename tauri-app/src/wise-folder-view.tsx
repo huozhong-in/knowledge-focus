@@ -2,12 +2,20 @@ import { useState, useEffect } from 'react';
 import { WiseFoldersService } from './api/wise-folders-service';
 import { WiseFolder, WiseFolderFile } from './types/wise-folder-types';
 import { useAppStore } from './main'; // 导入全局状态
-import { FileIcon, Calendar, FileText, ExternalLink } from 'lucide-react';
+import { FileIcon, Calendar, FileText, ExternalLink, Copy, Folder } from 'lucide-react';
+import { toast } from 'sonner';
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 import { Button } from "./components/ui/button";
 import { Skeleton } from "./components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./components/ui/card";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   HoverCard,
   HoverCardContent,
@@ -57,6 +65,7 @@ export default function WiseFolderView({ folder }: WiseFolderViewProps) {
       await openPath(filePath);
     } catch (error) {
       console.error('打开文件失败:', error);
+      toast.error(`打开文件失败: ${error}`);
     }
   };
 
@@ -66,6 +75,7 @@ export default function WiseFolderView({ folder }: WiseFolderViewProps) {
       await revealItemInDir(filePath);
     } catch (error) {
       console.error('在文件管理器中显示文件失败:', error);
+      toast.error(`打开文件夹失败: ${error}`);
     }
   };
 
@@ -162,60 +172,88 @@ export default function WiseFolderView({ folder }: WiseFolderViewProps) {
             <p>此文件夹没有文件</p>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[30%]">文件名</TableHead>
-                <TableHead className="w-[20%]">修改日期</TableHead>
-                <TableHead>大小</TableHead>
-                <TableHead className="w-[20%]">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+          <div className="overflow-x-auto">
+            <Table className="table-fixed w-full">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[60%] min-w-[200px]">文件名</TableHead>
+                  <TableHead className="w-[15%] text-right whitespace-nowrap">修改日期</TableHead>
+                  <TableHead className="w-[10%] text-right whitespace-nowrap">大小</TableHead>
+                  <TableHead className="w-[15%] text-right whitespace-nowrap">操作</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
               {files.map((file) => (
                 <TableRow key={file.id}>
-                  <TableCell>
-                    <div
-                      className="flex items-center space-x-2 cursor-pointer"
-                      onClick={() => openFile(file.file_path)}
-                    >
-                      {getFileIcon(file.extension)}
-                      <HoverCard>
-                        <HoverCardTrigger asChild>
-                          <span className="truncate max-w-[200px] inline-block">
-                            {file.file_name}
-                          </span>
-                        </HoverCardTrigger>
-                        <HoverCardContent className="w-auto max-w-[400px] p-2">
-                          <p className="break-all">{file.file_name}</p>
-                          <p className="text-xs text-gray-500 mt-1">{file.file_path}</p>
-                        </HoverCardContent>
-                      </HoverCard>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center space-x-2">
+                  <ContextMenu>
+                    <ContextMenuTrigger>
+                      <TableCell className="max-w-0 w-0 overflow-hidden">
+                        <div
+                          className="flex items-center space-x-2 cursor-pointer w-full"
+                          onClick={() => openFile(file.file_path)}
+                        >
+                          <div className="flex-shrink-0">
+                            {getFileIcon(file.extension)}
+                          </div>
+                          <HoverCard>
+                            <HoverCardTrigger asChild>
+                              <span className="truncate inline-block w-full">
+                                {file.file_name}
+                              </span>
+                            </HoverCardTrigger>
+                            <HoverCardContent className="w-auto max-w-[400px] p-2">
+                              <p className="break-all">{file.file_name}</p>
+                              <p className="text-xs text-gray-500 mt-1">{file.file_path}</p>
+                            </HoverCardContent>
+                          </HoverCard>
+                        </div>
+                      </TableCell>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-64">
+                      <ContextMenuItem onClick={() => openFile(file.file_path)}>
+                        <ExternalLink className="h-4 w-4 mr-2" /> 打开文件
+                      </ContextMenuItem>                        <ContextMenuItem onClick={() => showInFileManager(file.file_path)}>
+                        <Folder className="h-4 w-4 mr-2" /> 打开所在文件夹
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem onClick={() => {
+                        navigator.clipboard.writeText(file.file_path)
+                          .then(() => toast.success("文件路径已复制到剪贴板"))
+                          .catch(err => {
+                            console.error("复制失败:", err);
+                            toast.error("复制文件路径失败");
+                          })
+                      }}>
+                        <Copy className="h-4 w-4 mr-2" /> 复制文件路径
+                        复制文件路径
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <div className="flex items-center justify-end space-x-2">
                       <Calendar className="h-4 w-4 text-gray-500" />
                       <span>{formatDateTime(file.modified_time)}</span>
                     </div>
                   </TableCell>
-                  <TableCell>{formatFileSize(file.file_size)}</TableCell>
-                  <TableCell>
-                    <div className="flex space-x-2">
+                  <TableCell className="text-right whitespace-nowrap">
+                    {formatFileSize(file.file_size)}
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <div className="flex justify-end space-x-2">
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => showInFileManager(file.file_path)}
                       >
                         <ExternalLink className="h-4 w-4 mr-1" />
-                        显示位置
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
-            </TableBody>
-          </Table>
+              </TableBody>
+            </Table>
+          </div>
         )}
       </CardContent>
     </Card>
