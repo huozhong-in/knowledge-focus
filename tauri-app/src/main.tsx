@@ -73,7 +73,7 @@ async function setTrayIcon() {
 }
 
 // 创建 Zustand store
-export const useAppStore = create<AppGlobalState>((set, get) => ({
+export const useAppStore = create<AppGlobalState>((set, _get) => ({
   showWelcomeDialog: true, // 默认显示介绍页
   isFirstLaunch: false,
   isInitializing: false, // Will be set to true by initializeApp

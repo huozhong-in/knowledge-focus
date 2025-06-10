@@ -29,7 +29,6 @@ import {
 } from "@/components/ui/hover-card";
 import { toast } from "sonner";
 import { FileSearchResult } from "@/components/askme-form";
-import { useAppStore } from './main';
 
 // 格式化文件大小
 const formatFileSize = (size: number): string => {
