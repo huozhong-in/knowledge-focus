@@ -236,28 +236,26 @@ pub fn run() {
                     }
                 }
                 
-                // 发送API就绪信号并准备窗口切换
+                // 简化的 API 就绪信号发送逻辑
+                // 发送信号到内部通道 (用于文件监控启动等)
                 let api_ready_sent = {
                     let mut lock = tx_for_api.lock().unwrap();
                     if let Some(sender) = lock.take() {
                         let send_result = sender.send(api_ready);
-                        println!("已发送API就绪信号: {}", api_ready);
+                        println!("已发送内部API就绪信号: {}", api_ready);
                         send_result.is_ok() && api_ready
                     } else {
                         false
                     }
                 };
                 
-                // 在 MutexGuard 释放后通知主界面 API 就绪状态
-                if api_ready_sent {
+                // API 就绪时发送给主窗口，简化了条件检查
+                if api_ready {
                     println!("Python API 已完全就绪，向主窗口发送 API 就绪信号");
-                    
-                    // 添加短暂延迟，确保 API 完全可用
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     
                     // 获取主窗口句柄并发送就绪事件
                     if let Some(main) = app_handle_for_api.get_webview_window("main") {
-                        // 向主窗口发送 API 就绪事件
+                        // 向主窗口发送 API 就绪事件，这里是唯一发送位置
                         let _ = main.emit("api-ready", true);
                         println!("已向主窗口发送 API 就绪信号");
                     } else {

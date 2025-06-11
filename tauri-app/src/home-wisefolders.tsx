@@ -6,7 +6,14 @@ import { useAppStore } from './main'; // 导入全局状态
 import { Folder, FileIcon, FolderIcon, Calendar, Tag, Database } from 'lucide-react';
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./components/ui/card";
+import { 
+  Card, 
+  // CardContent, 
+  CardDescription, 
+  CardFooter, 
+  CardHeader, 
+  CardTitle 
+} from "./components/ui/card";
 import { Skeleton } from "./components/ui/skeleton";
 
 function HomeWiseFolders() {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../main';
 import { usePageStore } from '../App';
-import { listen } from '@tauri-apps/api/event';
 import { Button } from "./ui/button";
 import {
   Dialog,
@@ -24,48 +23,39 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("正在初始化后端系统...");
   
-  // 监听来自 Rust 后端的 API 就绪事件
+  // 使用全局状态的 isApiReady 值而不是直接监听事件
   useEffect(() => {
-    console.log("IntroDialog: 设置 api-ready 事件监听");
-    let unlistenFn: (() => void) | undefined;
-
-    listen('api-ready', (event) => {
-      console.log("IntroDialog: 收到 api-ready 事件", event);
-      appStore.setApiReady(true); // 更新全局状态
+    // 当 API 就绪时
+    if (appStore.isApiReady) {
       setLoading(false); // 更新本地加载状态
-      setLoadingMessage("后端系统就绪，可以进入应用");
       
-      // 如果不是首次启动，自动关闭对话框并继续
+      // 处理非首次启动的逻辑
       if (!appStore.isFirstLaunch) {
+        // 设置消息为自动关闭提示
+        setLoadingMessage("初始化完成，正在进入应用...");
+        // 略微延迟关闭对话框以便用户能看到成功信息
         setTimeout(() => {
+          console.log('非首次启动：自动关闭对话框');
           onOpenChange(false); // 自动关闭对话框
-        }, 500);
+        }, 800);
+      } else {
+        // 首次启动时显示就绪消息，等待用户操作
+        setLoadingMessage("后端系统就绪，可以开始使用应用");
       }
-    }).then(fn => {
-      unlistenFn = fn;
-    }).catch(err => {
-      console.error("IntroDialog: 监听 api-ready 事件失败", err);
-    });
-
-    return () => {
-      if (unlistenFn) {
-        console.log("IntroDialog: 清理 api-ready 事件监听");
-        unlistenFn();
-      }
-    };
-  }, [onOpenChange]);
+    }
+  }, [appStore.isApiReady, appStore.isFirstLaunch, onOpenChange]);
 
   const handleEnterApp = async () => {
     try {
       // 关闭对话框
       onOpenChange(false);
-      // 更新状态以便将来不再显示
+      // 更新状态以便将来不再显示首次启动对话框
       await appStore.setShowWelcomeDialog(false);
-      // 导航到文件夹授权页面
+      // 导航到文件夹授权页面（仅在首次启动时需要）
       setPage("home-authorization", "Home", "Authorization");
-      console.log('欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
+      console.log('首次启动流程：欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
     } catch (error) {
-      console.error('更新状态时出错:', error);
+      console.error('更新首次启动状态时出错:', error);
     }
   };
 
@@ -102,15 +92,18 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         </p>
 
         <DialogFooter>
-          <Button
-            onClick={handleEnterApp}
-            disabled={loading || !appStore.isApiReady} 
-            className={`w-full sm:w-auto text-white rounded-lg ${loading || !appStore.isApiReady 
-              ? "bg-gray-400 cursor-not-allowed" 
-              : "bg-blue-600 hover:bg-blue-700"}`}
-          >
-            {appStore.isFirstLaunch ? "开始使用" : "进入应用"}
-          </Button>
+          {/* 只在首次启动时显示按钮 */}
+          {appStore.isFirstLaunch && (
+            <Button
+              onClick={handleEnterApp}
+              disabled={loading || !appStore.isApiReady} 
+              className={`w-full sm:w-auto text-white rounded-lg ${loading || !appStore.isApiReady 
+                ? "bg-gray-400 cursor-not-allowed" 
+                : "bg-blue-600 hover:bg-blue-700"}`}
+            >
+              开始使用
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -135,7 +135,6 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 
                 // 启动健康检查，在API准备好后发送信号
                 let api_url = format!("http://{}:{}/health", host_to_use, port_to_use);
-                let app_handle_for_health = app_handle.clone();
                 let tx_for_health = Arc::clone(&tx);
                 
                 tauri::async_runtime::spawn(async move {
@@ -148,10 +147,8 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                         match client.get(&api_url).timeout(std::time::Duration::from_secs(1)).send().await {
                             Ok(response) if response.status().is_success() => {
                                 println!("API健康检查成功，API准备就绪");
-                                if let Some(window) = app_handle_for_health.get_webview_window("main") {
-                                    let _ = window.emit("api-ready", true);
-                                }
-                                // API准备好了，发送成功信号
+                                // API准备好了，发送成功信号到内部通道
+                                // 不再向主窗口发送信号，统一由 lib.rs 处理
                                 if let Some(sender) = tx_for_health.lock().unwrap().take() {
                                     let _ = sender.send(true);
                                 }

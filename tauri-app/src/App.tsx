@@ -71,27 +71,26 @@ export default function Page() {
   const [showIntroDialog, setShowIntroDialog] = useState(false);
 
   // Listen for 'api-ready' event from backend ONCE
+  // 这是应用中唯一需要监听 api-ready 事件的地方
   useEffect(() => {
     console.log("App.tsx: Setting up 'api-ready' event listener.");
     let unlistenFn: (() => void) | undefined;
 
     listen('api-ready', (event) => {
       console.log("App.tsx: Received 'api-ready' event from backend.", event);
-      setApiReady(true); // Update global state
+      setApiReady(true); // Update global state so all components can react
     }).then(fn => {
       unlistenFn = fn;
     }).catch(err => {
       console.error("App.tsx: Failed to listen for 'api-ready' event", err);
       // Fallback: if event listening fails, consider API ready after a delay
-      // This might be hit if the event was emitted before listener was attached
-      // Or if there's an issue with Tauri's event system.
       setTimeout(() => {
-        // Check global state before setting to avoid unnecessary updates if already true
+        // Check global state before setting to avoid unnecessary updates
         if (!useAppStore.getState().isApiReady) { 
-          console.warn("App.tsx: Fallback - 'api-ready' event likely missed or listener failed. Setting API ready.");
+          console.warn("App.tsx: Fallback - 'api-ready' event listener failed. Setting API ready after timeout.");
           setApiReady(true);
         }
-      }, 3000); // 3-second fallback delay
+      }, 5000); // 5-second fallback delay
     });
 
     return () => {
@@ -131,77 +130,56 @@ export default function Page() {
 
   useEffect(() => {
     const startupSequence = async () => {
-      // isInitializing is set to true in main.tsx's initializeApp
-      // useAppStore.setState({ isInitializing: true }); // This ensures we are in initializing state
+      // 日志首次启动状态
+      console.log(`App.tsx: ${isFirstLaunch ? "First launch" : "Normal launch"} detected.`);
 
-      // 检查是否是首次启动
-      if (isFirstLaunch) {
-        console.log("App.tsx: First launch detected.");
-      } else {
-        console.log("App.tsx: Normal launch. Ensuring API service is running.");
-      }
-
+      // 不再需要健康检查，我们已经在监听 api-ready 事件
+      // 后端会在 API 准备就绪后发送事件
+      console.log("App.tsx: Waiting for API ready signal from backend...");
+      
       try {
-        // Step 1: 检查 API 服务是否可用
-        console.log("App.tsx: Checking API service health...");
-        
-        const maxRetries = 20; // 最多等待20次
-        const retryDelay = 500; // 每次等待500ms
-        let isHealthCheckOk = false;
-        let retries = 0;
-        
-        while (retries < maxRetries && !isHealthCheckOk) {
-          console.log(`App.tsx: Checking API health (attempt ${retries + 1}/${maxRetries})...`);
-          try {
-            const response = await fetch('http://127.0.0.1:60315/health', { 
-              method: 'GET',
-              signal: AbortSignal.timeout(2000) // 2秒超时
-            });
-            
-            if (response.ok) {
-              console.log("App.tsx: API service health check OK!");
-              isHealthCheckOk = true;
-            } else {
-              console.log(`App.tsx: API service health check responded with status ${response.status}`);
-              await new Promise(resolve => setTimeout(resolve, retryDelay));
+        // 健康检查移到这里只作为后备方案，不会与全局状态冲突
+        // 仅在 API 超时未就绪时才会使用健康检查来判断状态
+        if (!isApiReady) {
+          console.log("App.tsx: Performing backup health check after 5 seconds...");
+          // 等待5秒，给予后端足够时间发送 api-ready 事件
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // 如果仍然没有收到 api-ready 信号，尝试主动健康检查
+          if (!useAppStore.getState().isApiReady) {
+            console.log("App.tsx: No api-ready event received, performing health check...");
+            try {
+              const response = await fetch('http://127.0.0.1:60315/health', { 
+                method: 'GET',
+                signal: AbortSignal.timeout(2000)
+              });
+              
+              if (response.ok) {
+                console.log("App.tsx: Health check successful, manually setting API ready.");
+                setApiReady(true);
+              }
+            } catch (error) {
+              console.log(`App.tsx: Health check failed: ${error}`);
+              // 不抛出错误，让应用继续显示等待状态
             }
-          } catch (error) {
-            console.log(`App.tsx: API service health check not ok yet: ${error}`);
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
           }
-          retries++;
-        }
-        
-        if (!isHealthCheckOk) {
-          throw new Error(`无法连接到API服务或服务不健康，已尝试${maxRetries}次。请检查API服务是否正确启动。`);
         }
 
-        // 初始化过程由服务端自动完成
-        // The 'api-ready' event listener (setup elsewhere) will set the global isApiReady state.
-        // No need to set it directly here.
-
-        if (isFirstLaunch) {
-          console.log("App.tsx: API service available. First launch initialization is now handled by the API server.");
-          // 注意：我们保留首次启动标记，直到用户完成授权流程后再在授权页面中清除
-          // 这样可以确保用户在首次启动时一定会看到授权页面
-          // setFirstLaunch(false);
-        }
       } catch (error) {
-        console.error("App.tsx: Error during API health check:", error);
+        console.error("App.tsx: Error during startup sequence:", error);
         const errorMessage = `API服务不可用: ${error instanceof Error ? error.message : String(error)}`;
         
         setInitializationError(errorMessage);
-        setApiReady(false); // Ensure API is marked as not ready globally
+        setApiReady(false);
         toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
       } finally {
-        // 无论结果如何，都设置为非初始化状态
-        setIsInitializing(false); // Mark initialization phase as complete
+        // 无论结果如何，最终都设置为非初始化状态
+        setIsInitializing(false);
       }
     };
-    // 始终运行 startupSequence，不再依赖 isInitializing 状态
     // 这里不再需要条件判断，因为 IntroDialog 会负责显示加载状态
     startupSequence();
-  }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady]); // 移除对 isInitializing 的依赖
+  }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady]);
 
   // WebSocket connection effect
   useEffect(() => {
