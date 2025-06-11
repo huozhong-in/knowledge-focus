@@ -6,14 +6,7 @@ import { useAppStore } from './main'; // 导入全局状态
 import { Folder, FileIcon, FolderIcon, Calendar, Tag, Database } from 'lucide-react';
 import { Button } from "./components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
-import { 
-  Card, 
-  // CardContent, 
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle 
-} from "./components/ui/card";
+import { Card } from "./components/ui/card";
 import { Skeleton } from "./components/ui/skeleton";
 
 function HomeWiseFolders() {
@@ -153,19 +146,21 @@ function HomeWiseFolders() {
         {foldersList.map((folder, index) => (
           <Card 
             key={`${folder.type}-${index}`}
-            className="cursor-pointer hover:shadow-md transition-shadow"
+            className="cursor-pointer hover:shadow-md transition-shadow p-4"
             onClick={() => handleFolderClick(folder)}
           >
-            <CardHeader>
-              <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="flex-shrink-0">
                 {getFolderIcon(folder.type)}
-                <CardTitle>{folder.name}</CardTitle>
               </div>
-              <CardDescription>{folder.description || '智慧归类的文件集合'}</CardDescription>
-            </CardHeader>
-            <CardFooter>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-medium text-base truncate">{folder.name}</h3>
+                <p className="text-sm text-gray-500 truncate">{folder.description || '智慧归类的文件集合'}</p>
+              </div>
+            </div>
+            <div className="border-t border-gray-100 pt-3">
               <p className="text-sm text-gray-600">{folder.count || folder.file_count || 0} 个文件</p>
-            </CardFooter>
+            </div>
           </Card>
         ))}
       </div>
@@ -183,17 +178,17 @@ function HomeWiseFolders() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Card key={i}>
-              <CardHeader>
-                <div className="flex items-center space-x-2">
-                  <Skeleton className="h-6 w-6 rounded-full" />
-                  <Skeleton className="h-4 w-40" />
+            <Card key={i} className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <Skeleton className="h-6 w-6 rounded-full flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <Skeleton className="h-5 w-40 mb-1" />
+                  <Skeleton className="h-3 w-full" />
                 </div>
-                <Skeleton className="h-3 w-full mt-2" />
-              </CardHeader>
-              <CardFooter>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
                 <Skeleton className="h-3 w-16" />
-              </CardFooter>
+              </div>
             </Card>
           ))}
         </div>

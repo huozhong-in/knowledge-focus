@@ -238,7 +238,7 @@ pub fn run() {
                 
                 // 简化的 API 就绪信号发送逻辑
                 // 发送信号到内部通道 (用于文件监控启动等)
-                let api_ready_sent = {
+                let _api_ready_sent = {
                     let mut lock = tx_for_api.lock().unwrap();
                     if let Some(sender) = lock.take() {
                         let send_result = sender.send(api_ready);

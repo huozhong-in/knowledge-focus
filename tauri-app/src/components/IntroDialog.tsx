@@ -65,13 +65,13 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">欢迎使用 Knowledge Focus</DialogTitle>
           <DialogDescription className="text-center">
-            让知识管理变得更加简单高效
+            从文件管理到知识管理
           </DialogDescription>
         </DialogHeader>
         
-        {/* 加载指示器 */}
-        {loading && (
-          <div className="flex justify-center items-center my-4">
+        {/* 加载指示器容器 - 固定高度防止布局跳动 */}
+        <div className="h-20 flex justify-center items-center my-4">
+          {loading && (
             <div className="relative w-12 h-12">
               <svg className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="#D29B71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="2" x2="12" y2="6"></line>
@@ -84,8 +84,8 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
                 <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
               </svg>
             </div>
-          </div>
-        )}
+          )}
+        </div>
         
         <p className={`text-center mb-4 ${appStore.isApiReady ? "text-green-600" : "text-whiskey-700 animate-pulse"}`}>
           {loadingMessage}

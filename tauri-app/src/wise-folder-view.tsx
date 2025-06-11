@@ -185,50 +185,27 @@ export default function WiseFolderView({ folder }: WiseFolderViewProps) {
               <TableBody>
               {files.map((file) => (
                 <TableRow key={file.id}>
-                  <ContextMenu>
-                    <ContextMenuTrigger>
-                      <TableCell className="max-w-0 w-0 overflow-hidden">
-                        <div
-                          className="flex items-center space-x-2 cursor-pointer w-full"
-                          onClick={() => openFile(file.file_path)}
-                        >
-                          <div className="flex-shrink-0">
-                            {getFileIcon(file.extension)}
+                  <TableCell className="max-w-0 w-0 overflow-hidden">
+                    <div
+                      className="flex items-center space-x-2 cursor-pointer w-full"
+                      onClick={() => openFile(file.file_path)}
+                    >
+                      <div className="flex-shrink-0">
+                        {getFileIcon(file.extension)}
+                      </div>
+                      <HoverCard>
+                        <HoverCardTrigger>
+                          <div className="truncate inline-block w-full">
+                            {file.file_name}
                           </div>
-                          <HoverCard>
-                            <HoverCardTrigger asChild>
-                              <span className="truncate inline-block w-full">
-                                {file.file_name}
-                              </span>
-                            </HoverCardTrigger>
-                            <HoverCardContent className="w-auto max-w-[400px] p-2">
-                              <p className="break-all">{file.file_name}</p>
-                              <p className="text-xs text-gray-500 mt-1">{file.file_path}</p>
-                            </HoverCardContent>
-                          </HoverCard>
-                        </div>
-                      </TableCell>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent className="w-64">
-                      <ContextMenuItem onClick={() => openFile(file.file_path)}>
-                        <ExternalLink className="h-4 w-4 mr-2" /> 打开文件
-                      </ContextMenuItem>                        <ContextMenuItem onClick={() => showInFileManager(file.file_path)}>
-                        <Folder className="h-4 w-4 mr-2" /> 打开所在文件夹
-                      </ContextMenuItem>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem onClick={() => {
-                        navigator.clipboard.writeText(file.file_path)
-                          .then(() => toast.success("文件路径已复制到剪贴板"))
-                          .catch(err => {
-                            console.error("复制失败:", err);
-                            toast.error("复制文件路径失败");
-                          })
-                      }}>
-                        <Copy className="h-4 w-4 mr-2" /> 复制文件路径
-                        复制文件路径
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
+                        </HoverCardTrigger>
+                        <HoverCardContent className="w-auto max-w-[400px] p-2">
+                          <p className="break-all">{file.file_name}</p>
+                          <p className="text-xs text-gray-500 mt-1">{file.file_path}</p>
+                        </HoverCardContent>
+                      </HoverCard>
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <div className="flex items-center justify-end space-x-2">
                       <Calendar className="h-4 w-4 text-gray-500" />
@@ -247,6 +224,35 @@ export default function WiseFolderView({ folder }: WiseFolderViewProps) {
                       >
                         <ExternalLink className="h-4 w-4 mr-1" />
                       </Button>
+                      <ContextMenu>
+                        <ContextMenuTrigger>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-64">
+                          <ContextMenuItem onClick={() => openFile(file.file_path)}>
+                            <ExternalLink className="h-4 w-4 mr-2" /> 打开文件
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => showInFileManager(file.file_path)}>
+                            <Folder className="h-4 w-4 mr-2" /> 打开所在文件夹
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onClick={() => {
+                            navigator.clipboard.writeText(file.file_path)
+                              .then(() => toast.success("文件路径已复制到剪贴板"))
+                              .catch(err => {
+                                console.error("复制失败:", err);
+                                toast.error("复制文件路径失败");
+                              })
+                          }}>
+                            <Copy className="h-4 w-4 mr-2" /> 复制文件路径
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     </div>
                   </TableCell>
                 </TableRow>

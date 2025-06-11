@@ -550,9 +550,15 @@ class ScreeningManager:
             results = self.session.execute(statement).scalars().all()
             query_exec_time = time.time() - query_exec_start
             
-            # 将结果转换为字典列表
+            # 将结果转换为字典列表，同时过滤掉不存在的文件
             conversion_start = time.time()
-            result_dicts = [self._result_to_dict(result) for result in results]
+            result_dicts = []
+            non_existent_count = 0
+            for result in results:
+                if os.path.exists(result.file_path):
+                    result_dicts.append(self._result_to_dict(result))
+                else:
+                    non_existent_count += 1
             conversion_time = time.time() - conversion_start
             
             # 记录总耗时和组件耗时
@@ -564,7 +570,7 @@ class ScreeningManager:
                 f"总耗时={total_time:.3f}秒, "
                 f"查询执行={query_exec_time:.3f}秒, "
                 f"结果转换={conversion_time:.3f}秒, "
-                f"结果数={len(results)}"
+                f"结果数={len(result_dicts)}, 过滤掉不存在文件数量={non_existent_count}"
             )
             
             return result_dicts
@@ -606,9 +612,15 @@ class ScreeningManager:
             results = self.session.execute(statement).scalars().all()
             query_exec_time = time.time() - query_exec_start
             
-            # 将结果转换为字典列表
+            # 将结果转换为字典列表，同时过滤掉不存在的文件
             conversion_start = time.time()
-            result_dicts = [self._result_to_dict(result) for result in results]
+            result_dicts = []
+            non_existent_count = 0
+            for result in results:
+                if os.path.exists(result.file_path):
+                    result_dicts.append(self._result_to_dict(result))
+                else:
+                    non_existent_count += 1
             conversion_time = time.time() - conversion_start
             
             # 记录总耗时和组件耗时
@@ -620,7 +632,7 @@ class ScreeningManager:
                 f"总耗时={total_time:.3f}秒, "
                 f"查询执行={query_exec_time:.3f}秒, "
                 f"结果转换={conversion_time:.3f}秒, "
-                f"结果数={len(results)}"
+                f"结果数={len(result_dicts)}, 过滤掉不存在文件数量={non_existent_count}"
             )
             
             return result_dicts
