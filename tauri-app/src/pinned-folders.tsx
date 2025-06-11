@@ -224,9 +224,6 @@ export const usePinnedFolderData = (folderId: string, isApiReady: boolean) => {
     }
   };
 
-  // 不再需要getFolderDefinition函数，因为我们直接从API中获取所有信息
-
-
   useEffect(() => {
     if (!isApiReady) {
       setLoading(true);
@@ -335,8 +332,6 @@ export const FullDiskFolderView = ({ folderId }: { folderId: string }) => {
   const [filterExtension, setFilterExtension] = useState<string>('all');
   const [uniqueExtensions, setUniqueExtensions] = useState<string[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-
-  // Removed local isApiReady state and useEffect for 'api-ready' event listener
 
   // 提取所有唯一的文件扩展名
   useEffect(() => {

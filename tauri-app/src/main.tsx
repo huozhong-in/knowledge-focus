@@ -179,11 +179,11 @@ const initializeApp = async () => {
     
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
-      showWelcomeDialog: isActuallyFirstLaunch,
+      showWelcomeDialog: true, // 始终显示欢迎对话框，作为 splash 屏幕
       isFirstLaunch: isActuallyFirstLaunch,
-      isInitializing: true, // Start in initializing state
-      isApiReady: false,    // API is not ready at this point
-      language: language    // 设置语言
+      isInitializing: false, // 不再使用单独的初始化状态，由 IntroDialog 处理
+      isApiReady: false,     // API is not ready at this point
+      language: language     // 设置语言
     });
 
     // 设置 i18n 和 Zustand store 的集成

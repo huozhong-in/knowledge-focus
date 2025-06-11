@@ -248,53 +248,20 @@ pub fn run() {
                     }
                 };
                 
-                // 在 MutexGuard 释放后处理窗口切换
+                // 在 MutexGuard 释放后通知主界面 API 就绪状态
                 if api_ready_sent {
-                    println!("Python API 已完全就绪，准备切换窗口");
+                    println!("Python API 已完全就绪，向主窗口发送 API 就绪信号");
                     
                     // 添加短暂延迟，确保 API 完全可用
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     
-                    // 获取窗口句柄
-                    let splashscreen_window = app_handle_for_api.get_webview_window("splashscreen");
-                    
-                    if let Some(splash) = splashscreen_window {
-                        // 向 splashscreen 发送就绪事件
-                        let _ = splash.emit("api-ready", true);
-                        println!("已向 splashscreen 发送 API 就绪信号");
-                        
-                        // 先关闭 splashscreen
-                        println!("准备关闭 splashscreen");
-                        splash.close().unwrap_or_else(|e| {
-                            eprintln!("关闭 splashscreen 失败: {}", e);
-                        });
-                        
-                        // 添加短暂延迟，等待 splashscreen 完全关闭
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        
-                        // splashscreen 关闭后再获取并显示主窗口
-                        let main_window = app_handle_for_api.get_webview_window("main");
-                        
-                        if let Some(main) = main_window {
-                            println!("splashscreen 已关闭，准备显示主窗口");
-                            if let Err(e) = main.show() {
-                                eprintln!("显示主窗口失败: {}", e);
-                            } else {
-                                println!("主窗口显示成功");
-                            }
-                        } else {
-                            eprintln!("找不到主窗口");
-                        }
+                    // 获取主窗口句柄并发送就绪事件
+                    if let Some(main) = app_handle_for_api.get_webview_window("main") {
+                        // 向主窗口发送 API 就绪事件
+                        let _ = main.emit("api-ready", true);
+                        println!("已向主窗口发送 API 就绪信号");
                     } else {
-                        eprintln!("找不到 splashscreen 窗口");
-                        
-                        // 尝试直接显示主窗口
-                        if let Some(main) = app_handle_for_api.get_webview_window("main") {
-                            println!("找不到 splashscreen，直接显示主窗口");
-                            if let Err(e) = main.show() {
-                                eprintln!("显示主窗口失败: {}", e);
-                            }
-                        }
+                        eprintln!("找不到主窗口，无法发送 API 就绪信号");
                     }
                 }
             });
@@ -420,11 +387,6 @@ pub fn run() {
                 
                 // 针对不同窗口采取不同的关闭策略
                 match window_label {
-                    // 对于启动画面，允许正常关闭
-                    "splashscreen" => {
-                        // 不阻止默认关闭行为，让 splashscreen 能够正常关闭
-                        println!("关闭启动画面");
-                    }
                     // 对于主窗口，使用隐藏而不是关闭的逻辑
                     "main" => {
                         #[cfg(target_os = "macos")]

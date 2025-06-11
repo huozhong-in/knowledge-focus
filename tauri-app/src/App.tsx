@@ -64,12 +64,10 @@ export default function Page() {
     initializationError,
     setIsInitializing,
     setInitializationError,
-    showWelcomeDialog,
     isApiReady, // Get global API ready state
     setApiReady,   // Get action to set API ready state
   } = useAppStore();
 
-  const [apiServiceChecked, setApiServiceChecked] = useState(false); // Tracks if initial API health check is done
   const [showIntroDialog, setShowIntroDialog] = useState(false);
 
   // Listen for 'api-ready' event from backend ONCE
@@ -120,13 +118,16 @@ export default function Page() {
     }
   }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
 
-  // 当应用成功加载并且需要显示欢迎对话框时，显示 IntroDialog
+  // 始终显示 IntroDialog 作为 splash 屏幕，直到 API 就绪
   useEffect(() => {
-    // Ensure API is ready, health check passed, not initializing, no errors, and dialog is requested
-    if (apiServiceChecked && isApiReady && !isInitializing && !initializationError && showWelcomeDialog) {
-      setShowIntroDialog(true);
-    }
-  }, [apiServiceChecked, isApiReady, isInitializing, initializationError, showWelcomeDialog]);
+    // 移除条件检查，总是在启动时显示 IntroDialog
+    // IntroDialog 会根据 isFirstLaunch 和 isApiReady 决定行为:
+    // - 如果 API 未就绪：显示加载状态
+    // - 如果 API 就绪且不是首次启动：自动关闭对话框，显示主界面
+    // - 如果 API 就绪且是首次启动：启用"开始使用"按钮，用户手动关闭
+    setShowIntroDialog(true);
+    console.log("App.tsx: IntroDialog 已设置为显示，等待 API 就绪");
+  }, []);
 
   useEffect(() => {
     const startupSequence = async () => {
@@ -174,8 +175,6 @@ export default function Page() {
         if (!isHealthCheckOk) {
           throw new Error(`无法连接到API服务或服务不健康，已尝试${maxRetries}次。请检查API服务是否正确启动。`);
         }
-        
-        setApiServiceChecked(true); // Mark that the health check has passed
 
         // 初始化过程由服务端自动完成
         // The 'api-ready' event listener (setup elsewhere) will set the global isApiReady state.
@@ -191,7 +190,6 @@ export default function Page() {
         console.error("App.tsx: Error during API health check:", error);
         const errorMessage = `API服务不可用: ${error instanceof Error ? error.message : String(error)}`;
         
-        setApiServiceChecked(false); // API check failed
         setInitializationError(errorMessage);
         setApiReady(false); // Ensure API is marked as not ready globally
         toast.error("API服务不可用，应用无法正常工作。请尝试重启应用。");
@@ -200,11 +198,10 @@ export default function Page() {
         setIsInitializing(false); // Mark initialization phase as complete
       }
     };
-    // Only run startupSequence if not already run (e.g. if isInitializing is true from store)
-    if (isInitializing) {
-        startupSequence();
-    }
-  }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady, isInitializing]); // Added isInitializing
+    // 始终运行 startupSequence，不再依赖 isInitializing 状态
+    // 这里不再需要条件判断，因为 IntroDialog 会负责显示加载状态
+    startupSequence();
+  }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady]); // 移除对 isInitializing 的依赖
 
   // WebSocket connection effect
   useEffect(() => {
@@ -269,18 +266,8 @@ export default function Page() {
   }, [isApiReady, isInitializing, initializationError]); // Depend on global isApiReady
 
 
-  // Conditional Rendering based on initialization state
-  if (isInitializing) { // 首次启动时的初始化阶段
-    return (
-      <div className="flex items-center justify-center h-screen w-screen bg-background text-foreground">
-        <div className="text-center">
-          <p className="text-xl font-semibold animate-pulse">正在准备应用...</p>
-          <p className="text-muted-foreground">请稍候，正在初始化...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // 不再使用单独的初始化页面，现在由 IntroDialog 充当 splash 屏幕
+  // 只保留初始化错误的处理
   if (initializationError) { // 初始化错误
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-background text-foreground p-4">
@@ -299,6 +286,12 @@ export default function Page() {
   // 根据currentPage返回对应的组件
   const renderContent = () => {
     console.log("App.tsx: Rendering content for page:", currentPage);
+    
+    // 如果API尚未就绪且显示IntroDialog，则返回空内容，避免不必要的组件初始化
+    if (!isApiReady && showIntroDialog) {
+      return null;
+    }
+    
     // Ensure API is ready before rendering content that might depend on it
     // However, some pages like settings might not need API ready.
     // For now, we'll let individual components handle their "API not ready" state if needed.
