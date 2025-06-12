@@ -16,7 +16,7 @@ from sqlmodel import (
     JSON,
 )
 from datetime import datetime
-from db_mgr import MyFiles, AuthStatus
+from db_mgr import MyFiles, AuthStatus, BundleExtension, SystemConfig
 from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform
@@ -41,6 +41,8 @@ class MyFilesManager:
     def get_default_directories(self) -> List[Dict[str, str]]:
         """获取系统默认常用文件夹，根据操作系统返回不同的文件夹列表
         
+        添加文件夹存在性检查，只返回实际存在的文件夹
+        
         Returns:
             List[Dict[str, str]]: 包含文件夹名称和路径的字典列表
         """
@@ -48,7 +50,7 @@ class MyFilesManager:
         
         if self.system == "Darwin":  # macOS
             home_dir = os.path.expanduser("~")
-            dirs = [
+            potential_dirs = [
                 {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
                 {"name": "文稿", "path": os.path.join(home_dir, "Documents")},
                 {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
@@ -60,7 +62,7 @@ class MyFilesManager:
             # Windows系统使用USERPROFILE环境变量获取用户主文件夹
             home_dir = os.environ.get("USERPROFILE")
             if home_dir:
-                dirs = [
+                potential_dirs = [
                     {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
                     {"name": "文档", "path": os.path.join(home_dir, "Documents")},
                     {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
@@ -71,8 +73,19 @@ class MyFilesManager:
                 
                 # 添加Windows特有的文件夹（如OneDrive）
                 onedrive_dir = os.environ.get("OneDriveConsumer") or os.environ.get("OneDrive")
-                if onedrive_dir:
-                    dirs.append({"name": "OneDrive", "path": onedrive_dir})
+                if onedrive_dir and os.path.exists(onedrive_dir):
+                    potential_dirs.append({"name": "OneDrive", "path": onedrive_dir})
+            else:
+                potential_dirs = []
+        else:
+            potential_dirs = []
+        
+        # 添加文件夹存在性检查
+        for dir_info in potential_dirs:
+            if os.path.exists(dir_info["path"]) and os.path.isdir(dir_info["path"]):
+                dirs.append(dir_info)
+            else:
+                logger.warning(f"默认文件夹不存在: {dir_info['path']}")
         
         return dirs
     
@@ -335,17 +348,21 @@ class MyFilesManager:
         # 如果路径不在数据库中，且不是任何已授权文件夹的子文件夹，则不监控
         return False
     
-    def is_path_in_blacklist(self, path: str) -> bool:
+    def is_path_in_blacklist(self, path: str, use_cache: bool = True) -> bool:
         """检查路径是否在黑名单中
         
         Args:
             path (str): 要检查的路径
+            use_cache (bool, optional): 是否使用缓存的黑名单列表。默认为True
         
         Returns:
             bool: 如果路径在黑名单中则返回True，否则返回False
         """
+        if not path:
+            return False
+            
         # 标准化路径
-        path = os.path.normpath(path)
+        path = os.path.normpath(path).replace("\\", "/")
         
         # 检查路径本身是否在黑名单中
         directory = self.session.exec(
@@ -360,6 +377,27 @@ class MyFilesManager:
         if directory:
             return True
             
+        # 优化黑名单子目录检查
+        # 1. 使用SQL的LIKE操作符更高效地检查路径前缀匹配
+        blacklist_paths_query = self.session.exec(
+            select(MyFiles.path).where(MyFiles.is_blacklist == True)
+        ).all()
+        
+        # 将当前路径与所有黑名单路径进行比较
+        for blacklist_path in blacklist_paths_query:
+            normalized_blacklist = os.path.normpath(blacklist_path).replace("\\", "/")
+            
+            # 确保两个路径都以/结尾，以处理目录
+            if not normalized_blacklist.endswith("/"):
+                normalized_blacklist += "/"
+                
+            # 简单的字符串前缀匹配
+            if path.startswith(normalized_blacklist):
+                return True
+                
+            # 另一种情况是当前路径是黑名单的父目录，这种情况不应该被标记为黑名单
+                
+        # 备用方法：使用Path对象进行比较（较慢但更精确）
         # 检查路径是否是黑名单文件夹的子文件夹
         blacklist_dirs = self.get_blacklist_directories()
         path_obj = Path(path)
@@ -594,6 +632,388 @@ class MyFilesManager:
                 "message": f"检查时出错: {str(e)}",
                 "status": "error"
             }
+
+# ========== 完全磁盘访问权限相关方法 ==========
+    
+    def check_full_disk_access_detailed(self) -> Dict[str, any]:
+        """详细检查macOS完全磁盘访问权限状态
+        
+        Returns:
+            Dict: 包含权限状态详情的字典
+        """
+        if self.system != "Darwin":
+            return {
+                "has_access": True,  # 非macOS系统默认有访问权限
+                "platform": self.system,
+                "test_results": {},
+                "message": f"当前系统({self.system})不需要完全磁盘访问权限检查"
+            }
+        
+        # macOS系统权限检测
+        test_paths = [
+            "/System/Library/CoreServices",
+            "/Library/Application Support",
+            "/usr/local",
+            "/private/var/log",
+        ]
+        
+        access_results = {}
+        for path in test_paths:
+            if os.path.exists(path):
+                try:
+                    # 尝试列出目录内容
+                    files = os.listdir(path)
+                    access_results[path] = {
+                        "accessible": True,
+                        "file_count": len(files)
+                    }
+                except PermissionError:
+                    access_results[path] = {
+                        "accessible": False,
+                        "error": "权限错误"
+                    }
+                except Exception as e:
+                    access_results[path] = {
+                        "accessible": False,
+                        "error": str(e)
+                    }
+            else:
+                access_results[path] = {
+                    "accessible": False,
+                    "error": "路径不存在"
+                }
+        
+        # 如果所有测试路径都能访问，则认为有完全磁盘访问权限
+        accessible_count = sum(1 for res in access_results.values() if res.get("accessible", False))
+        has_access = accessible_count >= len(test_paths) * 0.75  # 75%的路径可访问则认为有权限
+        
+        return {
+            "has_access": has_access,
+            "platform": "macOS",
+            "test_results": access_results,
+            "accessible_paths": accessible_count,
+            "total_paths": len(test_paths),
+            "message": "拥有完全磁盘访问权限" if has_access else "缺少完全磁盘访问权限"
+        }
+    
+    def update_full_disk_access_status(self, has_access: bool) -> bool:
+        """更新完全磁盘访问权限状态到系统配置
+        
+        Args:
+            has_access (bool): 是否拥有完全磁盘访问权限
+            
+        Returns:
+            bool: 更新是否成功
+        """
+        try:
+            # 查找或创建配置记录
+            config = self.session.exec(
+                select(SystemConfig).where(SystemConfig.key == "full_disk_access_status")
+            ).first()
+            
+            if config:
+                config.value = "true" if has_access else "false"
+                config.updated_at = datetime.now()
+            else:
+                config = SystemConfig(
+                    key="full_disk_access_status",
+                    value="true" if has_access else "false",
+                    description="macOS完全磁盘访问权限状态"
+                )
+            
+            self.session.add(config)
+            self.session.commit()
+            
+            # 同时更新权限检查时间戳
+            self._update_last_permission_check()
+            
+            return True
+        except Exception as e:
+            logger.error(f"更新完全磁盘访问权限状态失败: {str(e)}")
+            self.session.rollback()
+            return False
+    
+    def get_full_disk_access_status(self) -> bool:
+        """获取存储的完全磁盘访问权限状态
+        
+        Returns:
+            bool: 是否拥有完全磁盘访问权限
+        """
+        try:
+            config = self.session.exec(
+                select(SystemConfig).where(SystemConfig.key == "full_disk_access_status")
+            ).first()
+            
+            if config:
+                return config.value.lower() == "true"
+            return False
+        except Exception as e:
+            logger.error(f"获取完全磁盘访问权限状态失败: {str(e)}")
+            return False
+    
+    def _update_last_permission_check(self) -> None:
+        """更新最后一次权限检查时间戳"""
+        try:
+            import time
+            config = self.session.exec(
+                select(SystemConfig).where(SystemConfig.key == "last_permission_check")
+            ).first()
+            
+            if config:
+                config.value = str(int(time.time()))
+                config.updated_at = datetime.now()
+            else:
+                config = SystemConfig(
+                    key="last_permission_check",
+                    value=str(int(time.time())),
+                    description="最后一次权限检查时间戳"
+                )
+            
+            self.session.add(config)
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"更新权限检查时间戳失败: {str(e)}")
+    
+    # ========== 黑名单层级管理方法 ==========
+    
+    def add_blacklist_folder(self, parent_id: int, folder_path: str, folder_alias: str = None) -> Tuple[bool, Union[MyFiles, str]]:
+        """在指定的白名单文件夹下添加黑名单子文件夹
+        
+        Args:
+            parent_id (int): 父文件夹（白名单）的ID
+            folder_path (str): 黑名单文件夹路径
+            folder_alias (str, optional): 黑名单文件夹别名
+            
+        Returns:
+            Tuple[bool, Union[MyFiles, str]]: (成功标志, 黑名单文件夹对象或错误消息)
+        """
+        try:
+            # 验证父文件夹存在且不是黑名单
+            parent_folder = self.session.get(MyFiles, parent_id)
+            if not parent_folder:
+                return False, f"父文件夹ID不存在: {parent_id}"
+            
+            if parent_folder.is_blacklist:
+                return False, "不能在黑名单文件夹下添加子文件夹"
+            
+            # 验证子文件夹路径在父文件夹下
+            folder_path = os.path.normpath(folder_path)
+            parent_path = os.path.normpath(parent_folder.path)
+            
+            if not folder_path.startswith(parent_path):
+                return False, f"文件夹路径必须在父文件夹 {parent_path} 下"
+            
+            # 检查是否已存在
+            existing = self.session.exec(
+                select(MyFiles).where(MyFiles.path == folder_path)
+            ).first()
+            
+            if existing:
+                # 如果已存在，更新为黑名单
+                existing.is_blacklist = True
+                existing.parent_id = parent_id
+                existing.updated_at = datetime.now()
+                if folder_alias:
+                    existing.alias = folder_alias
+                self.session.add(existing)
+                self.session.commit()
+                self.session.refresh(existing)
+                return True, existing
+            
+            # 创建新的黑名单记录
+            blacklist_folder = MyFiles(
+                path=folder_path,
+                alias=folder_alias or os.path.basename(folder_path),
+                is_blacklist=True,
+                is_common_folder=False,
+                parent_id=parent_id,
+                auth_status=AuthStatus.AUTHORIZED.value  # 黑名单也设为已授权状态，只是不监控
+            )
+            
+            self.session.add(blacklist_folder)
+            self.session.commit()
+            self.session.refresh(blacklist_folder)
+            
+            return True, blacklist_folder
+            
+        except Exception as e:
+            logger.error(f"添加黑名单文件夹失败: {str(e)}")
+            self.session.rollback()
+            return False, f"添加黑名单文件夹失败: {str(e)}"
+    
+    def get_folder_hierarchy(self) -> List[Dict]:
+        """获取文件夹层级关系（白名单+其下的黑名单）
+        
+        Returns:
+            List[Dict]: 层级结构化的文件夹列表
+        """
+        try:
+            # 获取所有白名单文件夹（父文件夹）
+            white_folders = self.session.exec(
+                select(MyFiles).where(
+                    and_(
+                        MyFiles.is_blacklist == False,
+                        or_(MyFiles.parent_id.is_(None), MyFiles.parent_id == 0)
+                    )
+                ).order_by(MyFiles.created_at)
+            ).all()
+            
+            hierarchy = []
+            for white_folder in white_folders:
+                # 获取此白名单文件夹下的所有黑名单子文件夹
+                black_children = self.session.exec(
+                    select(MyFiles).where(
+                        and_(
+                            MyFiles.is_blacklist == True,
+                            MyFiles.parent_id == white_folder.id
+                        )
+                    ).order_by(MyFiles.created_at)
+                ).all()
+                
+                folder_data = {
+                    "id": white_folder.id,
+                    "path": white_folder.path,
+                    "alias": white_folder.alias,
+                    "is_blacklist": False,
+                    "is_common_folder": white_folder.is_common_folder,
+                    "auth_status": white_folder.auth_status,
+                    "created_at": white_folder.created_at.isoformat() if white_folder.created_at else None,
+                    "updated_at": white_folder.updated_at.isoformat() if white_folder.updated_at else None,
+                    "blacklist_children": [
+                        {
+                            "id": black_child.id,
+                            "path": black_child.path,
+                            "alias": black_child.alias,
+                            "is_blacklist": True,
+                            "parent_id": black_child.parent_id,
+                            "auth_status": black_child.auth_status,
+                            "created_at": black_child.created_at.isoformat() if black_child.created_at else None,
+                            "updated_at": black_child.updated_at.isoformat() if black_child.updated_at else None,
+                        }
+                        for black_child in black_children
+                    ]
+                }
+                hierarchy.append(folder_data)
+            
+            return hierarchy
+            
+        except Exception as e:
+            logger.error(f"获取文件夹层级关系失败: {str(e)}")
+            return []
+    
+    # ========== Bundle扩展名管理方法 ==========
+    
+    def get_bundle_extensions(self, active_only: bool = True) -> List[BundleExtension]:
+        """获取所有Bundle扩展名
+        
+        Args:
+            active_only (bool): 是否只返回启用的扩展名
+            
+        Returns:
+            List[BundleExtension]: Bundle扩展名列表
+        """
+        try:
+            query = select(BundleExtension)
+            if active_only:
+                query = query.where(BundleExtension.is_active == True)
+            
+            return self.session.exec(query.order_by(BundleExtension.extension)).all()
+        except Exception as e:
+            logger.error(f"获取Bundle扩展名失败: {str(e)}")
+            return []
+    
+    def add_bundle_extension(self, extension: str, description: str = None) -> Tuple[bool, Union[BundleExtension, str]]:
+        """添加新的Bundle扩展名
+        
+        Args:
+            extension (str): 扩展名（如.app）
+            description (str, optional): 描述
+            
+        Returns:
+            Tuple[bool, Union[BundleExtension, str]]: (成功标志, Bundle扩展名对象或错误消息)
+        """
+        try:
+            # 标准化扩展名格式
+            if not extension.startswith('.'):
+                extension = '.' + extension
+            
+            # 检查是否已存在
+            existing = self.session.exec(
+                select(BundleExtension).where(BundleExtension.extension == extension)
+            ).first()
+            
+            if existing:
+                if existing.is_active:
+                    return False, f"Bundle扩展名 {extension} 已存在"
+                else:
+                    # 重新激活已存在但被禁用的扩展名
+                    existing.is_active = True
+                    existing.updated_at = datetime.now()
+                    if description:
+                        existing.description = description
+                    self.session.add(existing)
+                    self.session.commit()
+                    self.session.refresh(existing)
+                    return True, existing
+            
+            # 创建新扩展名
+            bundle_ext = BundleExtension(
+                extension=extension,
+                description=description or f"{extension} Bundle",
+                is_active=True
+            )
+            
+            self.session.add(bundle_ext)
+            self.session.commit()
+            self.session.refresh(bundle_ext)
+            
+            return True, bundle_ext
+            
+        except Exception as e:
+            logger.error(f"添加Bundle扩展名失败: {str(e)}")
+            self.session.rollback()
+            return False, f"添加Bundle扩展名失败: {str(e)}"
+    
+    def remove_bundle_extension(self, extension_id: int) -> Tuple[bool, str]:
+        """删除Bundle扩展名（设为不活跃）
+        
+        Args:
+            extension_id (int): Bundle扩展名ID
+            
+        Returns:
+            Tuple[bool, str]: (成功标志, 消息)
+        """
+        try:
+            bundle_ext = self.session.get(BundleExtension, extension_id)
+            if not bundle_ext:
+                return False, f"Bundle扩展名ID不存在: {extension_id}"
+            
+            bundle_ext.is_active = False
+            bundle_ext.updated_at = datetime.now()
+            
+            self.session.add(bundle_ext)
+            self.session.commit()
+            
+            return True, f"Bundle扩展名 {bundle_ext.extension} 已禁用"
+            
+        except Exception as e:
+            logger.error(f"删除Bundle扩展名失败: {str(e)}")
+            self.session.rollback()
+            return False, f"删除Bundle扩展名失败: {str(e)}"
+    
+    def get_bundle_extensions_for_rust(self) -> List[str]:
+        """获取用于Rust端的Bundle扩展名列表
+        
+        Returns:
+            List[str]: 扩展名字符串列表
+        """
+        try:
+            extensions = self.get_bundle_extensions(active_only=True)
+            return [ext.extension for ext in extensions]
+        except Exception as e:
+            logger.error(f"获取Rust端Bundle扩展名列表失败: {str(e)}")
+            # 返回基本的默认扩展名作为备选
+            return [".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", ".imovielibrary"]
 
 
 if __name__ == '__main__':

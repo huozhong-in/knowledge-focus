@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"调试信息: Python版本 {sys.version}")
         logger.info(f"调试信息: 当前工作目录 {os.getcwd()}")
         
-        # 初始化数据库引擎
+        # 初始化数据库引擋
         if hasattr(app.state, "db_path"):
             sqlite_url = f"sqlite:///{app.state.db_path}"
             logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
@@ -1505,6 +1505,223 @@ async def search_files(
     except Exception as e:
         logger.error(f"搜索文件路径时出错: {str(e)}")
         return []
+
+# ========== Bundle扩展名管理端点 ==========
+@app.get("/bundle-extensions")
+def get_bundle_extensions(
+    active_only: bool = True,
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """获取Bundle扩展名列表"""
+    try:
+        extensions = myfiles_mgr.get_bundle_extensions(active_only=active_only)
+        extensions_data = []
+        for ext in extensions:
+            extensions_data.append({
+                "id": ext.id,
+                "extension": ext.extension,
+                "description": ext.description,
+                "is_active": ext.is_active,
+                "created_at": ext.created_at.isoformat() if ext.created_at else None,
+                "updated_at": ext.updated_at.isoformat() if ext.updated_at else None,
+            })
+        
+        return {
+            "status": "success",
+            "data": extensions_data,
+            "count": len(extensions_data),
+            "message": f"成功获取 {len(extensions_data)} 个Bundle扩展名"
+        }
+    except Exception as e:
+        logger.error(f"获取Bundle扩展名失败: {str(e)}")
+        return {"status": "error", "message": f"获取Bundle扩展名失败: {str(e)}"}
+
+@app.post("/bundle-extensions")
+def add_bundle_extension(
+    data: Dict[str, Any] = Body(...),
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """添加新的Bundle扩展名"""
+    try:
+        extension = data.get("extension", "").strip()
+        description = data.get("description", "").strip()
+        
+        if not extension:
+            return {"status": "error", "message": "扩展名不能为空"}
+        
+        success, result = myfiles_mgr.add_bundle_extension(extension, description)
+        
+        if success:
+            return {
+                "status": "success",
+                "data": {
+                    "id": result.id,
+                    "extension": result.extension,
+                    "description": result.description,
+                    "is_active": result.is_active,
+                    "created_at": result.created_at.isoformat() if result.created_at else None,
+                    "updated_at": result.updated_at.isoformat() if result.updated_at else None,
+                },
+                "message": f"成功添加Bundle扩展名: {result.extension}"
+            }
+        else:
+            return {"status": "error", "message": result}
+            
+    except Exception as e:
+        logger.error(f"添加Bundle扩展名失败: {str(e)}")
+        return {"status": "error", "message": f"添加Bundle扩展名失败: {str(e)}"}
+
+@app.delete("/bundle-extensions/{ext_id}")
+def remove_bundle_extension(
+    ext_id: int,
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """删除Bundle扩展名（设为不活跃）"""
+    try:
+        success, message = myfiles_mgr.remove_bundle_extension(ext_id)
+        
+        if success:
+            return {"status": "success", "message": message}
+        else:
+            return {"status": "error", "message": message}
+            
+    except Exception as e:
+        logger.error(f"删除Bundle扩展名失败: {str(e)}")
+        return {"status": "error", "message": f"删除Bundle扩展名失败: {str(e)}"}
+
+@app.get("/bundle-extensions/for-rust")
+def get_bundle_extensions_for_rust(
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """获取用于Rust端的Bundle扩展名列表"""
+    try:
+        extensions = myfiles_mgr.get_bundle_extensions_for_rust()
+        return {
+            "status": "success",
+            "data": extensions,
+            "count": len(extensions),
+            "message": f"成功获取 {len(extensions)} 个Rust端Bundle扩展名"
+        }
+    except Exception as e:
+        logger.error(f"获取Rust端Bundle扩展名失败: {str(e)}")
+        return {"status": "error", "data": [], "message": f"获取失败: {str(e)}"}
+
+# ========== 层级文件夹管理端点 ==========
+@app.post("/folders/blacklist/{parent_id}")
+def add_blacklist_folder_under_parent(
+    parent_id: int,
+    data: Dict[str, Any] = Body(...),
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager),
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """在指定的白名单父文件夹下添加黑名单子文件夹"""
+    try:
+        folder_path = data.get("path", "").strip()
+        folder_alias = data.get("alias", "").strip() or None
+        
+        if not folder_path:
+            return {"status": "error", "message": "文件夹路径不能为空"}
+        
+        success, result = myfiles_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
+        
+        if success:
+            # 当文件夹变为黑名单时，清理相关的粗筛结果数据
+            deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
+            
+            return {
+                "status": "success",
+                "data": {
+                    "id": result.id,
+                    "path": result.path,
+                    "alias": result.alias,
+                    "is_blacklist": result.is_blacklist,
+                    "parent_id": result.parent_id,
+                    "auth_status": result.auth_status,
+                    "created_at": result.created_at.isoformat() if result.created_at else None,
+                    "updated_at": result.updated_at.isoformat() if result.updated_at else None,
+                },
+                "message": f"成功添加黑名单文件夹: {result.path}，清理了 {deleted_count} 条相关粗筛结果"
+            }
+        else:
+            return {"status": "error", "message": result}
+            
+    except Exception as e:
+        logger.error(f"添加黑名单文件夹失败: {str(e)}")
+        return {"status": "error", "message": f"添加黑名单文件夹失败: {str(e)}"}
+
+@app.get("/folders/hierarchy")
+def get_folder_hierarchy(
+    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+):
+    """获取文件夹层级关系（白名单+其下的黑名单）"""
+    try:
+        hierarchy = myfiles_mgr.get_folder_hierarchy()
+        return {
+            "status": "success",
+            "data": hierarchy,
+            "count": len(hierarchy),
+            "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
+        }
+    except Exception as e:
+        logger.error(f"获取文件夹层级关系失败: {str(e)}")
+        return {"status": "error", "message": f"获取文件夹层级关系失败: {str(e)}"}
+
+@app.post("/screening/clean-by-path")
+def clean_screening_results_by_path(
+    data: Dict[str, Any] = Body(...),
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """手动清理指定路径下的粗筛结果（用于添加黑名单子文件夹时）
+    
+    前端可以使用此端点在用户在白名单下添加黑名单子文件夹后清理数据，
+    相当于在集合中扣出一个子集来删掉。
+    """
+    try:
+        folder_path = data.get("path", "").strip()
+        
+        if not folder_path:
+            return {"status": "error", "message": "文件夹路径不能为空"}
+        
+        # 使用 delete_screening_results_by_path_prefix 方法，用于在白名单下添加黑名单子文件夹
+        deleted_count = screening_mgr.delete_screening_results_by_path_prefix(folder_path)
+        return {
+            "status": "success", 
+            "deleted": deleted_count,
+            "message": f"已清理 {deleted_count} 条与路径前缀 '{folder_path}' 相关的粗筛结果"
+        }
+            
+    except Exception as e:
+        logger.error(f"手动清理粗筛结果失败: {str(e)}")
+        return {"status": "error", "message": f"清理失败: {str(e)}"}
+
+@app.post("/clear-screening-data")
+def clear_screening_data(
+    data: Dict[str, Any] = Body(...),
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """清理指定路径的粗筛数据（供Rust后端调用）
+    
+    当文件夹变为黑名单或被删除时，Rust后端调用此端点清理相关的粗筛数据。
+    """
+    try:
+        folder_path = data.get("folder_path", "").strip()
+        
+        if not folder_path:
+            return {"status": "error", "message": "文件夹路径不能为空"}
+        
+        deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
+        
+        logger.info(f"Rust后端请求清理路径 '{folder_path}' 的粗筛数据，已清理 {deleted_count} 条记录")
+        
+        return {
+            "status": "success", 
+            "deleted": deleted_count,
+            "message": f"已清理 {deleted_count} 条与路径 '{folder_path}' 相关的粗筛结果"
+        }
+            
+    except Exception as e:
+        logger.error(f"清理粗筛数据失败: {str(e)}")
+        return {"status": "error", "message": f"清理失败: {str(e)}"}
 
 if __name__ == "__main__":
     try:

@@ -159,8 +159,8 @@ impl DebouncedFileMonitor {
                 // 让线程休眠10秒
                 std::thread::sleep(Duration::from_secs(10));
                 tick_count += 1;
-                println!("[文件监控-心跳] #{} Watcher for '{}' is still alive", 
-                        tick_count, &dir_path_for_watcher);
+                // println!("[文件监控-心跳] #{} Watcher for '{}' is still alive", 
+                //         tick_count, &dir_path_for_watcher);
                 
                 // 确保 watcher 保持活跃
                 let _ = &watcher;

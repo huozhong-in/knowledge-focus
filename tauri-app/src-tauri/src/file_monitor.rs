@@ -191,6 +191,10 @@ pub struct FileMonitor {
     blacklist_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
     // 配置缓存
     config_cache: Arc<Mutex<Option<AllConfigurations>>>,
+    // Bundle扩展名缓存
+    bundle_extensions_cache: Arc<Mutex<Option<Vec<String>>>>,
+    // Bundle扩展名缓存时间戳
+    bundle_cache_timestamp: Arc<Mutex<Option<SystemTime>>>,
     // API主机和端口
     api_host: String,
     api_port: u16,
@@ -213,6 +217,8 @@ impl FileMonitor {
             monitored_dirs: Arc::new(Mutex::new(Vec::new())),
             blacklist_dirs: Arc::new(Mutex::new(Vec::new())),
             config_cache: Arc::new(Mutex::new(None)), // Initialize config cache
+            bundle_extensions_cache: Arc::new(Mutex::new(None)),
+            bundle_cache_timestamp: Arc::new(Mutex::new(None)),
             api_host,
             api_port,
             client: reqwest::Client::builder()
@@ -328,6 +334,16 @@ impl FileMonitor {
         // 克隆当前的metadata_tx通道（如果存在）
         self.metadata_tx.clone()
     }
+    
+    // 新增：获取API主机地址
+    pub fn get_api_host(&self) -> &str {
+        &self.api_host
+    }
+    
+    // 新增：获取API端口
+    pub fn get_api_port(&self) -> u16 {
+        self.api_port
+    }
 
     // 更新监控目录状态
     pub fn update_directory_status(&self, path: &str, status: DirectoryAuthStatus) {
@@ -398,6 +414,286 @@ impl FileMonitor {
         println!("[DEBUG] update_monitored_directories called. It will now attempt to refresh all config.");
         self.fetch_and_store_all_config().await?; // This will update self.monitored_dirs
         Ok(())
+    }
+
+    // --- Bundle扩展名动态获取和缓存机制 ---
+    
+    /// 从API获取Bundle扩展名列表
+    async fn fetch_bundle_extensions_from_api(&self) -> Result<Vec<String>, String> {
+        let url = format!("http://{}:{}/bundle-extensions/for-rust", self.api_host, self.api_port);
+        println!("[BUNDLE_FETCH] Fetching bundle extensions from URL: {}", url);
+
+        match self.client.get(&url).timeout(Duration::from_secs(5)).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<serde_json::Value>().await {
+                        Ok(json_response) => {
+                            // 解析API响应格式 {"status": "success", "data": [...]}
+                            if let Some(data_array) = json_response.get("data").and_then(|d| d.as_array()) {
+                                let extensions: Vec<String> = data_array
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                    .collect();
+                                println!("[BUNDLE_FETCH] Successfully fetched {} bundle extensions", extensions.len());
+                                Ok(extensions)
+                            } else {
+                                let err_msg = "[BUNDLE_FETCH] API response does not contain expected 'data' array".to_string();
+                                eprintln!("{}", err_msg);
+                                Err(err_msg)
+                            }
+                        }
+                        Err(e) => {
+                            let err_msg = format!("[BUNDLE_FETCH] Failed to parse bundle extensions JSON: {}", e);
+                            eprintln!("{}", err_msg);
+                            Err(err_msg)
+                        }
+                    }
+                } else {
+                    let status = response.status();
+                    let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
+                    let err_msg = format!("[BUNDLE_FETCH] API request failed with status: {}. Body: {}", status, err_text);
+                    eprintln!("{}", err_msg);
+                    Err(err_msg)
+                }
+            }
+            Err(e) => {
+                let err_msg = format!("[BUNDLE_FETCH] Failed to send request to {}: {}", url, e);
+                eprintln!("{}", err_msg);
+                Err(err_msg)
+            }
+        }
+    }
+
+    /// 更新Bundle扩展名缓存
+    fn update_bundle_cache(&self, extensions: Vec<String>) {
+        let mut cache = self.bundle_extensions_cache.lock().unwrap();
+        let mut timestamp = self.bundle_cache_timestamp.lock().unwrap();
+        
+        *cache = Some(extensions);
+        *timestamp = Some(SystemTime::now());
+        
+        println!("[BUNDLE_CACHE] Updated bundle extensions cache with {} items", 
+                 cache.as_ref().unwrap().len());
+    }
+
+    /// 检查Bundle缓存是否过期（TTL: 1小时）
+    fn is_bundle_cache_expired(&self) -> bool {
+        let timestamp = self.bundle_cache_timestamp.lock().unwrap();
+        match *timestamp {
+            Some(cached_time) => {
+                let now = SystemTime::now();
+                match now.duration_since(cached_time) {
+                    Ok(duration) => duration > Duration::from_secs(3600), // 1小时
+                    Err(_) => true, // 如果时间计算出错，认为已过期
+                }
+            }
+            None => true, // 没有缓存时间，认为已过期
+        }
+    }
+
+    /// 获取缓存的Bundle扩展名，如果缓存为空或过期则返回fallback列表
+    pub fn get_cached_bundle_extensions(&self) -> Vec<String> {
+        let cache = self.bundle_extensions_cache.lock().unwrap();
+        
+        if let Some(extensions) = cache.as_ref() {
+            if !self.is_bundle_cache_expired() {
+                return extensions.clone();
+            }
+        }
+        
+        // 返回fallback扩展名列表
+        Self::get_fallback_bundle_extensions()
+    }
+
+    /// 获取fallback Bundle扩展名列表
+    fn get_fallback_bundle_extensions() -> Vec<String> {
+        vec![
+            ".app".to_string(),
+            ".bundle".to_string(),
+            ".framework".to_string(),
+            ".fcpbundle".to_string(),
+            ".photoslibrary".to_string(),
+            ".imovielibrary".to_string(),
+            ".tvlibrary".to_string(),
+            ".theater".to_string(),
+            ".plugin".to_string(),
+            ".component".to_string(),
+            ".colorSync".to_string(),
+            ".mdimporter".to_string(),
+            ".qlgenerator".to_string(),
+            ".saver".to_string(),
+            ".service".to_string(),
+            ".wdgt".to_string(),
+            ".xpc".to_string(),
+        ]
+    }
+
+    /// 刷新Bundle扩展名缓存
+    pub async fn refresh_bundle_extensions(&self) -> Result<(), String> {
+        match self.fetch_bundle_extensions_from_api().await {
+            Ok(extensions) => {
+                self.update_bundle_cache(extensions);
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[BUNDLE_REFRESH] Failed to refresh bundle extensions: {}", e);
+                // 即使刷新失败，我们仍然可以使用fallback扩展名
+                Err(e)
+            }
+        }
+    }
+
+    /// 确保Bundle扩展名缓存有效（如果过期则自动刷新）
+    pub async fn ensure_bundle_cache_valid(&self) -> Vec<String> {
+        if self.is_bundle_cache_expired() {
+            // 尝试刷新缓存
+            if let Err(e) = self.refresh_bundle_extensions().await {
+                eprintln!("[BUNDLE_CACHE] Auto-refresh failed: {}, using fallback", e);
+            }
+        }
+        self.get_cached_bundle_extensions()
+    }
+
+// --- End of Bundle扩展名动态获取和缓存机制 ---
+
+    // --- 配置刷新机制 ---
+    
+    /// 刷新文件夹配置（重新获取监控目录和黑名单）
+    pub async fn refresh_folder_configuration(&self) -> Result<(), String> {
+        println!("[CONFIG_REFRESH] 开始刷新文件夹配置...");
+        
+        // 重新获取配置，这会更新监控目录和黑名单
+        match self.fetch_and_store_all_config().await {
+            Ok(()) => {
+                println!("[CONFIG_REFRESH] 文件夹配置刷新成功");
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("[CONFIG_REFRESH] 文件夹配置刷新失败: {}", e);
+                Err(e)
+            }
+        }
+    }
+    
+    /// 刷新所有配置（文件夹配置 + Bundle扩展名）
+    pub async fn refresh_all_configurations(&self) -> Result<(), String> {
+        println!("[CONFIG_REFRESH_ALL] 开始刷新所有配置...");
+        
+        let mut errors = Vec::new();
+        
+        // 刷新文件夹配置
+        if let Err(e) = self.refresh_folder_configuration().await {
+            errors.push(format!("文件夹配置刷新失败: {}", e));
+        }
+        
+        // 刷新Bundle扩展名
+        if let Err(e) = self.refresh_bundle_extensions().await {
+            errors.push(format!("Bundle扩展名刷新失败: {}", e));
+        }
+        
+        if errors.is_empty() {
+            println!("[CONFIG_REFRESH_ALL] 所有配置刷新成功");
+            Ok(())
+        } else {
+            let error_msg = errors.join("; ");
+            eprintln!("[CONFIG_REFRESH_ALL] 部分配置刷新失败: {}", error_msg);
+            Err(error_msg)
+        }
+    }
+    
+    /// 检查配置是否需要刷新（基于时间戳或手动触发）
+    pub fn should_refresh_configuration(&self) -> bool {
+        // 检查Bundle缓存是否过期
+        if self.is_bundle_cache_expired() {
+            return true;
+        }
+        
+        // 可以添加其他条件，比如配置缓存的时间戳等
+        // 目前简单返回false，表示不需要自动刷新
+        false
+    }
+    
+    /// 获取当前配置状态摘要
+    pub fn get_configuration_summary(&self) -> serde_json::Value {
+        let config_guard = self.config_cache.lock().unwrap();
+        let bundle_cache = self.bundle_extensions_cache.lock().unwrap();
+        let bundle_timestamp = self.bundle_cache_timestamp.lock().unwrap();
+        let monitored_dirs = self.monitored_dirs.lock().unwrap();
+        let blacklist_dirs = self.blacklist_dirs.lock().unwrap();
+        
+        serde_json::json!({
+            "has_config_cache": config_guard.is_some(),
+            "config_categories_count": config_guard.as_ref().map(|c| c.file_categories.len()).unwrap_or(0),
+            "config_filter_rules_count": config_guard.as_ref().map(|c| c.file_filter_rules.len()).unwrap_or(0),
+            "config_extension_maps_count": config_guard.as_ref().map(|c| c.file_extension_maps.len()).unwrap_or(0),
+            "full_disk_access": config_guard.as_ref().map(|c| c.full_disk_access).unwrap_or(false),
+            "monitored_dirs_count": monitored_dirs.len(),
+            "blacklist_dirs_count": blacklist_dirs.len(),
+            "bundle_cache_count": bundle_cache.as_ref().map(|b| b.len()).unwrap_or(0),
+            "bundle_cache_expired": self.is_bundle_cache_expired(),
+            "bundle_cache_timestamp": bundle_timestamp.as_ref().map(|t| {
+                t.duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            })
+        })
+    }
+    
+    // --- End of 配置刷新机制 ---
+
+    /// 使用动态扩展名列表检查是否为macOS bundle文件夹
+    pub async fn is_macos_bundle_folder_dynamic(&self, path: &Path) -> bool {
+        // 首先处理可能为null的情况
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+        
+        // 获取最新的bundle扩展名列表
+        let bundle_extensions = self.ensure_bundle_cache_valid().await;
+        
+        // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            let lowercase_name = file_name.to_lowercase();
+            
+            // 检查文件名是否匹配bundle扩展名
+            if bundle_extensions.iter().any(|ext| lowercase_name.ends_with(ext)) {
+                return true;
+            }
+        }
+        
+        // 2. 检查路径中的任何部分是否包含bundle
+        if let Some(path_str) = path.to_str() {
+            let path_components: Vec<&str> = path_str.split('/').collect();
+            
+            for component in path_components {
+                let lowercase_component = component.to_lowercase();
+                if bundle_extensions.iter().any(|ext| {
+                    // 检查组件是否以bundle扩展名结尾
+                    lowercase_component.ends_with(ext)
+                }) {
+                    return true;
+                }
+            }
+        }
+        
+        // 3. 如果是目录，检查是否有典型的macOS bundle目录结构
+        if path.is_dir() && cfg!(target_os = "macos") {
+            // 检查常见的bundle内部目录结构
+            let contents_dir = path.join("Contents");
+            if contents_dir.exists() && contents_dir.is_dir() {
+                let info_plist = contents_dir.join("Info.plist");
+                let macos_dir = contents_dir.join("MacOS");
+                let resources_dir = contents_dir.join("Resources");
+                
+                // 如果存在Info.plist或典型的bundle子目录，很可能是一个bundle
+                if info_plist.exists() || macos_dir.exists() || resources_dir.exists() {
+                    return true;
+                }
+            }
+        }
+        
+        // 如果以上检查都未通过，则不是bundle
+        false
     }
 
     // 计算简单文件哈希（使用文件前4KB内容）
@@ -583,7 +879,7 @@ impl FileMonitor {
         if metadata.is_hidden {
             extra_data.insert("excluded_by_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(9999)));
             extra_data.insert("excluded_by_rule_name".to_string(), serde_json::Value::String("隐藏文件自动排除".to_string()));
-            println!("[APPLY_RULES] 隐藏文件将被自动排除: {}", metadata.file_name);
+            // println!("[APPLY_RULES] 隐藏文件将被自动排除: {}", metadata.file_name);
         }
         
         // 根据扩展名进行初步分类
@@ -631,7 +927,7 @@ impl FileMonitor {
                         // 关键字匹配 - 检查文件名是否包含关键字
                         if filename.contains(&filter_rule.pattern.to_lowercase()) {
                             matched_this_rule = true;
-                            println!("[APPLY_RULES] Matched filename keyword rule '{}' for: {}", filter_rule.name, filename);
+                            // println!("[APPLY_RULES] Matched filename keyword rule '{}' for: {}", filter_rule.name, filename);
                         }
                     } else if filter_rule.pattern_type == "regex" {
                         // 正则表达式匹配
@@ -639,7 +935,7 @@ impl FileMonitor {
                             Ok(regex) => {
                                 if regex.is_match(&filename) {
                                     matched_this_rule = true;
-                                    println!("[APPLY_RULES] Matched filename regex rule '{}' for: {}", filter_rule.name, filename);
+                                    // println!("[APPLY_RULES] Matched filename regex rule '{}' for: {}", filter_rule.name, filename);
                                 }
                             },
                             Err(e) => {
@@ -655,7 +951,7 @@ impl FileMonitor {
                             Ok(regex) => {
                                 if regex.is_match(&filename) {
                                     matched_this_rule = true;
-                                    println!("[APPLY_RULES] Matched OS_BUNDLE regex rule '{}' for: {}", filter_rule.name, filename);
+                                    // println!("[APPLY_RULES] Matched OS_BUNDLE regex rule '{}' for: {}", filter_rule.name, filename);
                                     // 对于OS_BUNDLE类型，我们可以将其标记为排除
                                     extra_data.insert("excluded_by_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(filter_rule.id)));
                                     extra_data.insert("excluded_by_rule_name".to_string(), serde_json::Value::String(filter_rule.name.clone()));
@@ -672,14 +968,14 @@ impl FileMonitor {
                     if let Some(ext_val) = &metadata.extension {
                         if filter_rule.pattern_type == "keyword" && ext_val.to_lowercase() == filter_rule.pattern.to_lowercase() {
                             matched_this_rule = true;
-                            println!("[APPLY_RULES] Matched extension rule '{}' for: {}", filter_rule.name, ext_val);
+                            // println!("[APPLY_RULES] Matched extension rule '{}' for: {}", filter_rule.name, ext_val);
                         } else if filter_rule.pattern_type == "regex" {
                             // 扩展名的正则表达式匹配
                             match regex::Regex::new(&filter_rule.pattern) {
                                 Ok(regex) => {
                                     if regex.is_match(ext_val) {
                                         matched_this_rule = true;
-                                        println!("[APPLY_RULES] Matched extension regex rule '{}' for: {}", filter_rule.name, ext_val);
+                                        // println!("[APPLY_RULES] Matched extension regex rule '{}' for: {}", filter_rule.name, ext_val);
                                     }
                                 },
                                 Err(e) => {
@@ -712,12 +1008,12 @@ impl FileMonitor {
                                 }
                             }
                         }
-                         println!("[APPLY_RULES] Action TAG for rule '{}'", filter_rule.name);
+                        //  println!("[APPLY_RULES] Action TAG for rule '{}'", filter_rule.name);
                     }
                     RuleActionRust::Exclude => {
                         extra_data.insert("excluded_by_rule_id".to_string(), JsonValue::Number(serde_json::Number::from(filter_rule.id)));
                         extra_data.insert("excluded_by_rule_name".to_string(), JsonValue::String(filter_rule.name.clone()));
-                        println!("[APPLY_RULES] Action EXCLUDE for rule '{}'. File will be marked.", filter_rule.name);
+                        // println!("[APPLY_RULES] Action EXCLUDE for rule '{}'. File will be marked.", filter_rule.name);
                         
                         // 更新被过滤的文件统计
                         if let Ok(mut stats) = self.stats.lock() {
@@ -727,14 +1023,14 @@ impl FileMonitor {
                         // The caller (process_file_event) will need to check this extra_data field.
                     }
                     RuleActionRust::Include => {
-                         println!("[APPLY_RULES] Action INCLUDE for rule '{}'", filter_rule.name);
+                        //  println!("[APPLY_RULES] Action INCLUDE for rule '{}'", filter_rule.name);
                         // Default behavior, no specific action needed here unless it overrides an exclude
                     }
                 }
                 if let Some(cat_id) = filter_rule.category_id {
                     // Consider rule priority if multiple rules assign category
                     metadata.category_id = Some(cat_id);
-                    println!("[APPLY_RULES] Rule '{}' assigned category_id: {}", filter_rule.name, cat_id);
+                    // println!("[APPLY_RULES] Rule '{}' assigned category_id: {}", filter_rule.name, cat_id);
                 }
             }
         }
@@ -1154,7 +1450,7 @@ impl FileMonitor {
                         // 跳过目录，只处理文件
                         if metadata.is_dir {
                             stats.directory_skipped += 1;
-                            println!("[BATCH_PROC] 跳过目录: {:?}", metadata.file_path);
+                            // println!("[BATCH_PROC] 跳过目录: {:?}", metadata.file_path);
                             continue;
                         }
                         
@@ -1162,7 +1458,7 @@ impl FileMonitor {
                         
                         batch.push(metadata);
                         if batch.len() >= batch_size {
-                            println!("[BATCH_PROC] 批处理达到大小限制 ({} 项)，正在发送到API", batch.len());
+                            // println!("[BATCH_PROC] 批处理达到大小限制 ({} 项)，正在发送到API", batch.len());
                             
                             // 发送数据到API
                             if let Err(e) = self.send_batch_metadata_to_api(batch.clone()).await {
@@ -1187,7 +1483,7 @@ impl FileMonitor {
                         }
                     } else {
                         // 通道关闭
-                        if !batch.is_empty() {
+                        if (!batch.is_empty()) {
                             println!("[BATCH_PROC] 通道关闭，正在发送剩余批处理 ({} 项)", batch.len());
                             
                             // 发送剩余数据到API
@@ -1307,7 +1603,7 @@ impl FileMonitor {
                             skipped_bundles += 1;  // 注意：这是线程安全的，因为在同一线程中
                             // 不能在这里更新stats，因为这是在过滤器闭包中
                         }
-                        println!("[INITIAL_SCAN] 跳过Bundle或其内部文件: {:?}", e.path());
+                        println!("[INITIAL_SCAN] 跳过Bundle: {:?}", e.path());
                         return false;
                     }
                     
@@ -1541,7 +1837,7 @@ impl FileMonitor {
         // 扫描目录
         println!("[SINGLE_SCAN] 开始扫描目录: {}", path);
         let path_buf = PathBuf::from(path);
-        if !path_buf.exists() {
+        if (!path_buf.exists()) {
             return Err(format!("目录不存在: {}", path));
         }
 
@@ -1561,7 +1857,7 @@ impl FileMonitor {
                 // 不扫描macOS bundle以及其内部的所有文件
                 if Self::is_macos_bundle_folder(e.path()) {
                     skipped_bundles += 1;
-                    println!("[SINGLE_SCAN] 跳过Bundle或其内部文件: {:?}", e.path());
+                    println!("[SINGLE_SCAN] 跳过Bundle: {:?}", e.path());
                     return false;
                 }
                 
@@ -1578,7 +1874,7 @@ impl FileMonitor {
             match entry {
                 Ok(entry) => {
                     total_files += 1;
-                    
+
                     if total_files % 100 == 0 {
                         println!("[SINGLE_SCAN] 扫描进度: {} 个文件", total_files);
                     }

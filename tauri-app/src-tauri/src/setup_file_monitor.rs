@@ -129,6 +129,13 @@ pub fn setup_auto_file_monitoring(
                             app_state.update_config(cfg);
                             println!("已更新应用配置状态");
                         }
+                        
+                        // 通知 AppState 初始扫描已完成
+                        {
+                            let app_state = app_handle.state::<AppState>();
+                            app_state.set_initial_scan_completed(true);
+                            println!("[CONFIG_QUEUE] 已通知 AppState 初始扫描完成");
+                        }
                     },
                     Err(e) => {
                         eprintln!("自动启动防抖动文件监控失败: {}", e);

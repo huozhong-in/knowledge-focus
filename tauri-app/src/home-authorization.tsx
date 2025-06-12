@@ -1,16 +1,14 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from '@tauri-apps/api/event';
 import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { basename } from '@tauri-apps/api/path';
 import { checkFullDiskAccessPermission, requestFullDiskAccessPermission } from "tauri-plugin-macos-permissions-api";
 import {
-  debug,
-  info,
-  attachConsole
+  info
 } from '@tauri-apps/plugin-log';
+import { FolderTreeSelector } from "@/components/folder-tree-selector";
 import { 
   Folder, 
   FolderPlus, 
@@ -22,26 +20,13 @@ import {
   Check, 
   X, 
   Shield, 
-  Settings, 
-  Upload } from "lucide-react";
+  Settings } from "lucide-react";
 // UI组件
 import { 
   Button 
 } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { 
-  Alert, 
-  AlertDescription, 
-  AlertTitle 
-} from "@/components/ui/alert";
-import { 
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
-} from "@/components/ui/tabs";
 import { 
   Dialog, 
   DialogContent, 
@@ -55,7 +40,6 @@ import {
   Card, 
   CardContent, 
   CardDescription, 
-  CardFooter, 
   CardHeader, 
   CardTitle 
 } from "@/components/ui/card";
@@ -70,14 +54,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 
 // 定义文件夹类型接口
 interface Directory {
@@ -86,607 +62,106 @@ interface Directory {
   alias: string | null;
   auth_status: string; // "pending", "authorized", "unauthorized"
   is_blacklist: boolean;
+  parent_id?: number | null; // 支持层级关系
+  is_common_folder?: boolean; // 是否为常见文件夹
   created_at: string;
   updated_at: string;
 }
 
-// 定义API响应接口
-interface ApiResponse {
-  status: string;
-  message?: string;
-  data?: any;
+// 文件夹层级结构接口
+interface FolderHierarchy {
+  id: number;
+  path: string;
+  alias: string | null;
+  auth_status: string;
+  is_blacklist: boolean;
+  is_common_folder: boolean;
+  blacklist_children: Directory[]; // 后端返回的是blacklist_children字段
+  created_at: string;
+  updated_at: string;
 }
 
-// 定义权限提示接口
-interface PermissionsHint {
-  full_disk_access: string;
-  docs_desktop_downloads: string;
-  removable_volumes: string;
-  network_volumes: string;
+// Bundle扩展名接口
+interface BundleExtension {
+  id: number;
+  extension: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// 配置摘要接口
+interface ConfigurationSummary {
+  has_config_cache: boolean;
+  config_categories_count: number;
+  config_filter_rules_count: number;
+  config_extension_maps_count: number;
+  full_disk_access: boolean;
+  monitored_dirs_count: number;
+  blacklist_dirs_count: number;
+  bundle_cache_count: number;
+  bundle_cache_expired: boolean;
+  bundle_cache_timestamp?: number;
 }
 
 // 主组件
 function HomeAuthorization() {
   // 状态定义
-  const [directories, setDirectories] = useState<Directory[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [permissionsHint, setPermissionsHint] = useState<PermissionsHint | null>(null);
-  const [isPermissionDialogOpen, setIsPermissionDialogOpen] = useState(false);
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState<boolean>(false);
   const [_, setCheckingPermissions] = useState<boolean>(false);
   
-  // 初始化日志系统
-  useEffect(() => {
-    const initLogger = async () => {
-      try {
-        await attachConsole();
-        info("日志系统初始化成功");
-      } catch (e) {
-        console.error("初始化日志系统失败", e);
-      }
-    };
-    
-    initLogger();
-  }, []);
+  // 层级文件夹相关状态  
+  const [folderHierarchy, setFolderHierarchy] = useState<FolderHierarchy[]>([]);
+  const [selectedParentId, setSelectedParentId] = useState<number | null>(null);
+  const [isBlacklistDialogOpen, setIsBlacklistDialogOpen] = useState(false);
+  const [newBlacklistPath, setNewBlacklistPath] = useState("");
+  const [newBlacklistAlias, setNewBlacklistAlias] = useState("");
+  
+  // Bundle扩展名相关状态
+  const [bundleExtensions, setBundleExtensions] = useState<BundleExtension[]>([]);
+  const [newBundleExtension, setNewBundleExtension] = useState("");
+  const [newBundleDescription, setNewBundleDescription] = useState("");
+  const [isBundleDialogOpen, setIsBundleDialogOpen] = useState(false);
+  
+  // 配置摘要状态
+  const [configSummary, setConfigSummary] = useState<ConfigurationSummary | null>(null);
+  
+  // 界面控制状态
+  const [showBundleSection, setShowBundleSection] = useState(false);
   
   // 新文件夹对话框相关状态
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newDirPath, setNewDirPath] = useState("");
   const [newDirAlias, setNewDirAlias] = useState("");
-  const [newDirBlacklist, setNewDirBlacklist] = useState(false); // 新增：用于跟踪"加入黑名单"复选框状态
-  const [activeTab, setActiveTab] = useState("all");
-  const [isDraggingOver, setIsDraggingOver] = useState(false); // 新增：用于跟踪拖拽状态
-
-  // 尝试获取所有文件夹的函数
-  const fetchDirectories = async () => {
-    try {
-      setLoading(true);
-      
-      // 调用API获取文件夹列表
-      const response = await fetch("http://127.0.0.1:60315/directories");
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success" && result.data) {
-        const dirs = result.data as Directory[];
-        setDirectories(dirs);
-        
-        // 检查是否需要进行完全磁盘访问权限检查
-        // 如果有非默认常用文件夹，则检查完全磁盘访问权限
-        const hasNonStandardDirs = dirs.some(dir => 
-          dir.auth_status === "authorized" && !dir.path.includes("/Users") && 
-          !dir.path.includes("/Documents") && !dir.path.includes("/Desktop") && 
-          !dir.path.includes("/Downloads"));
-          
-        if (hasNonStandardDirs) {
-          info("检测到非常用文件夹，需要检查完全磁盘访问权限");
-          const hasAccess = await checkFullDiskAccess();
-          if (!hasAccess) {
-            info("未获得完全磁盘访问权限，需要向用户提示");
-            toast.warning("检测到您正在监控系统文件夹，建议开启完全磁盘访问权限", {
-              action: {
-                label: "授权",
-                onClick: requestFullDiskAccess
-              }
-            });
-          }
-        }
-      } else {
-        toast.error(result.message || "获取文件夹列表失败");
-      }
-    } catch (err) {
-      console.error("获取文件夹失败", err);
-      toast.error("获取文件夹列表失败，请检查API服务是否启动");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 获取macOS权限提示信息
-  const fetchMacOSPermissionsHint = async () => {
-    try {
-      const response = await fetch("http://127.0.0.1:60315/macos-permissions-hint");
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success" && result.data) {
-        setPermissionsHint(result.data);
-      }
-    } catch (err) {
-      console.error("获取权限提示信息失败", err);
-    }
-  };
-
-  // 显示权限指南对话框
-  const showPermissionsGuide = () => {
-    fetchMacOSPermissionsHint();
-    setIsPermissionDialogOpen(true);
-  };
-
-  // 初始化默认文件夹
-  const initializeDefaultDirectories = async () => {
-    try {
-      // 首先获取默认文件夹列表
-      const response = await fetch("http://127.0.0.1:60315/directories/default-list");
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success" && result.data) {
-        const defaultDirectories = result.data as Array<{name: string, path: string}>;
-        
-        toast.loading("正在添加默认文件夹...", { id: "default-folders-init" });
-        
-        let successCount = 0;
-        let failedCount = 0;
-        
-        // 逐个添加默认文件夹，使用handleAddDirectoryWithPath来确保扫描
-        for (const directory of defaultDirectories) {
-          try {
-            console.log(`正在添加默认文件夹: ${directory.name} - ${directory.path}`);
-            await handleAddDirectoryWithPath(directory.path, directory.name, true); // 使用静默模式
-            successCount++;
-          } catch (err) {
-            console.error(`添加默认文件夹失败: ${directory.name}`, err);
-            failedCount++;
-          }
-        }
-        
-        toast.success(`默认文件夹恢复完成: 成功 ${successCount} 个${failedCount > 0 ? `, 失败 ${failedCount} 个` : ""}`, {
-          id: "default-folders-init"
-        });
-        
-        // 如果没有完全磁盘访问权限，提示用户
-        if (!hasFullDiskAccess) {
-          toast.info("为了获得最佳体验，建议开启完全磁盘访问权限", {
-            action: {
-              label: "了解更多",
-              onClick: showPermissionsGuide
-            },
-            duration: 8000,
-          });
-        }
-      } else {
-        toast.error(result.message || "获取默认文件夹列表失败");
-      }
-    } catch (err) {
-      console.error("初始化默认文件夹失败", err);
-      toast.error("初始化默认文件夹失败，请检查API服务是否启动", { id: "default-folders-init" });
-    }
-  };
-
-  // 添加新文件夹
-  const addDirectory = async () => {
-    if (!newDirPath) {
-      toast.error("文件夹路径不能为空");
-      return;
-    }
-
-    try {
-      // 如果有完全磁盘访问权限，直接设置为已授权状态
-      const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
-      
-      const response = await fetch("http://127.0.0.1:60315/directories", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          path: newDirPath,
-          alias: newDirAlias || null,
-          auth_status: initialAuthStatus, // 添加初始授权状态
-          is_blacklist: newDirBlacklist, // 添加黑名单标志
-        }),
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        toast.success(result.message || "添加文件夹成功");
-        setIsDialogOpen(false);
-        setNewDirPath("");
-        setNewDirAlias("");
-        setNewDirBlacklist(false); // 重置黑名单状态
-        fetchDirectories();
-        
-        // 如果是已授权状态且不是黑名单，立即启动目录扫描
-        if (initialAuthStatus === "authorized" && !newDirBlacklist) {
-          toast.loading(`正在扫描文件夹: ${newDirPath}`, {
-            id: `scan-${result.data?.id || ''}`,
-          });
-          
-          // 等待目录列表刷新后再扫描
-          setTimeout(async () => {
-            await scanDirectory(newDirPath);
-            toast.success(`文件夹扫描已启动: ${newDirAlias || newDirPath}`, {
-              id: `scan-${result.data?.id || ''}`,
-            });
-          }, 1000);
-        }
-      } else {
-        toast.error(result.message || "添加文件夹失败");
-      }
-    } catch (err) {
-      console.error("添加文件夹失败", err);
-      toast.error("添加文件夹失败，请检查API服务是否启动");
-    }
-  };
-
-  // 通过路径添加文件夹（用于拖放操作）
-  const handleAddDirectoryWithPath = async (dirPath: string, dirAlias?: string, silent = false) => {
-    if (!dirPath) {
-      if (!silent) toast.error("文件夹路径不能为空");
-      return null;
-    }
-
-    try {
-      // 如果有完全磁盘访问权限，直接设置为已授权状态
-      const initialAuthStatus = hasFullDiskAccess ? "authorized" : "pending";
-      
-      const response = await fetch("http://127.0.0.1:60315/directories", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          path: dirPath,
-          alias: dirAlias || null,
-          auth_status: initialAuthStatus, // 添加初始授权状态
-          is_blacklist: false, // 拖拽添加的文件夹默认不加入黑名单
-        }),
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        if (!silent) {
-          toast.success(result.message || `成功添加文件夹 "${dirAlias || dirPath}"`);
-        }
-        fetchDirectories(); // 刷新列表
-        
-        // 如果是已授权状态且不是黑名单，立即启动目录扫描
-        if (initialAuthStatus === "authorized") {
-          if (!silent) {
-            toast.loading(`正在扫描文件夹: ${dirPath}`, {
-              id: `scan-${result.data?.id || ''}`,
-            });
-          }
-          
-          // 等待目录列表刷新后再扫描
-          setTimeout(async () => {
-            await scanDirectory(dirPath);
-            if (!silent) {
-              toast.success(`文件夹扫描已启动: ${dirAlias || dirPath}`, {
-                id: `scan-${result.data?.id || ''}`,
-              });
-            }
-          }, 1000);
-        }
-        
-        // 如果没有完全磁盘访问权限且是系统路径，提示用户
-        if (!silent && !hasFullDiskAccess && 
-            !dirPath.includes("/Users") && 
-            !dirPath.includes("/Documents") && 
-            !dirPath.includes("/Desktop") && 
-            !dirPath.includes("/Downloads")) {
-          toast.warning("检测到您添加了系统文件夹，建议开启完全磁盘访问权限", {
-            action: {
-              label: "授权",
-              onClick: requestFullDiskAccess
-            },
-            duration: 8000,
-          });
-        }
-        
-        // 返回添加的目录ID（如果后端提供）
-        if (result.data && typeof result.data === 'object' && 'id' in result.data) {
-          return { directoryId: result.data.id };
-        }
-        return { success: true };
-      } else {
-        if (!silent) toast.error(result.message || "添加文件夹失败");
-        return null;
-      }
-    } catch (err) {
-      console.error("添加文件夹失败", err);
-      if (!silent) toast.error("添加文件夹失败，请检查API服务是否启动");
-      return null;
-    }
-  };
-
-  // 更新文件夹授权状态
-  const updateAuthStatus = async (directory: Directory, newStatus: string) => {
-    try {
-      // 如果是要授权，先尝试读取该目录，以触发macOS授权弹窗
-      if (newStatus === "authorized") {
-        info(`尝试读取文件夹以触发系统授权对话框: ${directory.path}`);
-        // 显示加载状态
-        toast.loading(`正在请求访问权限: ${directory.alias || directory.path}...`, {id: `auth-${directory.id}`});
-        
-        try {
-          // 调用后端API尝试读取目录，这将触发系统授权对话框
-          const testResponse = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/test-access`, {
-            method: "GET",
-          });
-          const testResult = await testResponse.json() as ApiResponse;
-          
-          if (testResult.status === "success") {
-            info(`成功读取目录 ${directory.path}: ${JSON.stringify(testResult)}`);
-            toast.success(`成功获取"${directory.alias || directory.path}"的访问权限`, {id: `auth-${directory.id}`});
-          } else {
-            // 如果读取失败但不是权限问题，可能是其他错误
-            info(`读取目录失败 ${directory.path}: ${testResult.message}`);
-            toast.error(`无法访问"${directory.alias || directory.path}": ${testResult.message}`, {id: `auth-${directory.id}`});
-            return; // 如果读取失败，不继续更新状态
-          }
-        } catch (readErr) {
-          // 捕获网络错误或其他异常
-          info(`读取目录异常 ${directory.path}: ${readErr}`);
-          toast.error(`尝试访问文件夹时出错`, {id: `auth-${directory.id}`});
-          console.error("测试文件夹访问权限失败:", readErr);
-          return; // 如果读取出错，不继续更新状态
-        }
-      }
-      
-      // 更新后端状态
-      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/auth_status`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          auth_status: newStatus,
-        }),
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        const message = newStatus === "authorized" 
-          ? `成功授权"${directory.alias || directory.path}"`
-          : `已取消"${directory.alias || directory.path}"的授权`;
-        toast.success(message);
-        fetchDirectories();
-      } else {
-        toast.error(result.message || "更新授权状态失败");
-      }
-    } catch (err) {
-      console.error("更新授权状态失败", err);
-      toast.error("更新授权状态失败，请检查API服务是否启动");
-    }
-  };
-
-  // 请求目录访问权限 - 触发系统权限对话框并启动检查循环
-  const requestDirectoryAccess = async (directory: Directory) => {
-    try {
-      info(`请求访问目录权限: ${directory.path}`);
-      toast.loading(`请求访问"${directory.alias || directory.path}"权限...`, {id: `auth-req-${directory.id}`});
-      
-      // 调用后端API尝试读取目录，这将触发系统授权对话框
-      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/request-access`, {
-        method: "POST",
-      });
-      
-      const result = await response.json() as ApiResponse;
-      
-      if (result.status === "success") {
-        info(`已发送访问请求: ${JSON.stringify(result)}`);
-        toast.success(`请查看系统弹出的权限请求对话框`, {id: `auth-req-${directory.id}`});
-        
-        // 开始循环检查访问状态
-        checkDirectoryAccessStatus(directory);
-      } else {
-        toast.error(`无法请求访问"${directory.alias || directory.path}": ${result.message}`, {id: `auth-req-${directory.id}`});
-      }
-    } catch (err) {
-      console.error("请求目录访问权限失败:", err);
-      toast.error(`请求权限失败，请检查API服务是否启动`, {id: `auth-req-${directory.id}`});
-    }
-  };
-
-  // 检查指定文件夹的访问权限状态
-  const checkDirectoryAccessStatus = async (directory: Directory) => {
-    info(`开始检查文件夹访问权限状态: ${directory.path}`);
-    let attempts = 0;
-    const maxAttempts = 10;
-    const checkInterval = 1500; // 1.5秒检查一次
-    
-    // 显示加载状态
-    toast.loading(`正在检查访问权限状态...`, {id: `check-auth-${directory.id}`});
-    
-    // 创建一个循环检查函数
-    const checkAccess = async (): Promise<boolean> => {
+  
+  // 初始化日志系统
+  useEffect(() => {
+    const initLogger = async () => {
       try {
-        const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/access-status`);
-        const result = await response.json() as ApiResponse;
-        
-        if (result.status === "success") {
-          const accessGranted = result.data?.access_granted === true;
-          info(`文件夹 ${directory.path} 访问权限状态: ${accessGranted ? '已授权' : '未授权'}`);
-          return accessGranted;
-        }
-        return false;
-      } catch (err) {
-        info(`检查文件夹访问权限状态出错: ${err}`);
-        console.error("检查访问权限状态出错:", err);
-        return false;
+        info("授权管理界面初始化");
+      } catch (e) {
+        console.error("初始化日志失败", e);
       }
     };
     
-    // 使用Promise和setInterval实现周期性检查
-    return new Promise<boolean>(async (resolve) => {
-      const intervalId = setInterval(async () => {
-        attempts++;
-        info(`检查文件夹访问权限，第 ${attempts}/${maxAttempts} 次尝试`);
-        
-        const hasAccess = await checkAccess();
-        if (hasAccess || attempts >= maxAttempts) {
-          clearInterval(intervalId);
-          if (hasAccess) {
-            toast.success(`成功获得"${directory.alias || directory.path}"的访问权限`, {id: `check-auth-${directory.id}`});
-            // 更新授权状态到后端
-            await updateDirectoryAuthStatus(directory, "authorized");
-          } else if (attempts >= maxAttempts) {
-            toast.error(`无法获得"${directory.alias || directory.path}"的访问权限，用户可能拒绝了请求`, {id: `check-auth-${directory.id}`});
-            // 更新授权状态到后端
-            await updateDirectoryAuthStatus(directory, "unauthorized");
-          }
-          resolve(hasAccess);
-        }
-      }, checkInterval);
-    });
-  };
+    initLogger();
+  }, []);
 
-  // 仅更新目录授权状态到数据库而不触发读取操作
-  const updateDirectoryAuthStatus = async (directory: Directory, newStatus: string) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/auth_status`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          auth_status: newStatus,
-        }),
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        info(`成功更新文件夹 ${directory.path} 的授权状态为 ${newStatus}`);
-        fetchDirectories(); // 刷新列表
-      } else {
-        info(`更新授权状态失败: ${result.message}`);
-      }
-    } catch (err) {
-      console.error("更新授权状态失败", err);
-    }
-  };
-
-  // 切换黑名单状态
-  const toggleBlacklist = async (directory: Directory, isBlacklist: boolean) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}/blacklist`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          is_blacklist: isBlacklist,
-        }),
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        const action = isBlacklist ? "加入" : "移出";
-        toast.success(result.message || `成功${action}"${directory.alias || directory.path}"到黑名单`);
-        fetchDirectories();
-      } else {
-        toast.error(result.message || "更新黑名单状态失败");
-      }
-    } catch (err) {
-      console.error("更新黑名单状态失败", err);
-      toast.error("更新黑名单状态失败，请检查API服务是否启动");
-    }
-  };
-
-  // 删除文件夹
-  const removeDirectory = async (directory: Directory) => {
-    try {
-      info(`尝试删除文件夹: ${directory.path}, ID: ${directory.id}, 黑名单状态: ${directory.is_blacklist ? "是" : "否"}`);
-      
-      // 1. 首先通知Rust端停止监控此文件夹
-      try {
-        await invoke('stop_monitoring_directory', { directory_id: directory.id });
-        info(`已通知Rust停止监控文件夹: ${directory.path}`);
-      } catch (rustErr) {
-        // 如果Rust端报错（例如文件夹不在监控列表中），记录错误但继续执行删除
-        info(`通知Rust停止监控时出现警告: ${rustErr}，继续尝试删除文件夹`);
-      }
-      
-      // 2. 然后通知Python API删除文件夹
-      const response = await fetch(`http://127.0.0.1:60315/directories/${directory.id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      
-      const responseJson = await response.json();
-      const result = responseJson as ApiResponse;
-      
-      if (result.status === "success") {
-        toast.success(result.message || `成功删除"${directory.alias || directory.path}"`);
-        fetchDirectories();
-      } else {
-        // 如果后端返回错误，可能是文件夹已在黑名单中或其他原因
-        info(`删除文件夹失败: ${result.message}`);
-        toast.error(result.message || "删除文件夹失败");
-      }
-    } catch (err) {
-      console.error("删除文件夹失败", err);
-      info(`删除文件夹异常: ${err}`);
-      toast.error("删除文件夹失败，请检查API服务是否启动");
-    }
-  };
-
-  // 选择文件夹对话框
-  const openFolderPicker = async () => {
-    try {
-      const selected = await open({
-        directory: true,
-        multiple: false,
-        title: "选择要监控的文件夹",
-      });
-      
-      if (selected && !Array.isArray(selected)) {
-        setNewDirPath(selected);
-      }
-    } catch (err) {
-      console.error("选择文件夹失败", err);
-      toast.error("选择文件夹失败");
-    }
-  };
-
+  // ===== 数据加载函数 =====
+  
   // 检查完全磁盘访问权限
   const checkFullDiskAccess = async () => {
     try {
       setCheckingPermissions(true);
-      info("检查完全磁盘访问权限...");
-      
-      // 检查是否在开发环境
-      const isDev = process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost';
-      if (isDev) {
-        info("检测到开发环境，将向后端查询磁盘访问状态");
-        // 在开发环境中，通过API查询权限状态
-        try {
-          const response = await fetch("http://127.0.0.1:60315/system/full-disk-access-status");
-          const result = await response.json() as ApiResponse;
-          
-          if (result.status === "success" && result.data) {
-            const hasAccess = result.data.has_full_disk_access === true;
-            info(`从后端API获取完全磁盘访问权限状态: ${hasAccess}`);
-            setHasFullDiskAccess(hasAccess);
-            return hasAccess;
-          }
-        } catch (apiErr) {
-          info(`无法从API获取磁盘访问状态: ${apiErr}`);
-        }
-      }
-      
-      // 如果不在开发环境或API查询失败，则使用插件检查
-      const hasAccess = await checkFullDiskAccessPermission();
-      info(`通过插件获取完全磁盘访问权限状态: ${hasAccess}`);
-      setHasFullDiskAccess(hasAccess);
-      return hasAccess;
-    } catch (err) {
-      console.error("检查完全磁盘访问权限失败", err);
-      info(`检查完全磁盘访问权限失败: ${err}`);
+      const permission = await checkFullDiskAccessPermission();
+      setHasFullDiskAccess(permission);
+      info(`完全磁盘访问权限状态: ${permission}`);
+      return permission;
+    } catch (error) {
+      console.error("检查完全磁盘访问权限失败:", error);
+      setHasFullDiskAccess(false);
       return false;
     } finally {
       setCheckingPermissions(false);
@@ -696,670 +171,1105 @@ function HomeAuthorization() {
   // 请求完全磁盘访问权限
   const requestFullDiskAccess = async () => {
     try {
-      info("请求完全磁盘访问权限...");
+      setCheckingPermissions(true);
       await requestFullDiskAccessPermission();
-      toast.info("已打开系统偏好设置，请授予完全磁盘访问权限");
-      // 权限请求后，我们不立即检查权限状态，因为用户可能需要时间去授权
-      // 当用户返回应用时，我们会再次检查权限状态
-    } catch (err) {
-      console.error("请求完全磁盘访问权限失败", err);
-      info(`请求完全磁盘访问权限失败: ${err}`);
-      toast.error("请求完全磁盘访问权限失败");
+      toast.success("权限请求已发送，请在系统设置中授权后重启应用");
+      // 延迟检查权限状态
+      setTimeout(async () => {
+        await checkFullDiskAccess();
+      }, 1000);
+    } catch (error) {
+      console.error("请求完全磁盘访问权限失败:", error);
+      toast.error("权限请求失败，请手动在系统设置中开启");
+    } finally {
+      setCheckingPermissions(false);
     }
   };
 
-  // 在组件加载时获取文件夹列表并设置拖拽事件监听
-  useEffect(() => {
-    // 初始化日志控制台
-    const initLogs = async () => {
-      try {
-        await attachConsole();
-        info("日志系统初始化成功");
-        // 输出一些调试信息
-        debug("系统平台信息:");
-        debug(`User-Agent: ${navigator.userAgent}`);
-        debug(`窗口尺寸: ${window.innerWidth}x${window.innerHeight}`);
-        debug(`拖拽overlay状态: ${isDraggingOver}`);
-        
-        // 检查操作系统类型
-        const isMacOS = navigator.userAgent.toLowerCase().includes('mac');
-        if (isMacOS) {
-          info("检测到macOS系统，将检查完全磁盘访问权限");
-          // 在macOS上，初始化时检查完全磁盘访问权限
-          await checkFullDiskAccess();
-        } else {
-          info("非macOS系统，跳过完全磁盘访问权限检查");
+  // 加载文件夹层级结构
+  const loadFolderHierarchy = async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:60315/folders/hierarchy", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        const apiResponse = await response.json();
+        if (apiResponse.status === "success" && apiResponse.data) {
+          setFolderHierarchy(apiResponse.data);
+          info(`已加载文件夹层级结构: ${apiResponse.data.length} 个根文件夹`);
         }
-      } catch (e) {
-        console.error("初始化日志系统失败", e);
+      } else {
+        console.error("加载文件夹层级结构失败: HTTP", response.status);
+        toast.error("加载文件夹层级结构失败");
+      }
+    } catch (error) {
+      console.error("加载文件夹层级结构失败:", error);
+      toast.error("加载文件夹层级结构失败");
+    }
+  };
+
+  // 加载Bundle扩展名
+  const loadBundleExtensions = async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        const apiResponse = await response.json();
+        if (apiResponse.status === "success" && apiResponse.data) {
+          setBundleExtensions(apiResponse.data);
+          info(`已加载Bundle扩展名: ${apiResponse.data.length} 个`);
+        }
+      } else {
+        console.error("加载Bundle扩展名失败: HTTP", response.status);
+      }
+    } catch (error) {
+      console.error("加载Bundle扩展名失败:", error);
+    }
+  };
+
+  // 加载配置摘要
+  const loadConfigSummary = async () => {
+    try {
+      const response = await fetch("http://127.0.0.1:60315/config/all", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        const configData = await response.json();
+        // 从配置数据中提取摘要信息
+        const summary: ConfigurationSummary = {
+          has_config_cache: true,
+          config_categories_count: configData.file_categories?.length || 0,
+          config_filter_rules_count: configData.file_filter_rules?.length || 0,
+          config_extension_maps_count: configData.file_extension_maps?.length || 0,
+          full_disk_access: configData.full_disk_access || false,
+          monitored_dirs_count: configData.monitored_folders?.filter((f: Directory) => !f.is_blacklist).length || 0,
+          blacklist_dirs_count: configData.monitored_folders?.filter((f: Directory) => f.is_blacklist).length || 0,
+          bundle_cache_count: 0, // 需要从bundle端点获取
+          bundle_cache_expired: false,
+          bundle_cache_timestamp: Date.now()
+        };
+        setConfigSummary(summary);
+        
+        // 注意：现在使用folderHierarchy，不再需要directories状态
+      }
+    } catch (error) {
+      console.error("加载配置摘要失败:", error);
+    }
+  };
+
+  // 初始化数据加载
+  useEffect(() => {
+    const initializeData = async () => {
+      setLoading(true);
+      try {
+        // 并行加载所有数据
+        await Promise.all([
+          checkFullDiskAccess(),
+          loadConfigSummary(),
+          loadFolderHierarchy(),
+          loadBundleExtensions()
+        ]);
+      } catch (error) {
+        console.error("初始化数据加载失败:", error);
+      } finally {
+        setLoading(false);
       }
     };
-    initLogs();
 
-    // 获取文件夹列表和权限提示信息
-    fetchDirectories();
-    fetchMacOSPermissionsHint();
-    
-    // 设置拖拽事件监听器
-    const setupDragDropListeners = async () => {
-      // info("正在设置拖拽事件监听器...");
+    initializeData();
+  }, []);
+
+  // ===== 事件处理函数 =====
+
+  // 添加新文件夹 - 只能添加白名单
+  const handleAddDirectory = async () => {
+    if (!newDirPath.trim()) {
+      toast.error("请选择文件夹路径");
+      return;
+    }
+
+    try {
+      const response = await fetch("http://127.0.0.1:60315/directories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: newDirPath,
+          alias: newDirAlias || null,
+          is_blacklist: false // 只能添加白名单
+        })
+      });
+
+      if (response.ok) {
+        toast.success("白名单文件夹添加成功");
+        setIsDialogOpen(false);
+        setNewDirPath("");
+        setNewDirAlias("");
+        // 重新加载数据
+        await loadConfigSummary();
+        await loadFolderHierarchy();
+        // 刷新监控配置
+        try {
+          await invoke("refresh_monitoring_config");
+        } catch (invokeError) {
+          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
+          toast.info("配置已更新，建议重启应用以确保生效");
+        }
+      } else {
+        const errorData = await response.json();
+        toast.error(`添加失败: ${errorData.message || "未知错误"}`);
+      }
+    } catch (error) {
+      console.error("添加文件夹失败:", error);
+      toast.error("添加文件夹失败");
+    }
+  };
+
+  // 删除文件夹
+  const handleDeleteDirectory = async (id: number) => {
+    try {
+      // 先获取文件夹信息，以便后续清理
+      const folderInfo = folderHierarchy
+        .flatMap(folder => [
+          folder,
+          ...(folder.blacklist_children || [])
+        ])
+        .find(dir => dir.id === id);
       
+      const folderPath = folderInfo?.path || "";
+      const isBlacklist = folderInfo?.is_blacklist || false;
+      
+      // 使用队列版本的删除命令
       try {
-        // 尝试检测 Tauri 事件 API
-        // info("尝试监听 Tauri 拖拽事件...");
+        const result = await invoke("remove_folder_queued", {
+          folderId: id,
+          folderPath: folderPath,
+          isBlacklist: isBlacklist
+        });
         
-        // 进入拖拽区域
-        const unlistenDragEnter = await listen('tauri://drag-enter', (event) => {
-          info(`拖拽进入事件触发: ${JSON.stringify(event)}`);
-          setIsDraggingOver(true);
-          debug(`isDraggingOver 状态已设置为: ${true}`);
+        console.log("删除文件夹结果:", result);
+        toast.success("文件夹删除成功");
+        
+        // 重新加载数据
+        await loadConfigSummary();
+        await loadFolderHierarchy();
+        
+      } catch (invokeError) {
+        console.warn("Tauri删除命令失败，使用传统API:", invokeError);
+        
+        // 回退到传统的API调用
+        const response = await fetch(`http://127.0.0.1:60315/directories/${id}`, {
+          method: "DELETE"
         });
-        // info("成功设置 drag-enter 监听器");
 
-        // 使用 dragover 事件 (有些平台可能需要这个)
-        const unlistenDragOver = await listen('tauri://drag-over', (event) => {
-          info(`拖拽悬停事件触发: ${JSON.stringify(event)}`);
-          setIsDraggingOver(true);
-          debug(`isDraggingOver 状态已设置为: ${true}`);
-        });
-        // info("成功设置 drag-over 监听器");
-
-        // 离开拖拽区域
-        const unlistenDragLeave = await listen('tauri://drag-leave', (event) => {
-          info(`拖拽离开事件触发: ${JSON.stringify(event)}`);
-          setIsDraggingOver(false);
-          debug(`isDraggingOver 状态已设置为: ${false}`);
-        });
-        // info("成功设置 drag-leave 监听器");
-
-        // 放置文件/文件夹
-        const unlistenDragDrop = await listen('tauri://drag-drop', async (event) => {
-          info(`拖拽放置事件触发: ${JSON.stringify(event)}`);
-          setIsDraggingOver(false);
+        if (response.ok) {
+          toast.success("文件夹删除成功");
           
-          try {
-            // 为Tauri拖放事件的payload定义一个接口，增强类型安全
-            interface TauriDragDropPayload {
-              paths: string[];
-              position: { x: number; y: number }; // 根据日志，payload还包含position
-            }
-
-            // 解析拖放的路径
-            const dropPayload = event.payload as TauriDragDropPayload;
-            const paths = dropPayload.paths; // 从payload对象中获取paths数组
-            info(`拖拽事件载荷类型: ${typeof event.payload}, 是数组: ${Array.isArray(event.payload)}`);
-            info(`拖拽事件完整载荷: ${JSON.stringify(event.payload)}`);
-            if (paths && paths.length > 0) {
-              info(`检测到 ${paths.length} 个拖入项目: ${JSON.stringify(paths)}`);
-              toast.info(`检测到 ${paths.length} 个拖入项目，正在处理...`);
+          // 如果删除的是黑名单文件夹，需要确保清理相关粗筛数据
+          if (isBlacklist && folderPath) {
+            try {
+              const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  path: folderPath,
+                })
+              });
               
-              // 处理每个拖入的路径
-              for (const droppedPath of paths) {
-                try {
-                  debug(`正在处理路径: ${droppedPath}`);
-                  info(`路径类型: ${typeof droppedPath}, 长度: ${droppedPath.length}`);
-                  // 输出一些特殊字符，以检查路径中是否有不可见字符
-                  info(`路径前10个字符: "${droppedPath.substring(0, 10)}"`);
-                  info(`路径最后10个字符: "${droppedPath.substring(droppedPath.length - 10)}"`);
-                  
-                  // 处理可能的文件URL格式路径
-                  let processedPath = droppedPath;
-                  if (typeof processedPath === 'string' && processedPath.startsWith('file://')) {
-                    info(`检测到文件URL格式，尝试解码: ${processedPath}`);
-                    // 移除 file:// 前缀并解码URL
-                    processedPath = decodeURIComponent(processedPath.replace(/^file:\/\//, ''));
-                    info(`解码后的路径: ${processedPath}`);
-                  }
-                  // 调用Rust命令解析目录路径
-                  const resolvedDir = await invoke<string>("resolve_directory_from_path", { path_str: processedPath });
-                  info(`路径 ${processedPath} 解析结果: ${resolvedDir}`);
-                  
-                  if (resolvedDir) {
-                    try {
-                      // 获取文件夹名称作为默认别名
-                      const dirName = await basename(resolvedDir);
-                      info(`将添加目录: ${resolvedDir}，别名: ${dirName}`);
-                      
-                      // 添加目录并获取结果
-                      const addResult = await handleAddDirectoryWithPath(resolvedDir, dirName);
-                      
-                      // 如果没有完全磁盘访问权限，并且添加成功并返回了目录ID，则尝试请求访问权限
-                      if (!hasFullDiskAccess && addResult && addResult.directoryId) {
-                        info(`成功添加目录，ID: ${addResult.directoryId}，将请求访问权限`);
-                        
-                        // 创建一个临时的Directory对象用于授权检查
-                        const tempDir: Directory = {
-                          id: addResult.directoryId,
-                          path: resolvedDir,
-                          alias: dirName,
-                          auth_status: "pending",
-                          is_blacklist: false,
-                          created_at: new Date().toISOString(),
-                          updated_at: new Date().toISOString()
-                        };
-                        
-                        // 延迟一点请求权限，让UI有时间更新
-                        setTimeout(() => {
-                          requestDirectoryAccess(tempDir);
-                        }, 500);
-                      }
-
-                      // 触发目录扫描
-                      await scanDirectory(resolvedDir);
-                    } catch (processErr) {
-                      info(`处理目录 ${resolvedDir} 时出错: ${processErr}`);
-                      toast.error(`处理文件夹时出错: ${processErr}`);
-                    }
-                  } else {
-                    info(`无法解析路径: ${droppedPath}`);
-                    toast.error(`无法解析路径: ${droppedPath}`);
-                  }
-                } catch (err) {
-                  info(`处理拖拽路径 ${droppedPath} 出错: ${err}`);
-                  console.error(`处理拖拽路径 ${droppedPath} 出错:`, err);
-                  const pathName = await basename(droppedPath).catch(() => droppedPath);
-                  const errorMessage = typeof err === 'string' ? err : (err as Error)?.message || "未知错误";
-                  toast.error(`处理 ${pathName} 出错: ${errorMessage}`);
+              if (cleanResponse.ok) {
+                const cleanResult = await cleanResponse.json();
+                if (cleanResult.deleted > 0) {
+                  console.log(`删除黑名单后清理粗筛数据: ${cleanResult.deleted}条`);
                 }
               }
-            } else {
-              info("拖入项目为空或格式不正确");
-              toast.error("无法识别拖放的文件或文件夹");
+            } catch (cleanError) {
+              console.error("清理粗筛数据失败:", cleanError);
             }
-          } catch (err) {
-            info(`解析拖放事件出错: ${err}`);
-            console.error("解析拖放事件出错:", err);
-            toast.error("处理拖放文件时出错");
           }
-        });
-        // info("成功设置 drag-drop 监听器");
-        
-        // 返回清理函数
-        return () => {
-          // info("清理拖拽事件监听器");
-          unlistenDragEnter();
-          unlistenDragOver();
-          unlistenDragLeave();
-          unlistenDragDrop();
-        };
-      } catch (err) {
-        info(`设置拖拽事件监听器失败: ${err}`);
-        console.error("设置拖拽事件监听器失败:", err);
-        toast.error("初始化拖拽事件失败");
-        return () => {}; // 返回空函数
+          
+          // 重新加载数据
+          await loadConfigSummary();
+          await loadFolderHierarchy();
+          
+          // 刷新监控配置
+          try {
+            await invoke("refresh_monitoring_config");
+          } catch (configError) {
+            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
+            toast.info("配置已更新，建议重启应用以确保生效");
+          }
+        } else {
+          const errorData = await response.json();
+          toast.error(`删除失败: ${errorData.message || "未知错误"}`);
+        }
       }
-    };
-    
-    // 设置监听器并在组件卸载时清理
-    const cleanupPromise = setupDragDropListeners();
-    return () => {
-      cleanupPromise.then(cleanup => cleanup && cleanup());
-    };
-  }, []);
-
-  // 监听窗口焦点事件，当用户从系统设置返回应用时，重新检查权限状态
-  useEffect(() => {
-    const setupFocusListener = async () => {
-      try {
-        // info("正在设置窗口焦点监听器...");
-        
-        // 监听窗口获得焦点事件
-        const unlistenFocus = await listen('tauri://focus', async () => {
-          info("应用获得焦点，重新检查完全磁盘访问权限...");
-          await checkFullDiskAccess();
-        });
-        
-        // info("成功设置窗口焦点监听器");
-        
-        // 返回清理函数
-        return () => {
-          // info("清理窗口焦点监听器");
-          unlistenFocus();
-        };
-      } catch (err) {
-        info(`设置窗口焦点监听器失败: ${err}`);
-        console.error("设置窗口焦点监听器失败:", err);
-        return () => {}; // 返回空函数
-      }
-    };
-    
-    const cleanupPromise = setupFocusListener();
-    return () => {
-      cleanupPromise.then(cleanup => cleanup && cleanup());
-    };
-  }, []);
-
-  // 筛选文件夹
-  const filteredDirectories = directories.filter(dir => {
-    if (activeTab === "all") return true;
-    if (activeTab === "authorized") return dir.auth_status === "authorized" && !dir.is_blacklist;
-    if (activeTab === "pending") return dir.auth_status === "pending";
-    if (activeTab === "blacklist") return dir.is_blacklist;
-    return true;
-  });
-
-  // 渲染文件夹表格
-  const renderDirectoryTable = () => (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>名称/别名</TableHead>
-          <TableHead>路径</TableHead>
-          <TableHead>状态</TableHead>
-          <TableHead className="text-right">操作</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {filteredDirectories.length === 0 ? (
-          activeTab === "all" ? (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                <div>当前没有监控任何文件夹。</div>
-                <Button onClick={initializeDefaultDirectories} className="mt-4">
-                  导入macOS常用文件夹
-                </Button>
-              </TableCell>
-            </TableRow>
-          ) : (
-            <TableRow>
-              <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
-                {activeTab === "blacklist" 
-                  ? "黑名单列表为空" 
-                  : activeTab === "pending" 
-                  ? "没有等待授权的文件夹"
-                  : activeTab === "authorized"
-                  ? "没有已授权的文件夹"
-                  : "没有找到任何文件夹"}
-              </TableCell>
-            </TableRow>
-          )
-        ) : (
-          filteredDirectories.map((dir) => (
-            <TableRow key={dir.id}>
-              <TableCell className="font-medium">
-                {dir.alias || "未命名"}
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground">
-                {dir.path}
-              </TableCell>
-              <TableCell>
-                {hasFullDiskAccess ? (
-                  <span className="flex items-center text-green-600">
-                    <Shield size={16} className="mr-1" />通过完全磁盘访问权限授权
-                  </span>
-                ) : dir.is_blacklist ? (
-                  <span className="flex items-center text-gray-400">
-                    <MinusCircle size={16} className="mr-1" />已加入黑名单
-                  </span>
-                ) : dir.auth_status === "authorized" ? (
-                  <span className="flex items-center text-whiskey-600">
-                    <Check size={16} className="mr-1" />已授权
-                  </span>
-                ) : dir.auth_status === "unauthorized" ? (
-                  <span className="flex items-center text-red-400">
-                    <X size={16} className="mr-1" />未授权
-                  </span>
-                ) : (
-                  <span className="flex items-center text-whiskey-500">
-                    <AlertTriangle size={16} className="mr-1" />待授权
-                  </span>
-                )}
-              </TableCell>
-              <TableCell className="text-right flex justify-end gap-2">
-                {/* 授权/取消授权按钮 */}
-                {hasFullDiskAccess ? (
-                  <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed" title="已获得完全磁盘访问权限，无需单独授权">
-                    <Shield size={16} className="mr-1" />已授权
-                  </Button>
-                ) : dir.is_blacklist ? (
-                  <Button variant="outline" size="sm" disabled className="opacity-50 cursor-not-allowed">
-                    <Eye size={16} className="mr-1" />授权
-                  </Button>
-                ) : dir.auth_status === "authorized" ? (
-                  <Button variant="outline" size="sm" onClick={() => updateAuthStatus(dir, "pending")}>
-                    <EyeOff size={16} className="mr-1" />取消授权
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" onClick={() => requestDirectoryAccess(dir)}>
-                    <Eye size={16} className="mr-1" />授权
-                  </Button>
-                )}
-                
-                {/* 黑名单/取消黑名单按钮 */}
-                {dir.is_blacklist ? (
-                  <Button variant="outline" size="sm" onClick={() => toggleBlacklist(dir, false)}>
-                    <PlusCircle size={16} className="mr-1" />移出黑名单
-                  </Button>
-                ) : (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <MinusCircle size={16} className="mr-1" />加入黑名单
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>确认加入黑名单?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          加入黑名单后，此文件夹将不会被监控。您可以随时将其移出黑名单。
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => toggleBlacklist(dir, true)}>确认</AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-
-                {/* 删除按钮 */}
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                    >
-                      删除
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>确认删除?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        删除后将不再监控此文件夹，但不会删除实际文件。
-                        {hasFullDiskAccess && (
-                          <p className="mt-2 text-amber-600">
-                            注意：虽然您已获得完全磁盘访问权限，删除文件夹仅会从监控列表中移除，但不会影响访问权限。
-                          </p>
-                        )}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => removeDirectory(dir)}>确认删除</AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
-  );
-
-  // 添加React中DOM标准拖拽处理函数
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    info("DOM 标准拖拽进入事件触发");
-    setIsDraggingOver(true);
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    // 不要在每次drag over时都设置state和打印日志，会导致性能问题
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    info("DOM 标准拖拽离开事件触发");
-    // 检查是否真的离开了容器，而不是进入了子元素
-    // 使用relatedTarget来检查是否离开了容器
-    const relatedTarget = e.relatedTarget as Node;
-    if (!e.currentTarget.contains(relatedTarget)) {
-      setIsDraggingOver(false);
+    } catch (error) {
+      console.error("删除文件夹失败:", error);
+      toast.error("删除文件夹失败");
     }
   };
 
-  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    info("DOM 标准拖拽放置事件触发");
-    setIsDraggingOver(false);
-
-    // 只是记录，但不作实际处理，因为Tauri的事件系统应该会处理
-    const files = Array.from(e.dataTransfer.files);
-    info(`标准DOM拖放检测到 ${files.length} 个文件:`);
-    files.forEach((file, i) => {
-      info(`文件 ${i+1}: ${file.name}, 类型: ${file.type}`);
-    });
-    
-    // 这里我们不再直接处理，因为应该由Tauri的事件系统接管
-    toast.info("拖放事件已触发，等待Tauri处理...");
-  };
-
-  // 添加扫描目录的函数
-  const scanDirectory = async (path: string) => {
+  // 选择文件夹路径
+  const handleSelectFolder = async () => {
     try {
-      console.log(`触发目录扫描: ${path}`);
-      await invoke('scan_directory', { path });
-      console.log(`目录扫描已启动: ${path}`);
-    } catch (err) {
-      console.error(`扫描目录失败: ${err}`);
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "选择要监控的文件夹"
+      });
+
+      if (selected && typeof selected === "string") {
+        setNewDirPath(selected);
+        // 自动生成别名（文件夹名称）
+        const folderName = await basename(selected);
+        setNewDirAlias(folderName);
+      }
+    } catch (error) {
+      console.error("选择文件夹失败:", error);
+      toast.error("选择文件夹失败");
     }
   };
-  
-  return (
-    <main 
-      className="container mx-auto p-3 relative"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {/* 拖拽覆盖层，确保z-index足够高且覆盖整个界面 */}
-      {isDraggingOver && (
-        <div className="fixed inset-0 bg-whiskey-200/90 flex flex-col items-center justify-center z-[9999] border-4 border-dashed border-whiskey-500 rounded-lg pointer-events-none backdrop-blur-sm transition-all duration-200">
-          <div className="bg-whiskey-50 p-8 rounded-xl shadow-lg border-2 border-whiskey-400">
-            <Upload size={72} className="text-whiskey-600 mb-4 mx-auto" />
-            <p className="text-2xl font-bold text-whiskey-900 text-center">将文件或文件夹拖放到此处</p>
-            <p className="text-sm text-whiskey-700 mt-2 text-center">文件将自动添加其所在的父文件夹</p>
-          </div>
-        </div>
-      )}      
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">授权监控文件变化</h1>
-          <p className="text-muted-foreground">当文件发生变化，系统将自动解析其中的知识</p>
-        </div>
+
+  // 添加Bundle扩展名
+  const handleAddBundleExtension = async () => {
+    if (!newBundleExtension.trim()) {
+      toast.error("请输入扩展名");
+      return;
+    }
+
+    try {
+      const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          extension: newBundleExtension,
+          description: newBundleDescription || null
+        })
+      });
+
+      if (response.ok) {
+        toast.success("Bundle扩展名添加成功");
+        setIsBundleDialogOpen(false);
+        setNewBundleExtension("");
+        setNewBundleDescription("");
+        await loadBundleExtensions();
+        // 注意：Bundle扩展名的更改需要重启应用才能生效
+        toast.info("Bundle扩展名已更新，重启应用后生效");
+      } else {
+        const errorData = await response.json();
+        toast.error(`添加失败: ${errorData.message || "未知错误"}`);
+      }
+    } catch (error) {
+      console.error("添加Bundle扩展名失败:", error);
+      toast.error("添加Bundle扩展名失败");
+    }
+  };
+
+  // 删除Bundle扩展名
+  const handleDeleteBundleExtension = async (id: number) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:60315/bundle-extensions/${id}`, {
+        method: "DELETE"
+      });
+
+      if (response.ok) {
+        toast.success("Bundle扩展名删除成功");
+        await loadBundleExtensions();
+        // 注意：Bundle扩展名的更改需要重启应用才能生效
+        toast.info("Bundle扩展名已更新，重启应用后生效");
+      } else {
+        const errorData = await response.json();
+        toast.error(`删除失败: ${errorData.message || "未知错误"}`);
+      }
+    } catch (error) {
+      console.error("删除Bundle扩展名失败:", error);
+      toast.error("删除Bundle扩展名失败");
+    }
+  };
+
+  // 处理文件夹树选择器的路径选择
+  const handleTreePathSelect = async (path: string) => {
+    // 先检查路径是否已在黑名单中
+    try {
+      const response = await fetch("http://127.0.0.1:60315/folders/hierarchy", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
+      });
+      
+      if (response.ok) {
+        const apiResponse = await response.json();
+        if (apiResponse.status === "success" && apiResponse.data) {
+          let isInBlacklist = false;
+          
+          // 检查是否已在黑名单中
+          for (const folder of apiResponse.data) {
+            // 检查是否是黑名单子文件夹
+            if (folder.blacklist_children && folder.blacklist_children.length > 0) {
+              for (const blacklistChild of folder.blacklist_children) {
+                if (path === blacklistChild.path || path.startsWith(blacklistChild.path + '/')) {
+                  console.log(`选择的路径 "${path}" 已存在于黑名单中`);
+                  isInBlacklist = true;
+                  toast.warning("该文件夹已在黑名单中，不可重复添加");
+                  break;
+                }
+              }
+            }
+            
+            // 检查是否为已转为黑名单的常见文件夹
+            if (!isInBlacklist && folder.is_blacklist && folder.is_common_folder) {
+              if (path === folder.path || path.startsWith(folder.path + '/')) {
+                console.log(`选择的路径 "${path}" 已存在于黑名单中`);
+                isInBlacklist = true;
+                toast.warning("该文件夹已在黑名单中，不可重复添加");
+                break;
+              }
+            }
+          }
+          
+          // 只有不在黑名单中的路径才设置
+          if (!isInBlacklist) {
+            setNewBlacklistPath(path);
+            // 自动生成别名（文件夹名称）
+            const folderName = path.split('/').pop() || path;
+            setNewBlacklistAlias(folderName);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("检查黑名单状态失败:", error);
+      // 出错时仍然设置路径，但记录错误
+      setNewBlacklistPath(path);
+      const folderName = path.split('/').pop() || path;
+      setNewBlacklistAlias(folderName);
+    }
+  };
+
+  // 确认添加黑名单文件夹（从文件夹树选择器）
+  const handleConfirmTreeSelection = async () => {
+    await handleAddBlacklistFolder();
+  };
+
+  // 添加黑名单子文件夹
+  const handleAddBlacklistFolder = async () => {
+    if (!selectedParentId) {
+      toast.error("需要先选择父文件夹");
+      return;
+    }
+
+    if (!newBlacklistPath.trim()) {
+      toast.error("请选择黑名单文件夹路径");
+      return;
+    }
+
+    // 验证选择的路径是否为父文件夹的子路径
+    const parentFolder = folderHierarchy.find(f => f.id === selectedParentId);
+    if (parentFolder && !newBlacklistPath.startsWith(parentFolder.path)) {
+      toast.error(`选择的文件夹必须是 "${parentFolder.alias || parentFolder.path}" 的子文件夹`);
+      return;
+    }
+    
+    // 再次检查是否已在黑名单中（防止在对话框打开期间其他操作添加了相同路径）
+    try {
+      // 在当前层级结构中检查
+      for (const folder of folderHierarchy) {
+        // 检查黑名单子文件夹
+        if (folder.blacklist_children) {
+          for (const child of folder.blacklist_children) {
+            if (child.path === newBlacklistPath || newBlacklistPath.startsWith(child.path + '/')) {
+              toast.error("该路径已在黑名单中，不能重复添加");
+              return;
+            }
+          }
+        }
         
-        <div className="flex gap-2">
-          {/* macOS权限按钮 */}
-          <Button variant="outline" onClick={showPermissionsGuide} className="border-whiskey-200 hover:bg-whiskey-50 text-whiskey-700">
-            <Shield className="mr-2 h-4 w-4" /> macOS权限指南
-          </Button>          
-          {/* 完全磁盘访问按钮 */}
-          {!hasFullDiskAccess && (
-            <Button variant="outline" onClick={requestFullDiskAccess} className="border-green-200 hover:bg-green-50 text-green-700">
-              <Shield className="mr-2 h-4 w-4" /> 请求完全磁盘访问
-            </Button>
-          )}
-          {/* 添加文件夹按钮 */}
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-whiskey-200 hover:bg-whiskey-300 text-whiskey-900">
-                <FolderPlus className="mr-2 h-4 w-4" /> 添加文件夹
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>添加新文件夹</DialogTitle>
-                <DialogDescription>
-                  选择要监控的文件夹，并可以为其添加别名便于识别。
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="path" className="text-right">
-                    路径
-                  </Label>
-                  <div className="col-span-3 flex gap-2">
-                    <Input id="path" 
-                      value={newDirPath} 
-                      onChange={(e) => setNewDirPath(e.target.value)} 
-                      placeholder="/Users/tom/Documents"
-                      className="flex-1"
-                    />
-                    <Button type="button" variant="outline" onClick={openFolderPicker}>
-                      <Folder className="h-4 w-4" />
+        // 检查已转为黑名单的父文件夹
+        if (folder.is_blacklist && (folder.path === newBlacklistPath || newBlacklistPath.startsWith(folder.path + '/'))) {
+          toast.error("该路径已在黑名单中，不能重复添加");
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("检查黑名单状态失败:", error);
+      // 出错时继续执行，后端会再次验证
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:60315/folders/blacklist/${selectedParentId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          path: newBlacklistPath,
+          alias: newBlacklistAlias || null
+        })
+      });
+
+      if (response.ok) {
+        toast.success("黑名单子文件夹添加成功");
+        setIsBlacklistDialogOpen(false);
+        setNewBlacklistPath("");
+        setNewBlacklistAlias("");
+        setSelectedParentId(null);
+        // 重新加载数据
+        await loadConfigSummary();
+        await loadFolderHierarchy();
+        
+        // 无论Rust端是否初始化，都先手动清理粗筛结果以确保数据一致性
+        try {
+          const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              path: newBlacklistPath,
+            })
+          });
+          
+          if (cleanResponse.ok) {
+            const cleanResult = await cleanResponse.json();
+            console.log("手动清理粗筛结果:", cleanResult);
+            if (cleanResult.deleted > 0) {
+              toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
+            }
+          }
+        } catch (cleanError) {
+          console.error("手动清理粗筛结果失败:", cleanError);
+        }
+        
+        // 再尝试刷新Rust端监控配置，即使失败也不影响黑名单效果（数据已清理）
+        try {
+          await invoke("refresh_monitoring_config");
+          console.log("监控配置刷新成功");
+        } catch (invokeError) {
+          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
+          // 这里错误可能是因为文件监控器未初始化
+          toast.info("黑名单已添加并生效，但Rust监控配置刷新失败，建议重启应用");
+        }
+      } else {
+        const errorData = await response.json();
+        toast.error(`添加失败: ${errorData.message || "未知错误"}`);
+      }
+    } catch (error) {
+      console.error("添加黑名单子文件夹失败:", error);
+      toast.error("添加黑名单子文件夹失败");
+    }
+  };
+
+  // ===== 渲染函数 =====
+
+  // 获取权限状态图标和颜色
+  const getPermissionStatusIcon = (hasPermission: boolean) => {
+    return hasPermission ? (
+      <Check className="h-5 w-5 text-green-500" />
+    ) : (
+      <AlertTriangle className="h-5 w-5 text-yellow-500" />
+    );
+  };
+
+  // 获取权限状态文本
+  const getPermissionStatusText = (hasPermission: boolean) => {
+    return hasPermission ? "已获取完全磁盘访问权限" : "需要完全磁盘访问权限";
+  };
+
+  // 获取文件夹授权状态图标
+  const getAuthStatusIcon = (status: string) => {
+    switch (status) {
+      case "authorized":
+        return <Check className="h-4 w-4 text-green-500" />;
+      case "unauthorized":
+        return <X className="h-4 w-4 text-red-500" />;
+      default:
+        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
+    }
+  };
+
+  // 获取文件夹类型标识
+  const getFolderTypeIcon = (isCommon: boolean, isBlacklist: boolean) => {
+    if (isBlacklist) {
+      return <EyeOff className="h-4 w-4 text-red-500" />;
+    }
+    return isCommon ? (
+      <Shield className="h-4 w-4 text-blue-500" />
+    ) : (
+      <Folder className="h-4 w-4 text-gray-500" />
+    );
+  };
+
+  // 处理常见文件夹转换为黑名单的逻辑
+  const handleToggleFolderToBlacklist = async (folderId: number, currentIsBlacklist: boolean) => {
+    try {
+      // 首先获取文件夹信息，以便在转为黑名单时清理粗筛数据
+      const folderInfo = folderHierarchy
+        .flatMap(folder => [
+          folder,
+          ...(folder.blacklist_children || [])
+        ])
+        .find(dir => dir.id === folderId);
+
+      const folderPath = folderInfo?.path || "";
+      
+      const response = await fetch(`http://127.0.0.1:60315/directories/${folderId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          is_blacklist: !currentIsBlacklist
+        })
+      });
+
+      if (response.ok) {
+        toast.success(currentIsBlacklist ? "已恢复为白名单" : "已转为黑名单");
+        
+        // 如果是转为黑名单，清理相关粗筛数据
+        if (!currentIsBlacklist && folderPath) {
+          try {
+            const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                path: folderPath,
+              })
+            });
+            
+            if (cleanResponse.ok) {
+              const cleanResult = await cleanResponse.json();
+              if (cleanResult.deleted > 0) {
+                console.log(`黑名单设置后清理粗筛数据: ${cleanResult.deleted}条`);
+                toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
+              }
+            }
+          } catch (cleanError) {
+            console.error("清理粗筛数据失败:", cleanError);
+          }
+        }
+        
+        // 重新加载数据
+        await loadConfigSummary();
+        await loadFolderHierarchy();
+        
+        // 尝试刷新Rust端监控配置，即使失败也不影响黑名单效果（数据已清理）
+        try {
+          await invoke("refresh_monitoring_config");
+          console.log("监控配置刷新成功");
+        } catch (invokeError) {
+          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
+          toast.info("配置已更新，建议重启应用以确保生效");
+        }
+      } else {
+        const errorData = await response.json();
+        toast.error(`操作失败: ${errorData.message || "未知错误"}`);
+      }
+    } catch (error) {
+      console.error("切换文件夹状态失败:", error);
+      toast.error("操作失败");
+    }
+  };
+
+  // 渲染层级文件夹结构 - 直接显示两级层次结构
+  const renderFolderHierarchy = () => {
+    // 只显示白名单文件夹及其黑名单子文件夹的层次结构
+    const whitelistFolders = folderHierarchy.filter(folder => !folder.is_blacklist);
+
+    if (whitelistFolders.length === 0) {
+      return (
+        <div className="text-center py-8 text-gray-500">
+          没有配置文件夹
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-2">
+        {whitelistFolders.map((folder: FolderHierarchy) => (
+          <div key={folder.id} className="border rounded-lg">
+            {/* 白名单父文件夹 */}
+            <div className="p-4 bg-white">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {getFolderTypeIcon(folder.is_common_folder, folder.is_blacklist)}
+                  <div>
+                    <div className="font-medium">{folder.alias || folder.path}</div>
+                    <div className="text-sm text-gray-500">{folder.path}</div>
+                    <div className="text-xs text-gray-400">
+                      {folder.is_common_folder ? "常见文件夹" : "自定义"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {getAuthStatusIcon(folder.auth_status)}
+                  <span className="text-sm">
+                    {folder.auth_status === "authorized" ? "已授权" :
+                     folder.auth_status === "unauthorized" ? "未授权" : "等待中"}
+                  </span>
+                  
+                  {/* 添加黑名单子文件夹按钮 */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedParentId(folder.id);
+                      setIsBlacklistDialogOpen(true);
+                    }}
+                    title="添加黑名单子文件夹"
+                  >
+                    <PlusCircle className="h-4 w-4" />
+                  </Button>
+                  
+                  {/* 常见文件夹转黑名单 */}
+                  {folder.is_common_folder && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleToggleFolderToBlacklist(folder.id, folder.is_blacklist)}
+                      title="转为黑名单"
+                    >
+                      <EyeOff className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="alias" className="text-right">
-                    别名
-                  </Label>
-                  <Input id="alias" 
-                    value={newDirAlias} 
-                    onChange={(e) => setNewDirAlias(e.target.value)} 
-                    placeholder="我的文档"
-                    className="col-span-3" 
-                  />
-                </div>
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <div className="text-right col-span-1">
-                    <Label htmlFor="blacklist" className="text-right">
-                      黑名单
-                    </Label>
-                  </div>
-                  <div className="col-span-3 flex items-center">
-                    <Checkbox 
-                      id="blacklist" 
-                      checked={newDirBlacklist}
-                      onCheckedChange={(checked) => setNewDirBlacklist(checked === true)}
-                    />
-                    <Label htmlFor="blacklist" className="ml-2">
-                      加入黑名单（不监控此文件夹）
-                    </Label>
-                  </div>
+                  )}
+                  
+                  {/* 非常见文件夹可以删除 */}
+                  {!folder.is_common_folder && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <MinusCircle className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确认删除</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            确定要删除文件夹 "{folder.alias || folder.path}" 吗？
+                            删除后将停止监控此文件夹。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => handleDeleteDirectory(folder.id)}
+                          >
+                            确认删除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
                 </div>
               </div>
-              
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>取消</Button>
-                <Button type="button" onClick={addDirectory}>添加</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
+            </div>
+            
+            {/* 黑名单子文件夹 */}
+            {folder.blacklist_children && folder.blacklist_children.length > 0 && (
+              <div className="border-t bg-gray-50">
+                {folder.blacklist_children
+                  .filter(child => child.is_blacklist)
+                  .map((child) => (
+                  <div key={child.id} className="p-3 pl-8 border-b last:border-b-0 bg-red-50">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-4 h-px bg-gray-300 mr-2" />
+                        <EyeOff className="h-4 w-4 text-red-500" />
+                        <div>
+                          <div className="font-medium text-sm">{child.alias || child.path}</div>
+                          <div className="text-xs text-gray-500">{child.path}</div>
+                          <div className="text-xs text-gray-400">黑名单子文件夹</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {getAuthStatusIcon(child.auth_status)}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button size="sm" variant="outline">
+                              <MinusCircle className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>确认删除</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                确定要删除黑名单子文件夹 "{child.alias || child.path}" 吗？
+                                删除后将重新监控此文件夹。
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogAction 
+                                onClick={() => handleDeleteDirectory(child.id)}
+                              >
+                                确认删除
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+        
+        {/* 显示转为黑名单的常见文件夹 */}
+        {folderHierarchy.filter(f => f.is_blacklist && f.is_common_folder).map((folder: FolderHierarchy) => (
+          <div key={`blacklist-${folder.id}`} className="border rounded-lg p-4 bg-red-50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <EyeOff className="h-4 w-4 text-red-500" />
+                <div>
+                  <div className="font-medium">{folder.alias || folder.path}</div>
+                  <div className="text-sm text-gray-500">{folder.path}</div>
+                  <div className="text-xs text-gray-400">已转为黑名单的常见文件夹</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {getAuthStatusIcon(folder.auth_status)}
+                <span className="text-sm">
+                  {folder.auth_status === "authorized" ? "已授权" :
+                   folder.auth_status === "unauthorized" ? "未授权" : "等待中"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleToggleFolderToBlacklist(folder.id, true)}
+                  title="恢复为白名单"
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
-      
-      <Card className="border-whiskey-100">
-        <CardHeader className="bg-whiskey-50/50">
-          <CardTitle className="text-whiskey-900">文件夹管理</CardTitle>
-          <CardDescription className="text-whiskey-700">
-            查看和管理所有需要监控的文件夹，授权或取消授权读取权限。
-          </CardDescription>
+    );
+  };
+
+  // 渲染权限状态卡片
+  const renderPermissionStatusCard = () => (
+    <Card className="mb-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          系统权限状态
+        </CardTitle>
+        <CardDescription>
+          为了高效监控文件变化，建议获取完全磁盘访问权限
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-center gap-3">
+              {getPermissionStatusIcon(hasFullDiskAccess)}
+              <div>
+                <div className="font-medium">{getPermissionStatusText(hasFullDiskAccess)}</div>
+                <div className="text-sm text-gray-500">
+                  {hasFullDiskAccess 
+                    ? "可以监控所有白名单文件夹，排除黑名单" 
+                    : "只能监控手动授权的文件夹"}
+                </div>
+              </div>
+            </div>
+            {!hasFullDiskAccess && (
+              <Button onClick={requestFullDiskAccess} size="sm">
+                申请权限
+              </Button>
+            )}
+          </div>
+          
+          {configSummary && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-blue-600">
+                  {configSummary.monitored_dirs_count}
+                </div>
+                <div className="text-gray-500">监控文件夹</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-red-600">
+                  {configSummary.blacklist_dirs_count}
+                </div>
+                <div className="text-gray-500">黑名单文件夹</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-green-600">
+                  {configSummary.config_categories_count}
+                </div>
+                <div className="text-gray-500">文件分类</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-purple-600">
+                  {bundleExtensions.length}
+                </div>
+                <div className="text-gray-500">Bundle扩展名</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // 渲染文件夹管理表格 - 支持层级显示
+  const renderFolderManagementTable = () => {
+    return (
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Folder className="h-5 w-5" />
+                文件夹管理
+              </CardTitle>
+              <CardDescription>
+                管理白名单和黑名单文件夹，控制监控范围。只能添加白名单文件夹，黑名单在白名单下添加。
+              </CardDescription>
+            </div>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex items-center gap-2">
+                  <FolderPlus className="h-4 w-4" />
+                  添加白名单文件夹
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>添加白名单文件夹</DialogTitle>
+                  <DialogDescription>
+                    添加新的监控文件夹，只能添加为白名单。黑名单需要在白名单文件夹下添加。
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="folder-path">文件夹路径</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="folder-path"
+                        value={newDirPath}
+                        onChange={(e) => setNewDirPath(e.target.value)}
+                        placeholder="选择文件夹路径..."
+                        readOnly
+                      />
+                      <Button onClick={handleSelectFolder} variant="outline">
+                        选择
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="folder-alias">别名 (可选)</Label>
+                    <Input
+                      id="folder-alias"
+                      value={newDirAlias}
+                      onChange={(e) => setNewDirAlias(e.target.value)}
+                      placeholder="为文件夹设置一个友好的名称..."
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+                    取消
+                  </Button>
+                  <Button onClick={handleAddDirectory}>添加</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         </CardHeader>
         <CardContent>
-          {/* 完全磁盘访问权限提示 */}
-          {hasFullDiskAccess && (
-            <Alert className="mb-6 bg-green-50 border-green-200">
-              <Shield className="h-4 w-4 text-green-600" />
-              <AlertTitle className="text-green-700">已获得完全磁盘访问权限</AlertTitle>
-              <AlertDescription className="text-green-600">
-                您的应用已获得macOS完全磁盘访问权限，可以访问所有文件夹，无需单独授权每个文件夹。
-              </AlertDescription>
-            </Alert>
-          )}
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="mb-4 bg-whiskey-100">
-              <TabsTrigger value="all" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">全部</TabsTrigger>
-              <TabsTrigger value="authorized" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">已授权</TabsTrigger>
-              <TabsTrigger value="pending" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">待授权</TabsTrigger>
-              <TabsTrigger value="blacklist" className="data-[state=active]:bg-whiskey-200 data-[state=active]:text-whiskey-900">黑名单</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="all">{renderDirectoryTable()}</TabsContent>
-            <TabsContent value="authorized">{renderDirectoryTable()}</TabsContent>
-            <TabsContent value="pending">{renderDirectoryTable()}</TabsContent>
-            <TabsContent value="blacklist">{renderDirectoryTable()}</TabsContent>
-          </Tabs>
-          
-          {/* 加载中状态 */}
-          {loading && <div className="flex justify-center py-8">加载中...</div>}
+          {/* 直接显示层级文件夹结构 */}
+          {renderFolderHierarchy()}
         </CardContent>
-        <CardFooter className="flex justify-between items-center"> {/* Added items-center */}
-          <p className="text-xs text-muted-foreground">
-            Tips: 如果你误删了常见文件夹，可以点击右侧恢复默认文件夹。
-          </p>
-          {directories.length > 0 && (
-            <Button variant="outline" size="sm" onClick={initializeDefaultDirectories}>
-              恢复默认文件夹
-            </Button>
-          )}
-        </CardFooter>
       </Card>
+    );
+  };
 
-      {/* 权限指南对话框 */}
-      <Dialog open={isPermissionDialogOpen} onOpenChange={setIsPermissionDialogOpen}>
+  // 渲染Bundle扩展名管理区域
+  const renderBundleExtensionsSection = () => (
+    <Card className="mb-6">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              macOS Bundle 扩展名管理
+            </CardTitle>
+            <CardDescription>
+              macOS Bundle就是那些看起来是文件的文件夹，我们要跳过它们，提高扫描效率
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBundleSection(!showBundleSection)}
+            >
+              {showBundleSection ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              {showBundleSection ? "隐藏" : "显示"}
+            </Button>
+            <Dialog open={isBundleDialogOpen} onOpenChange={setIsBundleDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <PlusCircle className="h-4 w-4 mr-2" />
+                  添加扩展名
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>添加 Bundle 扩展名</DialogTitle>
+                  <DialogDescription>
+                    添加需要跳过扫描的 Bundle 扩展名（如 .app, .bundle）
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="extension">扩展名</Label>
+                    <Input
+                      id="extension"
+                      value={newBundleExtension}
+                      onChange={(e) => setNewBundleExtension(e.target.value)}
+                      placeholder="例如：.app"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="description">描述 (可选)</Label>
+                    <Input
+                      id="description"
+                      value={newBundleDescription}
+                      onChange={(e) => setNewBundleDescription(e.target.value)}
+                      placeholder="扩展名的用途描述..."
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsBundleDialogOpen(false)}>
+                    取消
+                  </Button>
+                  <Button onClick={handleAddBundleExtension}>添加</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+      </CardHeader>
+      {showBundleSection && (
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {bundleExtensions.map((ext) => (
+              <Card key={ext.id} className="p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="font-medium">{ext.extension}</div>
+                    <div className="text-sm text-gray-500">
+                      {ext.description || "无描述"}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${ext.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="outline">
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>确认删除</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            确定要删除扩展名 "{ext.extension}" 吗？
+                            删除后将重新扫描此类型的文件。
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={() => handleDeleteBundleExtension(ext.id)}
+                          >
+                            确认删除
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+          
+          {bundleExtensions.length === 0 && (
+            <div className="text-center py-8 text-gray-500">
+              还没有配置 Bundle 扩展名
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+
+  // 主渲染
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6 max-w-6xl">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4 mx-auto"></div>
+            <p className="text-lg text-gray-600">加载授权配置中...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-6 max-w-6xl">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+          <Shield className="h-8 w-8" />
+          系统授权管理
+        </h1>
+        <p className="text-gray-600 mt-2">
+          管理文件夹访问权限，配置监控白名单和黑名单，优化扫描性能
+        </p>
+      </div>
+
+      {renderPermissionStatusCard()}
+      {renderFolderManagementTable()}
+      {renderBundleExtensionsSection()}
+      
+      {/* 黑名单子文件夹对话框 */}
+      <Dialog open={isBlacklistDialogOpen} onOpenChange={setIsBlacklistDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>macOS权限指南</DialogTitle>
+            <DialogTitle>添加黑名单子文件夹</DialogTitle>
             <DialogDescription>
-              请按照以下步骤授予应用所需的权限，以便正常监控文件夹。
+              在白名单文件夹下选择不需要监控的黑名单子文件夹
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid gap-4 py-4">
-            {permissionsHint && (
-              <>
-                <div>
-                  <h3 className="font-bold flex items-center">
-                    完全磁盘访问
-                    {hasFullDiskAccess && (
-                      <span className="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">已授权</span>
-                    )}
-                  </h3>
-                  <p className="text-sm">{permissionsHint.full_disk_access}</p>
-                  {!hasFullDiskAccess && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={requestFullDiskAccess} 
-                      className="mt-2 border-green-200 hover:bg-green-50 text-green-700"
-                    >
-                      <Shield className="mr-2 h-4 w-4" /> 请求完全磁盘访问权限
-                    </Button>
-                  )}
-                  <p className="text-xs text-muted-foreground mt-2">
-                    注意：在macOS系统中，一旦本应用获得了"完全磁盘访问权限"，将自动获得对所有"文件与文件夹"的访问权限，无需单独授权每个文件夹。
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-bold">文档、桌面和下载文件夹</h3>
-                  <p className="text-sm">{permissionsHint.docs_desktop_downloads}</p>
-                </div>
-                <div>
-                  <h3 className="font-bold">可移动卷</h3>
-                  <p className="text-sm">{permissionsHint.removable_volumes}</p>
-                </div>
-                <div>
-                  <h3 className="font-bold">网络卷</h3>
-                  <p className="text-sm">{permissionsHint.network_volumes}</p>
-                </div>
-              </>
-            )}
-            
-            <Alert>
-              <Settings className="h-4 w-4" />
-              <AlertTitle>权限设置提示</AlertTitle>
-              <AlertDescription>
-                您可以通过系统偏好设置 &gt; 安全性与隐私 &gt; 隐私 手动授予应用必要的权限。
-              </AlertDescription>
-            </Alert>
-          </div>
-          
-          <DialogFooter>
-            <Button type="button" onClick={() => setIsPermissionDialogOpen(false)}>关闭</Button>
-          </DialogFooter>
+          {selectedParentId ? (
+            <FolderTreeSelector
+              rootPath={folderHierarchy.find(f => f.id === selectedParentId)?.path || ""}
+              rootAlias={folderHierarchy.find(f => f.id === selectedParentId)?.alias || undefined}
+              selectedPath={newBlacklistPath}
+              onPathSelect={handleTreePathSelect}
+              onConfirm={handleConfirmTreeSelection}
+              onCancel={() => {
+                setIsBlacklistDialogOpen(false);
+                setSelectedParentId(null);
+                setNewBlacklistPath("");
+                setNewBlacklistAlias("");
+              }}
+            />
+          ) : (
+            <div className="py-4">
+              <p className="text-gray-500">请先选择父文件夹</p>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
-    </main>
+    </div>
   );
 }
 

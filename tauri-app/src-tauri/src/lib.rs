@@ -58,6 +58,9 @@ pub struct AppState {
     config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
     file_monitor: Arc<Mutex<Option<FileMonitor>>>,
     debounced_file_monitor: Arc<Mutex<Option<DebouncedFileMonitor>>>, // 新增字段
+    // 新增：配置变更队列管理
+    pending_config_changes: Arc<Mutex<Vec<ConfigChangeRequest>>>,
+    initial_scan_completed: Arc<Mutex<bool>>,
 }
 
 impl AppState {
@@ -65,7 +68,9 @@ impl AppState {
         Self {
             config: Arc::new(Mutex::new(None)),
             file_monitor: Arc::new(Mutex::new(None)),
-        debounced_file_monitor: Arc::new(Mutex::new(None)), // 初始化新字段
+            debounced_file_monitor: Arc::new(Mutex::new(None)), // 初始化新字段
+            pending_config_changes: Arc::new(Mutex::new(Vec::new())), // 初始化配置变更队列
+            initial_scan_completed: Arc::new(Mutex::new(false)), // 初始化扫描完成标志
         }
     }
 
@@ -81,6 +86,215 @@ impl AppState {
         let mut config_guard = self.config.lock().unwrap();
         *config_guard = Some(config);
     }
+    
+    // 新增：配置变更队列管理方法
+    
+    /// 检查首次扫描是否已完成
+    pub fn is_initial_scan_completed(&self) -> bool {
+        let completed = self.initial_scan_completed.lock().unwrap();
+        *completed
+    }
+    
+    /// 设置首次扫描完成状态
+    pub fn set_initial_scan_completed(&self, completed: bool) {
+        let mut scan_completed = self.initial_scan_completed.lock().unwrap();
+        *scan_completed = completed;
+        
+        // 如果扫描完成，处理待处理的配置变更
+        if completed {
+            println!("[CONFIG_QUEUE] 首次扫描完成，开始处理待处理的配置变更");
+            self.process_pending_config_changes();
+        }
+    }
+    
+    /// 添加配置变更请求到队列
+    pub fn add_pending_config_change(&self, change: ConfigChangeRequest) {
+        let mut pending_changes = self.pending_config_changes.lock().unwrap();
+        pending_changes.push(change.clone());
+        println!("[CONFIG_QUEUE] 添加配置变更到队列: {:?}", change);
+    }
+    
+    /// 检查是否有待处理的配置变更
+    pub fn has_pending_config_changes(&self) -> bool {
+        let pending_changes = self.pending_config_changes.lock().unwrap();
+        !pending_changes.is_empty()
+    }
+    
+    /// 获取待处理的配置变更数量
+    pub fn get_pending_config_changes_count(&self) -> usize {
+        let pending_changes = self.pending_config_changes.lock().unwrap();
+        pending_changes.len()
+    }
+    
+    /// 处理所有待处理的配置变更（由Rust端调用Python API）
+    fn process_pending_config_changes(&self) {
+        let changes = {
+            let mut pending_changes = self.pending_config_changes.lock().unwrap();
+            let changes = pending_changes.clone();
+            pending_changes.clear(); // 清空队列
+            changes
+        };
+        
+        if changes.is_empty() {
+            return;
+        }
+        
+        println!("[CONFIG_QUEUE] 开始处理 {} 个待处理的配置变更", changes.len());
+        
+        // 在独立的异步任务中处理配置变更
+        let changes_clone = changes.clone();
+        let file_monitor = self.file_monitor.clone();
+        
+        tauri::async_runtime::spawn(async move {
+            Self::execute_config_changes(changes_clone, file_monitor).await;
+        });
+    }
+    
+    /// 执行配置变更（静态方法，可在异步任务中调用）
+    async fn execute_config_changes(
+        changes: Vec<ConfigChangeRequest>,
+        file_monitor: Arc<Mutex<Option<FileMonitor>>>,
+    ) {
+        println!("[CONFIG_QUEUE] 开始执行 {} 个配置变更", changes.len());
+        
+        // 获取文件监控器
+        let monitor = {
+            let guard = file_monitor.lock().unwrap();
+            match &*guard {
+                Some(monitor) => monitor.clone(),
+                None => {
+                    eprintln!("[CONFIG_QUEUE] 文件监控器未初始化，无法执行配置变更");
+                    return;
+                }
+            }
+        };
+        
+        for change in changes {
+            match Self::execute_single_config_change(&change, &monitor).await {
+                Ok(_) => {
+                    println!("[CONFIG_QUEUE] 成功执行配置变更: {:?}", change);
+                }
+                Err(e) => {
+                    eprintln!("[CONFIG_QUEUE] 执行配置变更失败: {:?}, 错误: {}", change, e);
+                }
+            }
+        }
+        
+        // 执行完所有变更后，刷新监控配置
+        match monitor.refresh_all_configurations().await {
+            Ok(_) => {
+                println!("[CONFIG_QUEUE] 所有配置变更执行完成，监控配置已刷新");
+            }
+            Err(e) => {
+                eprintln!("[CONFIG_QUEUE] 刷新监控配置失败: {}", e);
+            }
+        }
+    }
+    
+    /// 执行单个配置变更
+    async fn execute_single_config_change(
+        change: &ConfigChangeRequest,
+        monitor: &FileMonitor,
+    ) -> Result<(), String> {
+        match change {
+            ConfigChangeRequest::DeleteFolder { folder_path, is_blacklist, .. } => {
+                // 如果删除的是黑名单文件夹，清理相关粗筛数据
+                if *is_blacklist {
+                    Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
+                }
+                
+                // 对于文件夹删除，主要工作已在前端完成，这里主要是确保监控状态同步
+                println!("[CONFIG_QUEUE] 文件夹删除变更处理完成: {}", folder_path);
+                Ok(())
+            }
+            
+            ConfigChangeRequest::AddBlacklist { folder_path, .. } => {
+                // 清理新增黑名单路径的粗筛数据
+                Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
+                println!("[CONFIG_QUEUE] 黑名单文件夹添加变更处理完成: {}", folder_path);
+                Ok(())
+            }
+            
+            ConfigChangeRequest::ToggleFolder { folder_path, is_blacklist, .. } => {
+                if *is_blacklist {
+                    // 转为黑名单时清理粗筛数据
+                    Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
+                } else {
+                    // 转为白名单时执行增量扫描
+                    monitor.scan_single_directory(folder_path).await?;
+                }
+                println!("[CONFIG_QUEUE] 文件夹状态切换变更处理完成: {}", folder_path);
+                Ok(())
+            }
+            
+            ConfigChangeRequest::AddWhitelist { folder_path, .. } => {
+                // 新增白名单文件夹时执行增量扫描
+                monitor.scan_single_directory(folder_path).await?;
+                println!("[CONFIG_QUEUE] 白名单文件夹添加变更处理完成: {}", folder_path);
+                Ok(())
+            }
+            
+            ConfigChangeRequest::BundleExtensionChange => {
+                // Bundle扩展名变更通常需要重启生效，这里只记录
+                println!("[CONFIG_QUEUE] Bundle扩展名变更处理完成，重启应用后生效");
+                Ok(())
+            }
+        }
+    }
+    
+    /// 清理指定路径的粗筛数据（调用Python API）
+    async fn cleanup_screening_data_for_path(
+        folder_path: &str,
+        monitor: &FileMonitor,
+    ) -> Result<(), String> {
+        let api_url = format!("http://{}:{}/clear-screening-data", monitor.get_api_host(), monitor.get_api_port());
+        
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&api_url)
+            .json(&serde_json::json!({ "folder_path": folder_path }))
+            .send()
+            .await
+            .map_err(|e| format!("清理粗筛数据请求失败: {}", e))?;
+        
+        if response.status().is_success() {
+            println!("[CONFIG_QUEUE] 成功清理路径 {} 的粗筛数据", folder_path);
+            Ok(())
+        } else {
+            let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
+            Err(format!("清理粗筛数据失败: {}", error_text))
+        }
+    }
+}
+
+// 配置变更请求类型
+#[derive(Debug, Clone)]
+pub enum ConfigChangeRequest {
+    // 添加黑名单文件夹
+    AddBlacklist {
+        parent_id: i32,
+        folder_path: String,
+        folder_alias: Option<String>,
+    },
+    // 删除文件夹
+    DeleteFolder {
+        folder_id: i32,
+        folder_path: String,
+        is_blacklist: bool,
+    },
+    // 添加白名单文件夹
+    AddWhitelist {
+        folder_path: String,
+        folder_alias: Option<String>,
+    },
+    // 切换文件夹黑白名单状态
+    ToggleFolder {
+        folder_id: i32,
+        is_blacklist: bool,
+        folder_path: String,
+    },
+    // Bundle扩展名变更
+    BundleExtensionChange,
 }
 
 // 获取API状态的命令
@@ -367,6 +581,22 @@ pub fn run() {
             commands::test_bundle_detection,
             commands::scan_directory, // 新增:添加目录后扫描目录
             commands::stop_monitoring_directory, // 新增:停止监控指定目录
+            // 新增：文件夹层级管理命令
+            commands::add_blacklist_folder,
+            commands::remove_blacklist_folder,
+            commands::get_folder_hierarchy,
+            // 新增：配置刷新管理命令
+            commands::refresh_monitoring_config,
+            commands::get_bundle_extensions,
+            commands::get_configuration_summary,
+            commands::test_bundle_detection_dynamic,
+            commands::read_directory, // 新增：读取目录内容
+            // 新增：配置变更队列管理命令
+            commands::add_blacklist_folder_queued,
+            commands::remove_folder_queued,
+            commands::toggle_folder_status_queued,
+            commands::add_whitelist_folder_queued,
+            commands::get_config_queue_status,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
         ])

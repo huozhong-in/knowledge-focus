@@ -1,5 +1,6 @@
 from typing import List, Dict, Any, Optional, Tuple, Union
 from sqlmodel import Session, select, delete, update
+from sqlalchemy import text
 from db_mgr import FileScreeningResult, FileScreenResult
 from datetime import datetime, timedelta
 import logging
@@ -329,7 +330,7 @@ class ScreeningManager:
                 .where(FileScreeningResult.id.in_(result_ids))\
                 .values(status=status.value, updated_at=datetime.now())
                 
-            self.session.execute(update_statement)
+            self.session.exec(update_statement)
             self.session.commit()
             
             success_count = len(result_ids)  # 假设全部成功
@@ -390,7 +391,7 @@ class ScreeningManager:
                 .where(FileScreeningResult.status.in_([FileScreenResult.PROCESSED.value, FileScreenResult.IGNORED.value]))\
                 .where(FileScreeningResult.updated_at < cutoff_date)
                 
-            result = self.session.execute(delete_statement)
+            result = self.session.exec(delete_statement)
             self.session.commit()
             
             deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
@@ -412,18 +413,48 @@ class ScreeningManager:
             删除的记录数
         """
         try:
-            # 确保路径以"/"结尾，便于前缀匹配
-            if not path_prefix.endswith("/"):
-                path_prefix = f"{path_prefix}/"
+            if not path_prefix:
+                logger.warning("路径前缀为空，无法执行删除操作")
+                return 0
+                
+            # 标准化路径（统一分隔符、去除多余的分隔符等）
+            normalized_path = os.path.normpath(path_prefix).replace("\\", "/")
             
-            # 查询以该路径前缀开头的所有记录
-            statement = delete(FileScreeningResult).where(FileScreeningResult.file_path.like(f"{path_prefix}%"))
-            result = self.session.execute(statement)
-            self.session.commit()
+            # 直接使用SQL查询获取路径符合条件的记录ID列表
+            # 这种方式比使用LIKE更可靠，因为我们直接比较字符串前缀
+            from sqlalchemy import text
+            escaped_path = normalized_path.replace("%", "\\%").replace("_", "\\_")
+            query = text("SELECT id, file_path FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")
+            query_result = self.session.exec(query, params={"path_prefix": escaped_path})
             
-            deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
-            logger.info(f"删除路径前缀为'{path_prefix}'的粗筛结果成功: 删除了 {deleted_count} 条记录")
-            return deleted_count
+            matching_rows = query_result.fetchall()
+            matching_count = len(matching_rows)
+            
+            if matching_count > 0:
+                # 记录前5个匹配的路径，帮助调试
+                sample_paths = [row[1] for row in matching_rows[:5]]
+                print(f"找到 {matching_count} 条匹配路径 '{normalized_path}' 的粗筛结果记录，样例: {sample_paths}")
+                
+                # 获取所有匹配的ID
+                ids_to_delete = [row[0] for row in matching_rows]
+                
+                # 分批删除，避免单次传入过多参数
+                batch_size = 1000
+                total_deleted = 0
+                
+                for i in range(0, len(ids_to_delete), batch_size):
+                    batch_ids = ids_to_delete[i:i+batch_size]
+                    delete_stmt = delete(FileScreeningResult).where(FileScreeningResult.id.in_(batch_ids))
+                    result = self.session.exec(delete_stmt)
+                    self.session.commit()
+                    batch_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
+                    total_deleted += batch_deleted
+                    
+                print(f"成功删除了 {total_deleted} 条匹配路径 '{normalized_path}' 的粗筛结果记录")
+                return total_deleted
+            else:
+                print(f"未找到匹配路径 '{normalized_path}' 的粗筛结果记录")
+                return 0
             
         except Exception as e:
             self.session.rollback()
@@ -547,7 +578,7 @@ class ScreeningManager:
             
             # 执行查询，并记录时间
             query_exec_start = time.time()
-            results = self.session.execute(statement).scalars().all()
+            results = self.session.exec(statement).scalars().all()
             query_exec_time = time.time() - query_exec_start
             
             # 将结果转换为字典列表，同时过滤掉不存在的文件
@@ -609,7 +640,7 @@ class ScreeningManager:
             
             # 执行查询，并记录时间
             query_exec_start = time.time()
-            results = self.session.execute(statement).scalars().all()
+            results = self.session.exec(statement).scalars().all()
             query_exec_time = time.time() - query_exec_start
             
             # 将结果转换为字典列表，同时过滤掉不存在的文件
@@ -706,3 +737,112 @@ class ScreeningManager:
         except Exception as e:
             logger.error(f"按路径子字符串搜索文件失败: {e}")
             return []
+
+    def is_path_in_blacklist_hierarchy(self, path: str, myfiles_mgr=None) -> bool:
+        """检查路径是否在层级黑名单中
+        
+        Args:
+            path (str): 要检查的路径
+            myfiles_mgr: MyFilesManager实例，用于获取黑名单信息
+            
+        Returns:
+            bool: 如果路径在黑名单中则返回True，否则返回False
+        """
+        try:
+            if not myfiles_mgr:
+                # 如果没有传入MyFilesManager，则无法检查黑名单
+                logger.warning("未提供MyFilesManager实例，无法检查层级黑名单")
+                return False
+            
+            # 使用MyFilesManager的黑名单检查方法
+            return myfiles_mgr.is_path_in_blacklist(path)
+            
+        except Exception as e:
+            logger.error(f"检查层级黑名单失败: {str(e)}")
+            return False
+
+    def delete_screening_results_by_folder(self, folder_path: str) -> int:
+        """当文件夹变为黑名单时清理相关的粗筛结果数据
+        
+        Args:
+            folder_path (str): 文件夹路径
+            
+        Returns:
+            int: 删除的记录数
+        """
+        try:
+            if not folder_path:
+                logger.warning("删除粗筛结果时提供了空路径")
+                return 0
+                
+            # 标准化路径（统一分隔符，去除尾部斜杠）
+            normalized_path = os.path.normpath(folder_path).replace("\\", "/")
+            
+            # 确保路径以"/"结尾用于前缀匹配
+            if not normalized_path.endswith("/"):
+                normalized_path = f"{normalized_path}/"
+                
+            logger.info(f"黑名单文件夹添加操作，开始清理路径 '{normalized_path}' 下的粗筛结果")
+            
+            # 直接使用SQL执行，可以更精确地控制LIKE语句
+            # 转义LIKE中的特殊字符: % 和 _
+            escaped_path = normalized_path.replace("%", "\\%").replace("_", "\\_")
+            
+            # 先检查有多少条匹配的记录，作为日志记录和判断是否需要进一步处理
+            count_query = text("SELECT COUNT(*) FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")
+            count_result = self.session.exec(count_query, params={"path_prefix": escaped_path}).scalar()
+            
+            if count_result > 0:
+                logger.info(f"找到 {count_result} 条匹配路径 '{normalized_path}' 的粗筛结果记录，准备删除")
+                
+                # 对于大量记录，使用分批删除
+                if count_result > 10000:
+                    logger.warning(f"匹配记录数量大于10000，将使用分批删除")
+                    
+                    # 获取所有匹配记录的ID
+                    id_query = text("SELECT id FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")
+                    ids = [row[0] for row in self.session.exec(id_query, params={"path_prefix": escaped_path}).fetchall()]
+                    
+                    # 分批删除
+                    batch_size = 1000
+                    total_deleted = 0
+                    
+                    for i in range(0, len(ids), batch_size):
+                        batch_ids = ids[i:i+batch_size]
+                        delete_stmt = delete(FileScreeningResult).where(FileScreeningResult.id.in_(batch_ids))
+                        result = self.session.exec(delete_stmt)
+                        self.session.commit()
+                        batch_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
+                        total_deleted += batch_deleted
+                        logger.info(f"已删除第 {i//batch_size + 1} 批，共 {batch_deleted} 条记录")
+                    
+                    logger.info(f"文件夹 {normalized_path} 变为黑名单，已分批清理 {total_deleted} 条相关粗筛结果")
+                    return total_deleted
+                else:
+                    # 对于少量记录，直接执行删除
+                    delete_query = text("DELETE FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")
+                    result = self.session.exec(delete_query, params={"path_prefix": escaped_path})
+                    self.session.commit()
+                    
+                    deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+                    logger.info(f"文件夹 {normalized_path} 变为黑名单，已清理 {deleted_count} 条相关粗筛结果")
+                    return deleted_count
+            else:
+                logger.info(f"文件夹 {normalized_path} 变为黑名单，未找到需要清理的粗筛结果")
+                return 0
+            
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"清理文件夹 {folder_path} 的粗筛结果失败: {str(e)}")
+            return 0
+        
+if __name__ == "__main__":
+    # 仅用于测试，实际使用时请通过依赖注入获取Session实例
+    from sqlmodel import create_engine, Session
+    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    engine = create_engine(f"sqlite:///{db_file}")    
+    with Session(engine) as session:
+        mgr = ScreeningManager(session)
+        # 测试delete_screening_results_by_path_prefix()
+        deleted_count = mgr.delete_screening_results_by_path_prefix("/Users/dio/Movies/JianyingPro")
+        print(f"删除的记录数: {deleted_count}")

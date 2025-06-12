@@ -97,9 +97,40 @@ class MyFiles(SQLModel, table=True):
     path: str
     alias: str | None = Field(default=None)  # 别名
     is_blacklist: bool = Field(default=False)  # 是否是用户不想监控的文件夹(黑名单)
+    is_common_folder: bool = Field(default=False)  # 是否为常见文件夹（不可删除）
+    parent_id: int | None = Field(default=None, foreign_key="t_myfiles.id")  # 父文件夹ID，支持黑名单层级关系
     auth_status: str = Field(sa_column=Column(Enum(AuthStatus, values_callable=lambda obj: [e.value for e in obj]), default=AuthStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
     updated_at: datetime = Field(default=datetime.now())  # 更新时间
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+# macOS Bundle扩展名表
+class BundleExtension(SQLModel, table=True):
+    __tablename__ = "t_bundle_extensions"
+    id: int = Field(default=None, primary_key=True)
+    extension: str = Field(index=True, unique=True)  # 扩展名（如.app, .bundle等）
+    description: str | None = Field(default=None)  # 描述
+    is_active: bool = Field(default=True)  # 是否启用
+    created_at: datetime = Field(default=datetime.now())
+    updated_at: datetime = Field(default=datetime.now())
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+# 系统配置表
+class SystemConfig(SQLModel, table=True):
+    __tablename__ = "t_system_config"
+    id: int = Field(default=None, primary_key=True)
+    key: str = Field(index=True, unique=True)  # 配置键名
+    value: str  # 配置值（JSON字符串）
+    description: str | None = Field(default=None)  # 配置描述
+    updated_at: datetime = Field(default=datetime.now())
+    
     class Config:
         json_encoders = {
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
@@ -388,6 +419,17 @@ class DBManager:
             # 创建文件表
             if not inspector.has_table(MyFiles.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[MyFiles.__table__])
+                self._init_default_directories()  # 初始化默认文件夹
+            
+            # 创建Bundle扩展名表
+            if not inspector.has_table(BundleExtension.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[BundleExtension.__table__])
+                self._init_bundle_extensions()  # 初始化Bundle扩展名数据
+            
+            # 创建系统配置表
+            if not inspector.has_table(SystemConfig.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[SystemConfig.__table__])
+                self._init_system_config()  # 初始化系统配置数据
             
             # 创建文件分类表
             if not inspector.has_table(FileCategory.__tablename__):
@@ -434,6 +476,113 @@ class DBManager:
                 conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_project_path ON {Project.__tablename__} (path);'))
                 
         return True
+
+    def _init_bundle_extensions(self) -> None:
+        """初始化macOS Bundle扩展名数据"""
+        bundle_extensions = [
+            # 应用程序Bundle
+            {"extension": ".app", "description": "macOS应用程序包"},
+            {"extension": ".bundle", "description": "macOS通用Bundle包"},
+            {"extension": ".framework", "description": "macOS框架Bundle"},
+            {"extension": ".plugin", "description": "macOS插件Bundle"},
+            {"extension": ".kext", "description": "macOS内核扩展"},
+            
+            # 媒体和创意软件Bundle
+            {"extension": ".fcpbundle", "description": "Final Cut Pro项目包"},
+            {"extension": ".imovielibrary", "description": "iMovie项目库"},
+            {"extension": ".tvlibrary", "description": "TV应用库"},
+            {"extension": ".theater", "description": "Theater应用库"},
+            {"extension": ".photoslibrary", "description": "Photos照片库"},
+            {"extension": ".logicx", "description": "Logic Pro X项目包"},
+            
+            # 办公软件Bundle
+            {"extension": ".pages", "description": "Apple Pages文档包"},
+            {"extension": ".numbers", "description": "Apple Numbers电子表格包"},
+            {"extension": ".key", "description": "Apple Keynote演示文稿包"},
+            
+            # 开发工具Bundle
+            {"extension": ".xcodeproj", "description": "Xcode项目包"},
+            {"extension": ".xcworkspace", "description": "Xcode工作空间包"},
+            {"extension": ".playground", "description": "Swift Playground包"},
+            {"extension": ".xcassets", "description": "Xcode资源目录包"},
+            {"extension": ".xcdatamodeld", "description": "Core Data模型包"},
+            
+            # 设计和自动化Bundle
+            {"extension": ".sketch", "description": "Sketch设计文件包"},
+            {"extension": ".workflow", "description": "Automator工作流程包"},
+            {"extension": ".action", "description": "Automator动作包"},
+            {"extension": ".lbaction", "description": "LaunchBar动作包"},
+            
+            # 系统相关Bundle
+            {"extension": ".prefpane", "description": "系统偏好设置面板"},
+            {"extension": ".appex", "description": "App扩展"},
+            {"extension": ".component", "description": "音频单元组件"},
+            {"extension": ".wdgt", "description": "Dashboard小部件"},
+            {"extension": ".qlgenerator", "description": "Quick Look生成器"},
+            {"extension": ".mdimporter", "description": "Spotlight元数据导入器"},
+            {"extension": ".safari-extension", "description": "Safari扩展"},
+            
+            # 本地化和资源Bundle
+            {"extension": ".lproj", "description": "本地化资源目录"},
+            {"extension": ".nib", "description": "Interface Builder文件包"},
+            {"extension": ".storyboard", "description": "Interface Builder故事板包"},
+            
+            # 其他Bundle
+            {"extension": ".download", "description": "未完成下载的文件包"},
+            {"extension": ".scptd", "description": "AppleScript脚本包"},
+            {"extension": ".rtfd", "description": "富文本格式目录"},
+        ]
+        
+        bundle_objs = []
+        for ext_data in bundle_extensions:
+            bundle_objs.append(
+                BundleExtension(
+                    extension=ext_data["extension"],
+                    description=ext_data["description"],
+                    is_active=True
+                )
+            )
+        
+        self.session.add_all(bundle_objs)
+        self.session.commit()
+    
+    def _init_system_config(self) -> None:
+        """初始化系统配置数据"""
+        system_configs = [
+            {
+                "key": "full_disk_access_status",
+                "value": "false",
+                "description": "macOS完全磁盘访问权限状态"
+            },
+            {
+                "key": "last_permission_check",
+                "value": "0",
+                "description": "最后一次权限检查时间戳"
+            },
+            {
+                "key": "default_folders_initialized",
+                "value": "false", 
+                "description": "默认文件夹是否已初始化"
+            },
+            {
+                "key": "bundle_extensions_version",
+                "value": "1.0",
+                "description": "Bundle扩展名规则版本"
+            }
+        ]
+        
+        config_objs = []
+        for config_data in system_configs:
+            config_objs.append(
+                SystemConfig(
+                    key=config_data["key"],
+                    value=config_data["value"],
+                    description=config_data["description"]
+                )
+            )
+        
+        self.session.add_all(config_objs)
+        self.session.commit()
 
     def _init_file_categories(self) -> None:
         """初始化文件分类数据"""
@@ -1148,6 +1297,78 @@ class DBManager:
         
         self.session.add_all(rule_objs)
         self.session.commit()
+
+    def _init_default_directories(self) -> None:
+        """初始化默认系统文件夹"""
+        import platform
+        
+        # 检查是否已有文件夹记录，如果有则跳过初始化
+        existing_count = self.session.exec(select(MyFiles)).first()
+        if existing_count is not None:
+            return
+        
+        default_dirs = []
+        system = platform.system()
+        
+        # 设置用户主目录
+        home_dir = os.path.expanduser("~") if system != "Windows" else os.environ.get("USERPROFILE", "")
+        
+        if system == "Darwin":  # macOS
+            # 白名单常用文件夹（用户数据文件夹，通常希望被扫描）
+            whitelist_common_dirs = [
+                {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
+                {"name": "文稿", "path": os.path.join(home_dir, "Documents")},
+                {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
+                {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
+                {"name": "音乐", "path": os.path.join(home_dir, "Music")},
+                {"name": "影片", "path": os.path.join(home_dir, "Movies")},
+                {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
+            ]
+            
+        elif system == "Windows":
+            # Windows系统
+            if home_dir:
+                # 白名单常用文件夹
+                whitelist_common_dirs = [
+                    {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
+                    {"name": "文档", "path": os.path.join(home_dir, "Documents")},
+                    {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
+                    {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
+                    {"name": "音乐", "path": os.path.join(home_dir, "Music")},
+                    {"name": "视频", "path": os.path.join(home_dir, "Videos")},
+                    {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
+                ]
+                
+            else:
+                whitelist_common_dirs = []
+        else:
+            # Linux系统
+            whitelist_common_dirs = [
+                {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
+                {"name": "文档", "path": os.path.join(home_dir, "Documents")},
+                {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
+                {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
+                {"name": "音乐", "path": os.path.join(home_dir, "Music")},
+                {"name": "视频", "path": os.path.join(home_dir, "Videos")},
+                {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
+            ]
+        
+        # 处理白名单文件夹（用户数据文件夹）
+        for dir_info in whitelist_common_dirs:
+            if os.path.exists(dir_info["path"]) and os.path.isdir(dir_info["path"]):
+                default_dirs.append(
+                    MyFiles(
+                        path=dir_info["path"],
+                        alias=dir_info["name"],
+                        auth_status=AuthStatus.PENDING.value,
+                        is_blacklist=False,
+                        is_common_folder=True  # 标记为常见文件夹，界面上不可删除
+                    )
+                )
+        
+        if default_dirs:
+            self.session.add_all(default_dirs)
+            self.session.commit()
 
 if __name__ == '__main__':
     db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
