@@ -83,8 +83,7 @@ pub fn setup_auto_file_monitoring(
         }
         // 创建基础文件监控器
         let mut base_monitor = FileMonitor::new(api_host.clone(), api_port);
-        
-        // 首先获取配置和连接到API
+         // 首先获取配置和连接到API
         let result = base_monitor.start_monitoring_setup_and_initial_scan().await;
 
         match result {
@@ -101,7 +100,7 @@ pub fn setup_auto_file_monitoring(
                 // 创建防抖动文件监控器
                 let base_monitor_arc = Arc::new(base_monitor);
                 let mut debounced_monitor = DebouncedFileMonitor::new(Arc::clone(&base_monitor_arc));
-                
+
                 // 启动防抖动监控
                 match debounced_monitor.start_monitoring(directories, Duration::from_millis(2_000)).await {
                     Ok(_) => {
@@ -116,11 +115,20 @@ pub fn setup_auto_file_monitoring(
                             *monitor_guard = Some((*base_monitor_arc).clone());
                         }
 
-                        // 保存防抖动监控器实例到全局状态
+                        // 保存监控器实例到 AppState（用于配置队列处理）
                         {
                             let app_state = app_handle.state::<AppState>();
-                            let mut debounced_monitor_guard = app_state.debounced_file_monitor.lock().unwrap();
-                            *debounced_monitor_guard = Some(debounced_monitor); // 将 debounced_monitor 移动到 AppState
+                            // 保存基础监控器到 AppState.file_monitor
+                            {
+                                let mut app_monitor_guard = app_state.file_monitor.lock().unwrap();
+                                *app_monitor_guard = Some((*base_monitor_arc).clone());
+                                println!("[CONFIG_QUEUE] 已将文件监控器实例保存到 AppState.file_monitor");
+                            }
+                            // 保存防抖动监控器到 AppState.debounced_file_monitor
+                            {
+                                let mut debounced_monitor_guard = app_state.debounced_file_monitor.lock().unwrap();
+                                *debounced_monitor_guard = Some(debounced_monitor); // 将 debounced_monitor 移动到 AppState
+                            }
                         }
                         
                         // 更新应用配置状态
@@ -130,12 +138,57 @@ pub fn setup_auto_file_monitoring(
                             println!("已更新应用配置状态");
                         }
                         
-                        // 通知 AppState 初始扫描已完成
-                        {
-                            let app_state = app_handle.state::<AppState>();
+                        // 启动初始扫描完成监听器
+                        let app_handle_for_scan_completion = app_handle.clone();
+                        let base_monitor_arc_for_completion = Arc::clone(&base_monitor_arc);
+                        tokio::spawn(async move {
+                            // 更精确的初始扫描完成检测
+                            let max_wait_time = Duration::from_secs(60); // 最大等待时间60秒
+                            let check_interval = Duration::from_millis(500); // 每500ms检查一次
+                            let start_time = std::time::Instant::now();
+                            
+                            println!("[CONFIG_QUEUE] 开始监控初始扫描完成状态...");
+                            
+                            loop {
+                                tokio::time::sleep(check_interval).await;
+                                
+                                // 检查是否超时
+                                if start_time.elapsed() >= max_wait_time {
+                                    println!("[CONFIG_QUEUE] 等待初始扫描完成超时，强制设置为完成状态");
+                                    break;
+                                }
+                                
+                                // 获取监控器统计信息来判断扫描是否完成
+                                let stats = base_monitor_arc_for_completion.get_monitor_stats();
+                                
+                                // 基于文件处理统计来判断扫描是否稳定
+                                // 如果已经处理了一些文件，并且在最近几秒内没有新的处理活动，认为扫描完成
+                                if stats.processed_files > 0 {
+                                    // 等待一段时间确认没有新的文件处理活动
+                                    let checkpoint_files = stats.processed_files;
+                                    tokio::time::sleep(Duration::from_secs(3)).await;
+                                    
+                                    let new_stats = base_monitor_arc_for_completion.get_monitor_stats();
+                                    if new_stats.processed_files == checkpoint_files {
+                                        // 文件处理数量没有变化，认为初始扫描已完成
+                                        println!("[CONFIG_QUEUE] 初始扫描完成检测 - 处理文件: {}, 扫描稳定", new_stats.processed_files);
+                                        break;
+                                    } else {
+                                        println!("[CONFIG_QUEUE] 初始扫描进行中 - 处理文件: {} -> {}", checkpoint_files, new_stats.processed_files);
+                                    }
+                                } else {
+                                    // 还没有开始处理文件，等待一段时间后再检查
+                                    if start_time.elapsed() > Duration::from_secs(5) {
+                                        println!("[CONFIG_QUEUE] 等待初始扫描开始...");
+                                    }
+                                }
+                            }
+                            
+                            // 设置初始扫描完成状态并处理队列
+                            let app_state = app_handle_for_scan_completion.state::<AppState>();
                             app_state.set_initial_scan_completed(true);
-                            println!("[CONFIG_QUEUE] 已通知 AppState 初始扫描完成");
-                        }
+                            println!("[CONFIG_QUEUE] 初始扫描完成，开始处理配置变更队列");
+                        });
                     },
                     Err(e) => {
                         eprintln!("自动启动防抖动文件监控失败: {}", e);

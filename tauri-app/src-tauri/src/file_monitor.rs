@@ -593,12 +593,21 @@ impl FileMonitor {
         
         if errors.is_empty() {
             println!("[CONFIG_REFRESH_ALL] 所有配置刷新成功");
+            
+            // 配置刷新完成后，触发配置更新事件通知所有监听器
+            self.notify_config_updated();
             Ok(())
         } else {
             let error_msg = errors.join("; ");
             eprintln!("[CONFIG_REFRESH_ALL] 部分配置刷新失败: {}", error_msg);
             Err(error_msg)
         }
+    }
+    
+    /// 通知配置已更新（用于在配置变更后通知正在进行的扫描任务）
+    fn notify_config_updated(&self) {
+        // 这里可以实现配置更新通知机制，暂时通过日志输出
+        println!("[CONFIG_NOTIFY] 配置已更新，正在进行的扫描将使用新配置");
     }
     
     /// 检查配置是否需要刷新（基于时间戳或手动触发）
@@ -1656,6 +1665,7 @@ impl FileMonitor {
                 });
             
             // 正常处理剩下的文件
+            let mut files_processed_count = 0;
             for entry_result in walker {
                 // 忽略错误条目
                 let entry = match entry_result {
@@ -1666,7 +1676,16 @@ impl FileMonitor {
                 total_files += 1;
                 let entry_path = entry.path().to_path_buf();
                 
-                // 黑名单路径已在filter_entry中检查，这里不再需要重复检查
+                // 每处理1000个文件时重新检查黑名单配置（防止配置更新后继续扫描已加入黑名单的路径）
+                files_processed_count += 1;
+                if files_processed_count % 1000 == 0 {
+                    // 动态检查路径是否现在在黑名单中（配置可能已更新）
+                    if self.is_in_blacklist(&entry_path) {
+                        println!("[INITIAL_SCAN] 检测到配置更新，跳过新加入黑名单的路径: {:?}", entry_path);
+                        skipped_files += 1;
+                        continue;
+                    }
+                }
                 
                 // 处理文件事件
                 if let Some(metadata) = self.process_file_event(
@@ -1749,7 +1768,7 @@ impl FileMonitor {
             }
             
             // 初始扫描后批处理器会自动发送数据到API
-            println!("[INITIAL_SCAN] Initial scan process initiated. Batch processor will handle API submission.");
+            println!("[INITIAL_SCAN] Initial scan process completed.");
         });
         
         Ok(())

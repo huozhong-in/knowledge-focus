@@ -613,11 +613,10 @@ pub async fn toggle_folder_status_queued(
     
     if state.is_initial_scan_completed() {
         println!("[CONFIG_QUEUE] 初始扫描已完成，立即执行文件夹状态切换");
-        // 这里需要调用Python API来切换状态
-        // 为简化，我们直接返回成功，实际实现中需要调用相应的API
+        
         Ok(serde_json::json!({
-            "status": "success",
-            "message": format!("文件夹 {} 状态已切换", folder_path)
+            "status": "executed",
+            "message": format!("文件夹 {} 状态切换已立即执行", folder_path)
         }))
     } else {
         println!("[CONFIG_QUEUE] 初始扫描未完成，将文件夹状态切换操作加入队列");

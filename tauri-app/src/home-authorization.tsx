@@ -105,6 +105,13 @@ interface ConfigurationSummary {
   bundle_cache_timestamp?: number;
 }
 
+// 配置变更队列状态接口
+interface ConfigQueueStatus {
+  initial_scan_completed: boolean;
+  pending_changes_count: number;
+  has_pending_changes: boolean;
+}
+
 // 主组件
 function HomeAuthorization() {
   // 状态定义
@@ -135,6 +142,9 @@ function HomeAuthorization() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newDirPath, setNewDirPath] = useState("");
   const [newDirAlias, setNewDirAlias] = useState("");
+  
+  // 配置变更队列状态
+  const [queueStatus, setQueueStatus] = useState<ConfigQueueStatus | null>(null);
   
   // 初始化日志系统
   useEffect(() => {
@@ -264,6 +274,42 @@ function HomeAuthorization() {
     }
   };
 
+  // 检查配置变更队列状态
+  const checkQueueStatus = async () => {
+    try {
+      const status = await invoke("get_config_queue_status") as ConfigQueueStatus;
+      setQueueStatus(status);
+      
+      if (status.initial_scan_completed && status.has_pending_changes) {
+        // 如果初始扫描已完成但还有待处理变更，这可能表明有问题
+        console.warn("初始扫描已完成但仍有待处理的配置变更:", status);
+      }
+      
+      return status;
+    } catch (error) {
+      console.error("检查配置队列状态失败:", error);
+      return null;
+    }
+  };
+
+  // 安全刷新监控配置 - 只在初始扫描完成后才执行刷新
+  const safeRefreshMonitoringConfig = async () => {
+    try {
+      const queueStatus = await checkQueueStatus();
+      if (queueStatus?.initial_scan_completed) {
+        await invoke("refresh_monitoring_config");
+        console.log("监控配置刷新成功");
+        return true;
+      } else {
+        console.log("初始扫描未完成，跳过监控配置刷新");
+        return false;
+      }
+    } catch (error) {
+      console.warn("刷新监控配置失败:", error);
+      return false;
+    }
+  };
+
   // 初始化数据加载
   useEffect(() => {
     const initializeData = async () => {
@@ -274,7 +320,8 @@ function HomeAuthorization() {
           checkFullDiskAccess(),
           loadConfigSummary(),
           loadFolderHierarchy(),
-          loadBundleExtensions()
+          loadBundleExtensions(),
+          checkQueueStatus()
         ]);
       } catch (error) {
         console.error("初始化数据加载失败:", error);
@@ -284,6 +331,15 @@ function HomeAuthorization() {
     };
 
     initializeData();
+    
+    // 定期检查队列状态
+    const queueStatusInterval = setInterval(async () => {
+      await checkQueueStatus();
+    }, 5000); // 每5秒检查一次
+
+    return () => {
+      clearInterval(queueStatusInterval);
+    };
   }, []);
 
   // ===== 事件处理函数 =====
@@ -314,12 +370,31 @@ function HomeAuthorization() {
         // 重新加载数据
         await loadConfigSummary();
         await loadFolderHierarchy();
-        // 刷新监控配置
+        
+        // 使用新的队列机制处理配置变更
         try {
-          await invoke("refresh_monitoring_config");
+          const queueResult = await invoke("add_whitelist_folder_queued", {
+            folder_path: newDirPath,
+            folder_alias: newDirAlias || null
+          }) as { status: string; message: string };
+          
+          console.log("白名单文件夹队列处理结果:", queueResult);
+          
+          if (queueResult.status === "executed") {
+            toast.success("白名单文件夹处理完成");
+          } else if (queueResult.status === "queued") {
+            toast.info("白名单文件夹已加入处理队列，将在初始扫描完成后自动处理");
+          }
         } catch (invokeError) {
-          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
-          toast.info("配置已更新，建议重启应用以确保生效");
+          console.warn("Rust队列处理失败，回退到传统方式:", invokeError);
+          
+          // 回退到原有方式：安全刷新监控配置
+          try {
+            await safeRefreshMonitoringConfig();
+          } catch (configError) {
+            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
+            toast.info("配置已更新，建议重启应用以确保生效");
+          }
         }
       } else {
         const errorData = await response.json();
@@ -348,9 +423,9 @@ function HomeAuthorization() {
       // 使用队列版本的删除命令
       try {
         const result = await invoke("remove_folder_queued", {
-          folderId: id,
-          folderPath: folderPath,
-          isBlacklist: isBlacklist
+          folder_id: id,
+          folder_path: folderPath,
+          is_blacklist: isBlacklist
         });
         
         console.log("删除文件夹结果:", result);
@@ -619,35 +694,55 @@ function HomeAuthorization() {
         await loadConfigSummary();
         await loadFolderHierarchy();
         
-        // 无论Rust端是否初始化，都先手动清理粗筛结果以确保数据一致性
+        // 使用新的队列机制处理配置变更
         try {
-          const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              path: newBlacklistPath,
-            })
-          });
+          const queueResult = await invoke("add_blacklist_folder_queued", {
+            parent_id: selectedParentId,
+            folder_path: newBlacklistPath,
+            folder_alias: newBlacklistAlias || null
+          }) as { status: string; message: string };
           
-          if (cleanResponse.ok) {
-            const cleanResult = await cleanResponse.json();
-            console.log("手动清理粗筛结果:", cleanResult);
-            if (cleanResult.deleted > 0) {
-              toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
-            }
+          console.log("黑名单文件夹队列处理结果:", queueResult);
+          
+          if (queueResult.status === "executed") {
+            toast.success("黑名单子文件夹处理完成");
+          } else if (queueResult.status === "queued") {
+            toast.info("黑名单子文件夹已加入处理队列，将在初始扫描完成后自动处理");
           }
-        } catch (cleanError) {
-          console.error("手动清理粗筛结果失败:", cleanError);
-        }
-        
-        // 再尝试刷新Rust端监控配置，即使失败也不影响黑名单效果（数据已清理）
-        try {
-          await invoke("refresh_monitoring_config");
-          console.log("监控配置刷新成功");
         } catch (invokeError) {
-          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
-          // 这里错误可能是因为文件监控器未初始化
-          toast.info("黑名单已添加并生效，但Rust监控配置刷新失败，建议重启应用");
+          console.warn("Rust队列处理失败，回退到传统方式:", invokeError);
+          
+          // 回退到原有方式：手动清理粗筛结果
+          try {
+            const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                path: newBlacklistPath,
+              })
+            });
+            
+            if (cleanResponse.ok) {
+              const cleanResult = await cleanResponse.json();
+              console.log("手动清理粗筛结果:", cleanResult);
+              if (cleanResult.deleted > 0) {
+                toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
+              }
+            }
+          } catch (cleanError) {
+            console.error("手动清理粗筛结果失败:", cleanError);
+          }
+          
+          // 尝试安全刷新监控配置
+          try {
+            const refreshed = await safeRefreshMonitoringConfig();
+            if (!refreshed) {
+              toast.info("黑名单已添加并生效，但初始扫描未完成，配置将在扫描完成后自动刷新");
+            }
+          } catch (configError) {
+            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
+            toast.info("黑名单已添加并生效，但Rust监控配置刷新失败，建议重启应用");
+          }
         }
       } else {
         const errorData = await response.json();
@@ -723,40 +818,61 @@ function HomeAuthorization() {
       if (response.ok) {
         toast.success(currentIsBlacklist ? "已恢复为白名单" : "已转为黑名单");
         
-        // 如果是转为黑名单，清理相关粗筛数据
-        if (!currentIsBlacklist && folderPath) {
-          try {
-            const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                path: folderPath,
-              })
-            });
-            
-            if (cleanResponse.ok) {
-              const cleanResult = await cleanResponse.json();
-              if (cleanResult.deleted > 0) {
-                console.log(`黑名单设置后清理粗筛数据: ${cleanResult.deleted}条`);
-                toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
-              }
-            }
-          } catch (cleanError) {
-            console.error("清理粗筛数据失败:", cleanError);
-          }
-        }
-        
         // 重新加载数据
         await loadConfigSummary();
         await loadFolderHierarchy();
         
-        // 尝试刷新Rust端监控配置，即使失败也不影响黑名单效果（数据已清理）
+        // 使用新的队列机制处理配置变更
         try {
-          await invoke("refresh_monitoring_config");
-          console.log("监控配置刷新成功");
+          const queueResult = await invoke("toggle_folder_status_queued", {
+            folder_id: folderId,
+            folder_path: folderPath,
+            is_blacklist: !currentIsBlacklist
+          }) as { status: string; message: string };
+          
+          console.log("文件夹状态切换队列处理结果:", queueResult);
+          
+          if (queueResult.status === "executed") {
+            toast.success("文件夹状态切换处理完成");
+          } else if (queueResult.status === "queued") {
+            toast.info("文件夹状态切换已加入处理队列，将在初始扫描完成后自动处理");
+          }
         } catch (invokeError) {
-          console.warn("刷新监控配置失败，可能需要重启应用:", invokeError);
-          toast.info("配置已更新，建议重启应用以确保生效");
+          console.warn("Rust队列处理失败，回退到传统方式:", invokeError);
+          
+          // 回退到原有方式：如果是转为黑名单，清理相关粗筛数据
+          if (!currentIsBlacklist && folderPath) {
+            try {
+              const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  path: folderPath,
+                })
+              });
+              
+              if (cleanResponse.ok) {
+                const cleanResult = await cleanResponse.json();
+                if (cleanResult.deleted > 0) {
+                  console.log(`黑名单设置后清理粗筛数据: ${cleanResult.deleted}条`);
+                  toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
+                }
+              }
+            } catch (cleanError) {
+              console.error("清理粗筛数据失败:", cleanError);
+            }
+          }
+          
+          // 尝试安全刷新监控配置
+          try {
+            const refreshed = await safeRefreshMonitoringConfig();
+            if (!refreshed) {
+              toast.info("文件夹状态已切换，但初始扫描未完成，配置将在扫描完成后自动刷新");
+            }
+          } catch (configError) {
+            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
+            toast.info("配置已更新，建议重启应用以确保生效");
+          }
         }
       } else {
         const errorData = await response.json();
@@ -979,6 +1095,32 @@ function HomeAuthorization() {
               </Button>
             )}
           </div>
+          
+          {/* 配置变更队列状态 */}
+          {queueStatus && (
+            <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    queueStatus.initial_scan_completed ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
+                  }`} />
+                  <span className="text-sm font-medium">
+                    {queueStatus.initial_scan_completed ? '✅ 初始扫描已完成' : '⏳ 初始扫描进行中'}
+                  </span>
+                </div>
+                {queueStatus.has_pending_changes && (
+                  <div className="text-sm text-blue-600 font-medium">
+                    📋 队列中有 {queueStatus.pending_changes_count} 个待处理变更
+                  </div>
+                )}
+              </div>
+              {!queueStatus.initial_scan_completed && (
+                <div className="mt-2 text-xs text-blue-600">
+                  扫描完成前的配置变更将自动排队处理
+                </div>
+              )}
+            </div>
+          )}
           
           {configSummary && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
