@@ -1,9 +1,10 @@
 # KnowledgeFocus
+
 Focus on building an open and extensible AI knowledge base system. Suitable for individual use, small teams, and even larger enterprises. Its excellent openness allows for easy integration into existing workflows.
 
-# 功能特点
+## 功能特点
 
-## 文件监控与智能分类
+### 文件监控与智能分类
 
 KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定的文件夹，实时跟踪文件变化并进行智能分类。主要功能包括：
 
@@ -14,11 +15,11 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 5. **批量处理** - 高效地批量处理文件元数据，减少网络和系统资源开销
 6. **与Python API集成** - 将初步处理结果发送到Python后端，进行进一步的深度分析和处理
 
-## 其他核心功能
+### 其他核心功能
 
-# 开发环境搭建
+## 开发环境搭建
 
-## 1. api文件夹下建立python虚拟环境
+### 1. api文件夹下建立python虚拟环境
 
 `cd api`
 
@@ -38,7 +39,7 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 
 `pip install fastapi uvicorn`
 
-## 3. 给tauri app安装依赖并进行开发
+### 3. 给tauri app安装依赖并进行开发
 
 `cd tauri-app`
 
@@ -46,12 +47,12 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 
 `bun tauri dev`
 
-### 重新生成icon
+#### 重新生成icon
 
 `bun tauri icon`
 
 默认读取app-icon.png文件，生成所有平台所需图标文件，放在了icons文件夹下。
 
-## 4. 打包应用
+### 4. 打包应用
 
 `bun tauri build --bundles app`
