@@ -578,7 +578,7 @@ class ScreeningManager:
             
             # 执行查询，并记录时间
             query_exec_start = time.time()
-            results = self.session.exec(statement).scalars().all()
+            results = self.session.exec(statement).all()
             query_exec_time = time.time() - query_exec_start
             
             # 将结果转换为字典列表，同时过滤掉不存在的文件
@@ -640,7 +640,7 @@ class ScreeningManager:
             
             # 执行查询，并记录时间
             query_exec_start = time.time()
-            results = self.session.exec(statement).scalars().all()
+            results = self.session.exec(statement).all()
             query_exec_time = time.time() - query_exec_start
             
             # 将结果转换为字典列表，同时过滤掉不存在的文件
@@ -843,6 +843,7 @@ if __name__ == "__main__":
     engine = create_engine(f"sqlite:///{db_file}")    
     with Session(engine) as session:
         mgr = ScreeningManager(session)
-        # 测试delete_screening_results_by_path_prefix()
-        deleted_count = mgr.delete_screening_results_by_path_prefix("/Users/dio/Movies/JianyingPro")
-        print(f"删除的记录数: {deleted_count}")
+        # 测试get_files_by_category_id()
+        category_id = 1  # 假设我们要查询的分类ID
+        files = mgr.get_files_by_category_id(category_id)
+        print(f"分类ID {category_id} 下的文件: {files}")
