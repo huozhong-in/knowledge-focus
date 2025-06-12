@@ -671,7 +671,7 @@ pub async fn add_whitelist_folder_queued(
 pub fn get_config_queue_status(
     state: tauri::State<'_, crate::AppState>
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] get_config_queue_status 被调用");
+    // println!("[CMD] get_config_queue_status 被调用");
     
     let initial_scan_completed = state.is_initial_scan_completed();
     let pending_changes_count = state.get_pending_config_changes_count();

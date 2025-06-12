@@ -1072,7 +1072,7 @@ function HomeAuthorization() {
           系统权限状态
         </CardTitle>
         <CardDescription>
-          为了高效监控文件变化，建议获取完全磁盘访问权限
+          为了监控您的文件变化，本App必须获取“完全磁盘访问权限”
         </CardDescription>
       </CardHeader>
       <CardContent>

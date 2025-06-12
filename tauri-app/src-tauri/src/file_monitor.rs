@@ -318,10 +318,10 @@ impl FileMonitor {
     }
 
     // 添加监控目录
-    pub fn add_monitored_directory(&self, directory: MonitoredDirectory) {
-        let mut dirs = self.monitored_dirs.lock().unwrap();
-        dirs.push(directory);
-    }
+    // pub fn add_monitored_directory(&self, directory: MonitoredDirectory) {
+    //     let mut dirs = self.monitored_dirs.lock().unwrap();
+    //     dirs.push(directory);
+    // }
 
     // 获取监控目录列表
     pub fn get_monitored_directories(&self) -> Vec<MonitoredDirectory> {
@@ -608,18 +608,6 @@ impl FileMonitor {
     fn notify_config_updated(&self) {
         // 这里可以实现配置更新通知机制，暂时通过日志输出
         println!("[CONFIG_NOTIFY] 配置已更新，正在进行的扫描将使用新配置");
-    }
-    
-    /// 检查配置是否需要刷新（基于时间戳或手动触发）
-    pub fn should_refresh_configuration(&self) -> bool {
-        // 检查Bundle缓存是否过期
-        if self.is_bundle_cache_expired() {
-            return true;
-        }
-        
-        // 可以添加其他条件，比如配置缓存的时间戳等
-        // 目前简单返回false，表示不需要自动刷新
-        false
     }
     
     /// 获取当前配置状态摘要
@@ -1492,7 +1480,7 @@ impl FileMonitor {
                         }
                     } else {
                         // 通道关闭
-                        if (!batch.is_empty()) {
+                        if !batch.is_empty() {
                             println!("[BATCH_PROC] 通道关闭，正在发送剩余批处理 ({} 项)", batch.len());
                             
                             // 发送剩余数据到API
@@ -1600,7 +1588,7 @@ impl FileMonitor {
                     
                     // 优先检查黑名单路径 - 将检查移到这里可以更早过滤掉不需要的路径
                     if self.is_in_blacklist(e.path()) {
-                        println!("[INITIAL_SCAN] 跳过黑名单路径: {:?}", e.path());
+                        // println!("[INITIAL_SCAN] 跳过黑名单路径: {:?}", e.path());
                         return false;
                     }
                     
@@ -1856,7 +1844,7 @@ impl FileMonitor {
         // 扫描目录
         println!("[SINGLE_SCAN] 开始扫描目录: {}", path);
         let path_buf = PathBuf::from(path);
-        if (!path_buf.exists()) {
+        if !path_buf.exists() {
             return Err(format!("目录不存在: {}", path));
         }
 
