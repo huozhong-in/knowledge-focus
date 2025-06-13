@@ -14,6 +14,7 @@ mod file_monitor_debounced; // 新增防抖动文件监控模块
 mod file_scanner; // 新增文件扫描模块
 mod setup_file_monitor;
 mod api_startup; // 新增API启动模块
+mod permissions; // 新增权限管理模块
 use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
 use file_monitor::FileMonitor;
 use reqwest; // 导入reqwest用于API健康检查
@@ -478,28 +479,28 @@ pub fn run() {
                 }
             });
             
-            // 在API启动后延迟启动文件监控
+            // 等待API就绪信号后再初始化文件监控基础设施（但不开始扫描）
             let app_handle_for_monitor = app_handle.clone();
             let monitor_state = Arc::clone(&app.state::<Arc<Mutex<Option<FileMonitor>>>>());
             let api_state_for_monitor = api_state_instance.0.clone();
             
-            // 等待API就绪信号后再启动文件监控
+            // 等待API就绪信号后再准备文件监控基础设施
             tauri::async_runtime::spawn(async move {
                 // 等待API就绪信号
                 match rx.await {
                     Ok(true) => {
-                        println!("收到API就绪信号，开始启动文件监控...");
-                        // 使用setup_file_monitor模块中的函数启动文件监控，不再传递API就绪信号
-                        crate::setup_file_monitor::setup_auto_file_monitoring(
+                        println!("收到API就绪信号，准备文件监控基础设施（不开始扫描）...");
+                        // 初始化文件监控基础设施，但不开始自动扫描
+                        crate::setup_file_monitor::setup_file_monitoring_infrastructure(
                             app_handle_for_monitor,
                             monitor_state,
                             api_state_for_monitor,
-                        );
+                        ).await;
                     },
                     _ => {
-                        eprintln!("API未能成功启动，无法启动文件监控");
+                        eprintln!("API未能成功启动，无法初始化文件监控基础设施");
                         if let Some(window) = app_handle_for_monitor.get_webview_window("main") {
-                            let _ = window.emit("file-monitor-error", "API未就绪，无法启动文件监控");
+                            let _ = window.emit("file-monitor-error", "API未就绪，无法初始化文件监控");
                         }
                     }
                 }
@@ -599,6 +600,11 @@ pub fn run() {
             commands::get_config_queue_status,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
+            // 新增：权限管理命令
+            permissions::check_full_disk_access_permission,
+            permissions::request_full_disk_access_permission,
+            // 新增：后端扫描启动命令
+            file_scanner::start_backend_scanning,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {

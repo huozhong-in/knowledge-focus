@@ -8,9 +8,10 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     command, 
-    AppHandle, 
-    // Manager, 
-    State}; // Added State
+    AppHandle,
+    Manager, 
+    State,
+    Emitter}; // 添加Emitter trait
 use walkdir::WalkDir;
 
 use crate::file_monitor::{
@@ -18,7 +19,7 @@ use crate::file_monitor::{
     FileExtensionMapRust, 
     // MonitoredDirectory, 
     DirectoryAuthStatus}; // Added MonitoredDirectory, DirectoryAuthStatus
-use crate::AppState; // Import AppState
+use crate::AppState; // Import AppState from lib.rs
 
 // 定义文件信息结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,6 +293,155 @@ pub async fn scan_files_by_type(
     result
 }
 
+// 启动后端全量扫描工作，必须在前端权限检查通过后才调用
+#[command]
+pub async fn start_backend_scanning(
+    app_handle: tauri::AppHandle,
+    app_state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    println!("[扫描] 启动后端全量扫描工作");
+    println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
+    println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
+    
+    // 获取文件监控器
+    let file_monitor_option = {
+        let guard = app_state.file_monitor.lock().unwrap();
+        guard.clone()
+    };
+    
+    // 如果文件监控器不存在，返回错误
+    let file_monitor = match file_monitor_option {
+        Some(monitor) => monitor,
+        None => {
+            eprintln!("[扫描] 文件监控器未初始化");
+            return Err("文件监控器未初始化".to_string());
+        }
+    };
+    
+    // 通过FileMonitor获取配置而不是AppState
+    // 这里先刷新配置以确保获取到最新的监控目录列表
+    if let Err(e) = file_monitor.refresh_all_configurations().await {
+        eprintln!("[扫描] 刷新配置失败: {}", e);
+        return Err(format!("无法刷新配置: {}", e));
+    }
+    
+    // 检查是否有监控目录
+    let monitored_dirs = file_monitor.get_monitored_directories();
+    if monitored_dirs.is_empty() {
+        println!("[扫描] 没有监控目录，无需启动扫描");
+        return Ok(false);
+    }
+    
+    println!("[扫描] 找到 {} 个监控目录，准备启动扫描", monitored_dirs.len());
+    
+    // 发送事件通知前端扫描开始
+    if let Err(e) = app_handle.emit("scan_started", ()) {
+        eprintln!("[扫描] 发送扫描开始事件失败: {:?}", e);
+    }
+    
+    // 启动后台扫描任务
+    let app_handle_clone = app_handle.clone();
+    let file_monitor_clone = file_monitor.clone();
+    tokio::spawn(async move {
+        println!("[扫描] 开始执行全量扫描");
+        
+        // 设置扫描完成标志为false
+        let app_state_handle = app_handle_clone.state::<AppState>();
+        {
+            let mut scan_completed = app_state_handle.initial_scan_completed.lock().unwrap();
+            *scan_completed = false;
+        }
+        
+        // 执行初始扫描（完整的监控设置和扫描）
+        let mut fm = file_monitor_clone.clone();
+        match fm.start_monitoring_setup_and_initial_scan().await {
+            Ok(_) => {
+                println!("[扫描] 初始扫描和监控设置完成");
+                
+                // 更新扫描完成标志
+                {
+                    let mut scan_completed = app_state_handle.initial_scan_completed.lock().unwrap();
+                    *scan_completed = true;
+                }
+                
+                // 更新AppState中的配置
+                if let Some(config) = fm.get_configurations() {
+                    app_state_handle.update_config(config);
+                    println!("[扫描] 已更新AppState配置");
+                }
+                
+                // 发送事件通知前端扫描完成
+                if let Err(e) = app_handle_clone.emit("scan_completed", true) {
+                    eprintln!("[扫描] 发送扫描完成事件失败: {:?}", e);
+                }
+                
+                // 启动防抖动监控器
+                let debounced_monitor_state = app_state_handle.debounced_file_monitor.clone();
+                if let Some(mut debounced_monitor) = {
+                    let guard = debounced_monitor_state.lock().unwrap();
+                    guard.clone()
+                } {
+                    let directories: Vec<String> = fm.get_monitored_directories()
+                        .into_iter()
+                        .map(|dir| dir.path)
+                        .collect();
+                    
+                    if let Err(e) = debounced_monitor.start_monitoring(directories, std::time::Duration::from_millis(2_000)).await {
+                        eprintln!("[扫描] 启动防抖动监控失败: {}", e);
+                    } else {
+                        println!("[扫描] 防抖动监控已启动");
+                    }
+                }
+            },
+            Err(e) => {
+                eprintln!("[扫描] 初始扫描失败: {}", e);
+                
+                // 发送事件通知前端扫描失败
+                if let Err(emit_err) = app_handle_clone.emit("scan_error", format!("扫描失败: {}", e)) {
+                    eprintln!("[扫描] 发送扫描错误事件失败: {:?}", emit_err);
+                }
+            }
+        }
+    });
+    
+    Ok(true)
+}
+
+// 新增：访问敏感文件夹前的权限确认
+// 在start_monitoring_setup_and_initial_scan方法中，访问敏感文件夹前调用此函数
+// 如果没有授权，将不会继续访问（由于权限控制移至前端，此函数仅作为提示）
+fn ensure_permission_for_sensitive_folder() -> bool {
+    println!("[权限] 访问敏感文件夹前检查权限 - 提示：权限验证已移至前端");
+    
+    #[cfg(target_os = "macos")]
+    {
+        println!("[权限] macOS系统，假设前端已通过tauri-plugin-macos-permissions-api验证权限");
+        // 返回true，因为实际权限检查已在前端完成
+        // 如果前端未处理权限，此处可能会导致无权限访问
+        true
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    {
+        println!("[权限] 非macOS系统，假设已有权限");
+        true
+    }
+}
+
+// 帮助跟踪权限状态的函数
+fn log_permission_check(action: &str, path: &Path) {
+    #[cfg(target_os = "macos")]
+    {
+        println!("[权限] {} 访问路径: {} - 提示：此访问应当在前端权限验证通过后进行", 
+            action, path.display());
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    {
+        println!("[权限] {} 访问路径: {}", action, path.display());
+    }
+}
+
 // 内部函数：使用指定过滤条件扫描文件
 async fn scan_files_with_filter(
     config: &AllConfigurations,
@@ -335,6 +485,15 @@ async fn scan_files_with_filter(
         }
 
         let path = Path::new(&monitored_dir.path);
+        
+        // 记录权限敏感目录的访问
+        log_permission_check("开始扫描", path);
+        
+        // 确保前端已经验证权限
+        if path.to_string_lossy().contains("/Users") {
+            println!("[SCAN] 访问用户敏感目录: {:?} - 应该已经通过前端权限检查", path);
+        }
+        
         if !path.exists() || !path.is_dir() {
             continue;
         }

@@ -38,7 +38,7 @@ export function FolderTreeSelector({
   });
 
   const [bundlePatterns, setBundlePatterns] = useState<string[]>([]);
-  const [bundlePatternsLoaded, setBundlePatternsLoaded] = useState<boolean>(false);
+  // const [bundlePatternsLoaded, setBundlePatternsLoaded] = useState<boolean>(false);
 
   // 加载bundle扩展名配置
   const loadBundlePatterns = async (): Promise<string[]> => {
@@ -210,7 +210,7 @@ export function FolderTreeSelector({
       // 先加载bundle扩展名配置
       const patterns = await loadBundlePatterns();
       setBundlePatterns(patterns);
-      setBundlePatternsLoaded(true);
+      // setBundlePatternsLoaded(true);
       console.log('Bundle模式加载完成，共 ' + patterns.length + ' 条规则');
       
       // 然后加载根文件夹的子目录，直接传入加载的模式

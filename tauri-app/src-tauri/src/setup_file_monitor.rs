@@ -13,6 +13,106 @@ use reqwest;
 
 use crate::AppState; // Import AppState
 
+// 新增：仅设置文件监控基础设施，不开始扫描
+pub async fn setup_file_monitoring_infrastructure(
+    app_handle: tauri::AppHandle,
+    monitor_state: Arc<Mutex<Option<FileMonitor>>>,
+    api_state: Arc<Mutex<crate::ApiProcessState>>,
+) {
+    println!("初始化文件监控基础设施（不启动扫描）...");
+
+    // 不再使用固定等待时间，而是采用轮询方式检查API是否准备就绪
+    let max_retries = 30; // 最多尝试30次
+    let retry_interval = Duration::from_millis(500); // 每500ms检查一次
+    let api_url;
+    
+    // 先获取API主机和端口信息
+    let (api_host, api_port) = {
+        let api_state_guard = api_state.lock().unwrap();
+        (api_state_guard.host.clone(), api_state_guard.port)
+    };
+    
+    api_url = format!("http://{}:{}/health", api_host, api_port);
+    println!("开始检查API是否就绪，API地址: {}", api_url);
+    
+    // 使用reqwest客户端检查API健康状态
+    let client = reqwest::Client::new();
+    let mut api_ready = false;
+    
+    for i in 0..max_retries {
+        // 首先检查API进程是否运行
+        let api_running = {
+            let api_state_guard = api_state.lock().unwrap();
+            api_state_guard.process_child.is_some()
+        };
+        
+        if !api_running {
+            // 如果进程不存在，等待短暂时间后再次检查
+            tokio::time::sleep(retry_interval).await;
+            continue;
+        }
+        
+        // 尝试访问API健康检查端点
+        match client.get(&api_url)
+            .timeout(std::time::Duration::from_secs(1))
+            .send().await {
+            Ok(response) if response.status().is_success() => {
+                println!("第{}次尝试: API健康检查成功，API已就绪", i + 1);
+                api_ready = true;
+                break;
+            },
+            _ => {
+                // API尚未准备好，等待后重试
+                if (i + 1) % 5 == 0 { // 每5次打印一次，避免日志过多
+                    println!("第{}次尝试: API尚未就绪，继续等待...", i + 1);
+                }
+                tokio::time::sleep(retry_interval).await;
+            }
+        }
+    }
+    
+    if !api_ready {
+        eprintln!("API启动失败或未就绪，无法初始化文件监控基础设施");
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.emit("file-monitor-error", "API未就绪，无法初始化文件监控基础设施".to_string());
+        }
+        return;
+    }
+    
+    // 创建基础文件监控器（不执行任何初始化）
+    let base_monitor = FileMonitor::new(api_host.clone(), api_port);
+    
+    println!("文件监控基础设施创建完成，等待前端权限检查后启动扫描");
+    
+    // 保存基础监控器实例到全局状态
+    {
+        let mut monitor_guard = monitor_state.lock().unwrap();
+        *monitor_guard = Some(base_monitor.clone());
+    }
+
+    // 保存监控器实例到 AppState
+    {
+        let app_state = app_handle.state::<AppState>();
+        // 保存基础监控器到 AppState.file_monitor
+        {
+            let mut app_monitor_guard = app_state.file_monitor.lock().unwrap();
+            *app_monitor_guard = Some(base_monitor.clone());
+            println!("[基础设施] 已将文件监控器实例保存到 AppState.file_monitor");
+        }
+        
+        // 创建但不启动防抖动监控器
+        let base_monitor_arc = Arc::new(base_monitor.clone());
+        let debounced_monitor = DebouncedFileMonitor::new(Arc::clone(&base_monitor_arc));
+        {
+            let mut debounced_monitor_guard = app_state.debounced_file_monitor.lock().unwrap();
+            *debounced_monitor_guard = Some(debounced_monitor);
+            println!("[基础设施] 已创建防抖动监控器实例（未启动）");
+        }
+    }
+    
+    println!("[基础设施] 文件监控基础设施已就绪，等待前端显式启动扫描命令");
+}
+
 // 在 App 启动后自动启动文件监控的函数
 // 在此版本中我们不使用API就绪信号，为保持原有功能暂时使用原来的方法
 pub fn setup_auto_file_monitoring(

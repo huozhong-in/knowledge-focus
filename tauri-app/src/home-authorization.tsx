@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { basename } from '@tauri-apps/api/path';
-import { checkFullDiskAccessPermission, requestFullDiskAccessPermission } from "tauri-plugin-macos-permissions-api";
+
 import {
   info
 } from '@tauri-apps/plugin-log';
@@ -116,8 +116,6 @@ interface ConfigQueueStatus {
 function HomeAuthorization() {
   // 状态定义
   const [loading, setLoading] = useState<boolean>(true);
-  const [hasFullDiskAccess, setHasFullDiskAccess] = useState<boolean>(false);
-  const [_, setCheckingPermissions] = useState<boolean>(false);
   
   // 层级文件夹相关状态  
   const [folderHierarchy, setFolderHierarchy] = useState<FolderHierarchy[]>([]);
@@ -161,41 +159,6 @@ function HomeAuthorization() {
 
   // ===== 数据加载函数 =====
   
-  // 检查完全磁盘访问权限
-  const checkFullDiskAccess = async () => {
-    try {
-      setCheckingPermissions(true);
-      const permission = await checkFullDiskAccessPermission();
-      setHasFullDiskAccess(permission);
-      info(`完全磁盘访问权限状态: ${permission}`);
-      return permission;
-    } catch (error) {
-      console.error("检查完全磁盘访问权限失败:", error);
-      setHasFullDiskAccess(false);
-      return false;
-    } finally {
-      setCheckingPermissions(false);
-    }
-  };
-
-  // 请求完全磁盘访问权限
-  const requestFullDiskAccess = async () => {
-    try {
-      setCheckingPermissions(true);
-      await requestFullDiskAccessPermission();
-      toast.success("权限请求已发送，请在系统设置中授权后重启应用");
-      // 延迟检查权限状态
-      setTimeout(async () => {
-        await checkFullDiskAccess();
-      }, 1000);
-    } catch (error) {
-      console.error("请求完全磁盘访问权限失败:", error);
-      toast.error("权限请求失败，请手动在系统设置中开启");
-    } finally {
-      setCheckingPermissions(false);
-    }
-  };
-
   // 加载文件夹层级结构
   const loadFolderHierarchy = async () => {
     try {
@@ -315,16 +278,16 @@ function HomeAuthorization() {
     const initializeData = async () => {
       setLoading(true);
       try {
-        // 并行加载所有数据
+        // 不再需要在此检查权限，因为进入该页面的先决条件是已获得权限
         await Promise.all([
-          checkFullDiskAccess(),
-          loadConfigSummary(),
           loadFolderHierarchy(),
           loadBundleExtensions(),
-          checkQueueStatus()
+          loadConfigSummary(),
+          checkQueueStatus(),
         ]);
       } catch (error) {
-        console.error("初始化数据加载失败:", error);
+        console.error("初始化数据失败:", error);
+        toast.error("加载数据失败");
       } finally {
         setLoading(false);
       }
@@ -580,41 +543,34 @@ function HomeAuthorization() {
       if (response.ok) {
         const apiResponse = await response.json();
         if (apiResponse.status === "success" && apiResponse.data) {
-          let isInBlacklist = false;
+          // 检查路径是否已在黑名单中
+          const allFolders = apiResponse.data.flatMap((folder: any) => [
+            folder,
+            ...(folder.blacklist_children || [])
+          ]);
           
-          // 检查是否已在黑名单中
-          for (const folder of apiResponse.data) {
-            // 检查是否是黑名单子文件夹
-            if (folder.blacklist_children && folder.blacklist_children.length > 0) {
-              for (const blacklistChild of folder.blacklist_children) {
-                if (path === blacklistChild.path || path.startsWith(blacklistChild.path + '/')) {
-                  console.log(`选择的路径 "${path}" 已存在于黑名单中`);
-                  isInBlacklist = true;
-                  toast.warning("该文件夹已在黑名单中，不可重复添加");
-                  break;
-                }
-              }
-            }
-            
-            // 检查是否为已转为黑名单的常见文件夹
-            if (!isInBlacklist && folder.is_blacklist && folder.is_common_folder) {
-              if (path === folder.path || path.startsWith(folder.path + '/')) {
-                console.log(`选择的路径 "${path}" 已存在于黑名单中`);
-                isInBlacklist = true;
-                toast.warning("该文件夹已在黑名单中，不可重复添加");
-                break;
-              }
-            }
+          const pathExists = allFolders.some((dir: any) => dir.path === path && dir.is_blacklist);
+          
+          if (pathExists) {
+            toast.error(`路径 "${path}" 已在黑名单中`);
+            return;
           }
           
-          // 只有不在黑名单中的路径才设置
-          if (!isInBlacklist) {
-            setNewBlacklistPath(path);
-            // 自动生成别名（文件夹名称）
-            const folderName = path.split('/').pop() || path;
-            setNewBlacklistAlias(folderName);
-          }
+          // 路径没有问题，设置路径和默认别名
+          setNewBlacklistPath(path);
+          const folderName = path.split('/').pop() || path;
+          setNewBlacklistAlias(folderName);
+        } else {
+          console.error("检查黑名单状态失败: 无效响应");
+          setNewBlacklistPath(path);
+          const folderName = path.split('/').pop() || path;
+          setNewBlacklistAlias(folderName);
         }
+      } else {
+        console.error("检查黑名单状态失败: HTTP", response.status);
+        setNewBlacklistPath(path);
+        const folderName = path.split('/').pop() || path;
+        setNewBlacklistAlias(folderName);
       }
     } catch (error) {
       console.error("检查黑名单状态失败:", error);
@@ -754,22 +710,6 @@ function HomeAuthorization() {
     }
   };
 
-  // ===== 渲染函数 =====
-
-  // 获取权限状态图标和颜色
-  const getPermissionStatusIcon = (hasPermission: boolean) => {
-    return hasPermission ? (
-      <Check className="h-5 w-5 text-green-500" />
-    ) : (
-      <AlertTriangle className="h-5 w-5 text-yellow-500" />
-    );
-  };
-
-  // 获取权限状态文本
-  const getPermissionStatusText = (hasPermission: boolean) => {
-    return hasPermission ? "已获取完全磁盘访问权限" : "需要完全磁盘访问权限";
-  };
-
   // 获取文件夹授权状态图标
   const getAuthStatusIcon = (status: string) => {
     switch (status) {
@@ -816,73 +756,40 @@ function HomeAuthorization() {
       });
 
       if (response.ok) {
-        toast.success(currentIsBlacklist ? "已恢复为白名单" : "已转为黑名单");
-        
-        // 重新加载数据
-        await loadConfigSummary();
-        await loadFolderHierarchy();
-        
-        // 使用新的队列机制处理配置变更
-        try {
-          const queueResult = await invoke("toggle_folder_status_queued", {
-            folder_id: folderId,
-            folder_path: folderPath,
-            is_blacklist: !currentIsBlacklist
-          }) as { status: string; message: string };
+        const apiResponse = await response.json();
+        if (apiResponse.status === "success") {
+          toast.success(`文件夹状态已更新为 ${!currentIsBlacklist ? '黑名单' : '白名单'}`);
           
-          console.log("文件夹状态切换队列处理结果:", queueResult);
-          
-          if (queueResult.status === "executed") {
-            toast.success("文件夹状态切换处理完成");
-          } else if (queueResult.status === "queued") {
-            toast.info("文件夹状态切换已加入处理队列，将在初始扫描完成后自动处理");
-          }
-        } catch (invokeError) {
-          console.warn("Rust队列处理失败，回退到传统方式:", invokeError);
-          
-          // 回退到原有方式：如果是转为黑名单，清理相关粗筛数据
-          if (!currentIsBlacklist && folderPath) {
+          // 如果是转为黑名单，则清理已有的粗筛结果
+          if (!currentIsBlacklist) {
             try {
-              const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  path: folderPath,
-                })
-              });
-              
-              if (cleanResponse.ok) {
-                const cleanResult = await cleanResponse.json();
-                if (cleanResult.deleted > 0) {
-                  console.log(`黑名单设置后清理粗筛数据: ${cleanResult.deleted}条`);
-                  toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
-                }
-              }
-            } catch (cleanError) {
-              console.error("清理粗筛数据失败:", cleanError);
+              await invoke('clear_raw_scan_results_for_path', { path: folderPath });
+              console.log(`已清理路径 "${folderPath}" 的粗筛结果`);
+            } catch (invokeError) {
+              console.error("清理粗筛结果失败:", invokeError);
             }
           }
           
-          // 尝试安全刷新监控配置
-          try {
-            const refreshed = await safeRefreshMonitoringConfig();
-            if (!refreshed) {
-              toast.info("文件夹状态已切换，但初始扫描未完成，配置将在扫描完成后自动刷新");
-            }
-          } catch (configError) {
-            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
-            toast.info("配置已更新，建议重启应用以确保生效");
-          }
+          // 重新加载文件夹层级结构
+          await loadFolderHierarchy();
+          
+          // 检查配置队列状态
+          await checkQueueStatus();
+        } else {
+          toast.error("更新文件夹状态失败");
+          console.error("API返回错误:", apiResponse);
         }
       } else {
-        const errorData = await response.json();
-        toast.error(`操作失败: ${errorData.message || "未知错误"}`);
+        toast.error("更新文件夹状态失败");
+        console.error("HTTP请求失败:", response.status);
       }
     } catch (error) {
       console.error("切换文件夹状态失败:", error);
       toast.error("操作失败");
     }
   };
+
+  // ===== 渲染函数 =====
 
   // 渲染层级文件夹结构 - 直接显示两级层次结构
   const renderFolderHierarchy = () => {
@@ -1069,33 +976,14 @@ function HomeAuthorization() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5" />
-          系统权限状态
+          系统状态
         </CardTitle>
         <CardDescription>
-          为了监控您的文件变化，本App必须获取“完全磁盘访问权限”
+          系统监控和后台处理状态
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div className="flex items-center gap-3">
-              {getPermissionStatusIcon(hasFullDiskAccess)}
-              <div>
-                <div className="font-medium">{getPermissionStatusText(hasFullDiskAccess)}</div>
-                <div className="text-sm text-gray-500">
-                  {hasFullDiskAccess 
-                    ? "可以监控所有白名单文件夹，排除黑名单" 
-                    : "只能监控手动授权的文件夹"}
-                </div>
-              </div>
-            </div>
-            {!hasFullDiskAccess && (
-              <Button onClick={requestFullDiskAccess} size="sm">
-                申请权限
-              </Button>
-            )}
-          </div>
-          
           {/* 配置变更队列状态 */}
           {queueStatus && (
             <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
