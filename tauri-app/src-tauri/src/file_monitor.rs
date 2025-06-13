@@ -726,10 +726,27 @@ impl FileMonitor {
 
     // 检查文件是否隐藏
     fn is_hidden_file(path: &Path) -> bool {
-        path.file_name()
+        // 先检查文件/目录名本身是否以.开头
+        let is_name_hidden = path.file_name()
             .and_then(|name| name.to_str())
             .map(|name| name.starts_with("."))
-            .unwrap_or(false)
+            .unwrap_or(false);
+            
+        if is_name_hidden {
+            return true;
+        }
+        
+        // 检查路径中是否有任何部分是隐藏目录（以.开头）
+        if let Some(path_str) = path.to_str() {
+            // 分割路径并检查每个部分
+            for part in path_str.split('/') {
+                if !part.is_empty() && part.starts_with(".") && part != "." && part != ".." {
+                    return true;
+                }
+            }
+        }
+        
+        false
     }
     
     // 检查是否为macOS bundle文件夹
