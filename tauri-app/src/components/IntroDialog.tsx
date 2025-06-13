@@ -16,6 +16,7 @@ import {
   checkFullDiskAccessPermission, 
   requestFullDiskAccessPermission 
 } from "tauri-plugin-macos-permissions-api";
+import { relaunch } from '@tauri-apps/plugin-process';
 
 interface IntroDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
   const [loadingMessage, setLoadingMessage] = useState("正在检查系统权限...");
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(true);
+  const [permissionRequested, setPermissionRequested] = useState(false);
   
   // 检查完全磁盘访问权限
   const checkFullDiskAccess = async () => {
@@ -72,13 +74,16 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       const result = await requestFullDiskAccessPermission();
       console.log("[权限请求] 请求结果:", result);
       
+      // 标记已请求权限，这将改变按钮行为
+      setPermissionRequested(true);
+      
       // 提供明确的授权指导
       toast.success(
         "请在系统设置中授权：\n" +
         "1. 点击'系统偏好设置' > '安全性与隐私' > '隐私'\n" +
         "2. 选择'完全磁盘访问权限'\n" +
         "3. 勾选'Knowledge Focus'应用\n" +
-        "4. 完成后返回并重启应用", 
+        "4. 授权完成后点击'重启App'按钮", 
         { duration: 10000 }
       );
       
@@ -312,13 +317,13 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
             </Button>
           )}
           
-          {/* 未获得权限时显示请求权限按钮 */}
+          {/* 未获得权限时显示请求权限按钮或重启App按钮 */}
           {!hasFullDiskAccess && !checkingPermission && (
             <Button
-              onClick={requestFullDiskAccess}
-              className="w-full sm:w-auto text-white bg-yellow-600 hover:bg-yellow-700 rounded-lg"
+              onClick={permissionRequested ? () => relaunch() : requestFullDiskAccess}
+              className={`w-full sm:w-auto text-white ${permissionRequested ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} rounded-lg`}
             >
-              请求磁盘访问权限
+              {permissionRequested ? "重启App" : "请求磁盘访问权限"}
             </Button>
           )}
         </DialogFooter>

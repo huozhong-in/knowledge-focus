@@ -27,7 +27,7 @@ struct ApiProcessState {
     db_path: String,
 }
 
-// 新增：API进程管理器，用于应用退出时自动清理资源
+// API进程管理器，用于应用退出时自动清理资源
 struct ApiProcessManager {
     api_state: Arc<Mutex<ApiProcessState>>,
 }
@@ -59,7 +59,7 @@ pub struct AppState {
     config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
     file_monitor: Arc<Mutex<Option<FileMonitor>>>,
     debounced_file_monitor: Arc<Mutex<Option<DebouncedFileMonitor>>>, // 新增字段
-    // 新增：配置变更队列管理
+    // 配置变更队列管理
     pending_config_changes: Arc<Mutex<Vec<ConfigChangeRequest>>>,
     initial_scan_completed: Arc<Mutex<bool>>,
 }
@@ -88,7 +88,7 @@ impl AppState {
         *config_guard = Some(config);
     }
     
-    // 新增：配置变更队列管理方法
+    // 配置变更队列管理方法
     
     /// 检查首次扫描是否已完成
     pub fn is_initial_scan_completed(&self) -> bool {
@@ -580,19 +580,19 @@ pub fn run() {
             commands::resolve_directory_from_path,
             commands::get_file_monitor_stats,
             commands::test_bundle_detection,
-            commands::scan_directory, // 新增:添加目录后扫描目录
-            commands::stop_monitoring_directory, // 新增:停止监控指定目录
-            // 新增：文件夹层级管理命令
+            commands::scan_directory, // 添加目录后扫描目录
+            commands::stop_monitoring_directory, // 停止监控指定目录
+            // 文件夹层级管理命令
             commands::add_blacklist_folder,
             commands::remove_blacklist_folder,
             commands::get_folder_hierarchy,
-            // 新增：配置刷新管理命令
+            // 配置刷新管理命令
             commands::refresh_monitoring_config,
             commands::get_bundle_extensions,
             commands::get_configuration_summary,
             commands::test_bundle_detection_dynamic,
-            commands::read_directory, // 新增：读取目录内容
-            // 新增：配置变更队列管理命令
+            commands::read_directory, // 读取目录内容
+            // 配置变更队列管理命令
             commands::add_blacklist_folder_queued,
             commands::remove_folder_queued,
             commands::toggle_folder_status_queued,
@@ -600,10 +600,10 @@ pub fn run() {
             commands::get_config_queue_status,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
-            // 新增：权限管理命令
+            // 权限管理命令
             permissions::check_full_disk_access_permission,
             permissions::request_full_disk_access_permission,
-            // 新增：后端扫描启动命令
+            // 后端扫描启动命令
             file_scanner::start_backend_scanning,
         ])
         .on_window_event(|window, event| match event {
