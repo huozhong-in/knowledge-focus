@@ -293,7 +293,7 @@ def init_db(session: Session = Depends(get_session)):
 
     return {"message": "数据库结构已初始化"}
 
-# 新增：获取所有配置信息的API端点
+# 获取所有配置信息的API端点
 @app.get("/config/all")
 def get_all_configuration(
     session: Session = Depends(get_session),

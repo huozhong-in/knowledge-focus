@@ -13,7 +13,7 @@ use reqwest;
 
 use crate::AppState; // Import AppState
 
-// 新增：仅设置文件监控基础设施，不开始扫描
+// 仅设置文件监控基础设施，不开始扫描
 pub async fn setup_file_monitoring_infrastructure(
     app_handle: tauri::AppHandle,
     monitor_state: Arc<Mutex<Option<FileMonitor>>>,

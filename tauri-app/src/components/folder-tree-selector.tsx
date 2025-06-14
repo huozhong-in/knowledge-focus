@@ -9,7 +9,7 @@ interface FolderNode {
   children?: FolderNode[];
   expanded?: boolean;
   loading?: boolean;
-  isBlacklisted?: boolean; // 新增：标识该文件夹是否已在黑名单中
+  isBlacklisted?: boolean; // 标识该文件夹是否已在黑名单中
 }
 
 interface FolderTreeSelectorProps {

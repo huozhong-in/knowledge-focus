@@ -10,11 +10,11 @@ use tauri::{
 // 导入自定义命令
 mod commands;
 mod file_monitor;
-mod file_monitor_debounced; // 新增防抖动文件监控模块
-mod file_scanner; // 新增文件扫描模块
+mod file_monitor_debounced; // 防抖动文件监控模块
+mod file_scanner; // 文件扫描模块
 mod setup_file_monitor;
-mod api_startup; // 新增API启动模块
-mod permissions; // 新增权限管理模块
+mod api_startup; // API启动模块
+mod permissions; // 权限管理模块
 use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
 use file_monitor::FileMonitor;
 use reqwest; // 导入reqwest用于API健康检查
@@ -58,7 +58,7 @@ struct ApiState(Arc<Mutex<ApiProcessState>>);
 pub struct AppState {
     config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
     file_monitor: Arc<Mutex<Option<FileMonitor>>>,
-    debounced_file_monitor: Arc<Mutex<Option<DebouncedFileMonitor>>>, // 新增字段
+    debounced_file_monitor: Arc<Mutex<Option<DebouncedFileMonitor>>>,
     // 配置变更队列管理
     pending_config_changes: Arc<Mutex<Vec<ConfigChangeRequest>>>,
     initial_scan_completed: Arc<Mutex<bool>>,

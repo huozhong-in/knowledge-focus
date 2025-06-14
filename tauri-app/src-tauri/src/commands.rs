@@ -223,7 +223,7 @@ pub async fn stop_monitoring_directory(directory_id: i32, state: tauri::State<'_
     Ok(())
 }
 
-// --- 新增：文件夹层级管理命令 ---
+// --- 文件夹层级管理命令 ---
 
 /// 添加黑名单文件夹到指定父文件夹下
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
@@ -686,4 +686,4 @@ pub fn get_config_queue_status(
 
 // --- 配置变更队列管理命令结束 ---
 
-// --- End of 新增命令 ---
+// --- End of 文件夹层级管理命令 ---

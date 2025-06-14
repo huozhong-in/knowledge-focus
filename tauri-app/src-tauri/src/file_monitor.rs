@@ -335,12 +335,12 @@ impl FileMonitor {
         self.metadata_tx.clone()
     }
     
-    // 新增：获取API主机地址
+    // 获取API主机地址
     pub fn get_api_host(&self) -> &str {
         &self.api_host
     }
     
-    // 新增：获取API端口
+    // 获取API端口
     pub fn get_api_port(&self) -> u16 {
         self.api_port
     }
@@ -1126,7 +1126,7 @@ impl FileMonitor {
                     category_id: None,
                     tags: None,
                     initial_rule_matches: None,
-                    extra_metadata: None, // 新增字段
+                    extra_metadata: None,
                     is_os_bundle: Some(is_bundle), // 标记是否为macOS bundle
                 })
             }
