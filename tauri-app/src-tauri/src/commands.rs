@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use crate::AppState;
 use tauri::{State, Manager}; // 添加Manager以使用app_handle方法
 use serde::Serialize;
@@ -848,4 +849,63 @@ pub async fn add_whitelist_folder_queued(
 ) -> Result<serde_json::Value, String> {
     println!("[CMD] add_whitelist_folder_queued 被调用 (重定向到queue_add_whitelist_folder)");
     queue_add_whitelist_folder(folder_path, folder_alias, state).await
+}
+
+/// 重启文件监控系统命令
+#[tauri::command(rename_all = "snake_case", async)]
+pub async fn restart_file_monitoring(
+    app_state: tauri::State<'_, crate::AppState>,
+) -> Result<String, String> {
+    println!("[CMD] restart_file_monitoring 命令被调用，开始重启文件监控系统...");
+    
+    // 1. 获取并重新初始化文件监控器
+    let mut monitor = {
+        let monitor_guard = app_state.file_monitor.lock().unwrap();
+        match &*monitor_guard {
+            Some(monitor) => monitor.clone(),
+            None => {
+                return Err("文件监控器未初始化，无法重启".to_string());
+            }
+        }
+    };
+    
+    // 2. 重新初始化元数据通道
+    if let Err(e) = monitor.start_monitoring_setup_and_initial_scan().await {
+        return Err(format!("重新初始化文件监控器失败: {}", e));
+    }
+    
+    // 3. 更新 AppState 中的监控器
+    {
+        let mut file_monitor_guard = app_state.file_monitor.lock().unwrap();
+        *file_monitor_guard = Some(monitor.clone());
+        println!("[CMD] restart_file_monitoring 已更新 AppState.file_monitor");
+    }
+    
+    // 4. 重新创建并初始化防抖动监控器
+    // 先创建新的防抖动监控器
+    let mut debounced_monitor = {
+        let monitor_arc = Arc::new(monitor.clone());
+        crate::file_monitor_debounced::DebouncedFileMonitor::new(monitor_arc)
+    };
+    
+    // 获取当前的目录列表
+    let monitored_dirs = monitor.get_monitored_dirs();
+    
+    // 更新 AppState 中的防抖动监控器
+    {
+        let mut debounced_monitor_guard = app_state.debounced_file_monitor.lock().unwrap();
+        *debounced_monitor_guard = Some(debounced_monitor.clone());
+        println!("[CMD] restart_file_monitoring 已更新 AppState.debounced_file_monitor");
+    }
+    
+    // 启动防抖动监控 - 在 MutexGuard 已经释放后进行
+    if let Err(e) = debounced_monitor.start_monitoring(
+        monitored_dirs,
+        std::time::Duration::from_millis(500)
+    ).await {
+        return Err(format!("重启防抖动监控失败: {}", e));
+    }
+    
+    println!("[CMD] restart_file_monitoring 已成功启动防抖动监控");
+    Ok("文件监控系统已成功重启".to_string())
 }

@@ -501,7 +501,7 @@ impl FileMonitor {
         if let Some(config) = config_guard.as_ref() {
             // 1. 优先使用直接提供的 bundle_extensions 列表
             if !config.bundle_extensions.is_empty() {
-                println!("[BUNDLE_EXT] 使用/config/all中直接提供的 {} 个Bundle扩展名", config.bundle_extensions.len());
+                // println!("[BUNDLE_EXT] 使用/config/all中直接提供的 {} 个Bundle扩展名", config.bundle_extensions.len());
                 return config.bundle_extensions.clone();
             }
             

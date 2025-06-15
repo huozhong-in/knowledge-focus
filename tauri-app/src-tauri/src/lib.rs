@@ -698,6 +698,7 @@ pub fn run() {
             commands::get_file_monitor_stats,
             commands::scan_directory, // 添加目录后扫描目录
             commands::stop_monitoring_directory, // 停止监控指定目录
+            commands::restart_file_monitoring, // 重启文件监控系统
             // 文件夹层级管理命令
             commands::add_blacklist_folder,
             commands::remove_blacklist_folder,

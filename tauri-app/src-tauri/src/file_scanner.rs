@@ -301,20 +301,70 @@ pub async fn start_backend_scanning(
     // println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
     // println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
     
-    // 获取文件监控器
-    let file_monitor_option = {
-        let guard = app_state.file_monitor.lock().unwrap();
-        guard.clone()
-    };
-    
-    // 如果文件监控器不存在，返回错误
-    let file_monitor = match file_monitor_option {
-        Some(monitor) => monitor,
-        None => {
-            eprintln!("[扫描] 文件监控器未初始化");
-            return Err("文件监控器未初始化".to_string());
+    // 获取文件监控器或创建新的文件监控器
+    let file_monitor = {
+        // 首先尝试从 AppState 获取已初始化的监控器
+        let monitor_option = {
+            let guard = app_state.file_monitor.lock().unwrap();
+            guard.clone()
+        };
+        
+        // 如果文件监控器不存在，则创建并初始化一个新实例
+        match monitor_option {
+            Some(monitor) => {
+                println!("[扫描] 找到已初始化的文件监控器");
+                monitor
+            },
+            None => {
+                println!("[扫描] 文件监控器未初始化，创建新的实例");
+                
+                // 获取API状态以创建新的FileMonitor
+                let (api_host, api_port) = {
+                    let api_state = app_handle.state::<crate::ApiState>();
+                    let api_state_guard = api_state.0.lock().unwrap();
+                    
+                    if api_state_guard.process_child.is_none() {
+                        return Err("API服务未运行，无法启动文件监控".to_string());
+                    }
+                    
+                    (api_state_guard.host.clone(), api_state_guard.port)
+                };
+                
+                // 创建并初始化监控器
+                let new_monitor = crate::file_monitor::FileMonitor::new(api_host, api_port);
+                
+                // 保存到 AppState
+                {
+                    let mut monitor_guard = app_state.file_monitor.lock().unwrap();
+                    *monitor_guard = Some(new_monitor.clone());
+                }
+                
+                println!("[扫描] 已创建新的文件监控器实例");
+                new_monitor
+            }
         }
     };
+    
+    // 尝试初始化监控器（如果尚未初始化）
+    let monitor_initialized = file_monitor.get_metadata_sender().is_some();
+    if !monitor_initialized {
+        println!("[扫描] 文件监控器元数据通道未初始化，执行初始化");
+        
+        // 初始化监控器
+        let mut file_monitor_mut = file_monitor.clone();
+        if let Err(e) = file_monitor_mut.start_monitoring_setup_and_initial_scan().await {
+            eprintln!("[扫描] 初始化监控器失败: {}", e);
+            return Err(format!("无法初始化文件监控器: {}", e));
+        }
+        
+        // 更新 AppState 中的监控器实例
+        {
+            let mut monitor_guard = app_state.file_monitor.lock().unwrap();
+            *monitor_guard = Some(file_monitor.clone());
+        }
+        
+        println!("[扫描] 文件监控器初始化成功");
+    }
     
     // 通过FileMonitor获取配置而不是AppState
     // 这里先刷新配置以确保获取到最新的监控目录列表
@@ -373,21 +423,58 @@ pub async fn start_backend_scanning(
                     eprintln!("[扫描] 发送扫描完成事件失败: {:?}", e);
                 }
                 
-                // 启动防抖动监控器
+                // 初始化或重新初始化防抖动监控器
                 let debounced_monitor_state = app_state_handle.debounced_file_monitor.clone();
-                if let Some(mut debounced_monitor) = {
+                
+                // 检查是否已存在防抖动监控器
+                let debounced_monitor_opt = {
                     let guard = debounced_monitor_state.lock().unwrap();
                     guard.clone()
-                } {
-                    let directories: Vec<String> = fm.get_monitored_directories()
-                        .into_iter()
-                        .map(|dir| dir.path)
-                        .collect();
+                };
+                
+                let mut debounced_monitor = match debounced_monitor_opt {
+                    Some(monitor) => {
+                        println!("[扫描] 使用已存在的防抖动监控器");
+                        monitor
+                    },
+                    None => {
+                        println!("[扫描] 创建新的防抖动监控器");
+                        // 创建新的防抖动监控器
+                        let monitor_arc = std::sync::Arc::new(fm.clone());
+                        let new_monitor = crate::file_monitor_debounced::DebouncedFileMonitor::new(monitor_arc);
+                        
+                        // 保存到 AppState
+                        {
+                            let mut guard = debounced_monitor_state.lock().unwrap();
+                            *guard = Some(new_monitor.clone());
+                        }
+                        
+                        new_monitor
+                    }
+                };
+                
+                // 获取目录列表并启动防抖动监控
+                let directories: Vec<String> = fm.get_monitored_directories()
+                    .into_iter()
+                    .filter(|dir| !dir.is_blacklist) // 过滤掉黑名单目录
+                    .map(|dir| dir.path)
+                    .collect();
+                
+                if directories.is_empty() {
+                    println!("[扫描] 没有需要监控的白名单目录，跳过防抖动监控器启动");
+                } else {
+                    println!("[扫描] 正在启动防抖动监控，监控 {} 个目录", directories.len());
                     
                     if let Err(e) = debounced_monitor.start_monitoring(directories, std::time::Duration::from_millis(2_000)).await {
                         eprintln!("[扫描] 启动防抖动监控失败: {}", e);
                     } else {
                         println!("[扫描] 防抖动监控已启动");
+                        
+                        // 更新 AppState 中的防抖动监控器
+                        {
+                            let mut guard = debounced_monitor_state.lock().unwrap();
+                            *guard = Some(debounced_monitor);
+                        }
                     }
                 }
             },
@@ -395,7 +482,7 @@ pub async fn start_backend_scanning(
                 eprintln!("[扫描] 初始扫描失败: {}", e);
                 
                 // 发送事件通知前端扫描失败
-                if let Err(emit_err) = app_handle_clone.emit("scan_error", format!("扫描失败: {}", e)) {
+                if let Err(emit_err) = app_handle_clone.emit("scan_error", e.to_string()) {
                     eprintln!("[扫描] 发送扫描错误事件失败: {:?}", emit_err);
                 }
             }
