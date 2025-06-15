@@ -84,12 +84,6 @@ class Notification(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 取得授权状态
-class AuthStatus(str, PyEnum):
-    PENDING = "pending"  # 等待授权，或叫未请求授权
-    AUTHORIZED = "authorized"  # 已授权，或者叫已经授权
-    UNAUTHORIZED = "unauthorized"  # 未授权，或者叫拒绝授权
-
 # 监控的文件夹表，用来存储文件夹的路径和状态
 class MyFiles(SQLModel, table=True):
     __tablename__ = "t_myfiles"
@@ -99,7 +93,6 @@ class MyFiles(SQLModel, table=True):
     is_blacklist: bool = Field(default=False)  # 是否是用户不想监控的文件夹(黑名单)
     is_common_folder: bool = Field(default=False)  # 是否为常见文件夹（不可删除）
     parent_id: int | None = Field(default=None, foreign_key="t_myfiles.id")  # 父文件夹ID，支持黑名单层级关系
-    auth_status: str = Field(sa_column=Column(Enum(AuthStatus, values_callable=lambda obj: [e.value for e in obj]), default=AuthStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
     updated_at: datetime = Field(default=datetime.now())  # 更新时间
     class Config:
@@ -1360,7 +1353,6 @@ class DBManager:
                     MyFiles(
                         path=dir_info["path"],
                         alias=dir_info["name"],
-                        auth_status=AuthStatus.PENDING.value,
                         is_blacklist=False,
                         is_common_folder=True  # 标记为常见文件夹，界面上不可删除
                     )

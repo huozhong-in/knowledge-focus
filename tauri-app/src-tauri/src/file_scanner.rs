@@ -16,9 +16,7 @@ use walkdir::WalkDir;
 
 use crate::file_monitor::{
     AllConfigurations, 
-    FileExtensionMapRust, 
-    // MonitoredDirectory, 
-    DirectoryAuthStatus}; // Added MonitoredDirectory, DirectoryAuthStatus
+    FileExtensionMapRust};
 use crate::AppState; // Import AppState from lib.rs
 
 // 定义文件信息结构
@@ -300,8 +298,8 @@ pub async fn start_backend_scanning(
     app_state: tauri::State<'_, AppState>,
 ) -> Result<bool, String> {
     println!("[扫描] 启动后端全量扫描工作");
-    println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
-    println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
+    // println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
+    // println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
     
     // 获取文件监控器
     let file_monitor_option = {
@@ -407,27 +405,6 @@ pub async fn start_backend_scanning(
     Ok(true)
 }
 
-// 新增：访问敏感文件夹前的权限确认
-// 在start_monitoring_setup_and_initial_scan方法中，访问敏感文件夹前调用此函数
-// 如果没有授权，将不会继续访问（由于权限控制移至前端，此函数仅作为提示）
-fn ensure_permission_for_sensitive_folder() -> bool {
-    println!("[权限] 访问敏感文件夹前检查权限 - 提示：权限验证已移至前端");
-    
-    #[cfg(target_os = "macos")]
-    {
-        println!("[权限] macOS系统，假设前端已通过tauri-plugin-macos-permissions-api验证权限");
-        // 返回true，因为实际权限检查已在前端完成
-        // 如果前端未处理权限，此处可能会导致无权限访问
-        true
-    }
-    
-    #[cfg(not(target_os = "macos"))]
-    {
-        println!("[权限] 非macOS系统，假设已有权限");
-        true
-    }
-}
-
 // 帮助跟踪权限状态的函数
 fn log_permission_check(action: &str, path: &Path) {
     #[cfg(target_os = "macos")]
@@ -473,14 +450,11 @@ async fn scan_files_with_filter(
 
     for monitored_dir in &config.monitored_folders {
         // Only scan authorized and non-blacklisted directories
-        let should_scan = if config.full_disk_access {
-            !monitored_dir.is_blacklist
-        } else {
-            monitored_dir.auth_status == DirectoryAuthStatus::Authorized && !monitored_dir.is_blacklist
-        };
+        // 只扫描非黑名单目录
+        let should_scan = !monitored_dir.is_blacklist;
 
         if !should_scan {
-            println!("[SCAN] 跳过目录 {:?} (auth_status: {:?}, is_blacklist: {})", monitored_dir.path, monitored_dir.auth_status, monitored_dir.is_blacklist);
+            println!("[SCAN] 跳过黑名单目录 {:?}", monitored_dir.path);
             continue;
         }
 
@@ -666,145 +640,3 @@ async fn scan_files_with_filter(
     Ok(files)
 }
 
-// 创建默认配置，当AppState不可用时使用
-// fn create_default_config() -> AllConfigurations {
-//     use std::env;
-
-//     // Get user home directory
-//     let home_dir = env::var("HOME").unwrap_or_else(|_| "/".to_string());
-//     let downloads_dir = format!("{}/Downloads", home_dir);
-//     let documents_dir = format!("{}/Documents", home_dir);
-//     let desktop_dir = format!("{}/Desktop", home_dir);
-
-//     // Create default monitored directories list
-//     let monitored_folders = vec![
-//         MonitoredDirectory {
-//             id: Some(1),
-//             path: downloads_dir,
-//             alias: Some("下载".to_string()),
-//             is_blacklist: false,
-//             auth_status: DirectoryAuthStatus::Authorized,
-//             created_at: Some("2023-01-01T00:00:00Z".to_string()),
-//             updated_at: Some("2023-01-01T00:00:00Z".to_string()),
-//         },
-//         MonitoredDirectory {
-//             id: Some(2),
-//             path: documents_dir,
-//             alias: Some("文档".to_string()),
-//             is_blacklist: false,
-//             auth_status: DirectoryAuthStatus::Authorized,
-//             created_at: Some("2023-01-01T00:00:00Z".to_string()),
-//             updated_at: Some("2023-01-01T00:00:00Z".to_string()),
-//         },
-//         MonitoredDirectory {
-//             id: Some(3),
-//             path: desktop_dir,
-//             alias: Some("桌面".to_string()),
-//             is_blacklist: false,
-//             auth_status: DirectoryAuthStatus::Authorized,
-//             created_at: Some("2023-01-01T00:00:00Z".to_string()),
-//             updated_at: Some("2023-01-01T00:00:00Z".to_string()),
-//         },
-//     ];
-
-//     // Create default file categories
-//     let file_categories = vec![
-//         crate::file_monitor::FileCategoryRust {
-//             id: 1,
-//             name: "文档".to_string(),
-//             description: Some("文档文件".to_string()),
-//             icon: Some("📄".to_string()),
-//         },
-//         crate::file_monitor::FileCategoryRust {
-//             id: 2,
-//             name: "图片".to_string(),
-//             description: Some("图片文件".to_string()),
-//             icon: Some("🖼️".to_string()),
-//         },
-//         crate::file_monitor::FileCategoryRust {
-//             id: 3,
-//             name: "音视频".to_string(),
-//             description: Some("音频和视频文件".to_string()),
-//             icon: Some("🎬".to_string()),
-//         },
-//         crate::file_monitor::FileCategoryRust {
-//             id: 4,
-//             name: "压缩包".to_string(),
-//             description: Some("压缩文件".to_string()),
-//             icon: Some("🗃️".to_string()),
-//         },
-//     ];
-
-//     // Create default file extension maps
-//     let file_extension_maps = vec![
-//         FileExtensionMapRust {
-//             id: 1,
-//             extension: "pdf".to_string(),
-//             category_id: 1,
-//             description: Some("PDF文档".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 2,
-//             extension: "doc".to_string(),
-//             category_id: 1,
-//             description: Some("Word文档".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 3,
-//             extension: "docx".to_string(),
-//             category_id: 1,
-//             description: Some("Word文档".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 4,
-//             extension: "jpg".to_string(),
-//             category_id: 2,
-//             description: Some("JPG图片".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 5,
-//             extension: "png".to_string(),
-//             category_id: 2,
-//             description: Some("PNG图片".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 6,
-//             extension: "mp3".to_string(),
-//             category_id: 3,
-//             description: Some("MP3音频".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 7,
-//             extension: "mp4".to_string(),
-//             category_id: 3,
-//             description: Some("MP4视频".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//         FileExtensionMapRust {
-//             id: 8,
-//             extension: "zip".to_string(),
-//             category_id: 4,
-//             description: Some("ZIP压缩包".to_string()),
-//             priority: crate::file_monitor::RulePriorityRust::Medium,
-//         },
-//     ];
-
-//     // Default project recognition rules
-//     let project_recognition_rules = vec![];
-
-//     // Build default AllConfigurations
-//     AllConfigurations {
-//         file_categories,
-//         file_filter_rules: vec![],
-//         file_extension_maps,
-//         project_recognition_rules,
-//         monitored_folders,
-//         full_disk_access: false,
-//     }
-// }

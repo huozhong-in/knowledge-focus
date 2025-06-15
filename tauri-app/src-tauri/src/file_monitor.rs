@@ -8,6 +8,91 @@ use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
 use walkdir::WalkDir;
 
+// --- Blacklist Trie for Hierarchical Blacklisting ---
+#[derive(Debug, Default, Clone)]
+struct BlacklistTrieNode {
+    children: std::collections::HashMap<String, BlacklistTrieNode>,
+    is_blacklisted_here: bool, // True if the path ending at this node is explicitly blacklisted
+}
+
+impl BlacklistTrieNode {
+    // Inserts a path into the Trie.
+    // Paths are expected to be absolute and components UTF-8.
+    fn insert(&mut self, path: &Path) {
+        let mut current_node = self;
+        // Handle the case where the root "/" itself is blacklisted.
+        if path.components().count() == 1 && path.has_root() {
+            if let Some(std::path::Component::RootDir) = path.components().next() {
+                 current_node.is_blacklisted_here = true;
+                 return;
+            }
+        }
+
+        for component in path.components() {
+            match component {
+                std::path::Component::Normal(os_str) => {
+                    if let Some(name) = os_str.to_str() {
+                        current_node = current_node.children.entry(name.to_string()).or_default();
+                    } else {
+                        eprintln!("[BLACKLIST_TRIE] Non-UTF8 path component in blacklist path: {:?}", path);
+                        return; // Skip this path
+                    }
+                }
+                std::path::Component::RootDir => {
+                    // RootDir is the starting point, handled by `current_node` being `self`.
+                    // If the root node itself needs to be marked (for path "/"),
+                    // it's handled if "/" is explicitly passed and has only RootDir.
+                }
+                _ => { /* Ignore CurDir, ParentDir, Prefix for trie structure */ }
+            }
+        }
+        current_node.is_blacklisted_here = true; // Mark the end of this path as blacklisted
+    }
+
+    // Checks if the given path or any of its ancestors are in the Trie and marked as blacklisted.
+    // Path is assumed to be absolute.
+    fn is_path_or_ancestor_blacklisted(&self, path: &Path) -> bool {
+        let mut current_node = self;
+
+        // Check if the root of the trie itself is blacklisted (e.g., if "/" was inserted).
+        if current_node.is_blacklisted_here {
+            return true;
+        }
+
+        for component in path.components() {
+            match component {
+                std::path::Component::Normal(os_str) => {
+                    if let Some(name) = os_str.to_str() {
+                        if let Some(next_node) = current_node.children.get(name) {
+                            if next_node.is_blacklisted_here {
+                                return true; // This path component or an ancestor forms a blacklisted path.
+                            }
+                            current_node = next_node;
+                        } else {
+                            // Component not found, so path is not blacklisted via this Trie.
+                            return false;
+                        }
+                    } else {
+                        eprintln!("[BLACKLIST_TRIE] Non-UTF8 path component in path to check: {:?}", path);
+                        return false; // Treat as not blacklisted
+                    }
+                }
+                std::path::Component::RootDir => {
+                    // Already handled by initial check on `self.is_blacklisted_here`
+                    // and `current_node` starting at `self`.
+                }
+                _ => { /* Ignore CurDir, ParentDir, Prefix */ }
+            }
+        }
+        // If the loop completes, it means the full path exists in the Trie.
+        // The check `next_node.is_blacklisted_here` inside the loop covers if the path itself
+        // or any of its prefixes matches a blacklisted entry.
+        // If the path itself is blacklisted, the last `next_node.is_blacklisted_here` would have been true.
+        false
+    }
+}
+// --- End of Blacklist Trie ---
+
 // 文件监控统计信息
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct MonitorStats {
@@ -117,6 +202,8 @@ pub struct AllConfigurations {
     pub monitored_folders: Vec<MonitoredDirectory>, // Already defined as MonitoredDirectory
     #[serde(default)]
     pub full_disk_access: bool, // 是否有完全磁盘访问权限，特别是macOS
+    #[serde(default)]
+    pub bundle_extensions: Vec<String>, // 直接可用的 bundle 扩展名列表
 }
 // --- End of New Configuration Structs ---
 
@@ -143,8 +230,9 @@ pub struct FileMetadata {
     pub is_os_bundle: Option<bool>,  // 是否是macOS bundle
 }
 
-// API响应结构
+ // API响应结构
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ApiResponse {
     pub success: bool,
     pub message: Option<String>,
@@ -153,34 +241,32 @@ pub struct ApiResponse {
 
 // 目录监控状态
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum DirectoryAuthStatus {
-    #[serde(alias = "pending")] // Add alias for "pending"
-    Pending,
-    #[serde(alias = "authorized")] // Add alias for "authorized"
-    Authorized,
-    #[serde(alias = "unauthorized")] // Add alias for "unauthorized"
-    Unauthorized,
-}
-
-// 监控目录信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitoredDirectory {
     pub id: Option<i32>,
     pub path: String,
     pub alias: Option<String>,
     pub is_blacklist: bool,
-    pub auth_status: DirectoryAuthStatus,
     pub created_at: Option<String>, // Added field
     pub updated_at: Option<String>, // Added field
 }
 
-// New struct for the API response from /directories
-#[derive(Debug, Deserialize)]
-struct DirectoryApiResponse {
-    status: String, // Or use an enum if you have fixed status values
-    full_disk_access: bool, // Added
-    data: Vec<MonitoredDirectory>,
-}
+// #[derive(Debug, Deserialize, PartialEq)]
+// enum DirectoryStatus {
+//     #[serde(rename = "success")]
+//     Success,
+//     #[serde(rename = "error")]
+//     Error,
+//     #[serde(rename = "unauthorized")]
+//     Unauthorized,
+// }
+
+ // New struct for the API response from /directories
+// #[derive(Debug, Deserialize)]
+// struct DirectoryApiResponse {
+//     status: DirectoryStatus,
+//     full_disk_access: bool,
+//     data: Vec<MonitoredDirectory>,
+// }
 
 // 初始化文件监控器
 #[derive(Clone)]
@@ -189,12 +275,8 @@ pub struct FileMonitor {
     monitored_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
     // 黑名单目录列表（仅用于检查路径是否在黑名单中）
     blacklist_dirs: Arc<Mutex<Vec<MonitoredDirectory>>>,
-    // 配置缓存
+    // 配置缓存（包含所有配置信息，如Bundle扩展名等）
     config_cache: Arc<Mutex<Option<AllConfigurations>>>,
-    // Bundle扩展名缓存
-    bundle_extensions_cache: Arc<Mutex<Option<Vec<String>>>>,
-    // Bundle扩展名缓存时间戳
-    bundle_cache_timestamp: Arc<Mutex<Option<SystemTime>>>,
     // API主机和端口
     api_host: String,
     api_port: u16,
@@ -208,6 +290,8 @@ pub struct FileMonitor {
     batch_interval: Duration,
     // 监控统计数据
     stats: Arc<Mutex<MonitorStats>>,
+    // New field for hierarchical blacklist
+    blacklist_trie: Arc<Mutex<BlacklistTrieNode>>,
 }
 
 impl FileMonitor {
@@ -215,10 +299,8 @@ impl FileMonitor {
     pub fn new(api_host: String, api_port: u16) -> FileMonitor {
         FileMonitor {
             monitored_dirs: Arc::new(Mutex::new(Vec::new())),
-            blacklist_dirs: Arc::new(Mutex::new(Vec::new())),
-            config_cache: Arc::new(Mutex::new(None)), // Initialize config cache
-            bundle_extensions_cache: Arc::new(Mutex::new(None)),
-            bundle_cache_timestamp: Arc::new(Mutex::new(None)),
+            blacklist_dirs: Arc::new(Mutex::new(Vec::new())), // Still keep this for other potential uses or direct listing
+            config_cache: Arc::new(Mutex::new(None)),
             api_host,
             api_port,
             client: reqwest::Client::builder()
@@ -229,6 +311,7 @@ impl FileMonitor {
             metadata_tx: None,
             batch_size: 50,
             batch_interval: Duration::from_secs(5),
+            blacklist_trie: Arc::new(Mutex::new(BlacklistTrieNode::default())), // Initialize Trie
         }
     }
 
@@ -237,77 +320,106 @@ impl FileMonitor {
         let url = format!("http://{}:{}/config/all", self.api_host, self.api_port);
         println!("[CONFIG_FETCH] Fetching all configurations from URL: {}", url);
 
-        match self.client.get(&url).timeout(std::time::Duration::from_secs(5)).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.json::<AllConfigurations>().await {
-                        Ok(config_data) => {
-                            println!("[CONFIG_FETCH] Successfully parsed AllConfigurations. Categories: {}, FilterRules: {}, ExtMaps: {}, ProjRules: {}, MonitoredFolders: {}",
-                                config_data.file_categories.len(),
-                                config_data.file_filter_rules.len(),
-                                config_data.file_extension_maps.len(),
-                                config_data.project_recognition_rules.len(),
-                                config_data.monitored_folders.len()
-                            );
-                            let mut cache = self.config_cache.lock().unwrap();
-                            *cache = Some(config_data.clone()); // Store all fetched config
+        // 添加重试机制
+        let max_retries = 3;
+        let mut retry_count = 0;
+        let mut last_error = String::new();
 
-                            // 更新监控目录和黑名单目录列表
-                            let mut monitored_dirs_lock = self.monitored_dirs.lock().unwrap();
-                            let mut blacklist_dirs_lock = self.blacklist_dirs.lock().unwrap(); // 同时获取黑名单锁
-                            
-                            // 清空黑名单目录列表，准备重新填充
-                            blacklist_dirs_lock.clear();
-                            
-                            // 根据完全磁盘访问权限状态分类文件夹
-                            let mut authorized_folders = Vec::new();
-                            
-                            for dir in &config_data.monitored_folders {
-                                // 如果是黑名单文件夹，则添加到黑名单列表中
-                                if dir.is_blacklist {
-                                    blacklist_dirs_lock.push(dir.clone());
-                                    println!("[CONFIG_FETCH] Added blacklist directory: {}", dir.path);
-                                    continue; // 黑名单文件夹不添加到监控列表
+        while retry_count < max_retries {
+            if retry_count > 0 {
+                println!("[CONFIG_FETCH] 重试获取配置 ({}/{})", retry_count, max_retries);
+                // 重试前短暂等待，等待时间随重试次数增加
+                tokio::time::sleep(Duration::from_millis(500 * retry_count)).await;
+            }
+            
+            // 使用客户端原本的超时设置（30秒），不额外设置
+            match self.client.get(&url).send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        match response.json::<AllConfigurations>().await {
+                            Ok(config_data) => {
+                                println!("[CONFIG_FETCH] Successfully parsed AllConfigurations. Categories: {}, FilterRules: {}, ExtMaps: {}, ProjRules: {}, MonitoredFolders: {}",
+                                    config_data.file_categories.len(),
+                                    config_data.file_filter_rules.len(),
+                                    config_data.file_extension_maps.len(),
+                                    config_data.project_recognition_rules.len(),
+                                    config_data.monitored_folders.len()
+                                );
+                                let mut cache = self.config_cache.lock().unwrap();
+                                *cache = Some(config_data.clone()); // Store all fetched config
+
+                                // 更新监控目录和黑名单目录列表
+                                let mut monitored_dirs_lock = self.monitored_dirs.lock().unwrap();
+                                let mut blacklist_dirs_lock = self.blacklist_dirs.lock().unwrap(); // 同时获取黑名单锁
+                                
+                                // 清空黑名单目录列表，准备重新填充
+                                blacklist_dirs_lock.clear();
+                                
+                                // --- Build Blacklist Trie ---
+                                let mut new_blacklist_trie = BlacklistTrieNode::default();
+                                // --- End of Build Blacklist Trie ---
+
+                                // 根据完全磁盘访问权限状态分类文件夹
+                                let mut authorized_folders = Vec::new();
+                                
+                                for dir in &config_data.monitored_folders {
+                                    // 如果是黑名单文件夹，则添加到黑名单列表中
+                                    if dir.is_blacklist {
+                                        blacklist_dirs_lock.push(dir.clone());
+                                        // Add to Trie
+                                        let blacklist_path = PathBuf::from(&dir.path);
+                                        // TODO: Ensure blacklist_path is absolute and normalized before inserting.
+                                        // Assuming paths from API are suitable for now.
+                                        new_blacklist_trie.insert(&blacklist_path);
+                                        println!("[CONFIG_FETCH] Added to blacklist (Vec & Trie): {}", dir.path);
+                                        continue; // 黑名单文件夹不添加到监控列表
+                                    }
+                                    
+                                    // 对于非黑名单文件夹，直接添加到监控列表
+                                    let should_monitor = if config_data.full_disk_access {
+                                        true // 有完全访问权限时监控所有非黑名单文件夹
+                                    } else {
+                                        true // 现在不再检查授权状态，所有非黑名单文件夹都监控
+                                    };
+                                    
+                                    if should_monitor {
+                                        authorized_folders.push(dir.clone());
+                                    }
                                 }
                                 
-                                // 对于非黑名单文件夹，根据授权状态决定是否监控
-                                let should_monitor = if config_data.full_disk_access {
-                                    true // 有完全访问权限时监控所有非黑名单文件夹
-                                } else {
-                                    dir.auth_status == DirectoryAuthStatus::Authorized // 否则仅监控已授权文件夹
-                                };
+                                *monitored_dirs_lock = authorized_folders;
                                 
-                                if should_monitor {
-                                    authorized_folders.push(dir.clone());
-                                }
+                                // Update the shared blacklist_trie
+                                *self.blacklist_trie.lock().unwrap() = new_blacklist_trie;
+                                println!("[CONFIG_FETCH] Blacklist Trie rebuilt.");
+
+                                println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries and blacklist_dirs with {} entries from /config/all. (Full disk access: {})",
+                                    monitored_dirs_lock.len(), blacklist_dirs_lock.len(), config_data.full_disk_access);
+                                return Ok(());
                             }
-                            
-                            *monitored_dirs_lock = authorized_folders;
-                            
-                            println!("[CONFIG_FETCH] Updated monitored_dirs with {} entries and blacklist_dirs with {} entries from /config/all. (Full disk access: {})",
-                                monitored_dirs_lock.len(), blacklist_dirs_lock.len(), config_data.full_disk_access);
-                            Ok(())
+                            Err(e) => {
+                                last_error = format!("[CONFIG_FETCH] Failed to parse AllConfigurations JSON: {}", e);
+                                eprintln!("{}", last_error);
+                            }
                         }
-                        Err(e) => {
-                            let err_msg = format!("[CONFIG_FETCH] Failed to parse AllConfigurations JSON: {}", e);
-                            eprintln!("{}", err_msg);
-                            Err(err_msg)
-                        }
+                    } else {
+                        let status = response.status();
+                        let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
+                        last_error = format!("[CONFIG_FETCH] API request for /config/all failed with status: {}. Body: {}", status, err_text);
+                        eprintln!("{}", last_error);
                     }
-                } else {
-                    let status = response.status();
-                    let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
-                    let err_msg = format!("[CONFIG_FETCH] API request for /config/all failed with status: {}. Body: {}", status, err_text);
-                    eprintln!("{}", err_msg);
-                    Err(err_msg)
+                }
+                Err(e) => {
+                    last_error = format!("[CONFIG_FETCH] Failed to send request to {}: {}", url, e);
+                    eprintln!("{}", last_error);
                 }
             }
-            Err(e) => {
-                let err_msg = format!("[CONFIG_FETCH] Failed to send request to {}: {}", url, e);
-                eprintln!("{}", err_msg);
-                Err(err_msg)
-            }
+            
+            retry_count += 1;
         }
+        
+        // 如果所有重试都失败，返回最后一个错误
+        Err(last_error)
     }
     // --- End of new method ---
 
@@ -329,6 +441,14 @@ impl FileMonitor {
         dirs.clone()
     }
     
+    /// 获取当前监控的目录列表
+    pub fn get_monitored_dirs(&self) -> Vec<String> {
+        // 获取监控目录锁
+        let monitored_dirs_guard = self.monitored_dirs.lock().unwrap();
+        // 转换MonitoredDirectory为String路径
+        monitored_dirs_guard.iter().map(|dir| dir.path.clone()).collect()
+    }
+    
     // 获取元数据发送通道
     pub fn get_metadata_sender(&self) -> Option<Sender<FileMetadata>> {
         // 克隆当前的metadata_tx通道（如果存在）
@@ -345,70 +465,6 @@ impl FileMonitor {
         self.api_port
     }
 
-    // 更新监控目录状态
-    pub fn update_directory_status(&self, path: &str, status: DirectoryAuthStatus) {
-        let mut dirs = self.monitored_dirs.lock().unwrap();
-        for dir in dirs.iter_mut() {
-            if dir.path == path {
-                dir.auth_status = status;
-                break;
-            }
-        }
-    }
-
-    // 从API获取已授权的目录
-    pub async fn fetch_authorized_directories(&self) -> Result<Vec<MonitoredDirectory>, String> {
-        let url = format!("http://{}:{}/directories", self.api_host, self.api_port);
-        println!("[TEST_DEBUG] fetch_authorized_directories: Fetching from URL: {}", url);
-
-        match self.client.get(&url).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    println!("[TEST_DEBUG] fetch_authorized_directories: Received successful response status: {}", response.status());
-                    // Parse the entire response into DirectoryApiResponse
-                    match response.json::<DirectoryApiResponse>().await {
-                        Ok(api_response) => {
-                            println!("[TEST_DEBUG] fetch_authorized_directories: Successfully parsed DirectoryApiResponse. Status: {}, Data items: {}", api_response.status, api_response.data.len());
-                            let mut result = Vec::new();
-                            for dir in api_response.data {
-                                // Filter for authorized and not blacklisted directories
-                                let should_monitor = if api_response.full_disk_access {
-                                    !dir.is_blacklist
-                                } else {
-                                    dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
-                                };
-                                if !should_monitor {
-                                    println!("[TEST_DEBUG] fetch_authorized_directories: Skipping directory {:?} (auth_status: {:?}, is_blacklist: {})", dir.path, dir.auth_status, dir.is_blacklist);
-                                } else {
-                                    println!("[TEST_DEBUG] fetch_authorized_directories: Adding authorized directory: {:?}", dir.path);
-                                    result.push(dir);
-                                }
-                            }
-                            Ok(result)
-                        }
-                        Err(e) => {
-                            // It's helpful to see the raw response text when parsing fails
-                            // let response_text = response.text().await.unwrap_or_else(|_| "Failed to read response text".to_string());
-                            // eprintln!("[TEST_DEBUG] fetch_authorized_directories: Failed to parse DirectoryApiResponse JSON: {}. Raw response snippet: {}", e, &response_text[..std::cmp::min(response_text.len(), 500)]);
-                            // For now, just log the parsing error. The above can be uncommented if more detail is needed.
-                            eprintln!("[TEST_DEBUG] fetch_authorized_directories: Failed to parse DirectoryApiResponse JSON: {}", e);
-                            Err(format!("Failed to parse directory list response: {}", e))
-                        }
-                    }
-                } else {
-                    let status = response.status();
-                    let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
-                    eprintln!("[TEST_DEBUG] fetch_authorized_directories: API request failed with status: {}. Body: {}", status, err_text);
-                    Err(format!("API request for directories failed with status {}: {}", status, err_text))
-                }
-            }
-            Err(e) => {
-                eprintln!("[TEST_DEBUG] fetch_authorized_directories: Failed to send request to {}: {}", url, e);
-                Err(format!("Failed to send request to {}: {}", url, e))
-            },
-        }
-    }
-
     // 更新监控目录列表
     pub async fn update_monitored_directories(&self) -> Result<(), String> {
         println!("[DEBUG] update_monitored_directories called. It will now attempt to refresh all config.");
@@ -416,98 +472,11 @@ impl FileMonitor {
         Ok(())
     }
 
-    // --- Bundle扩展名动态获取和缓存机制 ---
+    // --- Bundle扩展名处理机制 ---
     
-    /// 从API获取Bundle扩展名列表
-    async fn fetch_bundle_extensions_from_api(&self) -> Result<Vec<String>, String> {
-        let url = format!("http://{}:{}/bundle-extensions/for-rust", self.api_host, self.api_port);
-        println!("[BUNDLE_FETCH] Fetching bundle extensions from URL: {}", url);
-
-        match self.client.get(&url).timeout(Duration::from_secs(5)).send().await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    match response.json::<serde_json::Value>().await {
-                        Ok(json_response) => {
-                            // 解析API响应格式 {"status": "success", "data": [...]}
-                            if let Some(data_array) = json_response.get("data").and_then(|d| d.as_array()) {
-                                let extensions: Vec<String> = data_array
-                                    .iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect();
-                                println!("[BUNDLE_FETCH] Successfully fetched {} bundle extensions", extensions.len());
-                                Ok(extensions)
-                            } else {
-                                let err_msg = "[BUNDLE_FETCH] API response does not contain expected 'data' array".to_string();
-                                eprintln!("{}", err_msg);
-                                Err(err_msg)
-                            }
-                        }
-                        Err(e) => {
-                            let err_msg = format!("[BUNDLE_FETCH] Failed to parse bundle extensions JSON: {}", e);
-                            eprintln!("{}", err_msg);
-                            Err(err_msg)
-                        }
-                    }
-                } else {
-                    let status = response.status();
-                    let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
-                    let err_msg = format!("[BUNDLE_FETCH] API request failed with status: {}. Body: {}", status, err_text);
-                    eprintln!("{}", err_msg);
-                    Err(err_msg)
-                }
-            }
-            Err(e) => {
-                let err_msg = format!("[BUNDLE_FETCH] Failed to send request to {}: {}", url, e);
-                eprintln!("{}", err_msg);
-                Err(err_msg)
-            }
-        }
-    }
-
-    /// 更新Bundle扩展名缓存
-    fn update_bundle_cache(&self, extensions: Vec<String>) {
-        let mut cache = self.bundle_extensions_cache.lock().unwrap();
-        let mut timestamp = self.bundle_cache_timestamp.lock().unwrap();
-        
-        *cache = Some(extensions);
-        *timestamp = Some(SystemTime::now());
-        
-        println!("[BUNDLE_CACHE] Updated bundle extensions cache with {} items", 
-                 cache.as_ref().unwrap().len());
-    }
-
-    /// 检查Bundle缓存是否过期（TTL: 1小时）
-    fn is_bundle_cache_expired(&self) -> bool {
-        let timestamp = self.bundle_cache_timestamp.lock().unwrap();
-        match *timestamp {
-            Some(cached_time) => {
-                let now = SystemTime::now();
-                match now.duration_since(cached_time) {
-                    Ok(duration) => duration > Duration::from_secs(3600), // 1小时
-                    Err(_) => true, // 如果时间计算出错，认为已过期
-                }
-            }
-            None => true, // 没有缓存时间，认为已过期
-        }
-    }
-
-    /// 获取缓存的Bundle扩展名，如果缓存为空或过期则返回fallback列表
-    pub fn get_cached_bundle_extensions(&self) -> Vec<String> {
-        let cache = self.bundle_extensions_cache.lock().unwrap();
-        
-        if let Some(extensions) = cache.as_ref() {
-            if !self.is_bundle_cache_expired() {
-                return extensions.clone();
-            }
-        }
-        
-        // 返回fallback扩展名列表
-        Self::get_fallback_bundle_extensions()
-    }
-
-    /// 获取fallback Bundle扩展名列表
-    fn get_fallback_bundle_extensions() -> Vec<String> {
-        vec![
+    /// 从当前配置中提取Bundle扩展名列表
+    pub fn extract_bundle_extensions(&self) -> Vec<String> {
+        let fallback_extensions = vec![
             ".app".to_string(),
             ".bundle".to_string(),
             ".framework".to_string(),
@@ -525,98 +494,140 @@ impl FileMonitor {
             ".service".to_string(),
             ".wdgt".to_string(),
             ".xpc".to_string(),
-        ]
-    }
-
-    /// 刷新Bundle扩展名缓存
-    pub async fn refresh_bundle_extensions(&self) -> Result<(), String> {
-        match self.fetch_bundle_extensions_from_api().await {
-            Ok(extensions) => {
-                self.update_bundle_cache(extensions);
-                Ok(())
+        ];
+        
+        // 尝试从配置缓存中获取bundle扩展名
+        let config_guard = self.config_cache.lock().unwrap();
+        if let Some(config) = config_guard.as_ref() {
+            // 1. 优先使用直接提供的 bundle_extensions 列表
+            if !config.bundle_extensions.is_empty() {
+                println!("[BUNDLE_EXT] 使用/config/all中直接提供的 {} 个Bundle扩展名", config.bundle_extensions.len());
+                return config.bundle_extensions.clone();
             }
-            Err(e) => {
-                eprintln!("[BUNDLE_REFRESH] Failed to refresh bundle extensions: {}", e);
-                // 即使刷新失败，我们仍然可以使用fallback扩展名
-                Err(e)
+            
+            // 2. 如果直接列表为空，从规则中提取（兼容旧版API）
+            let bundle_extensions: Vec<String> = config.file_filter_rules.iter()
+                .filter(|rule| rule.rule_type == RuleTypeRust::OSBundle && rule.enabled)
+                .filter_map(|rule| {
+                    // 确保pattern是以点开头的扩展名格式
+                    let pattern = &rule.pattern;
+                    if pattern.starts_with('.') {
+                        Some(pattern.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            
+            if !bundle_extensions.is_empty() {
+                println!("[BUNDLE_EXT] 从规则配置中提取了 {} 个Bundle扩展名", bundle_extensions.len());
+                return bundle_extensions;
             }
         }
+        
+        // 如果没有从配置中获取到，使用默认列表
+        println!("[BUNDLE_EXT] 使用默认Bundle扩展名列表，共 {} 项", fallback_extensions.len());
+        fallback_extensions
     }
 
-    /// 确保Bundle扩展名缓存有效（如果过期则自动刷新）
-    pub async fn ensure_bundle_cache_valid(&self) -> Vec<String> {
-        if self.is_bundle_cache_expired() {
-            // 尝试刷新缓存
-            if let Err(e) = self.refresh_bundle_extensions().await {
-                eprintln!("[BUNDLE_CACHE] Auto-refresh failed: {}, using fallback", e);
-            }
-        }
-        self.get_cached_bundle_extensions()
+    /// 获取Bundle扩展名列表（对外接口）
+    pub fn get_bundle_extensions(&self) -> Vec<String> {
+        self.extract_bundle_extensions()
     }
 
-// --- End of Bundle扩展名动态获取和缓存机制 ---
+// --- End of Bundle扩展名处理机制 ---
 
     // --- 配置刷新机制 ---
     
     /// 刷新文件夹配置（重新获取监控目录和黑名单）
-    pub async fn refresh_folder_configuration(&self) -> Result<(), String> {
-        println!("[CONFIG_REFRESH] 开始刷新文件夹配置...");
+    pub async fn refresh_folder_configuration(&self) -> Result<bool, String> {
+        println!("[FILE_MONITOR] 开始刷新文件夹配置...");
         
-        // 重新获取配置，这会更新监控目录和黑名单
-        match self.fetch_and_store_all_config().await {
-            Ok(()) => {
-                println!("[CONFIG_REFRESH] 文件夹配置刷新成功");
-                Ok(())
+        // 保存当前配置的快照
+        let current_monitored_dirs = self.get_monitored_dirs();
+        let current_blacklist_dirs = {
+            let blacklist_guard = self.blacklist_dirs.lock().unwrap();
+            blacklist_guard.clone()
+        };
+        
+        // 从API重新获取配置
+        if let Err(e) = self.fetch_and_store_all_config().await {
+            return Err(format!("刷新配置失败: {}", e));
+        }
+        
+        // 检查配置是否变化
+        let new_monitored_dirs = self.get_monitored_dirs();
+        let new_blacklist_dirs = {
+            let blacklist_guard = self.blacklist_dirs.lock().unwrap();
+            blacklist_guard.clone()
+        };
+        
+        // 对比变化
+        let monitored_changed = current_monitored_dirs.len() != new_monitored_dirs.len() 
+            || current_monitored_dirs.iter().any(|dir| !new_monitored_dirs.contains(dir));
+            
+        let blacklist_changed = current_blacklist_dirs.len() != new_blacklist_dirs.len()
+            || current_blacklist_dirs.iter().any(|dir| !new_blacklist_dirs.contains(dir));
+            
+        let config_changed = monitored_changed || blacklist_changed;
+        
+        if config_changed {
+            println!("[FILE_MONITOR] 文件夹配置已更新:");
+            if monitored_changed {
+                println!("[FILE_MONITOR]   - 监控目录: {} -> {}", current_monitored_dirs.len(), new_monitored_dirs.len());
             }
-            Err(e) => {
-                eprintln!("[CONFIG_REFRESH] 文件夹配置刷新失败: {}", e);
-                Err(e)
+            if blacklist_changed {
+                println!("[FILE_MONITOR]   - 黑名单目录: {} -> {}", current_blacklist_dirs.len(), new_blacklist_dirs.len());
             }
+            Ok(true)
+        } else {
+            println!("[FILE_MONITOR] 文件夹配置未变化");
+            Ok(false)
         }
     }
     
-    /// 刷新所有配置（文件夹配置 + Bundle扩展名）
+    /// 刷新所有配置（通过单一API调用获取所有配置）
     pub async fn refresh_all_configurations(&self) -> Result<(), String> {
         println!("[CONFIG_REFRESH_ALL] 开始刷新所有配置...");
         
-        let mut errors = Vec::new();
-        
-        // 刷新文件夹配置
+        // 刷新文件夹配置（包含所有配置数据，包括Bundle扩展名）
         if let Err(e) = self.refresh_folder_configuration().await {
-            errors.push(format!("文件夹配置刷新失败: {}", e));
+            eprintln!("[CONFIG_REFRESH_ALL] 配置刷新失败: {}", e);
+            return Err(e);
         }
         
-        // 刷新Bundle扩展名
-        if let Err(e) = self.refresh_bundle_extensions().await {
-            errors.push(format!("Bundle扩展名刷新失败: {}", e));
-        }
+        println!("[CONFIG_REFRESH_ALL] 所有配置刷新成功");
         
-        if errors.is_empty() {
-            println!("[CONFIG_REFRESH_ALL] 所有配置刷新成功");
-            
-            // 配置刷新完成后，触发配置更新事件通知所有监听器
-            self.notify_config_updated();
-            Ok(())
-        } else {
-            let error_msg = errors.join("; ");
-            eprintln!("[CONFIG_REFRESH_ALL] 部分配置刷新失败: {}", error_msg);
-            Err(error_msg)
-        }
+        // 配置刷新完成后，触发配置更新事件通知所有监听器
+        self.notify_config_updated();
+        Ok(())
     }
     
-    /// 通知配置已更新（用于在配置变更后通知正在进行的扫描任务）
+    /// 通知配置已更新（配置变更完成后的通知）
     fn notify_config_updated(&self) {
-        // 这里可以实现配置更新通知机制，暂时通过日志输出
-        println!("[CONFIG_NOTIFY] 配置已更新，正在进行的扫描将使用新配置");
+        // 这里可以实现实际的配置更新通知机制
+        // 目前只是记录日志，将来可以添加实际的通知逻辑
+        println!("[CONFIG_NOTIFY] 配置已成功更新，后续扫描将使用新配置");
     }
     
     /// 获取当前配置状态摘要
     pub fn get_configuration_summary(&self) -> serde_json::Value {
         let config_guard = self.config_cache.lock().unwrap();
-        let bundle_cache = self.bundle_extensions_cache.lock().unwrap();
-        let bundle_timestamp = self.bundle_cache_timestamp.lock().unwrap();
         let monitored_dirs = self.monitored_dirs.lock().unwrap();
         let blacklist_dirs = self.blacklist_dirs.lock().unwrap();
+        
+        // 从配置中提取Bundle扩展名数量
+        let bundle_extensions_count = config_guard.as_ref().map(|c| {
+            c.file_filter_rules.iter()
+                .filter(|rule| rule.rule_type == RuleTypeRust::OSBundle && rule.enabled)
+                .count()
+        }).unwrap_or(0);
+        
+        // 获取当前时间，用于显示配置时间戳
+        let current_timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         
         serde_json::json!({
             "has_config_cache": config_guard.is_some(),
@@ -626,28 +637,119 @@ impl FileMonitor {
             "full_disk_access": config_guard.as_ref().map(|c| c.full_disk_access).unwrap_or(false),
             "monitored_dirs_count": monitored_dirs.len(),
             "blacklist_dirs_count": blacklist_dirs.len(),
-            "bundle_cache_count": bundle_cache.as_ref().map(|b| b.len()).unwrap_or(0),
-            "bundle_cache_expired": self.is_bundle_cache_expired(),
-            "bundle_cache_timestamp": bundle_timestamp.as_ref().map(|t| {
-                t.duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs()
-            })
+            "bundle_extensions_count": bundle_extensions_count,
+            "timestamp": current_timestamp
         })
     }
     
     // --- End of 配置刷新机制 ---
 
-    /// 使用动态扩展名列表检查是否为macOS bundle文件夹
-    pub async fn is_macos_bundle_folder_dynamic(&self, path: &Path) -> bool {
+
+    // 计算简单文件哈希（使用文件前4KB内容）
+    async fn calculate_simple_hash(path: &Path, max_bytes: usize) -> Option<String> {
+        match fs::File::open(path).await {
+            Ok(mut file) => {
+                use tokio::io::AsyncReadExt;
+                let mut buffer = vec![0u8; max_bytes.min(4096)]; // 最多读4KB
+                match file.read(&mut buffer).await {
+                    Ok(n) => {
+                        buffer.truncate(n);
+                        if n > 0 {
+                            use sha2::{Digest, Sha256};
+                            let mut hasher = Sha256::new();
+                            hasher.update(&buffer);
+                            let result = hasher.finalize();
+                            Some(format!("{:x}", result))
+                        } else {
+                            None
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
+            Err(_) => None,
+        }
+    }
+
+    // 提取文件扩展名
+    fn extract_extension(path: &Path) -> Option<String> {
+        path.extension().and_then(|ext| ext.to_str()).map(|s| s.to_lowercase())
+    }
+
+    // 检查文件是否隐藏
+    fn is_hidden_file(path: &Path) -> bool {
+        // 先检查文件/文件夹名本身是否以.开头
+        let is_name_hidden = path.file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.starts_with("."))
+            .unwrap_or(false);
+            
+        if is_name_hidden {
+            return true;
+        }
+        
+        // 检查路径中是否有任何部分是隐藏文件夹（以.开头）
+        if let Some(path_str) = path.to_str() {
+            // 分割路径并检查每个部分
+            for part in path_str.split('/') {
+                if !part.is_empty() && part.starts_with(".") && part != "." && part != ".." {
+                    return true;
+                }
+            }
+        }
+        
+        false
+    }
+    
+    // 检查是否为macOS bundle文件夹
+    /// 静态方法：检查是否为macOS bundle文件夹（使用默认扩展名列表）
+    pub fn is_macos_bundle_folder(path: &Path) -> bool {
         // 首先处理可能为null的情况
         if path.as_os_str().is_empty() {
             return false;
         }
         
-        // 获取最新的bundle扩展名列表
-        let bundle_extensions = self.ensure_bundle_cache_valid().await;
+        // 默认bundle扩展名列表（用于静态调用）
+        let default_bundle_extensions = [
+            ".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", 
+            ".imovielibrary", ".tvlibrary", ".theater"
+        ];
         
+        // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
+        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+            let lowercase_name = file_name.to_lowercase();
+            
+            // 检查文件名是否匹配bundle扩展名
+            if default_bundle_extensions.iter().any(|ext| lowercase_name.ends_with(ext)) {
+                return true;
+            }
+        }
+        
+        // 添加实例方法，使用配置中的扩展名列表
+        Self::is_macos_bundle_folder_with_extensions(path, &default_bundle_extensions)
+    }
+    
+    /// 实例方法：检查是否为macOS bundle文件夹（使用配置中的扩展名列表）
+    pub fn check_if_macos_bundle(&self, path: &Path) -> bool {
+        // 首先处理可能为null的情况
+        if path.as_os_str().is_empty() {
+            return false;
+        }
+        
+        // 从配置中获取bundle扩展名
+        let bundle_extensions = self.get_bundle_extensions();
+        
+        // 创建引用切片
+        let bundle_extension_refs: Vec<&str> = bundle_extensions.iter()
+            .map(AsRef::as_ref)
+            .collect();
+        
+        // 使用共享的检查逻辑
+        Self::is_macos_bundle_folder_with_extensions(path, &bundle_extension_refs)
+    }
+    
+    /// 辅助方法：使用指定扩展名列表检查是否为macOS bundle
+    fn is_macos_bundle_folder_with_extensions(path: &Path, bundle_extensions: &[&str]) -> bool {
         // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
             let lowercase_name = file_name.to_lowercase();
@@ -693,122 +795,6 @@ impl FileMonitor {
         false
     }
 
-    // 计算简单文件哈希（使用文件前4KB内容）
-    async fn calculate_simple_hash(path: &Path, max_bytes: usize) -> Option<String> {
-        match fs::File::open(path).await {
-            Ok(mut file) => {
-                use tokio::io::AsyncReadExt;
-                let mut buffer = vec![0u8; max_bytes.min(4096)]; // 最多读4KB
-                match file.read(&mut buffer).await {
-                    Ok(n) => {
-                        buffer.truncate(n);
-                        if n > 0 {
-                            use sha2::{Digest, Sha256};
-                            let mut hasher = Sha256::new();
-                            hasher.update(&buffer);
-                            let result = hasher.finalize();
-                            Some(format!("{:x}", result))
-                        } else {
-                            None
-                        }
-                    }
-                    Err(_) => None,
-                }
-            }
-            Err(_) => None,
-        }
-    }
-
-    // 提取文件扩展名
-    fn extract_extension(path: &Path) -> Option<String> {
-        path.extension().and_then(|ext| ext.to_str()).map(|s| s.to_lowercase())
-    }
-
-    // 检查文件是否隐藏
-    fn is_hidden_file(path: &Path) -> bool {
-        // 先检查文件/目录名本身是否以.开头
-        let is_name_hidden = path.file_name()
-            .and_then(|name| name.to_str())
-            .map(|name| name.starts_with("."))
-            .unwrap_or(false);
-            
-        if is_name_hidden {
-            return true;
-        }
-        
-        // 检查路径中是否有任何部分是隐藏目录（以.开头）
-        if let Some(path_str) = path.to_str() {
-            // 分割路径并检查每个部分
-            for part in path_str.split('/') {
-                if !part.is_empty() && part.starts_with(".") && part != "." && part != ".." {
-                    return true;
-                }
-            }
-        }
-        
-        false
-    }
-    
-    // 检查是否为macOS bundle文件夹
-    pub fn is_macos_bundle_folder(path: &Path) -> bool {
-        // 首先处理可能为null的情况
-        if path.as_os_str().is_empty() {
-            return false;
-        }
-        
-        // 设置常用的bundle扩展名，仅作为备选检测方式
-        // 注意：主要检测逻辑应该基于从API获取的规则
-        // 这里保留最基本的几种作为异常情况下的安全网
-        let fallback_bundle_extensions = [
-            ".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", 
-            ".imovielibrary", ".tvlibrary", ".theater"
-        ];
-        
-        // 1. 检查文件/目录名是否以已知的bundle扩展名结尾
-        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            let lowercase_name = file_name.to_lowercase();
-            
-            // 检查文件名是否匹配bundle扩展名
-            if fallback_bundle_extensions.iter().any(|ext| lowercase_name.ends_with(ext)) {
-                return true;
-            }
-        }
-        
-        // 2. 检查路径中的任何部分是否包含bundle
-        if let Some(path_str) = path.to_str() {
-            let path_components: Vec<&str> = path_str.split('/').collect();
-            
-            for component in path_components {
-                let lowercase_component = component.to_lowercase();
-                if fallback_bundle_extensions.iter().any(|ext| {
-                    // 检查组件是否以bundle扩展名结尾
-                    lowercase_component.ends_with(ext)
-                }) {
-                    return true;
-                }
-            }
-        }
-        
-        // 3. 如果是目录，检查是否有典型的macOS bundle目录结构
-        if path.is_dir() && cfg!(target_os = "macos") {
-            // 检查常见的bundle内部目录结构
-            let contents_dir = path.join("Contents");
-            if contents_dir.exists() && contents_dir.is_dir() {
-                let info_plist = contents_dir.join("Info.plist");
-                let macos_dir = contents_dir.join("MacOS");
-                let resources_dir = contents_dir.join("Resources");
-                
-                // 如果存在Info.plist或典型的bundle子目录，很可能是一个bundle
-                if info_plist.exists() || macos_dir.exists() || resources_dir.exists() {
-                    return true;
-                }
-            }
-        }
-        
-        // 如果以上检查都未通过，则不是bundle
-        false
-    }
-
     // 检查文件是否在macOS bundle内部
     pub fn is_inside_macos_bundle(path: &Path) -> bool {
         if let Some(path_str) = path.to_str() {
@@ -824,52 +810,35 @@ impl FileMonitor {
         false
     }
 
-    // 检查路径是否在黑名单内
+    // 检查路径是否在黑名单内 (New implementation using Trie)
     fn is_in_blacklist(&self, path: &Path) -> bool {
-        // 现在从blacklist_dirs而不是monitored_dirs中获取黑名单文件夹
-        let dirs = self.blacklist_dirs.lock().unwrap();
+        // Ensure path is absolute for consistent Trie checking.
+        // Paths from notify events are typically absolute.
+        // If path might be relative, it needs normalization first.
+        // For now, assume `path` is absolute as it comes from file system events.
+        let path_to_check = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            // Attempt to make it absolute based on current dir, though this might not be ideal
+            // if the context of `path` is different.
+            // Best if `path` is always absolute.
+            // For file system events, they are.
+            // If called from elsewhere, ensure it's absolute.
+            // std::env::current_dir().unwrap_or_default().join(path)
+            // This part is tricky if path is not guaranteed absolute.
+            // Let's assume path is absolute for now.
+            path.to_path_buf()
+        };
         
-        // 获取当前路径的规范化字符串表示
-        let path_str = path.to_string_lossy().to_string();
-        
-        // 检查路径是否在任何黑名单文件夹内
-        for dir in dirs.iter() {
-            // 获取规范化的黑名单路径字符串用于比较
-            let mut blacklist_path = dir.path.trim_end_matches('/').to_string();
-            
-            // 确保路径以斜杠结尾便于目录比较
-            if !blacklist_path.ends_with('/') {
-                blacklist_path.push('/');
-            }
-            
-            // println!("[BLACKLIST_COMPARE] 比较 - 路径: '{}', 黑名单: '{}'", path_str, blacklist_path);
-            
-            // 方法1：检查路径是否以黑名单路径开头（目录匹配）
-            if path_str.starts_with(&blacklist_path) {
-                // println!("[BLACKLIST] 路径 {:?} 在黑名单目录内: {}", path, dir.path);
-                return true;
-            }
-            
-            // 方法2：检查路径是否与黑名单路径完全匹配（文件匹配）
-            let trimmed_blacklist = dir.path.trim_end_matches('/');
-            if path_str == trimmed_blacklist {
-                // println!("[BLACKLIST] 路径 {:?} 与黑名单路径完全匹配: {}", path, dir.path);
-                return true;
-            }
-            
-            // 方法3：规范化路径后进行比较
-            if let Ok(canonical_path) = std::fs::canonicalize(path) {
-                let canonical_str = canonical_path.to_string_lossy().to_string();
-                // println!("[BLACKLIST_CANONICAL] 规范化路径比较 - 路径: '{}', 黑名单: '{}'", canonical_str, blacklist_path);
-                
-                if canonical_str.starts_with(&blacklist_path) || canonical_str == trimmed_blacklist {
-                    // println!("[BLACKLIST] 规范化路径 {:?} 在黑名单内: {}", canonical_str, dir.path);
-                    return true;
-                }
-            }
-        }
-        // println!("[BLACKLIST_RESULT] 路径 {} 不在任何黑名单中", path_str);
-        false
+        let trie_guard = self.blacklist_trie.lock().unwrap();
+        let result = trie_guard.is_path_or_ancestor_blacklisted(&path_to_check);
+
+        // if result {
+        //     println!("[BLACKLIST_TRIE_CHECK] Path {:?} IS IN BLACKLIST", path_to_check);
+        // } else {
+        //     println!("[BLACKLIST_TRIE_CHECK] Path {:?} is NOT in blacklist", path_to_check);
+        // }
+        result
     }
 
     // 初步应用规则进行分类
@@ -1274,7 +1243,7 @@ impl FileMonitor {
         }
         
         // 检查macOS bundle文件夹 - 这是高优先级过滤，应该在黑名单检查前执行
-        if Self::is_macos_bundle_folder(&path) {
+        if self.check_if_macos_bundle(&path) {
             println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by extension). Ignoring.", path);
             // 增加统计计数器，记录过滤掉的bundle数量
             if let Ok(mut stats) = self.stats.lock() {
@@ -1567,11 +1536,8 @@ impl FileMonitor {
         
         for dir in directories {
             // 使用与 start_monitoring 相同的逻辑来决定是否扫描目录
-            let should_scan = if full_disk_access {
-                !dir.is_blacklist
-            } else {
-                dir.auth_status == DirectoryAuthStatus::Authorized && !dir.is_blacklist
-            };
+            // 所有非黑名单目录都扫描
+            let should_scan = !dir.is_blacklist;
             
             if !should_scan {
                 println!("[INITIAL_SCAN] 跳过目录: {}", dir.path);

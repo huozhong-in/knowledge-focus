@@ -8,6 +8,7 @@ use crate::file_monitor::FileMonitor;
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 // 定义简化的文件事件类型
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,6 +50,7 @@ impl DebouncedFileMonitor {
         dir_path_str: String, // Owned String
         debounce_time: Duration,
         tx_to_central_handler: Sender<(PathBuf, notify::EventKind)>,
+        stop_tx_sender: Option<std_mpsc::Sender<std_mpsc::Sender<()>>>, // 可选的停止通道发送器
     ) -> std::result::Result<(), String> {
         println!("[防抖监控] Setting up watch for directory: {}", dir_path_str);
 
@@ -63,6 +65,29 @@ impl DebouncedFileMonitor {
         
         // 创建一个同步通道用于保持通信
         let (init_tx, init_rx) = std_mpsc::channel();
+         // 创建停止通道
+        let (stop_tx, stop_rx) = std_mpsc::channel::<()>();
+        
+        // 创建一个共享的停止标志
+        let should_stop = Arc::new(AtomicBool::new(false));
+        let should_stop_clone = should_stop.clone();
+        
+        // 在单独的线程中监听停止信号
+        std::thread::spawn(move || {
+            if let Ok(_) = stop_rx.recv() {
+                should_stop_clone.store(true, Ordering::SeqCst);
+            }
+        });
+
+        // 如果提供了停止通道发送器，则发送停止通道
+        if let Some(tx_sender) = stop_tx_sender {
+            if let Err(e) = tx_sender.send(stop_tx.clone()) {
+                println!("[防抖监控] 无法注册停止通道: {:?}", e);
+                // 继续执行，但停止机制将无法工作
+            } else {
+                println!("[防抖监控] 已注册停止通道");
+            }
+        }
         
         // 在单独的线程中创建和运行 watcher
         // 这样避免了异步上下文的复杂性
@@ -153,12 +178,12 @@ impl DebouncedFileMonitor {
             
             // 保持 watcher 活跃
             println!("[文件监控-线程] 开始保持 watcher 活跃");
-            let mut tick_count = 0;
+            // let mut tick_count = 0;
             
             loop {
                 // 让线程休眠10秒
                 std::thread::sleep(Duration::from_secs(10));
-                tick_count += 1;
+                // tick_count += 1;
                 // println!("[文件监控-心跳] #{} Watcher for '{}' is still alive", 
                 //         tick_count, &dir_path_for_watcher);
                 
@@ -174,7 +199,11 @@ impl DebouncedFileMonitor {
             let mut debounce_buffer: HashMap<PathBuf, notify::EventKind> = HashMap::new();
             let mut interval = tokio::time::interval(debounce_time);
             
-            loop {
+            // 用于接收停止信号的变量
+            let mut continue_running = true;
+            let dir_path_clone = dir_path_str.clone();
+            
+            while continue_running {
                 tokio::select! {
                     // 当有新事件时加入缓冲区
                     Some((path, kind)) = debounce_rx.recv() => {
@@ -202,8 +231,28 @@ impl DebouncedFileMonitor {
                             }
                         }
                     }
+                    
+                    // 检查停止信号
+                    _ = tokio::time::sleep(Duration::from_millis(10)) => {
+                        // 检查共享的停止标志
+                        if should_stop.load(Ordering::SeqCst) {
+                            println!("[防抖处理] 收到停止信号，退出监控线程: {}", dir_path_clone);
+                            continue_running = false;
+                            // 处理剩余的缓冲区事件
+                            if !debounce_buffer.is_empty() {
+                                println!("[防抖处理] 处理退出前的 {} 个缓冲事件", debounce_buffer.len());
+                                for (path, kind) in std::mem::take(&mut debounce_buffer) {
+                                    if let Err(e) = tx_for_debounce.send((path.clone(), kind.clone())).await {
+                                        eprintln!("[防抖处理] 退出前发送失败: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
+            
+            println!("[防抖处理] 线程已完全退出: {}", dir_path_clone);
         });
         
         // 等待初始化完成
@@ -229,6 +278,9 @@ impl DebouncedFileMonitor {
         directories: Vec<String>, 
         debounce_time: Duration
     ) -> std::result::Result<(), String> {
+        // 先清理所有现有通道和状态
+        let _ = self.stop_monitoring().await;
+        
         // 创建事件处理通道
         let (event_tx_for_central_handler, mut event_rx_for_central_handler) = mpsc::channel::<(PathBuf, EventKind)>(100);
         self.event_tx = Some(event_tx_for_central_handler.clone()); // Store the sender for dynamic additions
@@ -236,12 +288,16 @@ impl DebouncedFileMonitor {
         // This Arc<FileMonitor> will be used by the central "防抖处理器" task
         let file_monitor_for_processing = Arc::clone(&self.file_monitor);
         
+        // 为每个目录创建停止通道接收器
+        let (stop_tx_sender, stop_tx_receiver) = std_mpsc::channel();
+        
         // 启动各个目录的监控
         for dir_path_str in directories {
             if let Err(e) = Self::setup_single_debounced_watch(
                 dir_path_str.clone(), // Pass owned string
                 debounce_time,
                 event_tx_for_central_handler.clone(),
+                Some(stop_tx_sender.clone()), // 传递停止通道发送器
             ).await {
                 eprintln!("[防抖监控] Failed to setup watch for directory {}: {}", dir_path_str, e);
                 // Optionally, decide if one failure should stop all, or just log and continue
@@ -249,7 +305,7 @@ impl DebouncedFileMonitor {
         }
         
         // 启动事件处理器
-        tokio::spawn(async move {
+        let _processor_handle = tokio::spawn(async move {
             let fm_processor = file_monitor_for_processing; // Use the cloned Arc<FileMonitor>
             
             println!("[防抖处理器] 开始处理事件流");
@@ -313,6 +369,20 @@ impl DebouncedFileMonitor {
             println!("[防抖处理器] 事件处理通道已关闭，退出");
         });
         
+        // 收集所有目录的停止通道
+        tokio::spawn(async move {
+            let mut watch_stop_channels = HashMap::new();
+            
+            // 接收所有注册的停止通道
+            while let Ok(stop_tx) = stop_tx_receiver.recv() {
+                let dir_id = format!("watch_{}", watch_stop_channels.len() + 1);
+                println!("[防抖监控] 收到停止通道 #{}", dir_id);
+                watch_stop_channels.insert(dir_id, stop_tx);
+            }
+            
+            println!("[防抖监控] 停止通道收集器已退出，共收集 {} 个停止通道", watch_stop_channels.len());
+        });
+        
         Ok(())
     }
 
@@ -322,13 +392,31 @@ impl DebouncedFileMonitor {
             Some(tx) => tx.clone(),
             None => return Err("DebouncedFileMonitor's event_tx is not initialized. Call start_monitoring first.".to_string()),
         };
-
-        // Call the static setup function
+        
+        // 创建一个通道来接收新目录的停止通道
+        let (stop_tx_sender, stop_tx_receiver) = std_mpsc::channel();
+        
+        // 调用设置函数并传递停止通道发送器
         Self::setup_single_debounced_watch(
-            dir_path, // dir_path is already String
+            dir_path.clone(), // 路径字符串
             debounce_time,
             tx_to_central_handler,
+            Some(stop_tx_sender), // 传递停止通道发送器
         ).await?;
+        
+        // 接收返回的停止通道
+        match stop_tx_receiver.recv() {
+            Ok(stop_tx) => {
+                // 将停止通道添加到表中
+                let mut watch_stop_channels = self.watch_stop_channels.lock().await;
+                watch_stop_channels.insert(dir_path.clone(), stop_tx);
+                println!("[防抖监控] 已注册 '{}' 的停止通道", dir_path);
+            }
+            Err(e) => {
+                println!("[防抖监控] 警告：无法获取 '{}' 的停止通道: {:?}", dir_path, e);
+                // 继续执行，但无法后续停止此监控
+            }
+        }
 
         Ok(())
     }
@@ -353,5 +441,92 @@ impl DebouncedFileMonitor {
         println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
         println!("▶▶▶ 已停止监控目录: {} ▶▶▶", path);
         println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
+    }
+    
+    /// 完全停止所有目录的监控
+    /// 
+    /// 这个方法会:
+    /// 1. 停止所有监控线程
+    /// 2. 清理所有资源
+    /// 3. 释放所有通道
+    /// 
+    /// 调用此方法后，必须通过 `start_monitoring` 重新启动监控
+    pub async fn stop_monitoring(&mut self) -> std::result::Result<(), String> {
+        // 记录操作开始
+        println!("[防抖监控] 开始停止所有监控线程...");
+        
+        // 1. 尝试通过停止通道发送停止信号
+        let watch_channels = {
+            let mut channels = self.watch_stop_channels.lock().await;
+            std::mem::take(&mut *channels)
+        };
+        
+        let mut stop_errors = Vec::new();
+        
+        // 发送停止信号给每个监控线程
+        for (path, stop_tx) in watch_channels.iter() {
+            if let Err(e) = stop_tx.send(()) {
+                let error_msg = format!("[防抖监控] 无法发送停止信号到 '{}' 的监控线程: {:?}", path, e);
+                println!("{}", error_msg);
+                stop_errors.push(error_msg);
+            } else {
+                println!("[防抖监控] 已发送停止信号到 '{}' 的监控线程", path);
+            }
+        }
+        
+        // 2. 清除事件发送通道
+        self.event_tx = None;
+        
+        // 3. 清空防抖缓冲区
+        {
+            let mut buffer = self.debounce_buffer.lock().await;
+            buffer.clear();
+        }
+        
+        // 返回结果
+        if stop_errors.is_empty() {
+            println!("[防抖监控] ✅ 成功停止所有监控线程");
+            Ok(())
+        } else {
+            let msg = format!("[防抖监控] ⚠️ 停止监控时发生 {} 个错误", stop_errors.len());
+            println!("{}", msg);
+            Err(msg)
+        }
+    }
+    
+    /// 平滑重启监控
+    /// 
+    /// 该方法会:
+    /// 1. 停止现有所有监控
+    /// 2. 获取最新的监控目录列表
+    /// 3. 重新启动监控所有目录
+    /// 
+    /// 调用此方法可以在配置更改后无缝切换监控
+    pub async fn restart_monitoring(&mut self, debounce_time: Duration) -> std::result::Result<(), String> {
+        println!("[防抖监控] 开始平滑重启监控...");
+        
+        // 1. 停止现有监控
+        if let Err(e) = self.stop_monitoring().await {
+            println!("[防抖监控] 警告：停止监控时发生错误: {}", e);
+            // 继续执行，尝试重新启动
+        }
+        
+        // 2. 获取最新的监控目录
+        let directories_to_monitor = {
+            let monitor = &self.file_monitor;
+            monitor.get_monitored_dirs()
+        };
+        
+        // 3. 重新启动监控
+        if directories_to_monitor.is_empty() {
+            println!("[防抖监控] 没有发现需要监控的目录，监控器处于空闲状态");
+            return Ok(());
+        }
+        
+        println!("[防抖监控] 重新启动监控 {} 个目录", directories_to_monitor.len());
+        self.start_monitoring(directories_to_monitor, debounce_time).await?;
+        
+        println!("[防抖监控] ✅ 监控器已平滑重启");
+        Ok(())
     }
 }

@@ -1,3 +1,9 @@
+mod commands;
+mod file_monitor;
+mod file_monitor_debounced; // 防抖动文件监控模块
+mod file_scanner; // 文件扫描模块
+mod setup_file_monitor;
+mod api_startup; // API启动模块
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
@@ -7,16 +13,9 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WindowEvent,
 };
-// 导入自定义命令
-mod commands;
-mod file_monitor;
-mod file_monitor_debounced; // 防抖动文件监控模块
-mod file_scanner; // 文件扫描模块
-mod setup_file_monitor;
-mod api_startup; // API启动模块
-mod permissions; // 权限管理模块
-use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
+use tokio::time::{sleep, Duration}; // 添加sleep和Duration导入
 use file_monitor::FileMonitor;
+use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
 use reqwest; // 导入reqwest用于API健康检查
 
 // 存储API进程的状态
@@ -128,7 +127,7 @@ impl AppState {
     }
     
     /// 处理所有待处理的配置变更（由Rust端调用Python API）
-    fn process_pending_config_changes(&self) {
+    pub fn process_pending_config_changes(&self) {
         let changes = {
             let mut pending_changes = self.pending_config_changes.lock().unwrap();
             let changes = pending_changes.clone();
@@ -170,6 +169,10 @@ impl AppState {
             }
         };
         
+        // 记录执行失败的变更，以便后续处理
+        let mut failed_changes = Vec::new();
+        
+        // 执行所有变更
         for change in changes {
             match Self::execute_single_config_change(&change, &monitor).await {
                 Ok(_) => {
@@ -177,18 +180,48 @@ impl AppState {
                 }
                 Err(e) => {
                     eprintln!("[CONFIG_QUEUE] 执行配置变更失败: {:?}, 错误: {}", change, e);
+                    failed_changes.push((change, e));
+                }
+            }
+            
+            // 每个变更之间短暂暂停，避免请求过于密集
+            sleep(Duration::from_millis(200)).await;
+        }
+        
+        // 执行完所有变更后，刷新监控配置（增加重试逻辑）
+        let mut refresh_success = false;
+        let max_retries = 3;
+        
+        for retry in 1..=max_retries {
+            // 保证在刷新配置前有足够的暂停时间让API服务器恢复
+            sleep(Duration::from_secs(1)).await;
+            
+            println!("[CONFIG_QUEUE] 尝试刷新配置 ({}/{})", retry, max_retries);
+            match monitor.refresh_all_configurations().await {
+                Ok(_) => {
+                    println!("[CONFIG_QUEUE] 所有配置变更执行完成，监控配置已刷新");
+                    refresh_success = true;
+                    break;
+                }
+                Err(e) => {
+                    eprintln!("[CONFIG_QUEUE] 刷新监控配置失败 ({}/{}): {}", retry, max_retries, e);
+                    if retry < max_retries {
+                        println!("[CONFIG_QUEUE] 将在 {} 秒后重试刷新配置", retry);
+                        sleep(Duration::from_secs(retry)).await;
+                    }
                 }
             }
         }
         
-        // 执行完所有变更后，刷新监控配置
-        match monitor.refresh_all_configurations().await {
-            Ok(_) => {
-                println!("[CONFIG_QUEUE] 所有配置变更执行完成，监控配置已刷新");
-            }
-            Err(e) => {
-                eprintln!("[CONFIG_QUEUE] 刷新监控配置失败: {}", e);
-            }
+        if !refresh_success {
+            eprintln!("[CONFIG_QUEUE] 严重警告: 配置刷新失败，系统可能处于不一致状态！");
+            // 这里可以添加额外的恢复步骤或通知用户
+        }
+        
+        // 报告失败的变更
+        if !failed_changes.is_empty() {
+            eprintln!("[CONFIG_QUEUE] 注意: {} 个配置变更执行失败，可能需要用户手动操作", failed_changes.len());
+            // 这里可以实现更多的失败处理逻辑，例如通知用户
         }
     }
     
@@ -201,7 +234,32 @@ impl AppState {
             ConfigChangeRequest::DeleteFolder { folder_path, is_blacklist, .. } => {
                 // 如果删除的是黑名单文件夹，清理相关粗筛数据
                 if *is_blacklist {
-                    Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
+                    // 添加重试逻辑确保清理操作完成
+                    let max_retries = 3;
+                    let mut retry_count = 0;
+                    let mut last_error = String::new();
+                    
+                    while retry_count < max_retries {
+                        match Self::cleanup_screening_data_for_path(folder_path, monitor).await {
+                            Ok(_) => {
+                                println!("[CONFIG_QUEUE] 成功清理路径 {} 的粗筛数据", folder_path);
+                                break;
+                            },
+                            Err(e) => {
+                                last_error = e.to_string();
+                                retry_count += 1;
+                                if retry_count < max_retries {
+                                    println!("[CONFIG_QUEUE] 清理粗筛数据失败，将重试 ({}/{}): {}", 
+                                             retry_count, max_retries, last_error);
+                                    sleep(Duration::from_millis(500 * retry_count)).await;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if retry_count == max_retries {
+                        return Err(format!("清理粗筛数据失败: {}", last_error));
+                    }
                 }
                 
                 // 对于文件夹删除，主要工作已在前端完成，这里主要是确保监控状态同步
@@ -210,8 +268,33 @@ impl AppState {
             }
             
             ConfigChangeRequest::AddBlacklist { folder_path, .. } => {
-                // 清理新增黑名单路径的粗筛数据
-                Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
+                // 清理新增黑名单路径的粗筛数据，同样添加重试机制
+                let max_retries = 3;
+                let mut retry_count = 0;
+                let mut last_error = String::new();
+                
+                while retry_count < max_retries {
+                    match Self::cleanup_screening_data_for_path(folder_path, monitor).await {
+                        Ok(_) => {
+                            println!("[CONFIG_QUEUE] 成功清理黑名单路径 {} 的粗筛数据", folder_path);
+                            break;
+                        },
+                        Err(e) => {
+                            last_error = e.to_string();
+                            retry_count += 1;
+                            if retry_count < max_retries {
+                                println!("[CONFIG_QUEUE] 清理黑名单粗筛数据失败，将重试 ({}/{}): {}", 
+                                         retry_count, max_retries, last_error);
+                                sleep(Duration::from_millis(500 * retry_count)).await;
+                            }
+                        }
+                    }
+                }
+                
+                if retry_count == max_retries {
+                    return Err(format!("清理黑名单粗筛数据失败: {}", last_error));
+                }
+                
                 println!("[CONFIG_QUEUE] 黑名单文件夹添加变更处理完成: {}", folder_path);
                 Ok(())
             }
@@ -248,22 +331,56 @@ impl AppState {
         folder_path: &str,
         monitor: &FileMonitor,
     ) -> Result<(), String> {
-        let api_url = format!("http://{}:{}/clear-screening-data", monitor.get_api_host(), monitor.get_api_port());
+        let api_url = format!("http://{}:{}/screening/clean-by-path", monitor.get_api_host(), monitor.get_api_port());
         
-        let client = reqwest::Client::new();
+        println!("[CLEANUP] 开始清理路径 {} 的粗筛数据", folder_path);
+        
+        // 创建一个更长超时设置的客户端
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(30))  // 设置30秒超时
+            .build()
+            .map_err(|e| format!("创建HTTP客户端失败: {}", e))?;
+            
         let response = client
             .post(&api_url)
-            .json(&serde_json::json!({ "folder_path": folder_path }))
+            .json(&serde_json::json!({ 
+                "path": folder_path,
+                // 添加额外的请求元数据，帮助调试
+                "request_time": chrono::Utc::now().to_rfc3339(),
+                "client_id": "rust_file_monitor"
+            }))
             .send()
             .await
             .map_err(|e| format!("清理粗筛数据请求失败: {}", e))?;
         
-        if response.status().is_success() {
-            println!("[CONFIG_QUEUE] 成功清理路径 {} 的粗筛数据", folder_path);
+        let status = response.status();
+        if status.is_success() {
+            // 获取响应体并解析
+            let result = response.json::<serde_json::Value>().await
+                .map_err(|e| format!("解析清理响应失败: {}", e))?;
+            
+            // 从响应中提取删除的记录数
+            let deleted_count = result.get("deleted")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+                
+            println!("[CLEANUP] 成功清理路径 {} 的粗筛数据，删除 {} 条记录", 
+                folder_path, deleted_count);
+                
+            // 额外的验证: 如果应该有记录被删除但返回0，可能要警告
+            if folder_path.contains("Pictures") && deleted_count == 0 {
+                println!("[CLEANUP] 警告: 清理图片目录相关的粗筛数据，但未删除任何记录");
+            }
+            
             Ok(())
         } else {
-            let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
-            Err(format!("清理粗筛数据失败: {}", error_text))
+            // 处理错误响应
+            let error_text = response.text().await
+                .unwrap_or_else(|_| "无法读取错误响应".to_string());
+                
+            let error_msg = format!("清理粗筛数据失败 (状态码: {}): {}", status, error_text);
+            eprintln!("[CLEANUP] {}", error_msg);
+            Err(error_msg)
         }
     }
 }
@@ -579,7 +696,6 @@ pub fn run() {
             get_api_status,
             commands::resolve_directory_from_path,
             commands::get_file_monitor_stats,
-            commands::test_bundle_detection,
             commands::scan_directory, // 添加目录后扫描目录
             commands::stop_monitoring_directory, // 停止监控指定目录
             // 文件夹层级管理命令
@@ -590,9 +706,14 @@ pub fn run() {
             commands::refresh_monitoring_config,
             commands::get_bundle_extensions,
             commands::get_configuration_summary,
-            commands::test_bundle_detection_dynamic,
             commands::read_directory, // 读取目录内容
-            // 配置变更队列管理命令
+            // 配置变更队列管理命令（新版：使用queue_前缀）
+            commands::queue_add_blacklist_folder,
+            commands::queue_delete_folder,
+            commands::queue_toggle_folder_status, 
+            commands::queue_add_whitelist_folder,
+            commands::queue_get_status,
+            // 配置变更队列管理命令（兼容旧版）
             commands::add_blacklist_folder_queued,
             commands::remove_folder_queued,
             commands::toggle_folder_status_queued,
@@ -600,9 +721,6 @@ pub fn run() {
             commands::get_config_queue_status,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
-            // 权限管理命令
-            permissions::check_full_disk_access_permission,
-            permissions::request_full_disk_access_permission,
             // 后端扫描启动命令
             file_scanner::start_backend_scanning,
         ])

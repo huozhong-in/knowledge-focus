@@ -16,9 +16,7 @@ import {
   PlusCircle, 
   Eye, 
   EyeOff, 
-  AlertTriangle, 
-  Check, 
-  X, 
+  X,
   Shield, 
   Settings } from "lucide-react";
 // UI组件
@@ -60,7 +58,6 @@ interface Directory {
   id: number;
   path: string;
   alias: string | null;
-  auth_status: string; // "pending", "authorized", "unauthorized"
   is_blacklist: boolean;
   parent_id?: number | null; // 支持层级关系
   is_common_folder?: boolean; // 是否为常见文件夹
@@ -73,7 +70,6 @@ interface FolderHierarchy {
   id: number;
   path: string;
   alias: string | null;
-  auth_status: string;
   is_blacklist: boolean;
   is_common_folder: boolean;
   blacklist_children: Directory[]; // 后端返回的是blacklist_children字段
@@ -171,7 +167,18 @@ function HomeAuthorization() {
         const apiResponse = await response.json();
         if (apiResponse.status === "success" && apiResponse.data) {
           setFolderHierarchy(apiResponse.data);
-          info(`已加载文件夹层级结构: ${apiResponse.data.length} 个根文件夹`);
+          // 计算黑名单常用文件夹数量
+          const blacklistCommonFolders = apiResponse.data.filter((f: FolderHierarchy) => f.is_blacklist && f.is_common_folder).length;
+          info(`已加载文件夹层级结构: ${apiResponse.data.length} 个根文件夹，其中 ${blacklistCommonFolders} 个是黑名单常用文件夹`);
+          
+          // 调试日志，输出所有一级文件夹的信息
+          console.log("层级结构：", apiResponse.data.map((f: FolderHierarchy) => ({
+            id: f.id,
+            path: f.path,
+            alias: f.alias,
+            is_blacklist: f.is_blacklist,
+            is_common_folder: f.is_common_folder
+          })));
         }
       } else {
         console.error("加载文件夹层级结构失败: HTTP", response.status);
@@ -383,69 +390,37 @@ function HomeAuthorization() {
       const folderPath = folderInfo?.path || "";
       const isBlacklist = folderInfo?.is_blacklist || false;
       
-      // 使用队列版本的删除命令
-      try {
-        const result = await invoke("remove_folder_queued", {
-          folder_id: id,
-          folder_path: folderPath,
-          is_blacklist: isBlacklist
-        });
-        
-        console.log("删除文件夹结果:", result);
+      // 第一步：使用队列版本的删除命令，这会将清理粗筛数据的任务加入队列
+      const queueResult = await invoke("remove_folder_queued", {
+        folder_id: id,
+        folder_path: folderPath,
+        is_blacklist: isBlacklist
+      });
+      
+      console.log("删除文件夹队列结果:", queueResult);
+      
+      // 第二步：从数据库中删除文件夹记录
+      const response = await fetch(`http://127.0.0.1:60315/directories/${id}`, {
+        method: "DELETE"
+      });
+      
+      if (response.ok) {
+        // 清理粗筛数据的任务已加入Rust队列，不需要前端处理
         toast.success("文件夹删除成功");
         
         // 重新加载数据
         await loadConfigSummary();
         await loadFolderHierarchy();
         
-      } catch (invokeError) {
-        console.warn("Tauri删除命令失败，使用传统API:", invokeError);
-        
-        // 回退到传统的API调用
-        const response = await fetch(`http://127.0.0.1:60315/directories/${id}`, {
-          method: "DELETE"
-        });
-
-        if (response.ok) {
-          toast.success("文件夹删除成功");
-          
-          // 如果删除的是黑名单文件夹，需要确保清理相关粗筛数据
-          if (isBlacklist && folderPath) {
-            try {
-              const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  path: folderPath,
-                })
-              });
-              
-              if (cleanResponse.ok) {
-                const cleanResult = await cleanResponse.json();
-                if (cleanResult.deleted > 0) {
-                  console.log(`删除黑名单后清理粗筛数据: ${cleanResult.deleted}条`);
-                }
-              }
-            } catch (cleanError) {
-              console.error("清理粗筛数据失败:", cleanError);
-            }
-          }
-          
-          // 重新加载数据
-          await loadConfigSummary();
-          await loadFolderHierarchy();
-          
-          // 刷新监控配置
-          try {
-            await invoke("refresh_monitoring_config");
-          } catch (configError) {
-            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
-            toast.info("配置已更新，建议重启应用以确保生效");
-          }
-        } else {
-          const errorData = await response.json();
-          toast.error(`删除失败: ${errorData.message || "未知错误"}`);
+        // 刷新监控配置
+        try {
+          await safeRefreshMonitoringConfig();
+        } catch (configError) {
+          console.warn("刷新监控配置失败:", configError);
         }
+      } else {
+        const errorData = await response.json();
+        toast.error(`删除失败: ${errorData.message || "未知错误"}`);
       }
     } catch (error) {
       console.error("删除文件夹失败:", error);
@@ -650,7 +625,7 @@ function HomeAuthorization() {
         await loadConfigSummary();
         await loadFolderHierarchy();
         
-        // 使用新的队列机制处理配置变更
+        // 使用队列机制处理配置变更，包括清理粗筛结果
         try {
           const queueResult = await invoke("add_blacklist_folder_queued", {
             parent_id: selectedParentId,
@@ -665,40 +640,19 @@ function HomeAuthorization() {
           } else if (queueResult.status === "queued") {
             toast.info("黑名单子文件夹已加入处理队列，将在初始扫描完成后自动处理");
           }
-        } catch (invokeError) {
-          console.warn("Rust队列处理失败，回退到传统方式:", invokeError);
-          
-          // 回退到原有方式：手动清理粗筛结果
-          try {
-            const cleanResponse = await fetch("http://127.0.0.1:60315/screening/clean-by-path", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                path: newBlacklistPath,
-              })
-            });
-            
-            if (cleanResponse.ok) {
-              const cleanResult = await cleanResponse.json();
-              console.log("手动清理粗筛结果:", cleanResult);
-              if (cleanResult.deleted > 0) {
-                toast.success(`已清理 ${cleanResult.deleted} 条符合黑名单路径的粗筛数据`);
-              }
-            }
-          } catch (cleanError) {
-            console.error("手动清理粗筛结果失败:", cleanError);
-          }
           
           // 尝试安全刷新监控配置
           try {
             const refreshed = await safeRefreshMonitoringConfig();
             if (!refreshed) {
-              toast.info("黑名单已添加并生效，但初始扫描未完成，配置将在扫描完成后自动刷新");
+              toast.info("黑名单已添加，但初始扫描未完成，配置将在扫描完成后自动刷新");
             }
           } catch (configError) {
-            console.warn("刷新监控配置失败，可能需要重启应用:", configError);
-            toast.info("黑名单已添加并生效，但Rust监控配置刷新失败，建议重启应用");
+            console.warn("刷新监控配置失败:", configError);
           }
+        } catch (invokeError) {
+          console.error("队列处理失败:", invokeError);
+          toast.error("黑名单子文件夹添加成功但队列处理失败，可能需要重启应用");
         }
       } else {
         const errorData = await response.json();
@@ -707,18 +661,6 @@ function HomeAuthorization() {
     } catch (error) {
       console.error("添加黑名单子文件夹失败:", error);
       toast.error("添加黑名单子文件夹失败");
-    }
-  };
-
-  // 获取文件夹授权状态图标
-  const getAuthStatusIcon = (status: string) => {
-    switch (status) {
-      case "authorized":
-        return <Check className="h-4 w-4 text-green-500" />;
-      case "unauthorized":
-        return <X className="h-4 w-4 text-red-500" />;
-      default:
-        return <AlertTriangle className="h-4 w-4 text-yellow-500" />;
     }
   };
 
@@ -746,28 +688,34 @@ function HomeAuthorization() {
         .find(dir => dir.id === folderId);
 
       const folderPath = folderInfo?.path || "";
+      const newIsBlacklist = !currentIsBlacklist;
       
-      const response = await fetch(`http://127.0.0.1:60315/directories/${folderId}`, {
+      // 第一步：使用队列版本的切换命令，这会将清理粗筛数据的任务加入队列
+      const queueResult = await invoke("toggle_folder_status_queued", {
+        folder_id: folderId,
+        folder_path: folderPath,
+        is_blacklist: newIsBlacklist
+      });
+      
+      console.log("切换文件夹状态队列结果:", queueResult);
+      
+      // 第二步：更新数据库中文件夹记录的状态
+      const response = await fetch(`http://127.0.0.1:60315/directories/${folderId}/blacklist`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          is_blacklist: !currentIsBlacklist
+          is_blacklist: newIsBlacklist
         })
       });
 
       if (response.ok) {
         const apiResponse = await response.json();
         if (apiResponse.status === "success") {
-          toast.success(`文件夹状态已更新为 ${!currentIsBlacklist ? '黑名单' : '白名单'}`);
+          toast.success(`文件夹状态已更新为 ${newIsBlacklist ? '黑名单' : '白名单'}`);
           
-          // 如果是转为黑名单，则清理已有的粗筛结果
-          if (!currentIsBlacklist) {
-            try {
-              await invoke('clear_raw_scan_results_for_path', { path: folderPath });
-              console.log(`已清理路径 "${folderPath}" 的粗筛结果`);
-            } catch (invokeError) {
-              console.error("清理粗筛结果失败:", invokeError);
-            }
+          // 清理粗筛数据的任务已加入Rust队列，不需要前端处理
+          if (newIsBlacklist) {
+            toast.info("相关粗筛数据清理任务已加入队列");
           }
           
           // 重新加载文件夹层级结构
@@ -822,12 +770,6 @@ function HomeAuthorization() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {getAuthStatusIcon(folder.auth_status)}
-                  <span className="text-sm">
-                    {folder.auth_status === "authorized" ? "已授权" :
-                     folder.auth_status === "unauthorized" ? "未授权" : "等待中"}
-                  </span>
-                  
                   {/* 添加黑名单子文件夹按钮 */}
                   <Button
                     size="sm"
@@ -902,7 +844,6 @@ function HomeAuthorization() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {getAuthStatusIcon(child.auth_status)}
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
                             <Button size="sm" variant="outline">
@@ -949,11 +890,6 @@ function HomeAuthorization() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {getAuthStatusIcon(folder.auth_status)}
-                <span className="text-sm">
-                  {folder.auth_status === "authorized" ? "已授权" :
-                   folder.auth_status === "unauthorized" ? "未授权" : "等待中"}
-                </span>
                 <Button
                   size="sm"
                   variant="outline"
@@ -979,7 +915,7 @@ function HomeAuthorization() {
           系统状态
         </CardTitle>
         <CardDescription>
-          系统监控和后台处理状态
+          文件夹监控和后台处理状态
         </CardDescription>
       </CardHeader>
       <CardContent>

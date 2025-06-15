@@ -17,8 +17,10 @@ import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 from sqlmodel import create_engine, Session, select
 import multiprocessing
+# 导入缓存相关模块
+from api_cache_optimization import TimedCache, cached
 from db_mgr import (
-    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, AuthStatus, 
+    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, 
     MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule,
     Task,
 )
@@ -29,6 +31,11 @@ from task_mgr import TaskManager
 
 # 设置日志记录
 logger = logging.getLogger(__name__)
+
+# 全局缓存实例
+config_cache = TimedCache[Dict[str, Any]](expiry_seconds=300)  # 5分钟过期
+folder_hierarchy_cache = TimedCache[List[Any]](expiry_seconds=180)  # 3分钟过期
+bundle_ext_cache = TimedCache[List[str]](expiry_seconds=600)   # 10分钟过期
 
 # print(f"调试模式: {sys.argv}")
 # print(f"Python 版本: {sys.version}")
@@ -113,7 +120,15 @@ async def lifespan(app: FastAPI):
                 # For SQLite, especially when accessed by FastAPI (which can use threads for async routes)
                 # and potentially by background tasks, 'check_same_thread': False is often needed.
                 # The set_sqlite_pragma event listener will configure WAL mode.
-                app.state.engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False})
+                app.state.engine = create_engine(
+                    sqlite_url, 
+                    echo=False, 
+                    connect_args={"check_same_thread": False, "timeout": 30},
+                    pool_size=5,       # 设置连接池大小
+                    max_overflow=10,   # 允许的最大溢出连接数
+                    pool_timeout=30,   # 获取连接的超时时间
+                    pool_recycle=1800  # 30分钟回收一次连接
+                )
                 logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
                 
                 # 初始化数据库结构
@@ -295,36 +310,31 @@ def init_db(session: Session = Depends(get_session)):
 
 # 获取所有配置信息的API端点
 @app.get("/config/all")
-def get_all_configuration(
+async def get_all_configuration(
     session: Session = Depends(get_session),
     myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
 ):
     """
     获取所有Rust端进行文件处理所需的配置信息。
     包括文件分类、粗筛规则、文件扩展名映射、项目识别规则以及监控的文件夹列表。
+    现在使用缓存机制提高性能，减少数据库查询。
     """
     try:
-        file_categories = session.exec(select(FileCategory)).all()
-        file_filter_rules = session.exec(select(FileFilterRule)).all()
-        file_extension_maps = session.exec(select(FileExtensionMap)).all()
-        project_recognition_rules = session.exec(select(ProjectRecognitionRule)).all()
-        monitored_folders = session.exec(select(MyFiles)).all()
-        
-        # 检查完全磁盘访问权限状态 
-        full_disk_access = False
-        if sys.platform == "darwin":  # macOS
-            access_status = myfiles_mgr.check_full_disk_access_status()
-            full_disk_access = access_status.get("has_full_disk_access", False)
-            logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
-        
-        return {
-            "file_categories": file_categories,
-            "file_filter_rules": file_filter_rules,
-            "file_extension_maps": file_extension_maps,
-            "project_recognition_rules": project_recognition_rules,
-            "monitored_folders": monitored_folders,
-            "full_disk_access": full_disk_access  # 添加此字段告知客户端完全磁盘访问权限状态
-        }
+        # 使用异步超时控制
+        try:
+            return await asyncio.wait_for(
+                _get_all_configuration_async(session, myfiles_mgr), 
+                timeout=5.0  # 设置5秒超时
+            )
+        except asyncio.TimeoutError:
+            logger.error("获取配置超时，返回缓存数据或空结果")
+            # 尝试从缓存获取
+            hit, cached_value = config_cache.get("config_all")
+            if hit:
+                logger.info("使用缓存数据响应超时请求")
+                return cached_value
+            # 没有缓存，返回空结果
+            raise Exception("获取配置超时")
     except Exception as e:
         logger.error(f"Error fetching all configuration: {e}", exc_info=True)
         # Return a default structure in case of error to prevent client-side parsing issues.
@@ -339,13 +349,59 @@ def get_all_configuration(
             "error_message": f"Failed to fetch configuration: {str(e)}"
         }
 
+async def _get_all_configuration_async(session: Session, myfiles_mgr: MyFilesManager):
+    """异步包装缓存函数，用于超时控制"""
+    return _get_all_configuration_cached(session, myfiles_mgr)
+
+@cached(config_cache, "config_all")
+def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager):
+    """缓存版本的配置获取函数"""
+    start_time = time.time()
+    file_categories = session.exec(select(FileCategory)).all()
+    file_filter_rules = session.exec(select(FileFilterRule)).all()
+    file_extension_maps = session.exec(select(FileExtensionMap)).all()
+    project_recognition_rules = session.exec(select(ProjectRecognitionRule)).all()
+    monitored_folders = session.exec(select(MyFiles)).all()
+    
+    # 检查完全磁盘访问权限状态 
+    full_disk_access = False
+    if sys.platform == "darwin":  # macOS
+        access_status = myfiles_mgr.check_full_disk_access_status()
+        full_disk_access = access_status.get("has_full_disk_access", False)
+        logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
+    
+    elapsed = time.time() - start_time
+    logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
+    
+    # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
+    bundle_extensions = myfiles_mgr.get_bundle_extensions_for_rust()
+    logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
+    
+    return {
+        "file_categories": file_categories,
+        "file_filter_rules": file_filter_rules,
+        "file_extension_maps": file_extension_maps,
+        "project_recognition_rules": project_recognition_rules,
+        "monitored_folders": monitored_folders,
+        "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
+        "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
+    }
+
 # 任务处理者
 def task_processor(processor_id: int, db_path: str = None):
     """处理任务的工作进程(实现了超时控制)"""
     logger.info(f"{processor_id}号任务处理者已启动")
     sqlite_url = f"sqlite:///{db_path}"
     # Ensure connect_args is correctly formatted for SQLAlchemy, typically a dictionary.
-    engine = create_engine(sqlite_url, echo=False, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        sqlite_url, 
+        echo=False, 
+        connect_args={"check_same_thread": False, "timeout": 30},
+        pool_size=3,       # 任务处理者使用较小的连接池
+        max_overflow=5,    # 允许的最大溢出连接数
+        pool_timeout=30,   # 获取连接的超时时间
+        pool_recycle=1800  # 30分钟回收一次连接
+    )
     session = Session(engine)
     
     _task_mgr = TaskManager(session)
@@ -1116,10 +1172,18 @@ def read_root():
     # 现在可以在任何路由中使用 app.state.db_path
     return {"Hello": "World", "db_path": app.state.db_path}
 
+# 添加健康检查端点
 @app.get("/health")
 def health_check():
-    """健康检查接口"""
-    return {"status": "ok", "message": "API服务正常运行中"}
+    """API健康检查端点，用于验证API服务是否正常运行"""
+    return {
+        "status": "ok", 
+        "timestamp": datetime.now().isoformat(),
+        "cache_stats": {
+            "config": config_cache.get_stats(),
+            "folders": folder_hierarchy_cache.get_stats()
+        }
+    }
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -1241,13 +1305,10 @@ def get_directories(
         
         processed_dirs = []
         for d in directories_from_db:
-            auth_status_value = d.auth_status.value if isinstance(d.auth_status, AuthStatus) else str(d.auth_status)
-            
             dir_dict = {
                 "id": getattr(d, 'id', None),
                 "path": getattr(d, 'path', None),
                 "alias": getattr(d, 'alias', None),
-                "auth_status": auth_status_value,
                 "is_blacklist": getattr(d, 'is_blacklist', False),
                 "created_at": d.created_at.isoformat() if getattr(d, 'created_at', None) else None,
                 "updated_at": d.updated_at.isoformat() if getattr(d, 'updated_at', None) else None,
@@ -1270,25 +1331,28 @@ def add_directory(
         path = data.get("path", "")
         alias = data.get("alias", "")
         is_blacklist = data.get("is_blacklist", False)
-        auth_status = data.get("auth_status", None)
         
         if not path: # 修正：之前是 if name或not path:
             return {"status": "error", "message": "路径不能为空"}
         
-        success, message_or_dir = myfiles_mgr.add_directory(path, alias, is_blacklist, auth_status)
+        success, message_or_dir = myfiles_mgr.add_directory(path, alias, is_blacklist)
         
         if success:
+            # 清除相关缓存
+            invalidate_config_caches()
+            logger.info(f"[CACHE] 已清除缓存，因为添加了新文件夹: {path}")
+            
             # 检查返回值是否是字符串或MyFiles对象
             if isinstance(message_or_dir, str):
                 return {"status": "success", "message": message_or_dir}
             else:
                 # 如果是MyFiles对象，调用model_dump()
                 
-                # 如果不是黑名单且设置了auth_status为authorized，立即启动Rust监控
-                if not is_blacklist and auth_status == "authorized":
+                # 如果不是黑名单，前端会立即启动Rust监控
+                if not is_blacklist:
                     # 添加Rust监控的触发信号（通过WebSocket通知前端或通过某种机制）
                     # 此处日志记录即可，实际监控由前端Tauri通过fetch_and_store_all_config获取最新配置
-                    logger.info(f"[MONITOR] 新文件夹已添加且已授权，需要立即启动监控: {path}")
+                    logger.info(f"[MONITOR] 新文件夹已添加，需要立即启动监控: {path}")
                     
                 return {"status": "success", "data": message_or_dir.model_dump(), "message": "文件夹添加成功"}
         else:
@@ -1297,27 +1361,19 @@ def add_directory(
         logger.error(f"添加文件夹失败: {str(e)}")
         return {"status": "error", "message": f"添加文件夹失败: {str(e)}"}
 
-@app.put("/directories/{directory_id}/auth_status")
-def update_directory_auth_status(
+@app.put("/directories/{directory_id}")
+def update_directory(
     directory_id: int,
     data: Dict[str, Any] = Body(...),
     myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
 ):
-    """更新文件夹的授权状态"""
+    """更新文件夹的信息"""
     try:
-        auth_status_str = data.get("auth_status")
-        if not auth_status_str or auth_status_str not in [status.value for status in AuthStatus]:
-            return {"status": "error", "message": "无效的授权状态"}
-            
-        auth_status = AuthStatus(auth_status_str)
-        success, message_or_dir = myfiles_mgr.update_auth_status(directory_id, auth_status)
-        if success:
-            return {"status": "success", "data": message_or_dir.model_dump(), "message": "授权状态更新成功"}
-        else:
-            return {"status": "error", "message": message_or_dir}
+        # 这里可以添加更新文件夹其他信息的逻辑
+        return {"status": "success", "message": "文件夹信息更新成功"}
     except Exception as e:
-        logger.error(f"更新文件夹授权状态失败: {directory_id}, {str(e)}")
-        return {"status": "error", "message": f"更新文件夹授权状态失败: {str(e)}"}
+        logger.error(f"更新文件夹信息失败: {directory_id}, {str(e)}")
+        return {"status": "error", "message": f"更新文件夹信息失败: {str(e)}"}
 
 @app.put("/directories/{directory_id}/blacklist")
 def toggle_directory_blacklist(
@@ -1333,6 +1389,9 @@ def toggle_directory_blacklist(
 
         success, message_or_dir = myfiles_mgr.toggle_blacklist(directory_id, is_blacklist)
         if success:
+            # 清除相关缓存
+            invalidate_config_caches()
+            logger.info(f"[CACHE] 已清除缓存，因为切换了文件夹 {directory_id} 的黑名单状态为 {is_blacklist}")
             return {"status": "success", "data": message_or_dir.model_dump(), "message": "黑名单状态更新成功"}
         else:
             return {"status": "error", "message": message_or_dir}
@@ -1349,6 +1408,9 @@ def delete_directory(
     try:
         success, message = myfiles_mgr.remove_directory(directory_id)
         if success:
+            # 清除相关缓存
+            invalidate_config_caches()
+            logger.info(f"[CACHE] 已清除缓存，因为删除了文件夹 {directory_id}")
             return {"status": "success", "message": "文件夹删除成功"}
         else:
             return {"status": "error", "message": message}
@@ -1595,6 +1657,9 @@ def get_bundle_extensions_for_rust(
 ):
     """获取用于Rust端的Bundle扩展名列表"""
     try:
+        # 添加日志，提示应该使用新的接口
+        logger.warning("[API_DEPRECATED] /bundle-extensions/for-rust 接口已被弃用，建议使用 /config/all 接口获取 bundle_extensions 字段")
+        
         extensions = myfiles_mgr.get_bundle_extensions_for_rust()
         return {
             "status": "success",
@@ -1625,6 +1690,10 @@ def add_blacklist_folder_under_parent(
         success, result = myfiles_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
         
         if success:
+            # 清除相关缓存
+            invalidate_config_caches()
+            logger.info(f"[CACHE] 已清除缓存，因为添加了黑名单文件夹: {folder_path}")
+            
             # 当文件夹变为黑名单时，清理相关的粗筛结果数据
             deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
             
@@ -1636,7 +1705,6 @@ def add_blacklist_folder_under_parent(
                     "alias": result.alias,
                     "is_blacklist": result.is_blacklist,
                     "parent_id": result.parent_id,
-                    "auth_status": result.auth_status,
                     "created_at": result.created_at.isoformat() if result.created_at else None,
                     "updated_at": result.updated_at.isoformat() if result.updated_at else None,
                 },
@@ -1650,21 +1718,48 @@ def add_blacklist_folder_under_parent(
         return {"status": "error", "message": f"添加黑名单文件夹失败: {str(e)}"}
 
 @app.get("/folders/hierarchy")
-def get_folder_hierarchy(
+async def get_folder_hierarchy(
     myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
 ):
     """获取文件夹层级关系（白名单+其下的黑名单）"""
     try:
-        hierarchy = myfiles_mgr.get_folder_hierarchy()
-        return {
-            "status": "success",
-            "data": hierarchy,
-            "count": len(hierarchy),
-            "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
-        }
+        # 使用异步超时控制
+        try:
+            return await asyncio.wait_for(
+                _get_folder_hierarchy_async(myfiles_mgr), 
+                timeout=3.0  # 设置3秒超时
+            )
+        except asyncio.TimeoutError:
+            logger.error("获取文件夹层级关系超时")
+            # 尝试从缓存获取
+            hit, cached_value = folder_hierarchy_cache.get("folder_hierarchy")
+            if hit:
+                logger.info("使用缓存数据响应超时请求")
+                return cached_value
+            # 没有缓存，返回错误
+            return {"status": "error", "message": "获取文件夹层级关系超时"}
     except Exception as e:
         logger.error(f"获取文件夹层级关系失败: {str(e)}")
         return {"status": "error", "message": f"获取文件夹层级关系失败: {str(e)}"}
+        
+async def _get_folder_hierarchy_async(myfiles_mgr: MyFilesManager):
+    """异步包装缓存函数，用于超时控制"""
+    return _get_folder_hierarchy_cached(myfiles_mgr)
+
+@cached(folder_hierarchy_cache, "folder_hierarchy")
+def _get_folder_hierarchy_cached(myfiles_mgr: MyFilesManager):
+    """缓存版本的文件夹层级关系获取函数"""
+    start_time = time.time()
+    hierarchy = myfiles_mgr.get_folder_hierarchy()
+    elapsed = time.time() - start_time
+    logger.info(f"[FOLDERS] 获取文件夹层级关系耗时 {elapsed:.3f}s (从数据库)")
+    
+    return {
+        "status": "success",
+        "data": hierarchy,
+        "count": len(hierarchy),
+        "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
+    }
 
 @app.post("/screening/clean-by-path")
 def clean_screening_results_by_path(
@@ -1699,9 +1794,9 @@ def clear_screening_data(
     data: Dict[str, Any] = Body(...),
     screening_mgr: ScreeningManager = Depends(get_screening_manager)
 ):
-    """清理指定路径的粗筛数据（供Rust后端调用）
+    """清理指定路径的粗筛数据（供Rust后端调用）- 兼容旧版API
     
-    当文件夹变为黑名单或被删除时，Rust后端调用此端点清理相关的粗筛数据。
+    此端点已弃用，只为了向后兼容，请使用 /screening/clean-by-path 代替。
     """
     try:
         folder_path = data.get("folder_path", "").strip()
@@ -1709,19 +1804,21 @@ def clear_screening_data(
         if not folder_path:
             return {"status": "error", "message": "文件夹路径不能为空"}
         
-        deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
-        
-        logger.info(f"Rust后端请求清理路径 '{folder_path}' 的粗筛数据，已清理 {deleted_count} 条记录")
-        
-        return {
-            "status": "success", 
-            "deleted": deleted_count,
-            "message": f"已清理 {deleted_count} 条与路径 '{folder_path}' 相关的粗筛结果"
-        }
+        # 重定向到新的接口内部实现
+        return clean_screening_results_by_path({"path": folder_path}, screening_mgr)
+    except Exception as e:
+        logger.error(f"清理粗筛数据失败（旧API）: {str(e)}")
+        return {"status": "error", "message": str(e)}
             
     except Exception as e:
         logger.error(f"清理粗筛数据失败: {str(e)}")
         return {"status": "error", "message": f"清理失败: {str(e)}"}
+
+def invalidate_config_caches():
+    """使所有配置相关缓存失效"""
+    config_cache.clear()
+    folder_hierarchy_cache.clear()
+    logger.info("[CACHE] 所有配置缓存已清除")
 
 if __name__ == "__main__":
     try:
@@ -1763,5 +1860,6 @@ if __name__ == "__main__":
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     except Exception as e:
         logger.critical(f"API服务启动失败: {str(e)}", exc_info=True)
+
         # 返回退出码2，表示发生错误
         sys.exit(2)

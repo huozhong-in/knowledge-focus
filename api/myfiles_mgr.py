@@ -16,7 +16,7 @@ from sqlmodel import (
     JSON,
 )
 from datetime import datetime
-from db_mgr import MyFiles, AuthStatus, BundleExtension, SystemConfig
+from db_mgr import MyFiles, BundleExtension, SystemConfig
 from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform
@@ -106,7 +106,6 @@ class MyFilesManager:
                 new_file = MyFiles(
                     path=dir_info["path"],
                     alias=dir_info["name"],
-                    auth_status=AuthStatus.PENDING.value,
                     is_blacklist=False
                 )
                 new_records.append(new_file)
@@ -127,29 +126,18 @@ class MyFilesManager:
         return self.session.exec(select(MyFiles)).all()
     
     def get_authorized_directories(self) -> List[MyFiles]:
-        """获取所有已授权的文件夹
+        """获取所有已授权的文件夹（即非黑名单的文件夹）
         
         Returns:
             List[MyFiles]: 已授权的文件夹记录列表
         """
         return self.session.exec(
             select(MyFiles).where(
-                and_(
-                    MyFiles.auth_status == AuthStatus.AUTHORIZED.value,
-                    MyFiles.is_blacklist == False
-                )
+                MyFiles.is_blacklist == False
             )
         ).all()
     
-    def get_pending_directories(self) -> List[MyFiles]:
-        """获取所有待授权的文件夹
-        
-        Returns:
-            List[MyFiles]: 待授权的文件夹记录列表
-        """
-        return self.session.exec(
-            select(MyFiles).where(MyFiles.auth_status == AuthStatus.PENDING.value)
-        ).all()
+    # 已移除 get_pending_directories 方法，不再需要检查授权状态
     
     def get_blacklist_directories(self) -> List[MyFiles]:
         """获取所有黑名单文件夹
@@ -161,14 +149,13 @@ class MyFilesManager:
             select(MyFiles).where(MyFiles.is_blacklist == True)
         ).all()
 
-    def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False, auth_status: str = None) -> Tuple[bool, Union[MyFiles, str]]:
+    def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False) -> Tuple[bool, Union[MyFiles, str]]:
         """添加新文件夹
         
         Args:
             path (str): 文件夹路径
             alias (Optional[str], optional): 文件夹别名. Defaults to None.
             is_blacklist (bool, optional): 是否为黑名单文件夹. Defaults to False.
-            auth_status (str, optional): 初始授权状态. Defaults to None (PENDING).
         
         Returns:
             Tuple[bool, Union[MyFiles, str]]: (成功标志, 文件夹对象或错误消息)
@@ -196,7 +183,7 @@ class MyFilesManager:
         new_file = MyFiles(
             path=path,
             alias=alias,
-            auth_status=auth_status or AuthStatus.PENDING.value,
+
             is_blacklist=is_blacklist
         )
         
@@ -206,23 +193,7 @@ class MyFilesManager:
         
         return True, new_file
     
-    def update_auth_status(self, directory_id: int, status: AuthStatus) -> Tuple[bool, MyFiles | str]:
-        """更新文件夹的授权状态
-
-        Args:
-            directory_id (int): 文件夹的ID
-            status (AuthStatus): 新的授权状态
-
-        Returns:
-            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
-        """
-        directory = self.session.get(MyFiles, directory_id)
-        if not directory:
-            return False, f"文件夹ID不存在: {directory_id}"
-
-        directory.auth_status = status.value
-        directory.updated_at = datetime.now()
-        self.session.add(directory)
+    # 授权状态方法已移除
         self.session.commit()
         self.session.refresh(directory)
         return True, directory
@@ -328,9 +299,9 @@ class MyFilesManager:
             select(MyFiles).where(MyFiles.path == path)
         ).first()
         
-        # 如果路径存在于数据库，检查是否已授权
+        # 如果路径存在于数据库且不是黑名单，则认为已授权
         if directory:
-            return directory.auth_status == AuthStatus.AUTHORIZED.value
+            return not directory.is_blacklist
         
         # 检查是否是已授权文件夹的子文件夹
         authorized_dirs = self.get_authorized_directories()
@@ -507,8 +478,7 @@ class MyFilesManager:
             # 尝试列出文件夹内容，这将触发系统授权对话框
             file_list = os.listdir(path)
             
-            # 如果成功读取，更新授权状态
-            directory.auth_status = AuthStatus.AUTHORIZED.value
+            # 如果成功读取，更新最后修改时间
             directory.updated_at = datetime.now()
             self.session.add(directory)
             self.session.commit()
@@ -633,147 +603,6 @@ class MyFilesManager:
                 "status": "error"
             }
 
-# ========== 完全磁盘访问权限相关方法 ==========
-    
-    def check_full_disk_access_detailed(self) -> Dict[str, any]:
-        """详细检查macOS完全磁盘访问权限状态
-        
-        Returns:
-            Dict: 包含权限状态详情的字典
-        """
-        if self.system != "Darwin":
-            return {
-                "has_access": True,  # 非macOS系统默认有访问权限
-                "platform": self.system,
-                "test_results": {},
-                "message": f"当前系统({self.system})不需要完全磁盘访问权限检查"
-            }
-        
-        # macOS系统权限检测
-        test_paths = [
-            "/System/Library/CoreServices",
-            "/Library/Application Support",
-            "/usr/local",
-            "/private/var/log",
-        ]
-        
-        access_results = {}
-        for path in test_paths:
-            if os.path.exists(path):
-                try:
-                    # 尝试列出目录内容
-                    files = os.listdir(path)
-                    access_results[path] = {
-                        "accessible": True,
-                        "file_count": len(files)
-                    }
-                except PermissionError:
-                    access_results[path] = {
-                        "accessible": False,
-                        "error": "权限错误"
-                    }
-                except Exception as e:
-                    access_results[path] = {
-                        "accessible": False,
-                        "error": str(e)
-                    }
-            else:
-                access_results[path] = {
-                    "accessible": False,
-                    "error": "路径不存在"
-                }
-        
-        # 如果所有测试路径都能访问，则认为有完全磁盘访问权限
-        accessible_count = sum(1 for res in access_results.values() if res.get("accessible", False))
-        has_access = accessible_count >= len(test_paths) * 0.75  # 75%的路径可访问则认为有权限
-        
-        return {
-            "has_access": has_access,
-            "platform": "macOS",
-            "test_results": access_results,
-            "accessible_paths": accessible_count,
-            "total_paths": len(test_paths),
-            "message": "拥有完全磁盘访问权限" if has_access else "缺少完全磁盘访问权限"
-        }
-    
-    def update_full_disk_access_status(self, has_access: bool) -> bool:
-        """更新完全磁盘访问权限状态到系统配置
-        
-        Args:
-            has_access (bool): 是否拥有完全磁盘访问权限
-            
-        Returns:
-            bool: 更新是否成功
-        """
-        try:
-            # 查找或创建配置记录
-            config = self.session.exec(
-                select(SystemConfig).where(SystemConfig.key == "full_disk_access_status")
-            ).first()
-            
-            if config:
-                config.value = "true" if has_access else "false"
-                config.updated_at = datetime.now()
-            else:
-                config = SystemConfig(
-                    key="full_disk_access_status",
-                    value="true" if has_access else "false",
-                    description="macOS完全磁盘访问权限状态"
-                )
-            
-            self.session.add(config)
-            self.session.commit()
-            
-            # 同时更新权限检查时间戳
-            self._update_last_permission_check()
-            
-            return True
-        except Exception as e:
-            logger.error(f"更新完全磁盘访问权限状态失败: {str(e)}")
-            self.session.rollback()
-            return False
-    
-    def get_full_disk_access_status(self) -> bool:
-        """获取存储的完全磁盘访问权限状态
-        
-        Returns:
-            bool: 是否拥有完全磁盘访问权限
-        """
-        try:
-            config = self.session.exec(
-                select(SystemConfig).where(SystemConfig.key == "full_disk_access_status")
-            ).first()
-            
-            if config:
-                return config.value.lower() == "true"
-            return False
-        except Exception as e:
-            logger.error(f"获取完全磁盘访问权限状态失败: {str(e)}")
-            return False
-    
-    def _update_last_permission_check(self) -> None:
-        """更新最后一次权限检查时间戳"""
-        try:
-            import time
-            config = self.session.exec(
-                select(SystemConfig).where(SystemConfig.key == "last_permission_check")
-            ).first()
-            
-            if config:
-                config.value = str(int(time.time()))
-                config.updated_at = datetime.now()
-            else:
-                config = SystemConfig(
-                    key="last_permission_check",
-                    value=str(int(time.time())),
-                    description="最后一次权限检查时间戳"
-                )
-            
-            self.session.add(config)
-            self.session.commit()
-        except Exception as e:
-            logger.error(f"更新权限检查时间戳失败: {str(e)}")
-    
     # ========== 黑名单层级管理方法 ==========
     
     def add_blacklist_folder(self, parent_id: int, folder_path: str, folder_alias: str = None) -> Tuple[bool, Union[MyFiles, str]]:
@@ -826,8 +655,7 @@ class MyFilesManager:
                 alias=folder_alias or os.path.basename(folder_path),
                 is_blacklist=True,
                 is_common_folder=False,
-                parent_id=parent_id,
-                auth_status=AuthStatus.AUTHORIZED.value  # 黑名单也设为已授权状态，只是不监控
+                parent_id=parent_id  # 黑名单不需要授权状态
             )
             
             self.session.add(blacklist_folder)
@@ -848,37 +676,43 @@ class MyFilesManager:
             List[Dict]: 层级结构化的文件夹列表
         """
         try:
-            # 获取所有白名单文件夹（父文件夹）
-            white_folders = self.session.exec(
+            # 获取所有一级文件夹：白名单文件夹 + 已转为黑名单的常用文件夹
+            root_folders = self.session.exec(
                 select(MyFiles).where(
                     and_(
-                        MyFiles.is_blacklist == False,
+                        # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
+                        or_(
+                            MyFiles.is_blacklist == False,
+                            and_(MyFiles.is_blacklist == True, MyFiles.is_common_folder == True)
+                        ),
+                        # 都是一级文件夹
                         or_(MyFiles.parent_id.is_(None), MyFiles.parent_id == 0)
                     )
                 ).order_by(MyFiles.created_at)
             ).all()
             
             hierarchy = []
-            for white_folder in white_folders:
-                # 获取此白名单文件夹下的所有黑名单子文件夹
-                black_children = self.session.exec(
-                    select(MyFiles).where(
-                        and_(
-                            MyFiles.is_blacklist == True,
-                            MyFiles.parent_id == white_folder.id
-                        )
-                    ).order_by(MyFiles.created_at)
-                ).all()
+            for folder in root_folders:
+                # 获取此文件夹下的所有黑名单子文件夹（如果当前文件夹是白名单）
+                black_children = []
+                if not folder.is_blacklist:
+                    black_children = self.session.exec(
+                        select(MyFiles).where(
+                            and_(
+                                MyFiles.is_blacklist == True,
+                                MyFiles.parent_id == folder.id
+                            )
+                        ).order_by(MyFiles.created_at)
+                    ).all()
                 
                 folder_data = {
-                    "id": white_folder.id,
-                    "path": white_folder.path,
-                    "alias": white_folder.alias,
-                    "is_blacklist": False,
-                    "is_common_folder": white_folder.is_common_folder,
-                    "auth_status": white_folder.auth_status,
-                    "created_at": white_folder.created_at.isoformat() if white_folder.created_at else None,
-                    "updated_at": white_folder.updated_at.isoformat() if white_folder.updated_at else None,
+                    "id": folder.id,
+                    "path": folder.path,
+                    "alias": folder.alias,
+                    "is_blacklist": folder.is_blacklist,
+                    "is_common_folder": folder.is_common_folder,
+                    "created_at": folder.created_at.isoformat() if folder.created_at else None,
+                    "updated_at": folder.updated_at.isoformat() if folder.updated_at else None,
                     "blacklist_children": [
                         {
                             "id": black_child.id,
@@ -886,7 +720,6 @@ class MyFilesManager:
                             "alias": black_child.alias,
                             "is_blacklist": True,
                             "parent_id": black_child.parent_id,
-                            "auth_status": black_child.auth_status,
                             "created_at": black_child.created_at.isoformat() if black_child.created_at else None,
                             "updated_at": black_child.updated_at.isoformat() if black_child.updated_at else None,
                         }
@@ -1037,17 +870,14 @@ if __name__ == '__main__':
     # 打印所有文件夹
     print("所有文件夹:")
     for directory in files_mgr.get_all_directories():
-        print(f"- {directory.path} ({directory.alias or '无别名'}): {directory.auth_status}")
+        print(f"- {directory.path} ({directory.alias or '无别名'})")
     
     # 测试添加文件夹
     home_dir = os.path.expanduser("~")
     success, msg = files_mgr.add_directory(os.path.join(home_dir, "Projects"), "我的项目")
     print(f"\n添加文件夹: {msg}")
     
-    # 测试更新授权状态
-    for directory in files_mgr.get_pending_directories()[:2]:
-        success, msg = files_mgr.update_auth_status(directory.id, AuthStatus.AUTHORIZED)
-        print(f"更新授权状态: {msg}")
+    # 不再需要测试更新授权状态
     
     # 测试黑名单
     if files_mgr.get_all_directories():

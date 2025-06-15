@@ -162,19 +162,6 @@ pub fn get_file_monitor_stats(state: State<AppState>) -> Result<MonitorStatsResp
     }
 }
 
-#[tauri::command(rename_all = "snake_case")]
-pub fn test_bundle_detection(path: String) -> Result<bool, String> {
-    use crate::file_monitor::FileMonitor;
-    use std::path::Path;
-    
-    // 测试指定路径是否为macOS bundle
-    let path_obj = Path::new(&path);
-    let is_bundle = FileMonitor::is_macos_bundle_folder(path_obj);
-    
-    // 返回结果
-    Ok(is_bundle)
-}
-
 /// 停止监控指定ID的目录
 /// 该命令会从监控列表中移除目录，使Rust端停止对该目录的监控
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
@@ -393,8 +380,8 @@ pub async fn refresh_monitoring_config(
 }
 
 /// 获取当前Bundle扩展名列表
-#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn get_bundle_extensions(
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_bundle_extensions(
     state: tauri::State<'_, crate::AppState>
 ) -> Result<Vec<String>, String> {
     println!("[CMD] get_bundle_extensions 被调用");
@@ -408,8 +395,8 @@ pub async fn get_bundle_extensions(
         }
     };
     
-    // 获取Bundle扩展名列表
-    let extensions = monitor.ensure_bundle_cache_valid().await;
+    // 从当前配置中提取Bundle扩展名列表
+    let extensions = monitor.get_bundle_extensions();
     println!("[CMD] get_bundle_extensions 返回 {} 个扩展名", extensions.len());
     Ok(extensions)
 }
@@ -434,31 +421,6 @@ pub fn get_configuration_summary(
     let summary = monitor.get_configuration_summary();
     println!("[CMD] get_configuration_summary 返回摘要: {:?}", summary);
     Ok(summary)
-}
-
-/// 测试使用动态扩展名的Bundle检测
-#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn test_bundle_detection_dynamic(
-    path: String,
-    state: tauri::State<'_, crate::AppState>
-) -> Result<bool, String> {
-    println!("[CMD] test_bundle_detection_dynamic 被调用，路径: {}", path);
-    
-    // 获取文件监控器
-    let monitor = {
-        let guard = state.file_monitor.lock().unwrap();
-        match &*guard {
-            Some(monitor) => monitor.clone(),
-            None => return Err("文件监控器未初始化".to_string()),
-        }
-    };
-    
-    // 测试指定路径是否为macOS bundle（使用动态扩展名）
-    let path_obj = std::path::Path::new(&path);
-    let is_bundle = monitor.is_macos_bundle_folder_dynamic(path_obj).await;
-    
-    println!("[CMD] test_bundle_detection_dynamic 结果: {}", is_bundle);
-    Ok(is_bundle)
 }
 
 #[derive(Serialize)]
@@ -529,32 +491,37 @@ pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
 
 // --- 配置变更队列管理命令 ---
 
-/// 添加配置变更到队列（如果初始扫描已完成则立即执行）
+/// 添加黑名单文件夹到队列（如果初始扫描已完成则立即处理队列）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn add_blacklist_folder_queued(
+pub async fn queue_add_blacklist_folder(
     parent_id: i32,
     folder_path: String,
     folder_alias: Option<String>,
     state: tauri::State<'_, crate::AppState>,
-    app_handle: tauri::AppHandle
+    _app_handle: tauri::AppHandle
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] add_blacklist_folder_queued 被调用，父ID: {}, 路径: {}", parent_id, folder_path);
+    println!("[CMD] queue_add_blacklist_folder 被调用，父ID: {}, 路径: {}", parent_id, folder_path);
+    
+    // 添加到队列
+    let change = crate::ConfigChangeRequest::AddBlacklist {
+        parent_id,
+        folder_path: folder_path.clone(),
+        folder_alias,
+    };
+    state.add_pending_config_change(change);
     
     // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
-        println!("[CONFIG_QUEUE] 初始扫描已完成，立即执行黑名单添加操作");
-        // 直接调用原有的命令
-        add_blacklist_folder(parent_id, folder_path, folder_alias, app_handle).await
+        println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
+        // 触发队列处理
+        state.process_pending_config_changes();
+        
+        Ok(serde_json::json!({
+            "status": "queued_for_processing",
+            "message": format!("黑名单文件夹 {} 已加入处理队列并即将执行", folder_path)
+        }))
     } else {
         println!("[CONFIG_QUEUE] 初始扫描未完成，将黑名单添加操作加入队列");
-        // 添加到队列
-        let change = crate::ConfigChangeRequest::AddBlacklist {
-            parent_id,
-            folder_path: folder_path.clone(),
-            folder_alias,
-        };
-        state.add_pending_config_change(change);
-        
         Ok(serde_json::json!({
             "status": "queued",
             "message": format!("黑名单文件夹 {} 已加入处理队列，将在初始扫描完成后处理", folder_path)
@@ -564,114 +531,129 @@ pub async fn add_blacklist_folder_queued(
 
 /// 删除文件夹（队列版本）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn remove_folder_queued(
+pub async fn queue_delete_folder(
     folder_id: i32,
     folder_path: String,
     is_blacklist: bool,
     state: tauri::State<'_, crate::AppState>,
-    app_handle: tauri::AppHandle
+    _app_handle: tauri::AppHandle  // 使用下划线前缀表示故意不使用的参数
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] remove_folder_queued 被调用，ID: {}, 路径: {}, 是否黑名单: {}", folder_id, folder_path, is_blacklist);
+    println!("[CMD] queue_delete_folder 被调用，ID: {}, 路径: {}, 是否黑名单: {}", folder_id, folder_path, is_blacklist);
     
-    if state.is_initial_scan_completed() {
-        println!("[CONFIG_QUEUE] 初始扫描已完成，立即执行文件夹删除操作");
-        // 直接调用相应的删除命令
-        if is_blacklist {
-            remove_blacklist_folder(folder_id, app_handle).await
-        } else {
-            // 这里可以调用白名单文件夹删除命令，如果有的话
-            Ok(serde_json::json!({
-                "status": "success",
-                "message": format!("文件夹 {} 删除操作已执行", folder_path)
-            }))
+    // 检查文件监控器是否已初始化
+    {
+        let guard = state.file_monitor.lock().unwrap();
+        if guard.is_none() {
+            return Err("文件监控器未初始化".to_string());
         }
-    } else {
-        println!("[CONFIG_QUEUE] 初始扫描未完成，将文件夹删除操作加入队列");
-        let change = crate::ConfigChangeRequest::DeleteFolder {
-            folder_id,
-            folder_path: folder_path.clone(),
-            is_blacklist,
-        };
-        state.add_pending_config_change(change);
+    }
+    
+    // 即使初始扫描已完成，也应将变更放入队列，以确保操作按正确顺序执行
+    // 添加到队列
+    let change = crate::ConfigChangeRequest::DeleteFolder {
+        folder_id,
+        folder_path: folder_path.clone(),
+        is_blacklist,
+    };
+    state.add_pending_config_change(change);
+    
+    // 如果初始扫描已完成，立即处理队列
+    if state.is_initial_scan_completed() {
+        println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
+        // 触发队列处理
+        state.process_pending_config_changes();
         
         Ok(serde_json::json!({
+            "status": "queued_for_processing",
+            "message": format!("文件夹 {} 删除操作已加入处理队列并即将执行", folder_path)
+        }))
+    } else {
+        println!("[CONFIG_QUEUE] 初始扫描未完成，将文件夹删除操作加入队列");
+        Ok(serde_json::json!({
             "status": "queued",
-            "message": format!("文件夹 {} 删除操作已加入处理队列", folder_path)
+            "message": format!("文件夹 {} 删除操作已加入处理队列，将在初始扫描完成后处理", folder_path)
         }))
     }
 }
 
 /// 切换文件夹黑白名单状态（队列版本）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn toggle_folder_status_queued(
+pub async fn queue_toggle_folder_status(
     folder_id: i32,
     folder_path: String,
     is_blacklist: bool,
     state: tauri::State<'_, crate::AppState>
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] toggle_folder_status_queued 被调用，ID: {}, 路径: {}, 设为黑名单: {}", folder_id, folder_path, is_blacklist);
+    println!("[CMD] queue_toggle_folder_status 被调用，ID: {}, 路径: {}, 设为黑名单: {}", folder_id, folder_path, is_blacklist);
     
+    // 添加到队列
+    let change = crate::ConfigChangeRequest::ToggleFolder {
+        folder_id,
+        is_blacklist,
+        folder_path: folder_path.clone(),
+    };
+    state.add_pending_config_change(change);
+    
+    // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
-        println!("[CONFIG_QUEUE] 初始扫描已完成，立即执行文件夹状态切换");
+        println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
+        // 触发队列处理
+        state.process_pending_config_changes();
         
         Ok(serde_json::json!({
-            "status": "executed",
-            "message": format!("文件夹 {} 状态切换已立即执行", folder_path)
+            "status": "queued_for_processing",
+            "message": format!("文件夹 {} 状态切换已加入处理队列并即将执行", folder_path)
         }))
     } else {
         println!("[CONFIG_QUEUE] 初始扫描未完成，将文件夹状态切换操作加入队列");
-        let change = crate::ConfigChangeRequest::ToggleFolder {
-            folder_id,
-            is_blacklist,
-            folder_path: folder_path.clone(),
-        };
-        state.add_pending_config_change(change);
-        
         Ok(serde_json::json!({
             "status": "queued",
-            "message": format!("文件夹 {} 状态切换已加入处理队列", folder_path)
+            "message": format!("文件夹 {} 状态切换已加入处理队列，将在初始扫描完成后处理", folder_path)
         }))
     }
 }
 
 /// 添加白名单文件夹（队列版本）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
-pub async fn add_whitelist_folder_queued(
+pub async fn queue_add_whitelist_folder(
     folder_path: String,
     folder_alias: Option<String>,
     state: tauri::State<'_, crate::AppState>
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] add_whitelist_folder_queued 被调用，路径: {}", folder_path);
+    println!("[CMD] queue_add_whitelist_folder 被调用，路径: {}", folder_path);
     
+    // 添加到队列
+    let change = crate::ConfigChangeRequest::AddWhitelist {
+        folder_path: folder_path.clone(),
+        folder_alias,
+    };
+    state.add_pending_config_change(change);
+    
+    // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
-        println!("[CONFIG_QUEUE] 初始扫描已完成，立即执行白名单添加操作");
-        // 这里需要调用Python API来添加白名单文件夹
-        // 为简化，我们直接返回成功，实际实现中需要调用相应的API
+        println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
+        // 触发队列处理
+        state.process_pending_config_changes();
+        
         Ok(serde_json::json!({
-            "status": "success",
-            "message": format!("白名单文件夹 {} 已添加", folder_path)
+            "status": "queued_for_processing",
+            "message": format!("白名单文件夹 {} 已加入处理队列并即将执行", folder_path)
         }))
     } else {
         println!("[CONFIG_QUEUE] 初始扫描未完成，将白名单添加操作加入队列");
-        let change = crate::ConfigChangeRequest::AddWhitelist {
-            folder_path: folder_path.clone(),
-            folder_alias,
-        };
-        state.add_pending_config_change(change);
-        
         Ok(serde_json::json!({
             "status": "queued",
-            "message": format!("白名单文件夹 {} 已加入处理队列", folder_path)
+            "message": format!("白名单文件夹 {} 已加入处理队列，将在初始扫描完成后处理", folder_path)
         }))
     }
 }
 
 /// 获取配置变更队列状态
 #[tauri::command(rename_all = "snake_case")]
-pub fn get_config_queue_status(
+pub fn queue_get_status(
     state: tauri::State<'_, crate::AppState>
 ) -> Result<serde_json::Value, String> {
-    // println!("[CMD] get_config_queue_status 被调用");
+    // println!("[CMD] queue_get_status 被调用");
     
     let initial_scan_completed = state.is_initial_scan_completed();
     let pending_changes_count = state.get_pending_config_changes_count();
@@ -684,6 +666,186 @@ pub fn get_config_queue_status(
     }))
 }
 
+/// 【兼容旧版】获取配置变更队列状态（重定向到queue_get_status）
+#[tauri::command(rename_all = "snake_case")]
+pub fn get_config_queue_status(
+    state: tauri::State<'_, crate::AppState>
+) -> Result<serde_json::Value, String> {
+    // println!("[CMD] get_config_queue_status 被调用 (重定向到queue_get_status)");
+    queue_get_status(state)
+}
+
 // --- 配置变更队列管理命令结束 ---
 
-// --- End of 文件夹层级管理命令 ---
+// --- 文件监控配置扩展命令 ---
+
+/// 添加黑名单文件夹（支持层级结构）
+#[tauri::command(rename_all = "snake_case", async)]
+pub async fn add_blacklist_folder_with_path(
+    path: String, 
+    parent_id: Option<i32>,
+    state: tauri::State<'_, crate::AppState>
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] add_blacklist_folder_with_path 被调用，路径: {}, 父ID: {:?}", path, parent_id);
+    
+    // 获取文件监控器
+    let monitor = {
+        let guard = state.file_monitor.lock().unwrap();
+        if let Some(monitor) = &*guard {
+            monitor.clone()
+        } else {
+            return Err("文件监控器未初始化".to_string());
+        }
+    };
+
+    // TODO: 实现层级黑名单添加逻辑（在阶段三B完成后实现）
+    // 目前只是简单地将路径添加到黑名单
+    let api_host = monitor.get_api_host();
+    let api_port = monitor.get_api_port();
+
+    // 构建请求URL
+    let url = format!(
+        "http://{}:{}/blacklist/add",
+        api_host, api_port
+    );
+
+    // 准备请求数据
+    let mut request_data = serde_json::Map::new();
+    request_data.insert("path".to_string(), serde_json::Value::String(path));
+    if let Some(pid) = parent_id {
+        request_data.insert("parent_id".to_string(), serde_json::Value::Number(serde_json::Number::from(pid)));
+    }
+    
+    // 发送请求到API
+    let client = reqwest::Client::new();
+    match client.post(&url).json(&request_data).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                let result = response.json::<serde_json::Value>().await
+                    .map_err(|e| format!("解析API响应失败: {}", e))?;
+                
+                // 刷新文件监控器的配置（异步，不等待完成）
+                let monitor_clone = monitor.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = monitor_clone.refresh_folder_configuration().await {
+                        eprintln!("[CMD] 刷新配置失败: {}", e);
+                    }
+                });
+                
+                Ok(result)
+            } else {
+                let error = response.text().await.unwrap_or_else(|_| "读取错误响应失败".to_string());
+                Err(format!("添加黑名单失败: {}", error))
+            }
+        },
+        Err(e) => Err(format!("请求API失败: {}", e))
+    }
+}
+
+/// 移除黑名单文件夹（通过路径）
+#[tauri::command(rename_all = "snake_case", async)]
+pub async fn remove_blacklist_folder_by_path(
+    path: String, 
+    state: tauri::State<'_, crate::AppState>
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] remove_blacklist_folder_by_path 被调用，路径: {}", path);
+    
+    // 获取文件监控器
+    let monitor = {
+        let guard = state.file_monitor.lock().unwrap();
+        if let Some(monitor) = &*guard {
+            monitor.clone()
+        } else {
+            return Err("文件监控器未初始化".to_string());
+        }
+    };
+
+    // 构建请求URL
+    let url = format!(
+        "http://{}:{}/blacklist/remove",
+        monitor.get_api_host(), monitor.get_api_port()
+    );
+    
+    // 准备请求数据
+    let mut request_data = serde_json::Map::new();
+    request_data.insert("path".to_string(), serde_json::Value::String(path));
+    
+    // 发送请求到API
+    let client = reqwest::Client::new();
+    match client.post(&url).json(&request_data).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                let result = response.json::<serde_json::Value>().await
+                    .map_err(|e| format!("解析API响应失败: {}", e))?;
+                
+                // 刷新文件监控器的配置（异步，不等待完成）
+                let monitor_clone = monitor.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = monitor_clone.refresh_folder_configuration().await {
+                        eprintln!("[CMD] 刷新配置失败: {}", e);
+                    }
+                });
+                
+                Ok(result)
+            } else {
+                let error = response.text().await.unwrap_or_else(|_| "读取错误响应失败".to_string());
+                Err(format!("移除黑名单失败: {}", error))
+            }
+        },
+        Err(e) => Err(format!("请求API失败: {}", e))
+    }
+}
+
+// 删除重复的 refresh_monitoring_config 和 get_bundle_extensions 函数定义，
+// 因为这些函数已经在前面定义过了
+
+// --- End of 文件监控配置扩展命令 ---
+
+/// 【兼容旧版】添加黑名单文件夹到队列（重定向到queue_add_blacklist_folder）
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn add_blacklist_folder_queued(
+    parent_id: i32,
+    folder_path: String,
+    folder_alias: Option<String>,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] add_blacklist_folder_queued 被调用 (重定向到queue_add_blacklist_folder)");
+    queue_add_blacklist_folder(parent_id, folder_path, folder_alias, state, app_handle).await
+}
+
+/// 【兼容旧版】删除文件夹（队列版本）（重定向到queue_delete_folder）
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn remove_folder_queued(
+    folder_id: i32,
+    folder_path: String,
+    is_blacklist: bool,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] remove_folder_queued 被调用 (重定向到queue_delete_folder)");
+    queue_delete_folder(folder_id, folder_path, is_blacklist, state, app_handle).await
+}
+
+/// 【兼容旧版】切换文件夹黑白名单状态（队列版本）（重定向到queue_toggle_folder_status）
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn toggle_folder_status_queued(
+    folder_id: i32,
+    folder_path: String,
+    is_blacklist: bool,
+    state: tauri::State<'_, crate::AppState>
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] toggle_folder_status_queued 被调用 (重定向到queue_toggle_folder_status)");
+    queue_toggle_folder_status(folder_id, folder_path, is_blacklist, state).await
+}
+
+/// 【兼容旧版】添加白名单文件夹（队列版本）（重定向到queue_add_whitelist_folder）
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn add_whitelist_folder_queued(
+    folder_path: String,
+    folder_alias: Option<String>,
+    state: tauri::State<'_, crate::AppState>
+) -> Result<serde_json::Value, String> {
+    println!("[CMD] add_whitelist_folder_queued 被调用 (重定向到queue_add_whitelist_folder)");
+    queue_add_whitelist_folder(folder_path, folder_alias, state).await
+}
