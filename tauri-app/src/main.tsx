@@ -79,8 +79,8 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   isInitializing: false, // Will be set to true by initializeApp
   initializationError: null,
   isApiReady: false, // Initialize API as not ready
-  language: 'zh', // 默认使用中文
-  
+  language: 'en', // 默认使用英文
+
   // 搜索相关状态
   searchQuery: '',
   searchResults: [],
@@ -172,8 +172,8 @@ const initializeApp = async () => {
     
     // 获取保存的语言设置
     const savedLanguage = await store.get('language') as string | null;
-    const language = savedLanguage || 'zh'; // 如果没有保存语言设置，默认使用中文
-    
+    const language = savedLanguage || 'en'; // 如果没有保存语言设置，默认使用英文
+
     console.log(`initializeApp: isFirstLaunchValue from store: ${isFirstLaunchValue}, isActuallyFirstLaunch: ${isActuallyFirstLaunch}`);
     console.log(`initializeApp: Loaded language preference: ${language}`);
     

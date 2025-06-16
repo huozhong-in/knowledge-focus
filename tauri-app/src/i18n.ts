@@ -2,8 +2,6 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import Backend from 'i18next-http-backend';
-// 移除对 useAppStore 的导入，避免循环依赖
-
 // 支持的语言列表 - 只使用简短代码
 export const supportedLanguages = ['en', 'zh'];
 
