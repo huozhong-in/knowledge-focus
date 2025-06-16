@@ -82,7 +82,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         "请在系统设置中授权：\n" +
         "1. 点击'系统偏好设置' > '安全性与隐私' > '隐私'\n" +
         "2. 选择'完全磁盘访问权限'\n" +
-        "3. 勾选'Knowledge Focus'应用\n" +
+        "3. 勾选'KnowledgeFocus'应用\n" +
         "4. 授权完成后点击'重启App'按钮", 
         { duration: 10000 }
       );
@@ -119,7 +119,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         "手动授权步骤：\n" +
         "1. 系统偏好设置 > 安全性与隐私 > 隐私\n" +
         "2. 选择'完全磁盘访问权限'\n" + 
-        "3. 添加并勾选'Knowledge Focus'应用",
+        "3. 添加并勾选'KnowledgeFocus'应用",
         { duration: 10000 }
       );
     } finally {
@@ -245,7 +245,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
     >
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-center">欢迎使用 Knowledge Focus</DialogTitle>
+          <DialogTitle className="text-2xl font-bold text-center">欢迎使用 KnowledgeFocus</DialogTitle>
           <DialogDescription className="text-center">
             从文件管理到知识管理
           </DialogDescription>
@@ -298,7 +298,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         {!hasFullDiskAccess && !checkingPermission && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
             <p className="text-sm text-yellow-700 mb-2">
-              Knowledge Focus需要完全磁盘访问权限才能正常工作。这将允许应用扫描和索引您的文件，以提供智能文件分类功能。
+              KnowledgeFocus需要完全磁盘访问权限才能正常工作。这将允许应用扫描和索引您的文件，以提供智能文件分类功能。
             </p>
             <p className="text-sm text-yellow-700">
               您的数据始终保存在本地，我们不会收集或上传您的文件内容。

@@ -1,5 +1,5 @@
 """
-Knowledge Focus 应用配置模块
+KnowledgeFocus 应用配置模块
 """
 
 # 进程池配置

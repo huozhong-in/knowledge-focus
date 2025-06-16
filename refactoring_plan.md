@@ -1,4 +1,4 @@
-# Knowledge Focus 重构执行清单
+# KnowledgeFocus 重构执行清单
 
 ## 重构要点分析
 

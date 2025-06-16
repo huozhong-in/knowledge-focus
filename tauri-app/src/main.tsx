@@ -68,7 +68,7 @@ async function setTrayIcon() {
       return;
     }
     tray.setIcon(newIconPath);
-    tray.setTooltip("Knowledge Focus");
+    tray.setTooltip("KnowledgeFocus");
   }
 }
 

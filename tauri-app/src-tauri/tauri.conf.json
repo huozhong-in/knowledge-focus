@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Knowledge Focus",
+        "title": "KnowledgeFocus",
         "minWidth": 1024,
         "minHeight": 650,
         "dragDropEnabled": true,
