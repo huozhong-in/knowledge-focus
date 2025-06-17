@@ -1820,6 +1820,66 @@ def invalidate_config_caches():
     folder_hierarchy_cache.clear()
     logger.info("[CACHE] 所有配置缓存已清除")
 
+@app.post("/screening/delete-by-path")
+def delete_screening_by_path(
+    data: Dict[str, Any] = Body(...),
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """删除指定路径的文件粗筛记录
+    
+    当客户端检测到文件删除事件时，调用此API端点删除对应的粗筛记录。
+    
+    请求体:
+    - file_path: 要删除的文件路径
+    
+    返回:
+    - success: 操作是否成功
+    - deleted_count: 删除的记录数量
+    - message: 操作结果消息
+    """
+    try:
+        file_path = data.get("file_path")
+        
+        if not file_path:
+            logger.warning("删除粗筛记录请求中未提供文件路径")
+            return {
+                "success": False,
+                "deleted_count": 0,
+                "message": "文件路径不能为空"
+            }
+        
+        # 对于单个文件删除，我们需要确保路径是精确匹配的
+        # 我们可以使用delete_screening_results_by_path_prefix方法，但需要确保只删除这个确切路径
+        # 通常情况下，这个路径应该是一个文件路径，不会匹配到其他文件
+        
+        # 标准化路径
+        normalized_path = os.path.normpath(file_path).replace("\\", "/")
+        
+        # 执行删除操作
+        deleted_count = screening_mgr.delete_screening_results_by_path_prefix(normalized_path)
+        
+        # 记录操作结果
+        if deleted_count > 0:
+            logger.info(f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条")
+        else:
+            logger.info(f"未找到文件 '{normalized_path}' 的粗筛记录，无需删除")
+        
+        return {
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条"
+        }
+        
+    except Exception as e:
+        logger.error(f"删除文件粗筛记录失败: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {
+            "success": False,
+            "deleted_count": 0,
+            "message": f"删除失败: {str(e)}"
+        }
+        
 if __name__ == "__main__":
     try:
         logger.info("API服务程序启动")

@@ -1191,10 +1191,35 @@ impl FileMonitor {
     pub async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind) -> Option<FileMetadata> {
         // println!("[PROCESS_EVENT] Processing event {:?} for path {:?}", event_kind, path);
 
-        // 对于删除事件进行特殊处理 - 现在只能记录不能处理
+        // 对于删除事件进行特殊处理 - 调用API删除相应的记录
         if let notify::EventKind::Remove(_) = event_kind {
-            println!("[PROCESS_EVENT] File removal detected for {:?}. Cannot process removed files directly.", path);
-            // 未来可以考虑查询数据库删除相关记录
+            println!("[PROCESS_EVENT] 检测到文件删除: {:?}. 正在从粗筛结果表中删除记录...", path);
+            
+            // 构建API请求URL
+            let path_str = path.to_string_lossy().to_string();
+            let url = format!("http://{}:{}/screening/delete-by-path", self.api_host, self.api_port);
+            
+            // 构建请求体
+            let request_body = serde_json::json!({
+                "file_path": path_str
+            });
+            
+            // 发送删除请求到API
+            match self.client.post(&url).json(&request_body).send().await {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_success() {
+                        println!("[PROCESS_EVENT] 成功删除文件 {:?} 的粗筛记录", path);
+                    } else {
+                        let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
+                        eprintln!("[PROCESS_EVENT] 删除粗筛记录失败，状态码: {}. 错误信息: {}", status, &err_text[..std::cmp::min(err_text.len(), 200)]);
+                    }
+                },
+                Err(e) => {
+                    eprintln!("[PROCESS_EVENT] 发送删除请求失败: {}", e);
+                }
+            }
+            
             return None;
         }
         
