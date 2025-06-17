@@ -98,7 +98,7 @@ impl BlacklistTrieNode {
 pub struct MonitorStats {
     pub processed_files: u64,     // 处理的文件数量
     pub filtered_files: u64,      // 被过滤的文件数量
-    pub filtered_bundles: u64,    // 被过滤的macOS包数量
+    pub filtered_bundles: u64,    // 处理的macOS包数量（改为只计数，不过滤）
     pub error_count: u64,         // 处理错误次数
 }
 
@@ -897,13 +897,18 @@ impl FileMonitor {
         let filename = metadata.file_name.to_lowercase();
         let mut rule_matches = metadata.initial_rule_matches.clone().unwrap_or_default(); // Preserve existing if any
 
+        // 检查是否是macOS bundle文件
+        let mut is_bundle_file = metadata.is_os_bundle.unwrap_or(false);
+
         // Apply FileFilterRuleRust
         for filter_rule in &config.file_filter_rules {
             if !filter_rule.enabled {
                 continue;
             }
+            
             // 实现正则表达式、关键字和通配符匹配逻辑
             let mut matched_this_rule = false;
+            
             match filter_rule.rule_type {
                 RuleTypeRust::Filename => {
                     if filter_rule.pattern_type == "keyword" {
@@ -934,11 +939,28 @@ impl FileMonitor {
                             Ok(regex) => {
                                 if regex.is_match(&filename) {
                                     matched_this_rule = true;
-                                    // println!("[APPLY_RULES] Matched OS_BUNDLE regex rule '{}' for: {}", filter_rule.name, filename);
-                                    // 对于OS_BUNDLE类型，我们可以将其标记为排除
-                                    extra_data.insert("excluded_by_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(filter_rule.id)));
-                                    extra_data.insert("excluded_by_rule_name".to_string(), serde_json::Value::String(filter_rule.name.clone()));
+                                    println!("[APPLY_RULES] Matched OS_BUNDLE regex rule '{}' for: {}", filter_rule.name, filename);
+                                    
+                                    // 对于OSBundle类型，标记为bundle而不是排除
+                                    is_bundle_file = true;
+                                    
+                                    // 记录bundle规则信息
+                                    extra_data.insert("macos_bundle_rule_id".to_string(), serde_json::Value::Number(serde_json::Number::from(filter_rule.id)));
+                                    extra_data.insert("macos_bundle_rule_name".to_string(), serde_json::Value::String(filter_rule.name.clone()));
                                     extra_data.insert("is_macos_bundle".to_string(), serde_json::Value::Bool(true));
+                                    
+                                    // 将bundle文件添加到标签中
+                                    if metadata.tags.is_none() {
+                                        metadata.tags = Some(Vec::new());
+                                    }
+                                    if let Some(tags) = &mut metadata.tags {
+                                        if !tags.contains(&filter_rule.name) {
+                                            tags.push(filter_rule.name.clone());
+                                        }
+                                        if !tags.contains(&"macos_bundle".to_string()) {
+                                            tags.push("macos_bundle".to_string());
+                                        }
+                                    }
                                 }
                             },
                             Err(e) => {
@@ -974,50 +996,56 @@ impl FileMonitor {
 
             if matched_this_rule {
                 rule_matches.push(filter_rule.name.clone());
-                match filter_rule.action {
-                    RuleActionRust::Tag => {
-                        if metadata.tags.is_none() {
-                            metadata.tags = Some(Vec::new());
-                        }
-                        if let Some(tags) = &mut metadata.tags {
-                            // Avoid duplicate tags from the same rule, or use a Set
-                            if !tags.contains(&filter_rule.name) { // Simple check
-                                tags.push(filter_rule.name.clone());
+                
+                // 只为非OSBundle类型的规则应用排除逻辑
+                if filter_rule.rule_type != RuleTypeRust::OSBundle {
+                    match filter_rule.action {
+                        RuleActionRust::Tag => {
+                            if metadata.tags.is_none() {
+                                metadata.tags = Some(Vec::new());
                             }
-                            // If rule has a specific tag in extra_data, use that
-                            if let Some(JsonValue::String(tag_value)) = filter_rule.extra_data.as_ref().and_then(|ed| ed.get("tag_value")) {
-                                if !tags.contains(tag_value) {
-                                    tags.push(tag_value.clone());
+                            if let Some(tags) = &mut metadata.tags {
+                                // Avoid duplicate tags from the same rule, or use a Set
+                                if !tags.contains(&filter_rule.name) { // Simple check
+                                    tags.push(filter_rule.name.clone());
+                                }
+                                // If rule has a specific tag in extra_data, use that
+                                if let Some(JsonValue::String(tag_value)) = filter_rule.extra_data.as_ref().and_then(|ed| ed.get("tag_value")) {
+                                    if !tags.contains(tag_value) {
+                                        tags.push(tag_value.clone());
+                                    }
                                 }
                             }
                         }
-                        //  println!("[APPLY_RULES] Action TAG for rule '{}'", filter_rule.name);
-                    }
-                    RuleActionRust::Exclude => {
-                        extra_data.insert("excluded_by_rule_id".to_string(), JsonValue::Number(serde_json::Number::from(filter_rule.id)));
-                        extra_data.insert("excluded_by_rule_name".to_string(), JsonValue::String(filter_rule.name.clone()));
-                        // println!("[APPLY_RULES] Action EXCLUDE for rule '{}'. File will be marked.", filter_rule.name);
-                        
-                        // 更新被过滤的文件统计
-                        if let Ok(mut stats) = self.stats.lock() {
-                            stats.filtered_files += 1;
+                        RuleActionRust::Exclude => {
+                            // 只有非bundle文件才能被排除
+                            if !is_bundle_file {
+                                extra_data.insert("excluded_by_rule_id".to_string(), JsonValue::Number(serde_json::Number::from(filter_rule.id)));
+                                extra_data.insert("excluded_by_rule_name".to_string(), JsonValue::String(filter_rule.name.clone()));
+                                
+                                // 更新被过滤的文件统计
+                                if let Ok(mut stats) = self.stats.lock() {
+                                    stats.filtered_files += 1;
+                                }
+                            }
                         }
-                        
-                        // The caller (process_file_event) will need to check this extra_data field.
-                    }
-                    RuleActionRust::Include => {
-                        //  println!("[APPLY_RULES] Action INCLUDE for rule '{}'", filter_rule.name);
-                        // Default behavior, no specific action needed here unless it overrides an exclude
+                        RuleActionRust::Include => {
+                            // Default behavior, no specific action needed
+                        }
                     }
                 }
+                
+                // 设置分类ID（如果规则有定义）
                 if let Some(cat_id) = filter_rule.category_id {
-                    // Consider rule priority if multiple rules assign category
                     metadata.category_id = Some(cat_id);
-                    // println!("[APPLY_RULES] Rule '{}' assigned category_id: {}", filter_rule.name, cat_id);
                 }
             }
         }
 
+        // 更新元数据中的bundle标记
+        metadata.is_os_bundle = Some(is_bundle_file);
+
+        // 设置规则匹配记录
         if !rule_matches.is_empty() {
             metadata.initial_rule_matches = Some(rule_matches);
         }
@@ -1206,8 +1234,11 @@ impl FileMonitor {
             return None;
         }
         
-        // 根据扩展名快速过滤不在白名单中的文件类型
-        if path.is_file() {
+        // 首先检查是否为macOS bundle文件
+        let mut is_bundle = self.check_if_macos_bundle(&path);
+        
+        // 根据扩展名快速过滤不在白名单中的文件类型（但bundle文件例外）
+        if path.is_file() && !is_bundle {  // 添加 !is_bundle 条件，让bundle文件跳过白名单检查
             // 获取配置中的有效扩展名集合
             let valid_extensions: std::collections::HashSet<String> = {
                 let config_guard = self.config_cache.lock().unwrap();
@@ -1220,7 +1251,7 @@ impl FileMonitor {
                 }
             };
             
-            // 如果有效扩展名集合不为空，进行扩展名检查
+            // 如果有效扩展名集合不为空，进行扩展名检查（不检查bundle文件）
             if !valid_extensions.is_empty() {
                 if let Some(ext) = Self::extract_extension(&path) {
                     let ext_lower = ext.to_lowercase();
@@ -1242,18 +1273,9 @@ impl FileMonitor {
             }
         }
         
-        // 检查macOS bundle文件夹 - 这是高优先级过滤，应该在黑名单检查前执行
-        if self.check_if_macos_bundle(&path) {
-            println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by extension). Ignoring.", path);
-            // 增加统计计数器，记录过滤掉的bundle数量
-            if let Ok(mut stats) = self.stats.lock() {
-                stats.filtered_bundles += 1;
-            }
-            return None;
-        }
-        
-        // 检查是否位于bundle内部
-        if Self::is_inside_macos_bundle(&path) {
+        // 检查是否位于bundle内部 - 如果是bundle内部的文件，我们仍然过滤掉以避免递归处理
+        let is_inside_bundle = Self::is_inside_macos_bundle(&path);
+        if is_inside_bundle && !is_bundle {  // 如果是bundle内部文件，但自身不是bundle
             println!("[PROCESS_EVENT] Path {:?} is inside a macOS bundle. Ignoring.", path);
             if let Ok(mut stats) = self.stats.lock() {
                 stats.filtered_files += 1;
@@ -1262,32 +1284,31 @@ impl FileMonitor {
         }
         
         // 其次，针对macOS，如果是目录，检查是否有隐藏的Info.plist文件，这是典型的macOS bundle标志
+        let mut is_bundle_by_plist = false;
         if path.is_dir() && cfg!(target_os = "macos") {
             let info_plist = path.join("Contents/Info.plist");
             if info_plist.exists() {
-                println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by Info.plist). Ignoring.", path);
-                if let Ok(mut stats) = self.stats.lock() {
-                    stats.filtered_bundles += 1;
-                }
-                return None;
+                println!("[PROCESS_EVENT] Path {:?} is a macOS bundle folder (by Info.plist).", path);
+                is_bundle_by_plist = true;
+                is_bundle = true;  // 更新bundle标志
+                // 不再return None，而是继续处理，但标记为bundle
             }
             
             // 额外检查：如果目录里有许多以"."开头的文件，可能是macOS包文件的典型特征
-            let dot_files_count = std::fs::read_dir(path.clone())
-                .map(|entries| {
-                    entries.filter_map(Result::ok)
-                           .filter(|entry| 
-                               entry.file_name().to_string_lossy().starts_with(".")
-                           ).count()
-                })
-                .unwrap_or(0);
-                
-            if dot_files_count > 5 {  // 如果有超过5个隐藏文件，可能是一个macOS包
-                println!("[PROCESS_EVENT] Path {:?} contains many hidden files ({}). Likely a macOS bundle. Ignoring.", path, dot_files_count);
-                if let Ok(mut stats) = self.stats.lock() {
-                    stats.filtered_bundles += 1;
+            if !is_bundle && !is_bundle_by_plist {  // 如果还没被确定为bundle
+                let dot_files_count = std::fs::read_dir(path.clone())
+                    .map(|entries| {
+                        entries.filter_map(Result::ok)
+                               .filter(|entry| 
+                                   entry.file_name().to_string_lossy().starts_with(".")
+                               ).count()
+                    })
+                    .unwrap_or(0);
+                    
+                if dot_files_count > 5 {  // 如果有超过5个隐藏文件，可能是一个macOS包
+                    println!("[PROCESS_EVENT] Path {:?} contains many hidden files ({}). Likely a macOS bundle.", path, dot_files_count);
+                    is_bundle = true;  // 标记为bundle，但继续处理
                 }
-                return None;
             }
         }
         
@@ -1315,6 +1336,17 @@ impl FileMonitor {
                 return None;
             }
         };
+        
+        // 如果是macOS bundle文件，在元数据中标记
+        if is_bundle || is_bundle_by_plist {
+            println!("[PROCESS_EVENT] Marking path {:?} as macOS bundle.", path);
+            metadata.is_os_bundle = Some(true);
+            
+            // 在统计中记录bundle数量
+            if let Ok(mut stats) = self.stats.lock() {
+                stats.filtered_bundles += 1;  // 虽然不过滤，我们仍然计数
+            }
+        }
 
         // 仅为文件计算哈希，不为目录计算
         if !metadata.is_dir {
@@ -1327,12 +1359,14 @@ impl FileMonitor {
         // println!("[TEST_DEBUG] process_file_event: Applying initial rules for metadata of {:?}", path);
         self.apply_initial_rules(&mut metadata).await; 
         
-        // Check if the file was marked for exclusion by rules
-        if let Some(extra_meta) = &metadata.extra_metadata {
-            if extra_meta.get("excluded_by_rule_id").is_some() {
-                println!("[PROCESS_EVENT] File {:?} was excluded by rule: {:?}. Not processing further.", metadata.file_path, extra_meta.get("excluded_by_rule_name"));
-                // 如果文件被标记为排除，直接返回None，不进行进一步处理
-                return None;
+        // 检查文件是否被规则排除（但bundle文件例外）
+        if !metadata.is_os_bundle.unwrap_or(false) {  // 只有非bundle文件才检查排除标记
+            if let Some(extra_meta) = &metadata.extra_metadata {
+                if extra_meta.get("excluded_by_rule_id").is_some() {
+                    println!("[PROCESS_EVENT] File {:?} was excluded by rule: {:?}. Not processing further.", metadata.file_path, extra_meta.get("excluded_by_rule_name"));
+                    // 如果文件被标记为排除，直接返回None，不进行进一步处理
+                    return None;
+                }
             }
         }
         
@@ -1377,11 +1411,13 @@ impl FileMonitor {
                             continue;
                         }
                         
-                        // 检查是否为bundle或bundle内部文件（应该在process_file_event中已过滤，这里是双重保证）
+                        // 检查是否为macOS bundle文件
+                        // 现在我们不再跳过bundle文件，而是将其作为单个文件处理
                         if metadata.is_os_bundle.unwrap_or(false) {
-                            stats.bundle_skipped += 1;
-                            println!("[BATCH_PROC] 跳过macOS bundle文件: {:?}", metadata.file_path);
-                            continue;
+                            println!("[BATCH_PROC] 处理macOS bundle文件: {:?}", metadata.file_path);
+                            // 仍然计数，但是不跳过
+                            //stats.bundle_skipped += 1;
+                            //continue;
                         }
                         
                         // 检查文件是否被规则排除（来自apply_initial_rules的结果）
@@ -1393,8 +1429,8 @@ impl FileMonitor {
                             }
                         }
                         
-                        // 白名单扩展名检查（双重保险）
-                        if !metadata.is_dir {
+                        // 白名单扩展名检查（双重保险）- 但是bundle文件例外
+                        if !metadata.is_dir && !metadata.is_os_bundle.unwrap_or(false) {  // 添加对bundle文件的例外
                             // 获取配置中的有效扩展名集合
                             let valid_extensions: std::collections::HashSet<String> = {
                                 let config_guard = self.config_cache.lock().unwrap();
