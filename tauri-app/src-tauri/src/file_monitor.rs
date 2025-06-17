@@ -795,19 +795,25 @@ impl FileMonitor {
         false
     }
 
-    // 检查文件是否在macOS bundle内部
-    pub fn is_inside_macos_bundle(path: &Path) -> bool {
+    // 检查文件是否在macOS bundle内部，如果是则返回bundle路径
+    pub fn is_inside_macos_bundle(path: &Path) -> Option<PathBuf> {
         if let Some(path_str) = path.to_str() {
             // 检查常见bundle扩展
             let bundle_extensions = [".app/", ".bundle/", ".framework/", ".fcpbundle/", 
                                     ".photoslibrary/", ".imovielibrary/", ".tvlibrary/", ".theater/"];
             for ext in bundle_extensions.iter() {
                 if path_str.contains(ext) {
-                    return true;
+                    // 找到包含该扩展名的部分，并构建bundle路径
+                    if let Some(bundle_end_idx) = path_str.find(ext) {
+                        let bundle_path_str = &path_str[..bundle_end_idx + ext.len() - 1]; // -1 是为了去掉末尾的斜杠
+                        return Some(PathBuf::from(bundle_path_str));
+                    }
+                    // 如果无法解析路径，至少返回true的等价物
+                    return Some(path.to_path_buf());
                 }
             }
         }
-        false
+        None // 不在bundle内部
     }
 
     // 检查路径是否在黑名单内 (New implementation using Trie)
@@ -1298,14 +1304,13 @@ impl FileMonitor {
             }
         }
         
-        // 检查是否位于bundle内部 - 如果是bundle内部的文件，我们仍然过滤掉以避免递归处理
-        let is_inside_bundle = Self::is_inside_macos_bundle(&path);
-        if is_inside_bundle && !is_bundle {  // 如果是bundle内部文件，但自身不是bundle
-            println!("[PROCESS_EVENT] Path {:?} is inside a macOS bundle. Ignoring.", path);
-            if let Ok(mut stats) = self.stats.lock() {
-                stats.filtered_files += 1;
+        // 检查是否位于bundle内部 - 如果是bundle内部的文件，将事件转发到bundle本身
+        if let Some(bundle_path) = Self::is_inside_macos_bundle(&path) {
+            if !is_bundle {  // 如果是bundle内部文件，但自身不是bundle
+                println!("[PROCESS_EVENT] Path {:?} is inside bundle {:?}. Redirecting event to the bundle.", path, bundle_path);
+                // 使用 Box::pin 处理递归调用，避免无限大的 Future
+                return Box::pin(self.process_file_event(bundle_path, event_kind)).await;
             }
-            return None;
         }
         
         // 其次，针对macOS，如果是目录，检查是否有隐藏的Info.plist文件，这是典型的macOS bundle标志
@@ -1650,8 +1655,8 @@ impl FileMonitor {
                     
                     // 检查路径中的任何部分是否包含macOS bundle扩展名
                     // 这样可以确保bundle内部的所有文件也被跳过
-                    if Self::is_inside_macos_bundle(e.path()) {
-                        println!("[INITIAL_SCAN] 跳过Bundle内部文件: {:?}", e.path());
+                    if let Some(bundle_path) = Self::is_inside_macos_bundle(e.path()) {
+                        println!("[INITIAL_SCAN] 跳过Bundle内部文件: {:?}，属于Bundle: {:?}", e.path(), bundle_path);
                         return false;
                     }
                     
@@ -1913,8 +1918,8 @@ impl FileMonitor {
                 }
                 
                 // 检查路径中的任何部分是否包含macOS bundle扩展名
-                if Self::is_inside_macos_bundle(e.path()) {
-                    println!("[SINGLE_SCAN] 跳过Bundle内部文件: {:?}", e.path());
+                if let Some(bundle_path) = Self::is_inside_macos_bundle(e.path()) {
+                    println!("[SINGLE_SCAN] 跳过Bundle内部文件: {:?}，属于Bundle: {:?}", e.path(), bundle_path);
                     return false;
                 }
                 

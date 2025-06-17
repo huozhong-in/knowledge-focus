@@ -163,10 +163,17 @@ impl DebouncedFileMonitor {
             println!("[文件监控-线程] Path exists: {}", watch_path.exists());
             println!("[文件监控-线程] Path is dir: {}", watch_path.is_dir());
             
-            // 设置监控
-            match watcher.watch(watch_path, RecursiveMode::Recursive) {
+            // 设置监控，检查是否为macOS bundle文件夹决定监控模式
+            let watch_mode = if crate::file_monitor::FileMonitor::is_macos_bundle_folder(watch_path) {
+                println!("[文件监控-线程] 检测到 Bundle 文件夹，使用非递归模式监控: {}", dir_path_for_watcher);
+                RecursiveMode::NonRecursive
+            } else {
+                RecursiveMode::Recursive
+            };
+            
+            match watcher.watch(watch_path, watch_mode) {
                 Ok(_) => {
-                    println!("[文件监控-线程] ✅ 成功设置监控: {}", dir_path_for_watcher);
+                    println!("[文件监控-线程] ✅ 成功设置监控: {} (模式: {:?})", dir_path_for_watcher, watch_mode);
                     let _ = init_tx.send(Ok(()));
                 }
                 Err(e) => {

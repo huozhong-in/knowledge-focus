@@ -4,7 +4,7 @@ use chrono::{
     TimeZone};
 use serde::{Deserialize, Serialize};
 // use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{
     command, 
@@ -138,19 +138,25 @@ fn is_macos_bundle_folder(path: &Path) -> bool {
     false
 }
 
-// 检查文件是否在macOS bundle内部
-fn is_inside_macos_bundle(path: &Path) -> bool {
+// 检查文件是否在macOS bundle内部，如果是则返回bundle路径
+fn is_inside_macos_bundle(path: &Path) -> Option<PathBuf> {
     if let Some(path_str) = path.to_str() {
         // 检查常见bundle扩展
         let bundle_extensions = [".app/", ".bundle/", ".framework/", ".fcpbundle/", 
                                 ".photoslibrary/", ".imovielibrary/", ".tvlibrary/", ".theater/"];
         for ext in bundle_extensions.iter() {
             if path_str.contains(ext) {
-                return true;
+                // 找到包含该扩展名的部分，并构建bundle路径
+                if let Some(bundle_end_idx) = path_str.find(ext) {
+                    let bundle_path_str = &path_str[..bundle_end_idx + ext.len() - 1]; // -1 是为了去掉末尾的斜杠
+                    return Some(PathBuf::from(bundle_path_str));
+                }
+                // 如果无法解析路径，至少返回true的等价物
+                return Some(path.to_path_buf());
             }
         }
     }
-    false
+    None // 不在bundle内部
 }
 
 #[derive(Debug, Default)]
@@ -578,7 +584,7 @@ async fn scan_files_with_filter(
                 continue;
             }
             
-            if is_inside_macos_bundle(entry.path()) {
+            if let Some(_) = is_inside_macos_bundle(entry.path()) {
                 stats.bundle_filtered += 1;
                 continue;
             }
