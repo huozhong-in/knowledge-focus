@@ -557,7 +557,7 @@ impl DebouncedFileMonitor {
     /// 3. 重新启动监控所有目录
     /// 
     /// 调用此方法可以在配置更改后无缝切换监控
-    pub async fn restart_monitoring(&mut self, debounce_time: Duration) -> std::result::Result<(), String> {
+    pub async fn _restart_monitoring(&mut self, debounce_time: Duration) -> std::result::Result<(), String> {
         println!("[防抖监控] 开始平滑重启监控...");
         
         // 1. 停止现有监控

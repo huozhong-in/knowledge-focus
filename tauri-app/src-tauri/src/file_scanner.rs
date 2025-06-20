@@ -307,86 +307,57 @@ pub async fn start_backend_scanning(
     // println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
     // println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
     
-    // 获取文件监控器或创建新的文件监控器
-    let file_monitor = {
-        // 首先尝试从 AppState 获取已初始化的监控器
+    // Get the FileMonitor instance from AppState.
+    // It should have been created by setup_file_monitoring_infrastructure and be in a "new" state.
+    let mut file_monitor_instance = {
         let monitor_option = {
             let guard = app_state.file_monitor.lock().unwrap();
             guard.clone()
         };
-        
-        // 如果文件监控器不存在，则创建并初始化一个新实例
         match monitor_option {
             Some(monitor) => {
-                println!("[扫描] 找到已初始化的文件监控器");
+                println!("[扫描] Found FileMonitor instance in AppState.");
                 monitor
             },
             None => {
-                println!("[扫描] 文件监控器未初始化，创建新的实例");
-                
-                // 获取API状态以创建新的FileMonitor
+                // This case should ideally not happen if setup_file_monitoring_infrastructure ran correctly.
+                eprintln!("[扫描] FileMonitor not found in AppState. This is unexpected. Creating a new one.");
                 let (api_host, api_port) = {
                     let api_state = app_handle.state::<crate::ApiState>();
                     let api_state_guard = api_state.0.lock().unwrap();
-                    
                     if api_state_guard.process_child.is_none() {
                         return Err("API服务未运行，无法启动文件监控".to_string());
                     }
-                    
                     (api_state_guard.host.clone(), api_state_guard.port)
                 };
-                
-                // 创建并初始化监控器
-                let new_monitor = crate::file_monitor::FileMonitor::new(api_host, api_port);
-                
-                // 保存到 AppState
-                {
-                    let mut monitor_guard = app_state.file_monitor.lock().unwrap();
-                    *monitor_guard = Some(new_monitor.clone());
-                }
-                
-                println!("[扫描] 已创建新的文件监控器实例");
-                new_monitor
+                crate::file_monitor::FileMonitor::new(api_host, api_port)
             }
         }
     };
-    
-    // 尝试初始化监控器（如果尚未初始化）
-    let monitor_initialized = file_monitor.get_metadata_sender().is_some();
-    if !monitor_initialized {
-        println!("[扫描] 文件监控器元数据通道未初始化，执行初始化");
-        
-        // 初始化监控器
-        let mut file_monitor_mut = file_monitor.clone();
-        if let Err(e) = file_monitor_mut.start_monitoring_setup_and_initial_scan().await {
-            eprintln!("[扫描] 初始化监控器失败: {}", e);
-            return Err(format!("无法初始化文件监控器: {}", e));
-        }
-        
-        // 更新 AppState 中的监控器实例
-        {
-            let mut monitor_guard = app_state.file_monitor.lock().unwrap();
-            *monitor_guard = Some(file_monitor.clone());
-        }
-        
-        println!("[扫描] 文件监控器初始化成功");
-    }
-    
+
+    // The FileMonitor instance (file_monitor_instance) is now obtained.
+    // It will be fully initialized (including starting scans and batch processors)
+    // exclusively inside the spawned task below.
+
     // 通过FileMonitor获取配置而不是AppState
     // 这里先刷新配置以确保获取到最新的监控目录列表
-    if let Err(e) = file_monitor.refresh_all_configurations().await {
+    // This initial refresh is better handled by start_monitoring_setup_and_initial_scan,
+    // which already fetches configuration.
+    /*
+    if let Err(e) = file_monitor_instance.refresh_all_configurations().await {
         eprintln!("[扫描] 刷新配置失败: {}", e);
         return Err(format!("无法刷新配置: {}", e));
     }
     
     // 检查是否有监控目录
-    let monitored_dirs = file_monitor.get_monitored_directories();
+    let monitored_dirs = file_monitor_instance.get_monitored_directories();
     if monitored_dirs.is_empty() {
         println!("[扫描] 没有监控目录，无需启动扫描");
         return Ok(false);
     }
     
     println!("[扫描] 找到 {} 个监控目录，准备启动扫描", monitored_dirs.len());
+    */
     
     // 发送事件通知前端扫描开始
     if let Err(e) = app_handle.emit("scan_started", ()) {
@@ -395,8 +366,8 @@ pub async fn start_backend_scanning(
     
     // 启动后台扫描任务
     let app_handle_clone = app_handle.clone();
-    let file_monitor_clone = file_monitor.clone();
     tokio::spawn(async move {
+        // file_monitor_instance is moved into this task.
         println!("[扫描] 开始执行全量扫描");
         
         // 设置扫描完成标志为false
@@ -407,8 +378,7 @@ pub async fn start_backend_scanning(
         }
         
         // 执行初始扫描（完整的监控设置和扫描）
-        let mut fm = file_monitor_clone.clone();
-        match fm.start_monitoring_setup_and_initial_scan().await {
+        match file_monitor_instance.start_monitoring_setup_and_initial_scan().await {
             Ok(_) => {
                 println!("[扫描] 初始扫描和监控设置完成");
                 
@@ -416,11 +386,16 @@ pub async fn start_backend_scanning(
                 {
                     let mut scan_completed = app_state_handle.initial_scan_completed.lock().unwrap();
                     *scan_completed = true;
+                    // After the initial scan is complete, process any pending configuration changes.
+                    // Note: process_pending_config_changes spawns its own Tokio task.
+                    app_state_handle.process_pending_config_changes();
                 }
                 
-                // 更新AppState中的配置
-                if let Some(config) = fm.get_configurations() {
+                // Update AppState with the initialized FileMonitor and its config
+                if let Some(config) = file_monitor_instance.get_configurations() {
                     app_state_handle.update_config(config);
+                    let mut app_state_monitor_guard = app_state_handle.file_monitor.lock().unwrap();
+                    *app_state_monitor_guard = Some(file_monitor_instance.clone());
                     println!("[扫描] 已更新AppState配置");
                 }
                 
@@ -446,7 +421,7 @@ pub async fn start_backend_scanning(
                     None => {
                         println!("[扫描] 创建新的防抖动监控器");
                         // 创建新的防抖动监控器
-                        let monitor_arc = std::sync::Arc::new(fm.clone());
+                        let monitor_arc = std::sync::Arc::new(file_monitor_instance.clone());
                         let new_monitor = crate::file_monitor_debounced::DebouncedFileMonitor::new(monitor_arc);
                         
                         // 保存到 AppState
@@ -460,7 +435,7 @@ pub async fn start_backend_scanning(
                 };
                 
                 // 获取目录列表并启动防抖动监控
-                let directories: Vec<String> = fm.get_monitored_directories()
+                let directories: Vec<String> = file_monitor_instance.get_monitored_directories()
                     .into_iter()
                     .filter(|dir| !dir.is_blacklist) // 过滤掉黑名单目录
                     .map(|dir| dir.path)
@@ -732,4 +707,3 @@ async fn scan_files_with_filter(
 
     Ok(files)
 }
-

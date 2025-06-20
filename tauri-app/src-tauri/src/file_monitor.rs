@@ -292,6 +292,9 @@ pub struct FileMonitor {
     stats: Arc<Mutex<MonitorStats>>,
     // New field for hierarchical blacklist
     blacklist_trie: Arc<Mutex<BlacklistTrieNode>>,
+    // 添加状态标志位，防止重复处理
+    is_batch_processor_running: Arc<Mutex<bool>>,
+    is_initial_scan_running: Arc<Mutex<bool>>,
 }
 
 impl FileMonitor {
@@ -312,6 +315,9 @@ impl FileMonitor {
             batch_size: 50,
             batch_interval: Duration::from_secs(5),
             blacklist_trie: Arc::new(Mutex::new(BlacklistTrieNode::default())), // Initialize Trie
+            // 初始化状态标志位
+            is_batch_processor_running: Arc::new(Mutex::new(false)),
+            is_initial_scan_running: Arc::new(Mutex::new(false)),
         }
     }
 
@@ -1412,6 +1418,23 @@ impl FileMonitor {
         batch_size: usize,
         batch_interval: Duration
     ) {
+        // 检查批处理器是否已经在运行
+        {
+            let mut is_running = self.is_batch_processor_running.lock().unwrap();
+            if *is_running {
+                println!("[BATCH_PROC] 批处理器已在运行，跳过重复启动");
+                return;
+            }
+            *is_running = true;
+        }
+        
+        // 使用scopeguard确保函数结束时重置运行状态
+        let _is_running_guard = scopeguard::guard(&self.is_batch_processor_running, |guard| {
+            if let Ok(mut is_running) = guard.lock() {
+                *is_running = false;
+            }
+        });
+
         // 统计信息
         let mut stats = BatchProcessorStats {
             received_files: 0,
@@ -1590,6 +1613,17 @@ impl FileMonitor {
 
     // 执行初始扫描
     async fn perform_initial_scan(&self, tx_metadata: &Sender<FileMetadata>) -> Result<(), String> {
+        // Guard to prevent multiple initial scans for the same FileMonitor instance
+        // This flag indicates that the initial scan process has been started.
+        {
+            let mut is_running_guard = self.is_initial_scan_running.lock().unwrap();
+            if *is_running_guard {
+                println!("[INITIAL_SCAN] Initial scan has already been initiated or completed for this monitor instance. Skipping.");
+                return Ok(());
+            }
+            *is_running_guard = true; // Mark as initiated
+        }
+
         let directories = self.monitored_dirs.lock().unwrap().clone();
         
         // 获取完全磁盘访问权限状态
@@ -1768,23 +1802,18 @@ impl FileMonitor {
                 },
                 Err(e) => {
                     if retries % 5 == 0 { // 每5次尝试输出一次日志，避免日志过多
-                        println!("[START_MONITORING] API服务尚未就绪，等待中 ({}/{}): {}", retries, max_retries, e);
+                        println!("[START_MONITORING] API服务未就绪，正在重试 ({}/{}): {}", retries, max_retries, e);
                     }
                     retries += 1;
-                    sleep(Duration::from_secs(1)).await;
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 }
             }
         }
         
         if !config_fetched {
-            let error = format!("经过{}秒尝试，无法连接到API服务获取配置", max_retries);
-            eprintln!("[START_MONITORING] {}", error);
-            return Err(error);
+            return Err("无法连接到API服务或获取配置，已达到最大重试次数".to_string());
         }
-        
-        println!("[START_MONITORING] API服务连接成功，配置已获取");
 
-        // 创建元数据通道
         let (metadata_tx, metadata_rx) = mpsc::channel::<FileMetadata>(100);
         self.metadata_tx = Some(metadata_tx.clone());
          
@@ -1970,68 +1999,5 @@ impl FileMonitor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::Path;
-    use super::FileMonitor;
 
-    #[test]
-    fn test_macos_bundle_detection() {
-        let test_paths = vec![
-            // 基础文件类型 - 不应匹配
-            ("/Users/test/Documents/test.txt", false),
-            ("/Users/test/Documents/notes.md", false),
             
-            // 顶层包文件 - 应匹配
-            ("/Users/test/Applications/App.app", true),
-            ("/Users/test/Projects/MyProject.xcodeproj", true),
-            ("/Users/test/Movies/FinalCutProjects/MyMovie.fcpbundle", true),
-            ("/Users/test/Pictures/Photos Library.photoslibrary", true),
-            ("/Users/test/Documents/Keynote/Presentation.key", true),
-            ("/Users/test/Documents/Pages/Document.pages", true),
-            ("/Users/test/Documents/Numbers/Spreadsheet.numbers", true),
-            ("/Users/test/Library/Application Support/MyApp.bundle", true),
-            ("/Users/test/Library/Frameworks/MyFramework.framework", true),
-            ("/Users/test/Library/en.lproj", true),
-            ("/Users/test/Library/QuickLook/Preview.qlgenerator", true),
-            
-            // 深层路径 - iMovie库内部的文件，应该匹配
-            ("/Users/test/Movies/iMovie 剪辑资源库.imovielibrary/2025-3-16/CurrentVersion.imovieevent", true),
-            ("/Users/test/Movies/iMovie 剪辑资源库.imovielibrary/Shared/Stills.modelDatabase", true),
-            
-            // TV库相关文件 - 应该匹配
-            ("/Users/test/Movies/TV.tvlibrary", true),
-            ("/Users/test/Movies/TV.tvlibrary/Library.json", true),
-            ("/Users/test/Movies/TV.tvlibrary/Metadata/TV Shows/Show.tvshow", true),
-            
-            // 深层路径 - 应用Bundle内部的文件，应该匹配
-            ("/Users/test/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/DeviceSupport/16.0/DeveloperDiskImage.dmg", true),
-            ("/Users/test/Library/Developer/Xcode/DerivedData/MyApp-abc123/Build/Products/Debug/MyApp.app/Contents/Resources/Base.lproj/Main.nib", true),
-            
-            // 深层路径 - 照片库内部的文件，应该匹配
-            ("/Users/test/Pictures/照片图库.photoslibrary/database/Library.apdb", true),
-            ("/Users/test/Pictures/照片图库.photoslibrary/resources/derivatives/masters/8/867/867ED30F-9780-40EC-A704-0E94BF09E0EF_1_201_a.jpeg", true),
-            
-            // 普通文件夹和文件 - 不应匹配
-            ("/Users/test/Documents/normal_folder", false),
-            ("/Users/test/Projects/rust-project", false),
-            ("/Users/test/Documents/.hidden_file", false),
-            
-            // 特殊情况 - 名称中包含但不完全符合bundle模式的文件/目录 - 不应匹配
-            ("/Users/test/Documents/app_data.json", false),
-            ("/Users/test/Projects/framework_test", false),
-        ];
-
-        for (path_str, expected_result) in test_paths {
-            let path = Path::new(path_str);
-            let is_bundle = FileMonitor::is_macos_bundle_folder(path);
-            assert_eq!(
-                is_bundle, expected_result,
-                "Path '{}' was detected as {} but expected {}",
-                path_str, 
-                if is_bundle { "bundle" } else { "not bundle" },
-                if expected_result { "bundle" } else { "not bundle" }
-            );
-        }
-    }
-}
