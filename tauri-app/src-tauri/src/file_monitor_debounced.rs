@@ -357,7 +357,14 @@ impl DebouncedFileMonitor {
                 };
                 
                 // 使用原始FileMonitor中的process_file_event处理简化后的事件
-                if let Some(metadata) = fm_processor.process_file_event(path.clone(), simplified_kind).await {
+                // 检查是否为bundle内部文件，如果是，则将事件归因于bundle本身
+                let processed_path = if let Some(bundle_path) = crate::file_monitor::FileMonitor::is_inside_macos_bundle(&path) {
+                    println!("[防抖处理器] 检测到Bundle内部文件，归因于Bundle本身: {:?}", bundle_path);
+                    bundle_path
+                } else {
+                    path.clone()
+                };
+                if let Some(metadata) = fm_processor.process_file_event(processed_path.clone(), simplified_kind).await {
                     println!("[防抖处理器] 处理文件元数据: {:?}", metadata.file_path);
                     
                     // 获取元数据发送通道并发送元数据
