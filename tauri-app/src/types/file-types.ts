@@ -11,7 +11,7 @@ export interface FileScreeningResult {
   category_id?: number;
   matched_rules?: number[];
   extra_metadata?: Record<string, any>;
-  tags?: string[];
+  labels?: string[];
   status: string;
   error_message?: string;
   task_id?: number;

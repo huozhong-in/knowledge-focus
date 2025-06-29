@@ -727,7 +727,7 @@ pub fn run() {
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {
-                // 获取窗口的标签，区分是哪个窗口被销毁
+                // 获取窗口的标牌，区分是哪个窗口被销毁
                 let window_label = window.label();
                 
                 // 我们不再需要在这里手动终止 API 进程，因为 ApiProcessManager 的 Drop 实现会在应用退出时自动处理
@@ -735,7 +735,7 @@ pub fn run() {
                 println!("窗口被销毁: {}", window_label);
             }
             WindowEvent::CloseRequested { api, .. } => {
-                // 获取窗口的标签，用于区分不同窗口
+                // 获取窗口的标牌，用于区分不同窗口
                 let window_label = window.label();
                 
                 // 针对不同窗口采取不同的关闭策略

@@ -327,7 +327,7 @@ class RefineManager:
             "created_time_iso": screening_result.created_time.isoformat() if screening_result.created_time else None,
             "modified_time_iso": screening_result.modified_time.isoformat() if screening_result.modified_time else None,
             "accessed_time_iso": screening_result.accessed_time.isoformat() if screening_result.accessed_time else None,
-            "tags_from_screening": screening_result.tags or [],
+            "labels_from_screening": screening_result.labels or [],
             "category_from_screening": screening_result.category_id 
         }
         # 可以根据需要添加更多从 screening_result 直接获取或简单转换的元数据
@@ -356,14 +356,14 @@ class RefineManager:
             features["date_in_filename"] = date_match.group(1).replace("-", "").replace("_", "")
 
         # 更多特征可以根据 refine_define.md 中的定义添加
-        # 例如：按文件名模式/标签 (Filename Pattern / Tag)
+        # 例如：按文件名模式/标牌 (Filename Pattern / label)
         # 这部分逻辑可能需要访问 FileFilterRule 表
-        # file_filter_rules = self.session.exec(select(FileFilterRule).where(FileFilterRule.rule_type == 'filename', FileFilterRule.action == 'tag')).all()
+        # file_filter_rules = self.session.exec(select(FileFilterRule).where(FileFilterRule.rule_type == 'filename', FileFilterRule.action == 'label')).all()
         # for rule in file_filter_rules:
         #     if re.search(rule.pattern, screening_result.file_name, re.IGNORECASE if rule.is_case_sensitive is False else 0):
-        #         if 'derived_tags' not in features:
-        #             features['derived_tags'] = []
-        #         features['derived_tags'].append(rule.tag_name) # 假设 FileFilterRule 有 tag_name 字段
+        #         if 'derived_labels' not in features:
+        #             features['derived_labels'] = []
+        #         features['derived_labels'].append(rule.label_name) # 假设 FileFilterRule 有 label_name 字段
 
         return features
 
@@ -450,7 +450,7 @@ class RefineManager:
                 name=name, 
                 description=description, 
                 path=path or "",  # 添加路径字段，如果未提供则使用空字符串
-                # 不再使用 tags 字段，因为 Project 类中没有定义
+                # 不再使用 labels 字段，因为 Project 类中没有定义
             )
             self.session.add(project)
             try:
@@ -657,7 +657,7 @@ class RefineManager:
         # 此方法将用于API层，根据 refine_define.md 中的定义查询 FileRefineResult 表
         # 例如: wise_folder_type="project", criteria={"project_id": 1}
         # wise_folder_type="file_category", criteria={"category_name": "document"}
-        # wise_folder_type="filename_pattern", criteria={"tag": "草稿文件"}
+        # wise_folder_type="filename_pattern", criteria={"label": "草稿文件"}
         # ...等等
         # 这个方法需要更详细的实现，根据传入的类型和条件构建SQLModel查询
         logger.info(f"获取智慧文件夹数据: 类型='{wise_folder_type}', 条件={criteria}")
@@ -701,17 +701,17 @@ class RefineManager:
                 else:
                     return [] # Category not found
 
-        elif wise_folder_type == "filename_pattern_tag": # Based on refine_define.md
-            tag = criteria.get("tag")
-            if tag:
-                # This implies that the 'tag' from FileFilterRule (applied during screening)
-                # is stored in FileScreeningResult.tags, and potentially copied to FileRefineResult.features or extra_metadata
-                # Example: features['derived_tags'] contains the tag
+        elif wise_folder_type == "filename_pattern_label": # Based on refine_define.md
+            label = criteria.get("label")
+            if label:
+                # This implies that the 'label' from FileFilterRule (applied during screening)
+                # is stored in FileScreeningResult.labels, and potentially copied to FileRefineResult.features or extra_metadata
+                # Example: features['derived_labels'] contains the label
                 # This requires JSON array contains operation
-                # query = query.where(FileRefineResult.features['derived_tags'].contains([tag])) # SQLAlchemy specific for JSON
-                # Or if tags are in screening_result.tags
+                # query = query.where(FileRefineResult.features['derived_labels'].contains([label])) # SQLAlchemy specific for JSON
+                # Or if labels are in screening_result.labels
                 query = query.join(FileScreeningResult, FileRefineResult.screening_id == FileScreeningResult.id)\
-                               .where(FileScreeningResult.tags.contains([tag])) # Assuming tags is a JSON array
+                               .where(FileScreeningResult.labels.contains([label])) # Assuming labels is a JSON array
             else:
                 return []
 
@@ -826,50 +826,50 @@ class RefineManager:
                     "criteria": {"category_id": category.id}
                 })
         
-        # 3. 按文件标签获取文件夹
+        # 3. 按文件标牌获取文件夹
         if task_id == "all":
             # 如果是获取所有智慧文件夹，使用不带task_id条件的SQL
-            tags_query = """
-            WITH file_tags AS (
-                SELECT fr.id, json_each.value as tag
+            labels_query = """
+            WITH file_labels AS (
+                SELECT fr.id, json_each.value as label
                 FROM t_file_refine_results fr
                 JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-                JOIN json_each(fs.tags) ON TRUE
+                JOIN json_each(fs.labels) ON TRUE
             )
-            SELECT tag, COUNT(id) as file_count
-            FROM file_tags
-            GROUP BY tag
+            SELECT label, COUNT(id) as file_count
+            FROM file_labels
+            GROUP BY label
             HAVING COUNT(id) > 0
             """
-            result = self.session.exec(text(tags_query)).all()
+            result = self.session.exec(text(labels_query)).all()
         else:
             # 使用带task_id条件的原始SQL
-            tags_query = """
-            WITH file_tags AS (
-                SELECT fr.id, json_each.value as tag
+            labels_query = """
+            WITH file_labels AS (
+                SELECT fr.id, json_each.value as label
                 FROM t_file_refine_results fr
                 JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-                JOIN json_each(fs.tags) ON TRUE
+                JOIN json_each(fs.labels) ON TRUE
                 WHERE fr.task_id = :task_id
             )
-            SELECT tag, COUNT(id) as file_count
-            FROM file_tags
-            GROUP BY tag
+            SELECT label, COUNT(id) as file_count
+            FROM file_labels
+            GROUP BY label
             HAVING COUNT(id) > 0
             """
-            result = self.session.exec(text(tags_query), params={"task_id": task_id}).all()
+            result = self.session.exec(text(labels_query), params={"task_id": task_id}).all()
         
         for row in result:
-            tag = row[0]
+            label = row[0]
             file_count = row[1]
             
             wise_folders.append({
-                "type": "tag",
+                "type": "label",
                 "id": None,
-                "name": tag,
-                "description": f"标签: {tag}",
+                "name": label,
+                "description": f"标牌: {label}",
                 "file_count": file_count,
-                "criteria": {"tag": tag}
+                "criteria": {"label": label}
             })
         
         # 4. 按时间段获取文件夹
@@ -935,8 +935,8 @@ class RefineManager:
                 "criteria": {"min_size_mb": 10}
             })
         
-        # 排序文件夹：项目 > 分类 > 标签 > 时间 > 大小
-        type_order = {"project": 1, "category": 2, "tag": 3, "time": 4, "file_size": 5}
+        # 排序文件夹：项目 > 分类 > 标牌 > 时间 > 大小
+        type_order = {"project": 1, "category": 2, "label": 3, "time": 4, "file_size": 5}
         wise_folders.sort(key=lambda f: (type_order.get(f["type"], 99), -f["file_count"]))
         
         return wise_folders
@@ -979,7 +979,7 @@ class RefineManager:
                 "file_size": screen_result.file_size,
                 "modified_time": screen_result.modified_time.isoformat() if screen_result.modified_time else None,
                 "category_id": screen_result.category_id,
-                "tags": screen_result.tags or []
+                "labels": screen_result.labels or []
             })
             
         return files
@@ -1022,17 +1022,17 @@ class RefineManager:
                 "file_size": screen_result.file_size,
                 "modified_time": screen_result.modified_time.isoformat() if screen_result.modified_time else None,
                 "category_id": screen_result.category_id,
-                "tags": screen_result.tags or []
+                "labels": screen_result.labels or []
             })
             
         return files
         
-    def get_files_by_tag(self, task_id: str, tag: str) -> List[Dict[str, Any]]:
-        """获取带有特定标签的文件列表
+    def get_files_by_label(self, task_id: str, label: str) -> List[Dict[str, Any]]:
+        """获取带有特定标牌的文件列表
         
         Args:
             task_id: 任务ID
-            tag: 标签名
+            label: 标牌名
             
         Returns:
             文件列表
@@ -1043,23 +1043,23 @@ class RefineManager:
             logger.error(f"无效的任务ID: {task_id}")
             return []
             
-        if not tag:
-            logger.error("标签名不能为空")
+        if not label:
+            logger.error("标牌名不能为空")
             return []
             
-        # SQLite JSON 查询，检查标签是否包含在 tags 数组中
+        # SQLite JSON 查询，检查标牌是否包含在 labels 数组中
         # 需要使用 json_each 函数和 JOIN 来实现数组包含查询
         query = """
         SELECT fr.id, fs.file_path, fs.file_name, fs.extension, 
-               fs.file_size, fs.modified_time, fs.category_id, fs.tags
+               fs.file_size, fs.modified_time, fs.category_id, fs.labels
         FROM t_file_refine_results fr
         JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-        JOIN json_each(fs.tags) ON json_each.value = :tag
+        JOIN json_each(fs.labels) ON json_each.value = :label
         WHERE fr.task_id = :task_id
         ORDER BY fs.file_name
         """
         
-        result = self.session.execute(text(query), {"task_id": task_id, "tag": tag})
+        result = self.session.execute(text(query), {"task_id": task_id, "label": label})
         
         files = []
         for row in result:
@@ -1083,7 +1083,7 @@ class RefineManager:
                 "file_size": row.file_size,
                 "modified_time": modified_time_str,
                 "category_id": row.category_id,
-                "tags": json.loads(row.tags) if row.tags else []
+                "labels": json.loads(row.labels) if row.labels else []
             })
             
         return files
@@ -1140,7 +1140,7 @@ class RefineManager:
                 "file_size": screen_result.file_size,
                 "modified_time": screen_result.modified_time.isoformat() if screen_result.modified_time else None,
                 "category_id": screen_result.category_id,
-                "tags": screen_result.tags or []
+                "labels": screen_result.labels or []
             })
             
         return files
@@ -1195,10 +1195,10 @@ class RefineManager:
                 "description": "按文件类型组织的文件"
             },
             {
-                "type": "tag",
-                "name": "标签",
+                "type": "label",
+                "name": "标牌",
                 "icon": "tag",
-                "description": "按标签组织的文件"
+                "description": "按标牌组织的文件"
             },
             {
                 "type": "time",
@@ -1235,19 +1235,19 @@ class RefineManager:
                 ).first()
                 # 直接使用count，它已经是一个整数
                 category["folder_count"] = count
-            elif category["type"] == "tag":
-                # 统计标签数量
-                tags_query = """
-                WITH file_tags AS (
-                    SELECT fr.id, json_each.value as tag
+            elif category["type"] == "label":
+                # 统计标牌数量
+                labels_query = """
+                WITH file_labels AS (
+                    SELECT fr.id, json_each.value as label
                     FROM t_file_refine_results fr
                     JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-                    JOIN json_each(fs.tags) ON TRUE
+                    JOIN json_each(fs.labels) ON TRUE
                 )
-                SELECT COUNT(DISTINCT tag) as tag_count
-                FROM file_tags
+                SELECT COUNT(DISTINCT label) as label_count
+                FROM file_labels
                 """
-                result = self.session.exec(text(tags_query)).first()
+                result = self.session.exec(text(labels_query)).first()
                 category["folder_count"] = result[0] if result else 0
             elif category["type"] == "time":
                 # 时间分类是固定的几个
@@ -1262,7 +1262,7 @@ class RefineManager:
         """根据分类类型获取智慧文件夹列表。
         
         Args:
-            category_type: 分类类型，如 project, category, tag, time, other
+            category_type: 分类类型，如 project, category, label, time, other
             
         Returns:
             智慧文件夹列表，每个文件夹包含类型、名称、文件数量等信息
@@ -1323,33 +1323,33 @@ class RefineManager:
                         "criteria": {"category_id": category.id}
                     })
         
-        elif category_type == "tag":
-            # 获取所有标签
-            tags_query = """
-            WITH file_tags AS (
-                SELECT fr.id, json_each.value as tag
+        elif category_type == "label":
+            # 获取所有标牌
+            labels_query = """
+            WITH file_labels AS (
+                SELECT fr.id, json_each.value as label
                 FROM t_file_refine_results fr
                 JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-                JOIN json_each(fs.tags) ON TRUE
+                JOIN json_each(fs.labels) ON TRUE
             )
-            SELECT tag, COUNT(id) as file_count
-            FROM file_tags
-            GROUP BY tag
+            SELECT label, COUNT(id) as file_count
+            FROM file_labels
+            GROUP BY label
             HAVING COUNT(id) > 0
             """
             
-            result = self.session.exec(text(tags_query)).all()
+            result = self.session.exec(text(labels_query)).all()
             for row in result:
-                tag = row[0]
+                label = row[0]
                 file_count = row[1]
                 
                 folders.append({
-                    "id": f"tag_{tag}",
-                    "type": "tag",
-                    "name": tag,
-                    "description": f"标签: {tag}",
+                    "id": f"label_{label}",
+                    "type": "label",
+                    "name": label,
+                    "description": f"标牌: {label}",
                     "file_count": file_count,
-                    "criteria": {"tag": tag}
+                    "criteria": {"label": label}
                 })
         
         elif category_type == "time":
@@ -1437,7 +1437,7 @@ class RefineManager:
         """获取智慧文件夹中的文件列表。
         
         Args:
-            folder_type: 文件夹类型，如 project, category, tag, time
+            folder_type: 文件夹类型，如 project, category, label, time
             criteria: 查询条件
             
         Returns:
@@ -1474,7 +1474,7 @@ class RefineManager:
                         "file_size": screen_result.file_size,
                         "modified_time": format_modified_time(screen_result.modified_time),
                         "category_id": screen_result.category_id,
-                        "tags": screen_result.tags or []
+                        "labels": screen_result.labels or []
                     })
         
         elif folder_type == "category":
@@ -1497,23 +1497,23 @@ class RefineManager:
                         "file_size": screen_result.file_size,
                         "modified_time": format_modified_time(screen_result.modified_time),
                         "category_id": screen_result.category_id,
-                        "tags": screen_result.tags or []
+                        "labels": screen_result.labels or []
                     })
         
-        elif folder_type == "tag":
-            tag = criteria.get("tag")
-            if tag:
-                # 查询带有特定标签的文件
+        elif folder_type == "label":
+            label = criteria.get("label")
+            if label:
+                # 查询带有特定标牌的文件
                 query = """
                 SELECT fr.id, fs.file_path, fs.file_name, fs.extension, 
-                       fs.file_size, fs.modified_time, fs.category_id, fs.tags
+                       fs.file_size, fs.modified_time, fs.category_id, fs.labels
                 FROM t_file_refine_results fr
                 JOIN t_file_screening_results fs ON fr.screening_id = fs.id
-                JOIN json_each(fs.tags) ON json_each.value = :tag
+                JOIN json_each(fs.labels) ON json_each.value = :label
                 ORDER BY fs.file_name
                 """
                 
-                result = self.session.execute(text(query), {"tag": tag})
+                result = self.session.execute(text(query), {"label": label})
                 
                 for row in result:
                     files.append({
@@ -1524,7 +1524,7 @@ class RefineManager:
                         "file_size": row.file_size,
                         "modified_time": format_modified_time(row.modified_time),
                         "category_id": row.category_id,
-                        "tags": json.loads(row.tags) if row.tags else []
+                        "labels": json.loads(row.labels) if row.labels else []
                     })
         
         elif folder_type == "time":
@@ -1561,7 +1561,7 @@ class RefineManager:
                         "file_size": screen_result.file_size,
                         "modified_time": format_modified_time(screen_result.modified_time),
                         "category_id": screen_result.category_id,
-                        "tags": screen_result.tags or []
+                        "labels": screen_result.labels or []
                     })
         
         elif folder_type == "file_size":
@@ -1584,7 +1584,7 @@ class RefineManager:
                         "file_size": screen_result.file_size,
                         "modified_time": format_modified_time(screen_result.modified_time),
                         "category_id": screen_result.category_id,
-                        "tags": screen_result.tags or []
+                        "labels": screen_result.labels or []
                     })
         
         return files
@@ -1647,7 +1647,7 @@ if __name__ == "__main__":
             extension=".txt",
             file_size=1024,
             category_id=doc_category.id,
-            tags=["draft"],
+            labels=["draft"],
             created_time=datetime.now() - timedelta(days=1),
             modified_time=datetime.now(),
             # ... other fields
@@ -1697,8 +1697,8 @@ if __name__ == "__main__":
         print(f"Text files (.txt): {len(text_files)}")
         for f in text_files: print(f"  - {f.file_path}")
 
-        draft_files = refine_mgr.get_wise_folder_data("filename_pattern_tag", {"tag": "draft"})
-        print(f"Draft files (tag 'draft'): {len(draft_files)}")
+        draft_files = refine_mgr.get_wise_folder_data("filename_pattern_label", {"label": "draft"})
+        print(f"Draft files (label 'draft'): {len(draft_files)}")
         for f in draft_files: print(f"  - {f.file_path}")
         
         # Restore original pathlib.Path.exists

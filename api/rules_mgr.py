@@ -805,8 +805,8 @@ class RulesManager:
                     "exclude": len(self.session.exec(select(FileFilterRule).where(
                         FileFilterRule.action == RuleAction.EXCLUDE.value
                     )).all()),
-                    "tag": len(self.session.exec(select(FileFilterRule).where(
-                        FileFilterRule.action == RuleAction.TAG.value
+                    "label": len(self.session.exec(select(FileFilterRule).where(
+                        FileFilterRule.action == RuleAction.LABEL.value
                     )).all())
                 }
             },
@@ -1039,7 +1039,7 @@ class RulesManager:
         """
         query = select(FileFilterRule).where(
             and_(
-                FileFilterRule.action == RuleAction.TAG.value,
+                FileFilterRule.action == RuleAction.LABEL.value,
                 FileFilterRule.enabled == True,
                 FileFilterRule.extra_data != None
             )
@@ -1058,8 +1058,8 @@ class RulesManager:
                         "pattern": rule.pattern,
                         "pattern_type": rule.pattern_type,
                         "insight_type": extra_data["insight_type"],
-                        "tag": extra_data.get("tag"),
-                        "tag_name": extra_data.get("tag_name"),
+                        "label": extra_data.get("label"),
+                        "label_name": extra_data.get("label_name"),
                         "extra_data": extra_data
                     })
         
@@ -1224,9 +1224,9 @@ class TestRulesManager(unittest.TestCase):
             "rule_type": RuleType.FILENAME.value,
             "pattern": "new_file_.*",
             "pattern_type": "regex",
-            "action": RuleAction.TAG.value,
+            "action": RuleAction.LABEL.value,
             "priority": RulePriority.LOW.value,
-            "extra_data": {"tag": "new"}
+            "extra_data": {"label": "new"}
         }
         result = self.rules_manager.create_file_filter_rule(rule_data)
         self.assertTrue(result["success"])
@@ -1554,8 +1554,8 @@ class TestRulesManager(unittest.TestCase):
             "rule_type": RuleType.FILENAME.value,
             "pattern": ".*insight.*",
             "pattern_type": "keyword",
-            "action": RuleAction.TAG.value,
-            "extra_data": {"insight_type": "recent_activity", "tag_name": "Insightful"}
+            "action": RuleAction.LABEL.value,
+            "extra_data": {"insight_type": "recent_activity", "label_name": "Insightful"}
         }
         create_result = self.rules_manager.create_file_filter_rule(insight_rule_data)
         self.assertTrue(create_result["success"])

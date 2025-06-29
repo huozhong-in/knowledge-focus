@@ -5,9 +5,9 @@
 条件: 文件在粗筛结果中被归类到特定的 FileCategory (如 document, image, code 等)。
 标题示例: "文档", "图片", "代码文件", "音视频文件", "压缩包", "设计文件", "其他文件"。
 
-## 按文件名模式/标签 (Filename Pattern / Tag)
+## 按文件名模式/标牌 (Filename Pattern / label)
 
-条件: 文件名匹配 FileFilterRule 中 rule_type='filename' 且 action='tag' 的规则，并在粗筛结果的 tags 字段中记录了相应的标签。
+条件: 文件名匹配 FileFilterRule 中 rule_type='filename' 且 action='label' 的规则，并在粗筛结果的 labels 字段中记录了相应的标牌。
 标题示例: "草稿文件", "最终版文件", "报告", "合同/协议", "发票/收据", "演示文稿", "周报/月报", "简历", "截图", "相机照片", "微信文件", "下载文件", "会议文件", "带版本号的文件", "备份/旧版文件", "带日期标记的文件"。
 
 ## 按项目 (Project)

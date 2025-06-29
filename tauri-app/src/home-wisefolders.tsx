@@ -32,7 +32,7 @@ function HomeWiseFolders() {
         const categoriesData = await WiseFoldersService.getCategories();
         setCategories(categoriesData);
         
-        // 设置默认活动标签
+        // 设置默认活动标牌
         if (categoriesData.length > 0) {
           setActiveTab(categoriesData[0].type);
         }
@@ -49,7 +49,7 @@ function HomeWiseFolders() {
     fetchCategories();
   }, [isApiReady]); // 依赖isApiReady，当API就绪状态改变时重新执行
 
-  // 当活动标签改变时加载对应分类的文件夹
+  // 当活动标牌改变时加载对应分类的文件夹
   useEffect(() => {
     if (!isApiReady || !activeTab) return;
     
@@ -95,7 +95,7 @@ function HomeWiseFolders() {
         return <Database className="h-6 w-6 text-blue-500" />;
       case 'category':
         return <FileIcon className="h-6 w-6 text-green-500" />;
-      case 'tag':
+      case 'label':
         return <Tag className="h-6 w-6 text-purple-500" />;
       case 'time':
         return <Calendar className="h-6 w-6 text-amber-500" />;
@@ -117,8 +117,8 @@ function HomeWiseFolders() {
         return '项目';
       case 'category':
         return '文件类型';
-      case 'tag':
-        return '标签';
+      case 'label':
+        return '标牌';
       case 'time':
         return '时间';
       case 'other':

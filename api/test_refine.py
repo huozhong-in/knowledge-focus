@@ -90,7 +90,7 @@ def main():
             category_id=doc_category.id,
             modified_time=yesterday,
             created_time=last_week,
-            tags=["文档"]
+            labels=["文档"]
         )
         
         screening_result3 = FileScreeningResult(
@@ -133,7 +133,7 @@ def main():
             category_id=doc_category.id,
             modified_time=yesterday,
             created_time=last_week,
-            tags=["报告", "草稿"]
+            labels=["报告", "草稿"]
         )
         
         screening_result7 = FileScreeningResult(
@@ -144,7 +144,7 @@ def main():
             category_id=doc_category.id,
             modified_time=now,
             created_time=yesterday,
-            tags=["报告", "终稿"]
+            labels=["报告", "终稿"]
         )
         
         session.add_all([
@@ -209,11 +209,11 @@ def main():
             screen_result = session.get(FileScreeningResult, file.screening_id)
             logger.info(f"  - {screen_result.file_path}")
         
-        # 按标签查询
+        # 按标牌查询
         if session.exec(select(FileRefineResult).where(FileRefineResult.status == FileRefineStatus.COMPLETE.value)).first():
-            logger.info("\n标签'报告'智慧文件夹:")
+            logger.info("\n标牌'报告'智慧文件夹:")
             report_files = refine_mgr.get_wise_folder_data(
-                "filename_pattern_tag", {"tag": "报告"}
+                "filename_pattern_label", {"label": "报告"}
             )
             for file in report_files:
                 screen_result = session.get(FileScreeningResult, file.screening_id)

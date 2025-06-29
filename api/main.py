@@ -26,7 +26,7 @@ from db_mgr import (
 )
 from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
-from refine_mgr import RefineManager
+# from refine_mgr import RefineManager
 from task_mgr import TaskManager
 from models_mgr import LocalModelsManager
 
@@ -128,29 +128,27 @@ async def lifespan(app: FastAPI):
             logger.warning("未设置数据库路径，数据库引擎未初始化")
         
         # 先清理可能存在的孤立子进程
-        try:
-            logger.info("清理可能存在的孤立子进程...")
-            kill_orphaned_processes("python", "task_processor")
-        except Exception as proc_err:
-            logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
+        # try:
+        #     logger.info("清理可能存在的孤立子进程...")
+        #     kill_orphaned_processes("python", "task_processor")
+        # except Exception as proc_err:
+        #     logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
         
         # 初始化进程池和任务处理者
-        try:
-            # 强制使用单worker模式，以确保文件处理过程中具有全局一致的视角
-            # 这对于精炼过程中的文件关联分析和聚类功能至关重要
-            # 多worker可能导致处理过程中的全局状态不一致，影响分析质量
-            from config import FORCE_SINGLE_WORKER
-            processes = 1 if FORCE_SINGLE_WORKER else max(1, multiprocessing.cpu_count() // 2)
-            logger.info(f"初始化进程池，强制单worker模式: {FORCE_SINGLE_WORKER}, 工作进程数: {processes}")
-            app.state.process_pool = multiprocessing.Pool(processes=processes)
+        # try:
+        #     # 强制使用单worker模式，以确保文件处理过程中具有全局一致的视角
+        #     from config import FORCE_SINGLE_WORKER
+        #     processes = 1 if FORCE_SINGLE_WORKER else max(1, multiprocessing.cpu_count() // 2)
+        #     logger.info(f"初始化进程池，强制单worker模式: {FORCE_SINGLE_WORKER}, 工作进程数: {processes}")
+        #     app.state.process_pool = multiprocessing.Pool(processes=processes)
             
-            for processor_id in range(processes):
-                logger.info(f"启动工作进程 {processor_id}...")
-                app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
-            logger.info(f"所有 {processes} 个工作进程已启动")
-        except Exception as pool_err:
-            logger.error(f"初始化进程池失败: {str(pool_err)}", exc_info=True)
-            raise
+        #     for processor_id in range(processes):
+        #         logger.info(f"启动工作进程 {processor_id}...")
+        #         app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
+        #     logger.info(f"所有 {processes} 个工作进程已启动")
+        # except Exception as pool_err:
+        #     logger.error(f"初始化进程池失败: {str(pool_err)}", exc_info=True)
+        #     raise
         
         # 启动通知检查任务
         try:
@@ -360,133 +358,128 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
     # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
     bundle_extensions = myfiles_mgr.get_bundle_extensions_for_rust()
     logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-    
+    from parsing_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
     return {
         "file_categories": file_categories,
         "file_filter_rules": file_filter_rules,
         "file_extension_maps": file_extension_maps,
         "project_recognition_rules": project_recognition_rules,
         "monitored_folders": monitored_folders,
-        "previewable_extensions": ['pdf', 'md', 'markdown', 'txt', 'json', 'pptx', 'docx', 'xlsx', 'xls'],  # 可预览扩展名列表
+        "parsable_extensions": PARSEABLE_EXTENSIONS,
         "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
         "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
     }
 
 # 任务处理者
-def task_processor(processor_id: int, db_path: str = None):
-    """处理任务的工作进程(实现了超时控制)"""
-    logger.info(f"{processor_id}号任务处理者已启动")
-    sqlite_url = f"sqlite:///{db_path}"
-    # Ensure connect_args is correctly formatted for SQLAlchemy, typically a dictionary.
-    engine = create_engine(
-        sqlite_url, 
-        echo=False, 
-        connect_args={"check_same_thread": False, "timeout": 30},
-        pool_size=3,       # 任务处理者使用较小的连接池
-        max_overflow=5,    # 允许的最大溢出连接数
-        pool_timeout=30,   # 获取连接的超时时间
-        pool_recycle=1800  # 30分钟回收一次连接
-    )
-    session = Session(engine)
+# def task_processor(processor_id: int, db_path: str = None):
+#     """处理任务的工作进程(实现了超时控制)"""
+#     logger.info(f"{processor_id}号任务处理者已启动")
+#     sqlite_url = f"sqlite:///{db_path}"
+#     # Ensure connect_args is correctly formatted for SQLAlchemy, typically a dictionary.
+#     engine = create_engine(
+#         sqlite_url, 
+#         echo=False, 
+#         connect_args={"check_same_thread": False, "timeout": 30},
+#         pool_size=3,       # 任务处理者使用较小的连接池
+#         max_overflow=5,    # 允许的最大溢出连接数
+#         pool_timeout=30,   # 获取连接的超时时间
+#         pool_recycle=1800  # 30分钟回收一次连接
+#     )
+#     session = Session(engine)
     
-    _task_mgr = TaskManager(session)
-    _screening_mgr = ScreeningManager(session) # 保留以备将来扩展
-    _refine_mgr = RefineManager(session)
+#     _task_mgr = TaskManager(session)
+#     # _screening_mgr = ScreeningManager(session) # 保留以备将来扩展
+#     # _refine_mgr = RefineManager(session)
     
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        try:
-            while True:
-                time.sleep(5)
-                task: Optional[Task] = None
-                try:
-                    task = _task_mgr.get_next_task()
-                except Exception as task_err:
-                    logger.error(f"获取任务失败: {str(task_err)}")
-                    continue
+#     with ThreadPoolExecutor(max_workers=1) as executor:
+#         try:
+#             while True:
+#                 time.sleep(5)
+#                 task: Optional[Task] = None
+#                 try:
+#                     task = _task_mgr.get_next_task()
+#                 except Exception as task_err:
+#                     logger.error(f"获取任务失败: {str(task_err)}")
+#                     continue
                 
-                if not task:
-                    continue
+#                 if not task:
+#                     continue
                 
-                logger.info(f"{processor_id}号处理者接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
-                future = None
-                try:
-                    _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-                    session.commit() # Commit status update immediately
+#                 logger.info(f"{processor_id}号处理者接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
+#                 future = None
+#                 try:
+#                     _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+#                     session.commit() # Commit status update immediately
                     
-                    if task.task_type == TaskType.REFINE.value:
-                        logger.info(f"开始批量精炼任务 (Task ID: {task.id})")
-                        future = executor.submit(_refine_mgr.process_all_pending_screening_results)
-                    else:
-                        logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
-                        session.commit()
-                        continue
+#                     if task.task_type == TaskType.REFINE.value:
+#                         logger.info(f"开始批量精炼任务 (Task ID: {task.id})")
+#                         future = executor.submit(_refine_mgr.process_all_pending_screening_results)
+#                     else:
+#                         logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
+#                         _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
+#                         session.commit()
+#                         continue
 
-                    if not future:
-                        continue
+#                     if not future:
+#                         continue
 
-                    task_result_data = future.result(timeout=300) # 5分钟超时
+#                     task_result_data = future.result(timeout=300) # 5分钟超时
 
-                    if task.task_type == TaskType.REFINE.value:
-                        # 批量处理返回的不再是单个 FileRefineResult，而是处理结果统计
-                        if isinstance(task_result_data, dict):
-                            if task_result_data.get("success", False):
-                                _task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.COMPLETED, 
-                                    result=TaskResult.SUCCESS, 
-                                    message=f"成功处理 {task_result_data.get('processed', 0)} 个粗筛结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
-                                )
-                            else:
-                                _task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.FAILED, 
-                                    result=TaskResult.FAILURE, 
-                                    message=f"批量精炼失败: {task_result_data.get('error', '未知错误')}"
-                                )
-                        elif task_result_data is None:
-                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼失败: 没有找到可处理的粗筛结果")
-                        else:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼返回了意外的数据类型")
+#                     if task.task_type == TaskType.REFINE.value:
+#                         # 批量处理返回的不再是单个 FileRefineResult，而是处理结果统计
+#                         if isinstance(task_result_data, dict):
+#                             if task_result_data.get("success", False):
+#                                 _task_mgr.update_task_status(
+#                                     task.id, 
+#                                     TaskStatus.COMPLETED, 
+#                                     result=TaskResult.SUCCESS, 
+#                                     message=f"成功处理 {task_result_data.get('processed', 0)} 个粗筛结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
+#                                 )
+#                             else:
+#                                 _task_mgr.update_task_status(
+#                                     task.id, 
+#                                     TaskStatus.FAILED, 
+#                                     result=TaskResult.FAILURE, 
+#                                     message=f"批量精炼失败: {task_result_data.get('error', '未知错误')}"
+#                                 )
+#                         elif task_result_data is None:
+#                              _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼失败: 没有找到可处理的粗筛结果")
+#                         else:
+#                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼返回了意外的数据类型")
                 
-                except TimeoutError:
-                    logger.error(f"任务 {task.id} ({task.task_name}) 超时")
-                    if task and task.id:
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.TIMEOUT, message="Task execution timed out")
-                except Exception as e:
-                    logger.error(f"处理任务 {task.id} ({task.task_name}) 失败: {str(e)}")
-                    # Ensure traceback is imported if you uncomment its usage
-                    # import traceback
-                    logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
-                    if task and task.id:
-                        try:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(e))
-                        except Exception as update_err:
-                            logger.error(f"更新失败任务 {task.id} 状态时再次发生错误: {update_err}")
-                finally:
-                    if future and not future.done():
-                        future.cancel()
-                    if session.is_active: # Check if session is still active before committing
-                        try:
-                            session.commit() # Commit any final status updates
-                        except Exception as commit_err:
-                            logger.error(f"Task processor final commit failed for task {task.id if task else 'Unknown'}: {commit_err}")
-                            session.rollback()
+#                 except TimeoutError:
+#                     logger.error(f"任务 {task.id} ({task.task_name}) 超时")
+#                     if task and task.id:
+#                         _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.TIMEOUT, message="Task execution timed out")
+#                 except Exception as e:
+#                     logger.error(f"处理任务 {task.id} ({task.task_name}) 失败: {str(e)}")
+#                     # Ensure traceback is imported if you uncomment its usage
+#                     # import traceback
+#                     logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
+#                     if task and task.id:
+#                         try:
+#                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(e))
+#                         except Exception as update_err:
+#                             logger.error(f"更新失败任务 {task.id} 状态时再次发生错误: {update_err}")
+#                 finally:
+#                     if future and not future.done():
+#                         future.cancel()
+#                     if session.is_active: # Check if session is still active before committing
+#                         try:
+#                             session.commit() # Commit any final status updates
+#                         except Exception as commit_err:
+#                             logger.error(f"Task processor final commit failed for task {task.id if task else 'Unknown'}: {commit_err}")
+#                             session.rollback()
 
-        except KeyboardInterrupt:
-            logger.info(f"{processor_id}号任务处理者被中断，正在关闭...")
-        except Exception as e:
-            logger.error(f"{processor_id}号任务处理者发生意外错误，正在关闭: {e}")
-            logger.error(traceback.format_exc())
-        finally:
-            if session.is_active:
-                session.close()
-            logger.info(f"{processor_id}号任务处理者已关闭")
-
-def process_refine_task(task, screening_mgr, refine_mgr) -> bool:
-    """旧的精炼任务处理函数 - 此函数现在的功能已合并到 task_processor 中，可以考虑移除。"""
-    logger.warning("process_refine_task is deprecated and should be removed. Logic moved to task_processor.")
-    return False
+#         except KeyboardInterrupt:
+#             logger.info(f"{processor_id}号任务处理者被中断，正在关闭...")
+#         except Exception as e:
+#             logger.error(f"{processor_id}号任务处理者发生意外错误，正在关闭: {e}")
+#             logger.error(traceback.format_exc())
+#         finally:
+#             if session.is_active:
+#                 session.close()
+#             logger.info(f"{processor_id}号任务处理者已关闭")
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
@@ -494,9 +487,9 @@ def get_screening_manager(session: Session = Depends(get_session)):
     return ScreeningManager(session)
 
 # 获取 RefineManager 的依赖函数
-def get_refine_manager(session: Session = Depends(get_session)):
-    """获取文件精炼管理类实例"""
-    return RefineManager(session)
+# def get_refine_manager(session: Session = Depends(get_session)):
+#     """获取文件精炼管理类实例"""
+#     return RefineManager(session)
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
@@ -616,7 +609,7 @@ def add_file_screening_result(
     - category_id: 分类ID（可选）
     - matched_rules: 匹配的规则ID列表（可选）    
     - metadata: 其他元数据（可选）
-    - tags: 标签列表（可选）
+    - labels: 标牌列表（可选）
     - auto_create_task: 是否自动创建任务（默认 True）
     """
     try:
@@ -1182,92 +1175,92 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 # 项目相关API
-@app.post("/projects")
-def create_project(
-    data: Dict[str, Any] = Body(...),
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """创建新项目"""
-    try:
-        name = data.get("name")
-        path = data.get("path")
-        project_type = data.get("project_type")
+# @app.post("/projects")
+# def create_project(
+#     data: Dict[str, Any] = Body(...),
+#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
+# ):
+#     """创建新项目"""
+#     try:
+#         name = data.get("name")
+#         path = data.get("path")
+#         project_type = data.get("project_type")
         
-        if not path:
-            return {
-                "success": False,
-                "message": "项目名称和路径不能为空"
-            }
+#         if not path:
+#             return {
+#                 "success": False,
+#                 "message": "项目名称和路径不能为空"
+#             }
         
-        project = refine_mgr.create_project(name, path, project_type)
-        if not project:
-            return {
-                "success": False,
-                "message": "创建项目失败"
-            }
+#         project = refine_mgr.create_project(name, path, project_type)
+#         if not project:
+#             return {
+#                 "success": False,
+#                 "message": "创建项目失败"
+#             }
         
-        # 转换为可序列化的字典
-        project_data = project.model_dump()
+#         # 转换为可序列化的字典
+#         project_data = project.model_dump()
         
-        return {
-            "success": True,
-            "data": project_data,
-            "message": f"已创建项目: {name}"
-        }
+#         return {
+#             "success": True,
+#             "data": project_data,
+#             "message": f"已创建项目: {name}"
+#         }
         
-    except Exception as e:
-        logger.error(f"创建项目失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"创建项目失败: {str(e)}"
-        }
+#     except Exception as e:
+#         logger.error(f"创建项目失败: {str(e)}")
+#         return {
+#             "success": False,
+#             "message": f"创建项目失败: {str(e)}"
+#         }
 
-@app.get("/projects")
-def get_projects(
-    limit: int = 50,
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """获取项目列表"""
-    try:
-        projects = refine_mgr.get_projects(limit)
+# @app.get("/projects")
+# def get_projects(
+#     limit: int = 50,
+#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
+# ):
+#     """获取项目列表"""
+#     try:
+#         projects = refine_mgr.get_projects(limit)
         
-        # 转换为可序列化的字典
-        projects_data = [project.model_dump() for project in projects]
+#         # 转换为可序列化的字典
+#         projects_data = [project.model_dump() for project in projects]
         
-        return {
-            "success": True,
-            "count": len(projects_data),
-            "data": projects_data
-        }
+#         return {
+#             "success": True,
+#             "count": len(projects_data),
+#             "data": projects_data
+#         }
         
-    except Exception as e:
-        logger.error(f"获取项目列表失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"获取项目列表失败: {str(e)}"
-        }
+#     except Exception as e:
+#         logger.error(f"获取项目列表失败: {str(e)}")
+#         return {
+#             "success": False,
+#             "message": f"获取项目列表失败: {str(e)}"
+#         }
 
-@app.get("/projects/{project_id}/files")
-def get_project_files(
-    project_id: int,
-    limit: int = 100,
-    refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-):
-    """获取项目下的文件"""
-    try:
-        files = refine_mgr.get_by_project_id(project_id, limit)
+# @app.get("/projects/{project_id}/files")
+# def get_project_files(
+#     project_id: int,
+#     limit: int = 100,
+#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
+# ):
+#     """获取项目下的文件"""
+#     try:
+#         files = refine_mgr.get_by_project_id(project_id, limit)
         
-        # 转换为可序列化的字典
-        files_data = [file.model_dump() for file in files]
+#         # 转换为可序列化的字典
+#         files_data = [file.model_dump() for file in files]
         
-        return {
-            "success": True,
-            "count": len(files_data),
-            "data": files_data
-        }
+#         return {
+#             "success": True,
+#             "count": len(files_data),
+#             "data": files_data
+#         }
         
-    except Exception as e:
-        logger.error(f"获取项目文件失败: {str(e)}")
+#     except Exception as e:
+#         logger.error(f"获取项目文件失败: {str(e)}")
 
 # 添加文件夹管理相关API
 @app.get("/directories")
@@ -1543,7 +1536,7 @@ async def search_files(
                 "extension": result.extension,
                 "modified_time": result.modified_time.strftime("%Y-%m-%d %H:%M:%S") if result.modified_time else None,
                 "category_id": result.category_id,
-                "tags": result.tags,
+                "labels": result.labels,
                 "status": result.status
             }
             file_list.append(file_dict)

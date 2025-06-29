@@ -155,8 +155,8 @@ pub enum RuleActionRust {
     Include,
     #[serde(alias = "exclude")]
     Exclude,
-    #[serde(alias = "tag")]
-    Tag,
+    #[serde(alias = "label")]
+    Label,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -221,7 +221,7 @@ pub struct FileMetadata {
     #[serde(rename = "file_hash")]  // 重命名为Python API期望的字段名
     pub hash_value: Option<String>, // 简单哈希值，例如前几KB的内容哈希
     pub category_id: Option<i32>,  // 初步分类ID
-    pub tags: Option<Vec<String>>, // 初步标签
+    pub labels: Option<Vec<String>>, // 初步标牌
     #[serde(rename = "matched_rules")] // 重命名为Python API期望的字段名
     pub initial_rule_matches: Option<Vec<String>>, // 匹配的初步规则
     #[serde(rename = "extra_metadata", skip_serializing_if = "Option::is_none")]
@@ -893,12 +893,12 @@ impl FileMonitor {
                 }
             }
 
-            // 添加基于扩展名的标签
-            if metadata.tags.is_none() {
-                metadata.tags = Some(Vec::new());
+            // 添加基于扩展名的标牌
+            if metadata.labels.is_none() {
+                metadata.labels = Some(Vec::new());
             }
-            if let Some(tags) = &mut metadata.tags {
-                tags.push(format!("ext:{}", ext));
+            if let Some(labels) = &mut metadata.labels {
+                labels.push(format!("ext:{}", ext));
             }
             
             // 记录扩展名到额外元数据
@@ -961,16 +961,16 @@ impl FileMonitor {
                                     extra_data.insert("macos_bundle_rule_name".to_string(), serde_json::Value::String(filter_rule.name.clone()));
                                     extra_data.insert("is_macos_bundle".to_string(), serde_json::Value::Bool(true));
                                     
-                                    // 将bundle文件添加到标签中
-                                    if metadata.tags.is_none() {
-                                        metadata.tags = Some(Vec::new());
+                                    // 将bundle文件添加到标牌中
+                                    if metadata.labels.is_none() {
+                                        metadata.labels = Some(Vec::new());
                                     }
-                                    if let Some(tags) = &mut metadata.tags {
-                                        if !tags.contains(&filter_rule.name) {
-                                            tags.push(filter_rule.name.clone());
+                                    if let Some(labels) = &mut metadata.labels {
+                                        if !labels.contains(&filter_rule.name) {
+                                            labels.push(filter_rule.name.clone());
                                         }
-                                        if !tags.contains(&"macos_bundle".to_string()) {
-                                            tags.push("macos_bundle".to_string());
+                                        if !labels.contains(&"macos_bundle".to_string()) {
+                                            labels.push("macos_bundle".to_string());
                                         }
                                     }
                                 }
@@ -1012,19 +1012,19 @@ impl FileMonitor {
                 // 只为非OSBundle类型的规则应用排除逻辑
                 if filter_rule.rule_type != RuleTypeRust::OSBundle {
                     match filter_rule.action {
-                        RuleActionRust::Tag => {
-                            if metadata.tags.is_none() {
-                                metadata.tags = Some(Vec::new());
+                        RuleActionRust::Label => {
+                            if metadata.labels.is_none() {
+                                metadata.labels = Some(Vec::new());
                             }
-                            if let Some(tags) = &mut metadata.tags {
-                                // Avoid duplicate tags from the same rule, or use a Set
-                                if !tags.contains(&filter_rule.name) { // Simple check
-                                    tags.push(filter_rule.name.clone());
+                            if let Some(labels) = &mut metadata.labels {
+                                // Avoid duplicate labels from the same rule, or use a Set
+                                if !labels.contains(&filter_rule.name) { // Simple check
+                                    labels.push(filter_rule.name.clone());
                                 }
-                                // If rule has a specific tag in extra_data, use that
-                                if let Some(JsonValue::String(tag_value)) = filter_rule.extra_data.as_ref().and_then(|ed| ed.get("tag_value")) {
-                                    if !tags.contains(tag_value) {
-                                        tags.push(tag_value.clone());
+                                // If rule has a specific label in extra_data, use that
+                                if let Some(JsonValue::String(label_value)) = filter_rule.extra_data.as_ref().and_then(|ed| ed.get("label_value")) {
+                                    if !labels.contains(label_value) {
+                                        labels.push(label_value.clone());
                                     }
                                 }
                             }
@@ -1133,7 +1133,7 @@ impl FileMonitor {
                     is_hidden: Self::is_hidden_file(path),
                     hash_value: None, // 哈希值稍后计算
                     category_id: None,
-                    tags: None,
+                    labels: None,
                     initial_rule_matches: None,
                     extra_metadata: None,
                     is_os_bundle: Some(is_bundle), // 标记是否为macOS bundle

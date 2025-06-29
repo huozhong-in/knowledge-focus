@@ -34,7 +34,7 @@ i18n
     },
     // detection options 作为备份
     detection: {
-      // 只使用导航器和HTML标签作为备选检测方法
+      // 只使用导航器和HTML作为备选检测方法
       order: ['navigator', 'htmlTag'] as const,
       // 不再使用 localStorage 缓存
       caches: [] as const,

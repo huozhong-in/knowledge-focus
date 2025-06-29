@@ -39,7 +39,7 @@ export interface WiseFolderFile {
   category_name?: string;
   project_id?: number;
   project_name?: string;
-  tags?: string[];
+  labels?: string[];
   extra_metadata?: Record<string, any>;
   features?: Record<string, any>;
 }

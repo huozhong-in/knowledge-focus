@@ -87,7 +87,7 @@ def get_router(external_get_session=None):
         """获取指定分类下的智慧文件夹
         
         Args:
-            category_type: 分类类型，如 project, category, tag, time, other
+            category_type: 分类类型，如 project, category, label, time, other
             
         Returns:
             智慧文件夹列表
@@ -117,7 +117,7 @@ def get_router(external_get_session=None):
         """获取智慧文件夹中的文件
         
         Args:
-            folder_type: 文件夹类型，如 project, category, tag, time, file_size
+            folder_type: 文件夹类型，如 project, category, label, time, file_size
             criteria: JSON格式的条件参数
             
         Returns:
@@ -191,7 +191,7 @@ def get_router(external_get_session=None):
         
         Args:
             task_id: 任务ID
-            folder_type: 文件夹类型，如 category, tag, project, topic, entity
+            folder_type: 文件夹类型，如 category, label, project, topic, entity
             criteria: JSON格式的条件参数
             
         Returns:

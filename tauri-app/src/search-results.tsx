@@ -291,10 +291,10 @@ export const SearchResults: React.FC<SearchResultsProps> = ({ results, searchQue
                           <div className="space-y-1">
                             <p className="text-sm font-medium">{file.file_name}</p>
                             <p className="text-xs text-whiskey-500">{file.file_path}</p>
-                            {file.tags && file.tags.length > 0 && (
+                            {file.labels && file.labels.length > 0 && (
                               <div className="flex flex-wrap gap-1">
-                                {file.tags.map((tag, idx) => (
-                                  <Badge key={idx} variant="secondary" className="text-xs">{tag}</Badge>
+                                {file.labels.map((label, idx) => (
+                                  <Badge key={idx} variant="secondary" className="text-xs">{label}</Badge>
                                 ))}
                               </div>
                             )}

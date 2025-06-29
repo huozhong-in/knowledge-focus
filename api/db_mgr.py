@@ -147,7 +147,7 @@ class RulePriority(str, PyEnum):
 class RuleAction(str, PyEnum):
     INCLUDE = "include"  # 包含在处理中
     EXCLUDE = "exclude"  # 排除在处理外
-    TAG = "tag"         # 标记特定类型，但不影响处理流程
+    LABEL = "label"         # 标记特定类型，但不影响处理流程
 
 # 文件分类表 - 存储不同的文件分类
 class FileCategory(SQLModel, table=True):
@@ -248,14 +248,15 @@ class FileScreeningResult(SQLModel, table=True):
     created_time: datetime | None = Field(default=None)  # 文件创建时间
     modified_time: datetime = Field(index=True)  # 文件最后修改时间，增加索引以优化时间范围查询
     accessed_time: datetime | None = Field(default=None)  # 文件最后访问时间
-    
+    refined_time: datetime | None = Field(default=None)  # 上一次精炼时间，用来判定是否需要重新处理
+
     # 粗筛分类结果
     category_id: int | None = Field(default=None, index=True)  # 根据扩展名或规则确定的分类ID（已有索引）
     matched_rules: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 匹配的规则ID列表
     
     # 额外元数据和特征
     extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 其他元数据信息
-    tags: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标签
+    labels: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标牌
     
     # 处理状态
     status: str = Field(
@@ -871,10 +872,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(草稿|draft|Draft|DRAFT)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "draft",
-                    "tag_name": "草稿",
+                    "label": "draft",
+                    "label_name": "草稿",
                     "refine_type": "status"
                 }
             },
@@ -884,10 +885,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(最终版|终稿|final|Final|FINAL)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "final",
-                    "tag_name": "最终版",
+                    "label": "final",
+                    "label_name": "最终版",
                     "refine_type": "status"
                 }
             },
@@ -897,10 +898,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(v\d+|v\d+\.\d+|版本\d+|V\d+)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "versioned",
-                    "tag_name": "带版本号",
+                    "label": "versioned",
+                    "label_name": "带版本号",
                     "refine_type": "version"
                 }
             },
@@ -910,10 +911,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(_old|_旧|_backup|_备份|_bak|副本|Copy of|\(\d+\))",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "backup",
-                    "tag_name": "备份/旧版",
+                    "label": "backup",
+                    "label_name": "备份/旧版",
                     "refine_type": "cleanup"
                 }
             }
@@ -927,10 +928,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(报告|Report|report|REPORT)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "report",
-                    "tag_name": "报告",
+                    "label": "report",
+                    "label_name": "报告",
                     "refine_type": "document_type"
                 }
             },
@@ -940,10 +941,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(提案|Proposal|proposal|PROPOSAL)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "proposal",
-                    "tag_name": "提案",
+                    "label": "proposal",
+                    "label_name": "提案",
                     "refine_type": "document_type"
                 }
             },
@@ -953,10 +954,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(合同|协议|合约|Contract|contract|Agreement|agreement)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "contract",
-                    "tag_name": "合同/协议",
+                    "label": "contract",
+                    "label_name": "合同/协议",
                     "refine_type": "document_type"
                 }
             },
@@ -966,10 +967,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(发票|收据|Invoice|invoice|Receipt|receipt)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "invoice",
-                    "tag_name": "发票/收据",
+                    "label": "invoice",
+                    "label_name": "发票/收据",
                     "refine_type": "document_type"
                 }
             },
@@ -979,10 +980,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(演示|幻灯片|Presentation|presentation|Slides|slides)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "presentation",
-                    "tag_name": "演示/幻灯片",
+                    "label": "presentation",
+                    "label_name": "演示/幻灯片",
                     "refine_type": "document_type"
                 }
             },
@@ -992,10 +993,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(周报|月报|周总结|月总结|Weekly|weekly|Monthly|monthly)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "report_periodical",
-                    "tag_name": "周报/月报",
+                    "label": "report_periodical",
+                    "label_name": "周报/月报",
                     "refine_type": "document_type"
                 }
             },
@@ -1005,10 +1006,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(简历|Resume|resume|CV|cv)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "resume",
-                    "tag_name": "简历",
+                    "label": "resume",
+                    "label_name": "简历",
                     "refine_type": "document_type"
                 }
             }
@@ -1022,10 +1023,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(20\d{2}[-_]?(0[1-9]|1[0-2])[-_]?(0[1-9]|[12]\d|3[01]))",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "dated_ymd",
-                    "tag_name": "带日期",
+                    "label": "dated_ymd",
+                    "label_name": "带日期",
                     "refine_type": "time"
                 }
             },
@@ -1035,10 +1036,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(Q[1-4]|第[一二三四]季度|[一二三四]季度|上半年|下半年)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "quarterly",
-                    "tag_name": "季度文件",
+                    "label": "quarterly",
+                    "label_name": "季度文件",
                     "refine_type": "time"
                 }
             },
@@ -1048,10 +1049,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[一二三四五六七八九十]{1,2}月)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "monthly",
-                    "tag_name": "月度文件",
+                    "label": "monthly",
+                    "label_name": "月度文件",
                     "refine_type": "time"
                 }
             }
@@ -1065,11 +1066,11 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(截图|屏幕截图|Screenshot|screenshot|Screen Shot|screen shot|Snipaste|snipaste|CleanShot)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "priority": RulePriority.HIGH.value,
                 "extra_data": {
-                    "tag": "screenshot",
-                    "tag_name": "截图",
+                    "label": "screenshot",
+                    "label_name": "截图",
                     "refine_type": "app_source"
                 }
             },
@@ -1079,10 +1080,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(IMG_\d+|DSC_\d+|DCIM|DSCN\d+)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "camera",
-                    "tag_name": "相机照片",
+                    "label": "camera",
+                    "label_name": "相机照片",
                     "refine_type": "app_source"
                 }
             },
@@ -1092,11 +1093,11 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(微信|WeChat|wechat|MicroMsg|mmexport)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "priority": RulePriority.HIGH.value,
                 "extra_data": {
-                    "tag": "wechat",
-                    "tag_name": "微信文件",
+                    "label": "wechat",
+                    "label_name": "微信文件",
                     "refine_type": "app_source"
                 }
             },
@@ -1106,10 +1107,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(下载|download|Download|DOWNLOAD)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "download",
-                    "tag_name": "下载文件",
+                    "label": "download",
+                    "label_name": "下载文件",
                     "refine_type": "app_source"
                 }
             },
@@ -1119,10 +1120,10 @@ class DBManager:
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(Zoom|zoom|Teams|teams|Meet|meet|会议记录|meeting)",
                 "pattern_type": "regex",
-                "action": RuleAction.TAG.value,
+                "action": RuleAction.LABEL.value,
                 "extra_data": {
-                    "tag": "meeting",
-                    "tag_name": "会议文件",
+                    "label": "meeting",
+                    "label_name": "会议文件",
                     "refine_type": "app_source"
                 }
             }

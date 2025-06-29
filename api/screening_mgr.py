@@ -51,7 +51,7 @@ class ScreeningManager:
                 category_id=data.get("category_id"),
                 matched_rules=data.get("matched_rules"), # Ensure this matches the key from Rust if it's 'metadata'
                 extra_metadata=data.get("extra_metadata", data.get("metadata")), # Handle potential old key 'metadata'
-                tags=data.get("tags"),
+                labels=data.get("labels"),
                 status=data.get("status", FileScreenResult.PENDING.value),
                 task_id=data.get("task_id")
             )
@@ -185,12 +185,12 @@ class ScreeningManager:
             .limit(limit)
         return self.session.exec(statement).all()
     
-    def get_results_by_tag(self, tag: str, limit: int = 100) -> List[FileScreeningResult]:
-        """根据标签获取粗筛结果（需要查询JSON数组）"""
+    def get_results_by_label(self, label: str, limit: int = 100) -> List[FileScreeningResult]:
+        """根据标牌获取粗筛结果（需要查询JSON数组）"""
         # 使用JSON查询，SQLite的JSON支持有限，可能需要根据具体数据库调整
         # 这里使用LIKE操作符进行简单模糊匹配
         statement = select(FileScreeningResult)\
-            .where(FileScreeningResult.tags.like(f"%{tag}%"))\
+            .where(FileScreeningResult.labels.like(f"%{label}%"))\
             .order_by(FileScreeningResult.modified_time.desc())\
             .limit(limit)
         return self.session.exec(statement).all()

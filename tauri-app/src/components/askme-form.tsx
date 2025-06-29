@@ -21,7 +21,7 @@ export interface FileSearchResult {
   extension: string | null;
   modified_time: string | null;
   category_id: number | null;
-  tags: string[] | null;
+  labels: string[] | null;
   status: string;
 }
 
