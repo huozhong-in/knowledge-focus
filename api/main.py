@@ -697,7 +697,6 @@ def add_batch_file_screening_results(
     
     参数:
     - data_list: 文件粗筛结果列表
-    - auto_create_tasks: 是否自动创建任务（可选，默认 True）
     """
     try:
         # 从请求体中提取数据和参数
@@ -706,15 +705,11 @@ def add_batch_file_screening_results(
         # 适配Rust客户端发送的格式: {data_list: [...], auto_create_tasks: true}
         if "data_list" in request:
             data_list = request.get("data_list", [])
-            auto_create_tasks = request.get("auto_create_tasks", True)
-        # 兼容旧格式: {files: [...], auto_create_tasks: true} 或者直接是列表
         elif isinstance(request, dict):
-            auto_create_tasks = request.get("auto_create_tasks", True)
             data_list = request.get("files", [])
         else:
             # 假设请求体本身就是列表
             data_list = request
-            auto_create_tasks = True
             
         # 预处理每个文件记录中的时间戳，转换为Python datetime对象
         for data in data_list:
@@ -754,29 +749,29 @@ def add_batch_file_screening_results(
         result = screening_mgr.add_batch_screening_results(data_list)
         
         # 创建一个批处理任务（只要有成功添加的文件就创建任务）
-        if result["success"] > 0:
-            # 取消之前的批量精炼任务（如果有）
-            # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
-            canceled_tasks = task_mgr.cancel_old_tasks(TaskType.REFINE.value)
-            if canceled_tasks > 0:
-                logger.info(f"已取消 {canceled_tasks} 个旧的精炼任务")
+        # if result["success"] > 0:
+        #     # 取消之前的批量精炼任务（如果有）
+        #     # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
+        #     canceled_tasks = task_mgr.cancel_old_tasks(TaskType.REFINE.value)
+        #     if canceled_tasks > 0:
+        #         logger.info(f"已取消 {canceled_tasks} 个旧的精炼任务")
                 
-            # 创建一个新的批处理任务，使用高优先级确保及时处理
-            task_name = f"批量处理文件: {result['success']} 个文件"
-            task = task_mgr.add_task(
-                task_name=task_name, 
-                task_type=TaskType.REFINE.value,  # 使用精炼任务类型
-                priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
-                extra_data={"file_count": result["success"]}
-            )
-            result["task_id"] = task.id
-            logger.info(f"已创建精炼任务 ID: {task.id}，处理 {result['success']} 个文件")
+        #     # 创建一个新的批处理任务，使用高优先级确保及时处理
+        #     task_name = f"批量处理文件: {result['success']} 个文件"
+        #     task = task_mgr.add_task(
+        #         task_name=task_name, 
+        #         task_type=TaskType.REFINE.value,  # 使用精炼任务类型
+        #         priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
+        #         extra_data={"file_count": result["success"]}
+        #     )
+        #     result["task_id"] = task.id
+        #     logger.info(f"已创建精炼任务 ID: {task.id}，处理 {result['success']} 个文件")
         
         return {
             "success": result["success"] > 0,
             "processed_count": result["success"],
             "failed_count": result["failed"],
-            "task_id": result.get("task_id"),  # 返回任务ID
+            # "task_id": result.get("task_id"),  # 返回任务ID
             "errors": result.get("errors"),
             "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个，并创建精炼任务"
         }
