@@ -277,102 +277,102 @@ class FileScreeningResult(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 文件精炼结果状态枚举
-class FileRefineStatus(str, PyEnum):
-    PENDING = "pending"       # 等待进一步处理
-    PROCESSING = "processing" # 正在处理中
-    COMPLETE = "complete"     # 处理完成
-    FAILED = "failed"         # 处理失败
-    IGNORED = "ignored"       # 被忽略
+# # 文件精炼结果状态枚举
+# class FileRefineStatus(str, PyEnum):
+#     PENDING = "pending"       # 等待进一步处理
+#     PROCESSING = "processing" # 正在处理中
+#     COMPLETE = "complete"     # 处理完成
+#     FAILED = "failed"         # 处理失败
+#     IGNORED = "ignored"       # 被忽略
 
-# 文件精炼分析类型枚举
-class FileAnalysisType(str, PyEnum):
-    BASIC = "basic"           # 基本分析（元数据整理）
-    CONTENT = "content"       # 内容分析（文本提取、简单NLP）
-    DEEP = "deep"             # 深度分析（LLM处理、高级特征提取）
-    RELATIONSHIP = "relationship"  # 关联分析（文件间关系）
-    PROJECT = "project"       # 项目识别分析
+# # 文件精炼分析类型枚举
+# class FileAnalysisType(str, PyEnum):
+#     BASIC = "basic"           # 基本分析（元数据整理）
+#     CONTENT = "content"       # 内容分析（文本提取、简单NLP）
+#     DEEP = "deep"             # 深度分析（LLM处理、高级特征提取）
+#     RELATIONSHIP = "relationship"  # 关联分析（文件间关系）
+#     PROJECT = "project"       # 项目识别分析
 
-# 文件精炼结果表
-class FileRefineResult(SQLModel, table=True):
-    __tablename__ = "t_file_refine_results"
-    id: int = Field(default=None, primary_key=True)
-    screening_id: int = Field(foreign_key="t_file_screening_results.id", index=True)  # 关联的粗筛结果ID
-    task_id: int | None = Field(default=None, foreign_key="t_tasks.id", index=True)   # 关联的处理任务ID
+# # 文件精炼结果表
+# class FileRefineResult(SQLModel, table=True):
+#     __tablename__ = "t_file_refine_results"
+#     id: int = Field(default=None, primary_key=True)
+#     screening_id: int = Field(foreign_key="t_file_screening_results.id", index=True)  # 关联的粗筛结果ID
+#     task_id: int | None = Field(default=None, foreign_key="t_tasks.id", index=True)   # 关联的处理任务ID
     
-    # 基本信息
-    file_path: str            # 文件完整路径（冗余存储，便于查询）
-    analysis_type: str = Field(sa_column=Column(Enum(FileAnalysisType, values_callable=lambda obj: [e.value for e in obj]), default=FileAnalysisType.BASIC.value))
-    status: str = Field(sa_column=Column(Enum(FileRefineStatus, values_callable=lambda obj: [e.value for e in obj]), default=FileRefineStatus.PENDING.value))
+#     # 基本信息
+#     file_path: str            # 文件完整路径（冗余存储，便于查询）
+#     analysis_type: str = Field(sa_column=Column(Enum(FileAnalysisType, values_callable=lambda obj: [e.value for e in obj]), default=FileAnalysisType.BASIC.value))
+#     status: str = Field(sa_column=Column(Enum(FileRefineStatus, values_callable=lambda obj: [e.value for e in obj]), default=FileRefineStatus.PENDING.value))
     
-    # 处理结果
-    # --- Fields requiring content reading or LLM are commented out for this phase ---
-    # content_summary: str | None = Field(default=None)
-    # extracted_text: str | None = Field(default=None)
-    # language: str | None = Field(default=None)
-    # topics: List[str] | None = Field(default=None, sa_column=Column(JSON))
-    # named_entities: Dict[str, List[str]] | None = Field(default=None, sa_column=Column(JSON))
-    # key_phrases: List[str] | None = Field(default=None, sa_column=Column(JSON))
-    # sentiment: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))
-    # readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+#     # 处理结果
+#     # --- Fields requiring content reading or LLM are commented out for this phase ---
+#     # content_summary: str | None = Field(default=None)
+#     # extracted_text: str | None = Field(default=None)
+#     # language: str | None = Field(default=None)
+#     # topics: List[str] | None = Field(default=None, sa_column=Column(JSON))
+#     # named_entities: Dict[str, List[str]] | None = Field(default=None, sa_column=Column(JSON))
+#     # key_phrases: List[str] | None = Field(default=None, sa_column=Column(JSON))
+#     # sentiment: Dict[str, float] | None = Field(default=None, sa_column=Column(JSON))
+#     # readability_metrics: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     
-    # 额外特征和元数据 (从文件名、路径和元数据派生)
-    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据 from screening + basic derivations
-    features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征 (e.g., is_backup, versioned_file)
+#     # 额外特征和元数据 (从文件名、路径和元数据派生)
+#     extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据 from screening + basic derivations
+#     features: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 提取的特征 (e.g., is_backup, versioned_file)
     
-    # 项目和关联信息
-    project_id: int | None = Field(default=None, foreign_key="t_projects.id")  # 关联的项目ID（如果已识别）
-    # project: Optional["Project"] = Relationship(back_populates="refine_results") # Uncomment if using bidirectional relationship
-    related_files: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件ID列表 (metadata-based)
-    similar_files: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 相似文件和相似度 (metadata-based, simple)
+#     # 项目和关联信息
+#     project_id: int | None = Field(default=None, foreign_key="t_projects.id")  # 关联的项目ID（如果已识别）
+#     # project: Optional["Project"] = Relationship(back_populates="refine_results") # Uncomment if using bidirectional relationship
+#     related_files: List[int] | None = Field(default=None, sa_column=Column(JSON))  # 关联文件ID列表 (metadata-based)
+#     similar_files: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))  # 相似文件和相似度 (metadata-based, simple)
     
-    # 处理统计
-    processing_time: float | None = Field(default=None)  # 处理耗时（秒）
-    # tokens_processed: int | None = Field(default=None) # Related to LLM
-    error_message: str | None = Field(default=None)      # 错误信息（如果有）
+#     # 处理统计
+#     processing_time: float | None = Field(default=None)  # 处理耗时（秒）
+#     # tokens_processed: int | None = Field(default=None) # Related to LLM
+#     error_message: str | None = Field(default=None)      # 错误信息（如果有）
     
-    # 时间戳
-    created_at: datetime = Field(default=datetime.now())  # 记录创建时间
-    updated_at: datetime = Field(default=datetime.now())  # 记录更新时间
+#     # 时间戳
+#     created_at: datetime = Field(default=datetime.now())  # 记录创建时间
+#     updated_at: datetime = Field(default=datetime.now())  # 记录更新时间
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
-        }
+#     class Config:
+#         json_encoders = {
+#             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+#         }
 
-# 项目信息表 - 存储识别出的项目信息
-class Project(SQLModel, table=True):
-    __tablename__ = "t_projects"
-    id: int = Field(default=None, primary_key=True)
-    name: str                 # 项目名称
-    path: str                 # 项目根路径
-    description: str | None = Field(default=None)  # 项目描述
+# # 项目信息表 - 存储识别出的项目信息
+# class Project(SQLModel, table=True):
+#     __tablename__ = "t_projects"
+#     id: int = Field(default=None, primary_key=True)
+#     name: str                 # 项目名称
+#     path: str                 # 项目根路径
+#     description: str | None = Field(default=None)  # 项目描述
     
-    # 项目特征
-    project_type: str | None = Field(default=None)  # 项目类型（代码、文档、设计等）
-    programming_languages: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 编程语言列表
-    framework: str | None = Field(default=None)     # 使用的框架
+#     # 项目特征
+#     project_type: str | None = Field(default=None)  # 项目类型（代码、文档、设计等）
+#     programming_languages: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 编程语言列表
+#     framework: str | None = Field(default=None)     # 使用的框架
     
-    # 项目统计
-    file_count: int | None = Field(default=None)    # 文件数量
-    total_size: int | None = Field(default=None)    # 总大小（字节）
-    last_activity: datetime | None = Field(default=None)  # 最后活动时间
+#     # 项目统计
+#     file_count: int | None = Field(default=None)    # 文件数量
+#     total_size: int | None = Field(default=None)    # 总大小（字节）
+#     last_activity: datetime | None = Field(default=None)  # 最后活动时间
     
-    # 识别信息
-    recognition_confidence: float | None = Field(default=None)  # 识别置信度
-    recognition_method: str | None = Field(default=None)  # 识别方法
+#     # 识别信息
+#     recognition_confidence: float | None = Field(default=None)  # 识别置信度
+#     recognition_method: str | None = Field(default=None)  # 识别方法
     
-    # 时间戳
-    discovered_at: datetime = Field(default=datetime.now())  # 发现时间
-    updated_at: datetime = Field(default=datetime.now())     # 更新时间
+#     # 时间戳
+#     discovered_at: datetime = Field(default=datetime.now())  # 发现时间
+#     updated_at: datetime = Field(default=datetime.now())     # 更新时间
     
-    # 额外数据
-    extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
+#     # 额外数据
+#     extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 额外元数据
     
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
-        }
+#     class Config:
+#         json_encoders = {
+#             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+#         }
 
 # 新增一个模型服务商类型的枚举
 class ModelProviderType(str, PyEnum):
@@ -493,19 +493,19 @@ class DBManager:
                 # 创建索引 - 为修改时间创建索引，便于按时间查询
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
             
-            # 创建文件精炼结果表
-            if not inspector.has_table(FileRefineResult.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[FileRefineResult.__table__])
-                # 创建索引 - 为文件路径创建索引
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_file_path ON {FileRefineResult.__tablename__} (file_path);'))
-                # 创建索引 - 为处理状态创建索引
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_status ON {FileRefineResult.__tablename__} (status);'))
+            # # 创建文件精炼结果表
+            # if not inspector.has_table(FileRefineResult.__tablename__):
+            #     SQLModel.metadata.create_all(engine, tables=[FileRefineResult.__table__])
+            #     # 创建索引 - 为文件路径创建索引
+            #     conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_file_path ON {FileRefineResult.__tablename__} (file_path);'))
+            #     # 创建索引 - 为处理状态创建索引
+            #     conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_refine_status ON {FileRefineResult.__tablename__} (status);'))
             
-            # 创建项目表
-            if not inspector.has_table(Project.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Project.__table__])
-                # 创建索引 - 为项目路径创建唯一索引
-                conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_project_path ON {Project.__tablename__} (path);'))
+            # # 创建项目表
+            # if not inspector.has_table(Project.__tablename__):
+            #     SQLModel.metadata.create_all(engine, tables=[Project.__table__])
+            #     # 创建索引 - 为项目路径创建唯一索引
+            #     conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_project_path ON {Project.__tablename__} (path);'))
             
             # 创建本地模型配置表
             if not inspector.has_table(LocalModelConfig.__tablename__):
@@ -584,7 +584,7 @@ class DBManager:
         self.session.commit()
     
     def _init_system_config(self) -> None:
-        """初始化系统配置数据，确保所有默认��置都存在"""
+        """初始化系统配置数据，确保所有默认配置项都存在"""
         system_configs = [
             {
                 "key": "full_disk_access_status",

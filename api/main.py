@@ -249,34 +249,34 @@ def get_session():
         yield session
 
 # 智慧文件夹API端点添加 - 传递 main.py 的 get_session 函数
-from wise_folders_api import get_router as get_wise_folders_router
-wise_folders_router = get_wise_folders_router(external_get_session=get_session)
-app.include_router(wise_folders_router, prefix="", tags=["wise-folders"])
+# from wise_folders_api import get_router as get_wise_folders_router
+# wise_folders_router = get_wise_folders_router(external_get_session=get_session)
+# app.include_router(wise_folders_router, prefix="", tags=["wise-folders"])
 
-# 本地大模型API端点添加
+# # 本地大模型API端点添加
 from models_api import get_router as get_models_router
 models_router = get_models_router(external_get_session=get_session)
 app.include_router(models_router, prefix="", tags=["local-models"])
 
-# 定义智慧文件夹获取函数
-@app.get("/wise-folders-legacy/{task_id}")
-async def get_wise_folders_legacy(task_id: int):
-    try:
-        refine_mgr = RefineManager(get_session())
-        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
-        return {
-            "success": True,
-            "task_id": task_id,
-            "folders_count": len(wise_folders),
-            "folders": wise_folders
-        }
-    except Exception as e:
-        logger.error(f"获取智慧文件夹失败: {str(e)}")
-    logger.error(traceback.format_exc())
-    return {
-        "success": False,
-        "message": f"获取智慧文件夹失败: {str(e)}"
-    }
+# # 定义智慧文件夹获取函数
+# @app.get("/wise-folders-legacy/{task_id}")
+# async def get_wise_folders_legacy(task_id: int):
+#     try:
+#         refine_mgr = RefineManager(get_session())
+#         wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
+#         return {
+#             "success": True,
+#             "task_id": task_id,
+#             "folders_count": len(wise_folders),
+#             "folders": wise_folders
+#         }
+#     except Exception as e:
+#         logger.error(f"获取智慧文件夹失败: {str(e)}")
+#     logger.error(traceback.format_exc())
+#     return {
+#         "success": False,
+#         "message": f"获取智慧文件夹失败: {str(e)}"
+#     }
 
 # 获取 MyFilesManager 的依赖函数
 def get_myfiles_manager(session: Session = Depends(get_session)):
@@ -566,34 +566,34 @@ def get_latest_task(
         }
 
 # 智慧文件夹相关的API端点
-@app.get("/wise-folders/{task_id}")
-def get_wise_folders(
-    task_id: str,
-    refine_mgr: RefineManager = Depends(get_refine_manager)
-):
-    """获取指定任务的智慧文件夹
+# @app.get("/wise-folders/{task_id}")
+# def get_wise_folders(
+#     task_id: str,
+#     refine_mgr: RefineManager = Depends(get_refine_manager)
+# ):
+#     """获取指定任务的智慧文件夹
     
-    Args:
-        task_id: 任务ID
+#     Args:
+#         task_id: 任务ID
         
-    Returns:
-        智慧文件夹列表
-    """
-    try:
-        wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
-        return {
-            "success": True,
-            "task_id": task_id,
-            "folders_count": len(wise_folders),
-            "folders": wise_folders
-        }
-    except Exception as e:
-        logger.error(f"获取智慧文件夹失败: {str(e)}")
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"获取智慧文件夹失败: {str(e)}"
-        }
+#     Returns:
+#         智慧文件夹列表
+#     """
+#     try:
+#         wise_folders = refine_mgr.get_wise_folders_by_task(task_id)
+#         return {
+#             "success": True,
+#             "task_id": task_id,
+#             "folders_count": len(wise_folders),
+#             "folders": wise_folders
+#         }
+#     except Exception as e:
+#         logger.error(f"获取智慧文件夹失败: {str(e)}")
+#         logger.error(traceback.format_exc())
+#         return {
+#             "success": False,
+#             "message": f"获取智慧文件夹失败: {str(e)}"
+#         }
 
 # 添加用于处理文件粗筛结果的 API 接口
 @app.post("/file-screening")
