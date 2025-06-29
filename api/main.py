@@ -28,79 +28,58 @@ from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
 from refine_mgr import RefineManager
 from task_mgr import TaskManager
+from models_mgr import LocalModelsManager
 
-# 设置日志记录
+# --- Centralized Logging Setup ---
+def setup_logging():
+    """Configures the root logger for the application."""
+    try:
+        # Determine log directory
+        script_path = os.path.abspath(__file__)
+        log_dir = pathlib.Path(script_path).parent / 'logs'
+        if not log_dir.exists():
+            current_dir = pathlib.Path(os.getcwd())
+            log_dir = current_dir / 'api' / 'logs' if 'api' not in str(current_dir) else current_dir / 'logs'
+        log_dir.mkdir(exist_ok=True, parents=True)
+
+        log_filename = f'api_{time.strftime("%Y%m%d")}.log'
+        log_filepath = log_dir / log_filename
+
+        # Get the root logger and configure it
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+
+        # Avoid adding duplicate handlers
+        if not root_logger.handlers:
+            # Console handler
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            console_handler.setFormatter(console_formatter)
+            root_logger.addHandler(console_handler)
+
+            # File handler
+            file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+            file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            file_handler.setFormatter(file_formatter)
+            root_logger.addHandler(file_handler)
+        
+        logging.getLogger(__name__).info("Logging configured successfully.")
+
+    except Exception as e:
+        # Fallback to basic config if setup fails
+        logging.basicConfig(level=logging.INFO)
+        logging.error(f"Error setting up custom logging: {e}", exc_info=True)
+
+setup_logging()
+# --- End Logging Setup ---
+
+# Get a logger for this module
 logger = logging.getLogger(__name__)
 
 # 全局缓存实例
 config_cache = TimedCache[Dict[str, Any]](expiry_seconds=300)  # 5分钟过期
 folder_hierarchy_cache = TimedCache[List[Any]](expiry_seconds=180)  # 3分钟过期
 bundle_ext_cache = TimedCache[List[str]](expiry_seconds=600)   # 10分钟过期
-
-# print(f"调试模式: {sys.argv}")
-# print(f"Python 版本: {sys.version}")
-# print(f"当前工作目录: {os.getcwd()}")
-
-try:
-    # 确定日志目录 - 尝试多种方式确保找到正确路径
-    script_path = os.path.abspath(__file__)
-    # print(f"脚本路径: {script_path}")
-    
-    # 首先尝试直接从脚本路径获取
-    parents_logs_dir = pathlib.Path(script_path).parent / 'logs'
-    
-    # 如果上面的目录不存在，尝试从当前工作目录
-    if not parents_logs_dir.exists():
-        current_dir = pathlib.Path(os.getcwd())
-        if 'api' in str(current_dir):
-            # 如果当前目录包含 'api'
-            parents_logs_dir = current_dir / 'logs'
-        else:
-            # 尝试在当前目录下找 api/logs
-            parents_logs_dir = current_dir / 'api' / 'logs'
-    
-    # print(f"日志目录路径: {parents_logs_dir}")
-    # 确保日志目录存在
-    parents_logs_dir.mkdir(exist_ok=True, parents=True)
-    
-    logger.setLevel(logging.INFO)
-    
-    # 配置日志记录器，避免重复输出
-    # 先设置为不传播到父记录器，这样可以防止消息被记录两次
-    logger.propagate = False
-    
-    # 添加控制台处理器，确保日志同时输出到终端
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(console_handler)
-    
-    # 添加文件处理器
-    log_filename = f'api_{time.strftime("%Y%m%d", time.localtime(time.time()))}.log'
-    log_filepath = parents_logs_dir / log_filename
-    # print(f"日志文件路径: {log_filepath}")
-    
-    # 确保不重复添加处理器
-    file_handler_exists = False
-    for handler in logger.handlers:
-        if isinstance(handler, logging.FileHandler):
-            file_handler_exists = True
-            break
-    
-    if not file_handler_exists:
-        try:
-            file_handler = logging.FileHandler(log_filepath)
-            file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-            logger.addHandler(file_handler)
-            # print(f"文件日志处理器已添加: {log_filepath}")
-        except Exception as e:
-            # print(f"添加文件日志处理器失败: {e}")
-            # 记录详细的错误信息
-            import traceback
-            traceback.print_exc()
-except Exception as e:
-    print(f"设置日志记录时出错: {e}")
-    import traceback
-    traceback.print_exc()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -274,6 +253,11 @@ from wise_folders_api import get_router as get_wise_folders_router
 wise_folders_router = get_wise_folders_router(external_get_session=get_session)
 app.include_router(wise_folders_router, prefix="", tags=["wise-folders"])
 
+# 本地大模型API端点添加
+from models_api import get_router as get_models_router
+models_router = get_models_router(external_get_session=get_session)
+app.include_router(models_router, prefix="", tags=["local-models"])
+
 # 定义智慧文件夹获取函数
 @app.get("/wise-folders-legacy/{task_id}")
 async def get_wise_folders_legacy(task_id: int):
@@ -383,6 +367,7 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
         "file_extension_maps": file_extension_maps,
         "project_recognition_rules": project_recognition_rules,
         "monitored_folders": monitored_folders,
+        "previewable_extensions": ['pdf', 'md', 'markdown', 'txt', 'json', 'pptx', 'docx', 'xlsx', 'xls'],  # 可预览扩展名列表
         "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
         "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
     }

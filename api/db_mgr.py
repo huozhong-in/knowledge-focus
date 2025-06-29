@@ -374,6 +374,45 @@ class Project(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
+# 新增一个模型服务商类型的枚举
+class ModelProviderType(str, PyEnum):
+    OLLAMA = "ollama"
+    LM_STUDIO = "lm_studio"
+    OPENAI_COMPATIBLE = "openai_compatible"
+
+# 新增本地模型配置表
+class LocalModelConfig(SQLModel, table=True):
+    __tablename__ = "t_local_model_configs"
+    id: int = Field(default=None, primary_key=True)
+    
+    # 服务商类型，如 "ollama", "lm_studio"。这将作为唯一标识符。
+    provider_type: str = Field(
+        sa_column=Column(Enum(ModelProviderType, values_callable=lambda obj: [e.value for e in obj]), unique=True, index=True)
+    )
+    
+    # 服务商的显示名称，如 "Ollama"
+    provider_name: str
+    
+    # API 连接信息
+    api_endpoint: str
+    api_key: str | None = Field(default=None)
+    
+    # 是否启用此配置
+    enabled: bool = Field(default=True)
+    
+    # 用于存储此服务商下可用模型的JSON字段
+    # 结构: [{"id": "model_id", "name": "显示名称", "attributes": {"vision": true, ...}}]
+    available_models: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    
+    # 时间戳
+    created_at: datetime = Field(default=datetime.now())
+    updated_at: datetime = Field(default=datetime.now())
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
     从上层拿到session，自己不管理数据库连接"""
@@ -422,7 +461,7 @@ class DBManager:
             # 创建系统配置表
             if not inspector.has_table(SystemConfig.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[SystemConfig.__table__])
-                self._init_system_config()  # 初始化系统配置数据
+            self._init_system_config()  # 初始化系统配置数据
             
             # 创建文件分类表
             if not inspector.has_table(FileCategory.__tablename__):
@@ -467,6 +506,11 @@ class DBManager:
                 SQLModel.metadata.create_all(engine, tables=[Project.__table__])
                 # 创建索引 - 为项目路径创建唯一索引
                 conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_project_path ON {Project.__tablename__} (path);'))
+            
+            # 创建本地模型配置表
+            if not inspector.has_table(LocalModelConfig.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[LocalModelConfig.__table__])
+                self._init_local_model_configs()  # 初始化本地模型配置数据
                 
         return True
 
@@ -540,7 +584,7 @@ class DBManager:
         self.session.commit()
     
     def _init_system_config(self) -> None:
-        """初始化系统配置数据"""
+        """初始化系统配置数据，确保所有默认��置都存在"""
         system_configs = [
             {
                 "key": "full_disk_access_status",
@@ -561,20 +605,83 @@ class DBManager:
                 "key": "bundle_extensions_version",
                 "value": "1.0",
                 "description": "Bundle扩展名规则版本"
+            },
+            {
+                "key": "selected_model_for_vision",
+                "value": "{}",
+                "description": "用于视觉任务的全局模型配置"
+            },
+            {
+                "key": "selected_model_for_reasoning",
+                "value": "{}",
+                "description": "用于推理任务的全局模型配置"
+            },
+            {
+                "key": "selected_model_for_toolUse",
+                "value": "{}",
+                "description": "用于工具调用任务的全局模型配置"
+            },
+            {
+                "key": "selected_model_for_embedding",
+                "value": "{}",
+                "description": "用于嵌入任务的全局模型配置"
+            },
+            {
+                "key": "selected_model_for_reranking",
+                "value": "{}",
+                "description": "用于重排序任务的全局模型配置"
             }
         ]
         
-        config_objs = []
         for config_data in system_configs:
-            config_objs.append(
-                SystemConfig(
+            # 检查配置项是否已存在
+            existing_config = self.session.exec(
+                select(SystemConfig).where(SystemConfig.key == config_data["key"])
+            ).first()
+            
+            # 如果不存在，则添加
+            if not existing_config:
+                new_config = SystemConfig(
                     key=config_data["key"],
                     value=config_data["value"],
                     description=config_data["description"]
                 )
-            )
+                self.session.add(new_config)
         
-        self.session.add_all(config_objs)
+        self.session.commit()
+
+    def _init_local_model_configs(self) -> None:
+        """初始化本地模型配置数据"""
+        default_configs = [
+            {
+                "provider_type": ModelProviderType.OLLAMA.value,
+                "provider_name": "Ollama",
+                "api_endpoint": "http://localhost:11434/v1/",
+                "enabled": True,
+            },
+            {
+                "provider_type": ModelProviderType.LM_STUDIO.value,
+                "provider_name": "LM Studio",
+                "api_endpoint": "http://localhost:1234/v1/",
+                "enabled": True,
+            },
+            {
+                "provider_type": ModelProviderType.OPENAI_COMPATIBLE.value,
+                "provider_name": "OpenAI 兼容 API",
+                "api_endpoint": "",
+                "enabled": True,
+            },
+        ]
+
+        for config_data in default_configs:
+            # 检查是否已存在
+            existing = self.session.exec(
+                select(LocalModelConfig).where(LocalModelConfig.provider_type == config_data["provider_type"])
+            ).first()
+            if not existing:
+                config_obj = LocalModelConfig(**config_data)
+                self.session.add(config_obj)
+        
         self.session.commit()
 
     def _init_file_categories(self) -> None:
