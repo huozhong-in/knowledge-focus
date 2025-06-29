@@ -223,6 +223,20 @@ class ProjectRecognitionRule(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
+# 标签表
+class Tags(SQLModel, table=True):
+    __tablename__ = "t_tags"
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(index=True)  # 标签名称
+    type: str = Field(default="user", index=True)  # 标签类型：user（用户自定义）、system（系统预设）
+    created_at: datetime = Field(default=datetime.now())
+    updated_at: datetime = Field(default=datetime.now())
+
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
 # 文件粗筛结果状态枚举
 class FileScreenResult(str, PyEnum):
     PENDING = "pending"       # 等待进一步处理
@@ -257,6 +271,7 @@ class FileScreeningResult(SQLModel, table=True):
     # 额外元数据和特征
     extra_metadata: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 其他元数据信息
     labels: List[str] | None = Field(default=None, sa_column=Column(JSON))  # 初步标记的标牌
+    tags_display_ids: str | None = Field(default=None)  # 标签ID列表（逗号分隔字符串）
     
     # 处理状态
     status: str = Field(
