@@ -12,7 +12,7 @@ class LocalModelsManager:
     """管理本地大模型配置的业务逻辑"""
 
     def __init__(self, session: Session):
-        self.session = session
+        self.session: Session = session
 
     def get_all_configs(self) -> List[LocalModelConfig]:
         """获取所有本地模型服务商的配置"""

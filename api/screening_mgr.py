@@ -13,7 +13,7 @@ class ScreeningManager:
     """文件粗筛结果管理类，提供增删改查方法"""
     
     def __init__(self, session: Session): # No change to __init__
-        self.session = session
+        self.session: Session = session
     
     def add_screening_result(self, data: Dict[str, Any], commit_session: bool = True) -> Optional[FileScreeningResult]:
         """添加一条文件粗筛结果

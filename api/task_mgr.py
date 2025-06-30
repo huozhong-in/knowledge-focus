@@ -23,14 +23,14 @@ logger = logging.getLogger(__name__)
 class TaskManager:
     """任务管理器，负责任务的添加、获取、更新等操作"""
 
-    def __init__(self, session):
+    def __init__(self, session: Session):
         """初始化任务管理器
         
         Args:
             session: SQLAlchemy数据库会话
         """
-        self.session = session
-    
+        self.session: Session = session
+
     def add_task(self, task_name: str, task_type: str, priority: str = "medium", extra_data: Dict[str, Any] = None) -> Task:
         """添加新任务
         
