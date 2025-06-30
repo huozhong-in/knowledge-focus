@@ -14,26 +14,24 @@
     CREATE TABLE t_tags (
         id INTEGER PRIMARY KEY,
         name TEXT UNIQUE NOT NULL,
-        type INT NOT NULL DEFAULT 0, -- 标签类型（在Python中定义enum来保存：0预设、1用户自定义、2LLM生成）
+        type TEXT NOT NULL,  -- 标签类型
     );
 
     -- 粗筛结果表
     CREATE TABLE t_file_screening_results (
-        pk_file_screening_results INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY,
         file_path TEXT NOT NULL,
         -- 其他字段...
-        -- 我们将在这里存储一个供人阅读的标签列表，比如用逗号分隔
-        -- 但这个字段不用于高性能搜索
+        -- 我们将在这里存储一个供人阅读的标签列表，是用逗号分隔的ID列表，但这个字段不用于高性能搜索
         tags_display_ids TEXT
     );
 
     -- FTS5 虚拟表 (用于高性能搜索)
     -- 注意：这里的 `tags_search_ids` 列存储的是用空格分隔的标签ID
     CREATE VIRTUAL TABLE t_files_fts USING fts5(
-        fk_file_screening_results UNINDEXED, -- 不对文件ID本身进行索引，只做关联
         tags_search_ids,  -- 这个列将被全文索引
         content='t_file_screening_results', -- 告诉FTS5内容存储在t_file_screening_results表中（可选，但推荐）
-        content_rowid='pk_file_screening_results'
+        content_rowid='id'
     );
     ```
 
@@ -46,24 +44,23 @@
     CREATE TRIGGER trg_files_after_insert AFTER INSERT ON t_file_screening_results
     BEGIN
         -- 假设新插入的行的 tags_display_ids 是 '1,5,10'
-        -- 我们把它转换成 'tag_1 tag_5 tag_10' 这样的形式存入FTS表
-        -- 为了简化，我们假设存入的直接是空格分隔的ID字符串
+        -- 我们把它转换成 '1 5 10' 这样的形式存入FTS表，是空格分隔的标签ID
         INSERT INTO t_files_fts (rowid, tags_search_ids)
-        VALUES (NEW.pk_file_screening_results, REPLACE(NEW.tags_display_ids, ',', ' '));
+        VALUES (NEW.id, REPLACE(NEW.tags_display_ids, ',', ' '));
     END;
 
     -- 删除文件时，自动更新FTS表
     CREATE TRIGGER trg_files_after_delete AFTER DELETE ON t_file_screening_results
     BEGIN
-        DELETE FROM t_files_fts WHERE rowid = OLD.pk_file_screening_results;
+        DELETE FROM t_files_fts WHERE rowid = OLD.id;
     END;
 
     -- 更新文件时，自动更新FTS表
     CREATE TRIGGER trg_files_after_update AFTER UPDATE ON t_file_screening_results
     BEGIN
-        DELETE FROM t_files_fts WHERE rowid = OLD.pk_file_screening_results;
+        DELETE FROM t_files_fts WHERE rowid = OLD.id;
         INSERT INTO t_files_fts (rowid, tags_search_ids)
-        VALUES (NEW.pk_file_screening_results, REPLACE(NEW.tags_display_ids, ',', ' '));
+        VALUES (NEW.id, REPLACE(NEW.tags_display_ids, ',', ' '));
     END;
     ```
 
@@ -75,19 +72,19 @@
     - **查询包含标签 `5` 和 `10` 的文件 (AND):**
 
         ```sql
-        SELECT pk_file FROM t_files_fts WHERE tags_search_ids MATCH '5 AND 10';
+        SELECT content_rowid FROM t_files_fts WHERE tags_search_ids MATCH '5 AND 10';
         ```
 
     - **查询包含标签 `5` 或 `10` 的文件 (OR):**
 
         ```sql
-        SELECT pk_file FROM t_files_fts WHERE tags_search_ids MATCH '5 OR 10';
+        SELECT content_rowid FROM t_files_fts WHERE tags_search_ids MATCH '5 OR 10';
         ```
 
     - **查询包含标签 `5` 但不包含标签 `3` 的文件 (NOT):**
 
         ```sql
-        SELECT pk_file FROM t_files_fts WHERE tags_search_ids MATCH '5 NOT 3';
+        SELECT content_rowid FROM t_files_fts WHERE tags_search_ids MATCH '5 NOT 3';
         ```
 
 **优点:**

@@ -474,12 +474,7 @@ class DBManager:
                 END;
             """))
             
-            # 确保 FileScreeningResult 表有 tags_display_ids 字段
-            columns = [col['name'] for col in inspector.get_columns(FileScreeningResult.__tablename__)]
-            if 'tags_display_ids' not in columns:
-                conn.execute(text(f"""
-                    ALTER TABLE {FileScreeningResult.__tablename__} ADD COLUMN tags_display_ids TEXT;
-                """))
+            conn.commit()  # 提交所有更改
             
             # 创建本地模型配置表
             if not inspector.has_table(LocalModelConfig.__tablename__):
