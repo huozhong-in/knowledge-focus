@@ -1,4 +1,4 @@
-from sqlmodel import Session, select, create_engine
+from sqlmodel import Session, create_engine
 from datetime import datetime
 from typing import List, Dict, Tuple
 import os
@@ -25,6 +25,7 @@ class ParsingMgr:
             base_url="http://localhost:1234/v1/",
             api_key="sk-xxx",
         )
+        self._use_model = "google/gemma-3-4b" # A fast and capable model for this task
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
         """
@@ -45,7 +46,7 @@ class ParsingMgr:
         except Exception as e:
             logger.error(f"Error extracting content from {screening_result.file_path}: {e}")
             screening_result.error_message = f"Content extraction failed: {e}"
-            self.session.add(screening_result)
+            self.session.commit()
             return False
 
         # 2. Generate tags with LLM
@@ -58,7 +59,7 @@ class ParsingMgr:
         except Exception as e:
             logger.error(f"Error generating tags for {screening_result.file_path}: {e}")
             screening_result.error_message = f"Tag generation failed: {e}"
-            self.session.add(screening_result)
+            self.session.commit()
             return False
 
         # 3. Get or create tag objects
@@ -73,7 +74,7 @@ class ParsingMgr:
         else:
             logger.error(f"Failed to link tags to {screening_result.file_path}")
             screening_result.error_message = "Failed to link tags."
-            self.session.add(screening_result)
+            self.session.commit()
 
         return success
 
@@ -107,7 +108,7 @@ class ParsingMgr:
 
         try:
             response = self.llm_client.chat.completions.create(
-                model="google/gemma-3-4b", # A fast and capable model for this task
+                model=self._use_model,
                 messages=[
                     {"role": "system", "content": "You are an expert at analyzing file content and metadata to generate relevant tags. Respond with a comma-separated list of tags and nothing else."},
                     {"role": "user", "content": prompt}
@@ -170,9 +171,9 @@ if __name__ == "__main__":
     # 测试从指定全路径的文件中提取内容
     parsing_mgr = ParsingMgr(session)
     extracted_content = parsing_mgr._extract_content(test_file_path)
-    # print("提取的内容:\n", extracted_content)
+    print("提取的内容:\n", extracted_content)
 
-    # 测试从粗筛结果表中得到一条记录
+    # 测试从粗筛结果表中得到一条记录，使用LLM生成标签
     from screening_mgr import ScreeningManager
     screening_mgr = ScreeningManager(session)
     result: FileScreeningResult = screening_mgr.get_by_path(test_file_path)

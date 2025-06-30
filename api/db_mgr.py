@@ -443,7 +443,13 @@ class DBManager:
                         content_rowid='id'
                     );
                 """))
-
+            
+            # 删除旧的触发器（如果存在）
+            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_insert;"))
+            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_delete;"))
+            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_update;"))
+            
+            # 创建新的触发器
             conn.execute(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_insert AFTER INSERT ON {FileScreeningResult.__tablename__}
                 BEGIN
@@ -460,13 +466,20 @@ class DBManager:
             """))
 
             conn.execute(text(f"""
-                CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE ON {FileScreeningResult.__tablename__}
+                CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE OF tags_display_ids ON {FileScreeningResult.__tablename__}
                 BEGIN
                     DELETE FROM t_files_fts WHERE rowid = OLD.id;
                     INSERT INTO t_files_fts (rowid, tags_search_ids)
                     VALUES (NEW.id, REPLACE(IFNULL(NEW.tags_display_ids, ''), ',', ' '));
                 END;
             """))
+            
+            # 确保 FileScreeningResult 表有 tags_display_ids 字段
+            columns = [col['name'] for col in inspector.get_columns(FileScreeningResult.__tablename__)]
+            if 'tags_display_ids' not in columns:
+                conn.execute(text(f"""
+                    ALTER TABLE {FileScreeningResult.__tablename__} ADD COLUMN tags_display_ids TEXT;
+                """))
             
             # 创建本地模型配置表
             if not inspector.has_table(LocalModelConfig.__tablename__):
@@ -596,9 +609,8 @@ class DBManager:
         
         for config_data in system_configs:
             # 检查配置项是否已存在
-            existing_config = self.session.exec(
-                select(SystemConfig).where(SystemConfig.key == config_data["key"])
-            ).first()
+            stmt = select(SystemConfig).where(SystemConfig.key == config_data["key"])
+            existing_config = self.session.exec(stmt).first()
             
             # 如果不存在，则添加
             if not existing_config:
@@ -636,9 +648,8 @@ class DBManager:
 
         for config_data in default_configs:
             # 检查是否已存在
-            existing = self.session.exec(
-                select(LocalModelConfig).where(LocalModelConfig.provider_type == config_data["provider_type"])
-            ).first()
+            stmt = select(LocalModelConfig).where(LocalModelConfig.provider_type == config_data["provider_type"])
+            existing = self.session.exec(stmt).first()
             if not existing:
                 config_obj = LocalModelConfig(**config_data)
                 self.session.add(config_obj)
@@ -664,7 +675,8 @@ class DBManager:
     def _init_file_extensions(self) -> None:
         """初始化文件扩展名映射"""
         # 获取分类ID映射
-        category_map = {cat.name: cat.id for cat in self.session.exec(select(FileCategory)).all()}
+        stmt = select(FileCategory)
+        category_map = {cat.name: cat.id for cat in self.session.exec(stmt).all()}
         
         # 文档类扩展名
         doc_extensions = [
