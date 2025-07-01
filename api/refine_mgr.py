@@ -1,3 +1,4 @@
+from sqlmodel import Session, create_engine
 from typing import Dict, Any
 from sqlmodel import Session, select
 from db_mgr import (
@@ -98,3 +99,8 @@ class RefineManager:
         self.session.refresh(task)
         
         return task.id
+
+# 测试用代码
+if __name__ == "__main__":
+    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    session = Session(create_engine(f'sqlite:///{db_file}'))

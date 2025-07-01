@@ -41,10 +41,11 @@ class TaskPriority(str, PyEnum):
     MEDIUM = "medium"
     HIGH = "high"
 
-# 2种任务类型
+# 任务类型
 class TaskType(str, PyEnum):
     SCREENING = "screening"
-    REFINE = "refine"  # Added for refinement tasks
+    PARSING = "parsing"
+    REFINE = "refine"
     MAINTENANCE = "maintenance"
 
 # 供worker使用的tasks表
@@ -52,7 +53,7 @@ class Task(SQLModel, table=True):
     __tablename__ = "t_tasks"
     id: int = Field(default=None, primary_key=True)
     task_name: str
-    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.REFINE.value))
+    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.PARSING.value))
     priority: str = Field(sa_column=Column(Enum(TaskPriority, values_callable=lambda obj: [e.value for e in obj]), default=TaskPriority.MEDIUM.value))
     status: str = Field(sa_column=Column(Enum(TaskStatus, values_callable=lambda obj: [e.value for e in obj]), default=TaskStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
@@ -268,7 +269,7 @@ class FileScreeningResult(SQLModel, table=True):
     created_time: datetime | None = Field(default=None)  # 文件创建时间
     modified_time: datetime = Field(index=True)  # 文件最后修改时间，增加索引以优化时间范围查询
     accessed_time: datetime | None = Field(default=None)  # 文件最后访问时间
-    refined_time: datetime | None = Field(default=None)  # 上一次精炼时间，用来判定是否需要重新处理
+    tagged_time: datetime | None = Field(default=None)  # 上一次打标签时间，用来判定是否需要重新处理
 
     # 粗筛分类结果
     category_id: int | None = Field(default=None, index=True)  # 根据扩展名或规则确定的分类ID（已有索引）

@@ -384,12 +384,12 @@ class TaggingMgr:
             
         return self.get_tags_by_ids(top_tag_ids)
 
-
+# 测试用代码
 if __name__ == '__main__':
     db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
     tagging_mgr = TaggingMgr(Session(create_engine(f'sqlite:///{db_file}')))
     
-    # 示例：获取或创建标签
+    # 获取或创建标签
     test_tag_names = ["test", "example", "sample"]
     created_tags = tagging_mgr.get_or_create_tags(test_tag_names)
     print("Created or fetched tags:", created_tags)

@@ -1,6 +1,6 @@
 from sqlmodel import Session, create_engine
 from datetime import datetime
-from typing import List, Dict, Tuple
+from typing import List, Dict, Any
 import os
 import logging
 from tagging_mgr import TaggingMgr
@@ -41,7 +41,7 @@ class ParsingMgr:
             content = self._extract_content(screening_result.file_path)
             if not content:
                 logger.info(f"No content extracted from {screening_result.file_path}. Skipping tagging.")
-                self._update_refined_time(screening_result.id)
+                self._update_tagged_time(screening_result.id)
                 return True # Mark as processed even if no content
         except Exception as e:
             logger.error(f"Error extracting content from {screening_result.file_path}: {e}")
@@ -54,7 +54,7 @@ class ParsingMgr:
             generated_tag_names = self._generate_tags_with_llm(screening_result, content)
             if not generated_tag_names:
                 logger.info(f"LLM did not generate any tags for {screening_result.file_path}. Skipping linking.")
-                self._update_refined_time(screening_result.id)
+                self._update_tagged_time(screening_result.id)
                 return True
         except Exception as e:
             logger.error(f"Error generating tags for {screening_result.file_path}: {e}")
@@ -69,7 +69,7 @@ class ParsingMgr:
         # 4. Link tags to the file
         success = self.tagging_mgr.link_tags_to_file(screening_result.id, tag_ids)
         if success:
-            self._update_refined_time(screening_result.id)
+            self._update_tagged_time(screening_result.id)
             logger.info(f"Successfully linked {len(tag_ids)} tags to {screening_result.file_path}")
         else:
             logger.error(f"Failed to link tags to {screening_result.file_path}")
@@ -155,13 +155,41 @@ class ParsingMgr:
         """
         return prompt
 
-    def _update_refined_time(self, screening_result_id: int):
-        """Updates the refined_time for a screening result."""
+    def _update_tagged_time(self, screening_result_id: int):
+        """Updates the tagged_time for a screening result."""
         result = self.session.get(FileScreeningResult, screening_result_id)
         if result:
-            result.refined_time = datetime.now()
+            result.tagged_time = datetime.now()
             self.session.commit()
+    
+    def create_rough_parse_task(self, file_path: str) -> int:
+        """
+        Creates a rough parse task for a file.
+        This is a placeholder for future implementation.
+        """
+        # In a real application, you would create a task in the database
+        # and return its ID. Here we just log the action.
+        logger.info(f"Creating rough parse task for file: {file_path}")
+        
+        # For now, we return a dummy task ID
+        return 1
+    
+    def process_all_pending_parsing_results(self) -> Dict[str, Any]:
+        pass
+    
+    def create_sophisticated_parse_task(self, file_path: str) -> int:
+        """
+        Creates a sophisticated parse task for a file.
+        This is a placeholder for future implementation.
+        """
+        # In a real application, you would create a task in the database
+        # and return its ID. Here we just log the action.
+        logger.info(f"Creating sophisticated parse task for file: {file_path}")
+        
+        # For now, we return a dummy task ID
+        return 2
 
+# 测试用代码
 if __name__ == "__main__":
     db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
     session = Session(create_engine(f'sqlite:///{db_file}'))

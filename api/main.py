@@ -26,9 +26,8 @@ from db_mgr import (
 )
 from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
-from refine_mgr import RefineManager
+from parsing_mgr import ParsingMgr
 from task_mgr import TaskManager
-from models_mgr import LocalModelsManager
 
 # --- Centralized Logging Setup ---
 def setup_logging():
@@ -364,9 +363,8 @@ def task_processor(processor_id: int, db_path: str = None):
     session = Session(engine)
     
     _task_mgr = TaskManager(session)
-    # _screening_mgr = ScreeningManager(session) # 保留以备将来扩展
-    _refine_mgr = RefineManager(session)
-    
+    _parsing_mgr = ParsingMgr(session)
+
     with ThreadPoolExecutor(max_workers=1) as executor:
         try:
             while True:
@@ -387,9 +385,9 @@ def task_processor(processor_id: int, db_path: str = None):
                     _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
                     session.commit() # Commit status update immediately
                     
-                    if task.task_type == TaskType.REFINE.value:
-                        logger.info(f"开始批量精炼任务 (Task ID: {task.id})")
-                        future = executor.submit(_refine_mgr.process_all_pending_screening_results)
+                    if task.task_type == TaskType.PARSING.value:
+                        logger.info(f"开始批量解析任务 (Task ID: {task.id})")
+                        future = executor.submit(_parsing_mgr.process_all_pending_parsing_results())
                     else:
                         logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
                         _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
@@ -401,28 +399,28 @@ def task_processor(processor_id: int, db_path: str = None):
 
                     task_result_data = future.result(timeout=300) # 5分钟超时
 
-                    if task.task_type == TaskType.REFINE.value:
-                        # 批量处理返回的不再是单个 FileRefineResult，而是处理结果统计
+                    if task.task_type == TaskType.PARSING.value:
+                        # 批量处理返回的不再是单个文件的结果，而是一个包含处理统计信息的字典
                         if isinstance(task_result_data, dict):
                             if task_result_data.get("success", False):
                                 _task_mgr.update_task_status(
                                     task.id, 
                                     TaskStatus.COMPLETED, 
                                     result=TaskResult.SUCCESS, 
-                                    message=f"成功处理 {task_result_data.get('processed', 0)} 个粗筛结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
+                                    message=f"成功处理 {task_result_data.get('processed', 0)} 个解析结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
                                 )
                             else:
                                 _task_mgr.update_task_status(
                                     task.id, 
                                     TaskStatus.FAILED, 
                                     result=TaskResult.FAILURE, 
-                                    message=f"批量精炼失败: {task_result_data.get('error', '未知错误')}"
+                                    message=f"批量解析失败: {task_result_data.get('error', '未知错误')}"
                                 )
                         elif task_result_data is None:
-                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼失败: 没有找到可处理的粗筛结果")
+                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量解析失败: 没有找到可处理的粗筛结果")
                         else:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量精炼返回了意外的数据类型")
-                
+                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量解析返回了意外的数据类型")
+
                 except TimeoutError:
                     logger.error(f"任务 {task.id} ({task.task_name}) 超时")
                     if task and task.id:
@@ -462,23 +460,23 @@ def get_screening_manager(session: Session = Depends(get_session)):
     """获取文件粗筛结果管理类实例"""
     return ScreeningManager(session)
 
-# 获取 RefineManager 的依赖函数
-def get_refine_manager(session: Session = Depends(get_session)):
-    """获取文件精炼管理类实例"""
-    return RefineManager(session)
+# 获取 ParsingMgr 的依赖函数
+def get_parsing_manager(session: Session = Depends(get_session)):
+    """获取文件解析管理类实例"""
+    return ParsingMgr(session)
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
     """获取任务管理器实例"""
     return TaskManager(session)
 
-# 为单个文件创建精炼任务
-@app.post("/tasks/refine")
-def create_refine_task(
+# 为单个文件创建解析任务
+@app.post("/tasks/parse")
+def create_parse_task(
     file_path: str,
-    refine_mgr: RefineManager = Depends(get_refine_manager)
+    parsing_mgr: ParsingMgr = Depends(get_parsing_manager)
 ):
-    """为单个文件创建精炼任务
+    """为单个文件创建解析任务
 
     Args:
         file_path: 文件路径
@@ -487,16 +485,16 @@ def create_refine_task(
         任务ID
     """
     try:
-        task_id = refine_mgr.create_refine_task(file_path)
+        task_id = parsing_mgr.create_rough_parse_task(file_path)
         return {
             "success": True,
             "task_id": task_id
         }
     except Exception as e:
-        logger.error(f"创建精炼任务失败: {str(e)}")
+        logger.error(f"创建解析任务失败: {str(e)}")
         return {
             "success": False,
-            "message": f"创建精炼任务失败: {str(e)}"
+            "message": f"创建解析任务失败: {str(e)}"
         }
 
 # 获取最新的指定类型任务
@@ -508,7 +506,7 @@ def get_latest_task(
     """获取最新的指定类型任务
     
     Args:
-        task_type: 任务类型 (refine, screening)
+        task_type: 任务类型
         
     Returns:
         最新任务信息
@@ -626,11 +624,11 @@ def add_file_screening_result(
             # 创建一个处理此文件的任务
             task_name = f"处理文件: {result.file_name}"
             
-            # 这里我们使用精炼任务类型统一处理
+            # 这里我们使用解析任务类型统一处理
             # 并将单一文件任务也设置为高优先级，确保优先处理单一文件任务
             task = task_mgr.add_task(
-                task_name=task_name, 
-                task_type=TaskType.REFINE.value,  # 使用精炼任务类型，与批处理保持一致
+                task_name=task_name,
+                task_type=TaskType.PARSING.value,  # 使用解析任务类型，与批处理保持一致
                 priority=TaskPriority.HIGH.value,  # 高优先级
                 extra_data={"screening_result_id": result.id}  # 关联粗筛结果ID
             )
@@ -723,30 +721,30 @@ def add_batch_file_screening_results(
         result = screening_mgr.add_batch_screening_results(data_list)
         
         # 创建一个批处理任务（只要有成功添加的文件就创建任务）
-        # if result["success"] > 0:
-        #     # 取消之前的批量精炼任务（如果有）
-        #     # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
-        #     canceled_tasks = task_mgr.cancel_old_tasks(TaskType.REFINE.value)
-        #     if canceled_tasks > 0:
-        #         logger.info(f"已取消 {canceled_tasks} 个旧的精炼任务")
+        if result["success"] > 0:
+            # 取消之前的批量解析任务（如果有）
+            # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
+            canceled_tasks = task_mgr.cancel_old_tasks(TaskType.PARSING.value)
+            if canceled_tasks > 0:
+                logger.info(f"已取消 {canceled_tasks} 个旧的解析任务")
                 
-        #     # 创建一个新的批处理任务，使用高优先级确保及时处理
-        #     task_name = f"批量处理文件: {result['success']} 个文件"
-        #     task = task_mgr.add_task(
-        #         task_name=task_name, 
-        #         task_type=TaskType.REFINE.value,  # 使用精炼任务类型
-        #         priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
-        #         extra_data={"file_count": result["success"]}
-        #     )
-        #     result["task_id"] = task.id
-        #     logger.info(f"已创建精炼任务 ID: {task.id}，处理 {result['success']} 个文件")
+            # 创建一个新的批处理任务，使用高优先级确保及时处理
+            task_name = f"批量处理文件: {result['success']} 个文件"
+            task = task_mgr.add_task(
+                task_name=task_name,
+                task_type=TaskType.PARSING.value,  # 使用解析任务类型
+                priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
+                extra_data={"file_count": result["success"]}
+            )
+            result["task_id"] = task.id
+            logger.info(f"已创建解析任务 ID: {task.id}，处理 {result['success']} 个文件")
         
         return {
             "success": result["success"] > 0,
             "processed_count": result["success"],
             "failed_count": result["failed"],
             "errors": result.get("errors"),
-            "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个，并创建精炼任务"
+            "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个，并创建解析任务"
         }
         
     except Exception as e:
@@ -1141,94 +1139,6 @@ async def websocket_endpoint(websocket: WebSocket):
             
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-
-# 项目相关API
-# @app.post("/projects")
-# def create_project(
-#     data: Dict[str, Any] = Body(...),
-#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-# ):
-#     """创建新项目"""
-#     try:
-#         name = data.get("name")
-#         path = data.get("path")
-#         project_type = data.get("project_type")
-        
-#         if not path:
-#             return {
-#                 "success": False,
-#                 "message": "项目名称和路径不能为空"
-#             }
-        
-#         project = refine_mgr.create_project(name, path, project_type)
-#         if not project:
-#             return {
-#                 "success": False,
-#                 "message": "创建项目失败"
-#             }
-        
-#         # 转换为可序列化的字典
-#         project_data = project.model_dump()
-        
-#         return {
-#             "success": True,
-#             "data": project_data,
-#             "message": f"已创建项目: {name}"
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"创建项目失败: {str(e)}")
-#         return {
-#             "success": False,
-#             "message": f"创建项目失败: {str(e)}"
-#         }
-
-# @app.get("/projects")
-# def get_projects(
-#     limit: int = 50,
-#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-# ):
-#     """获取项目列表"""
-#     try:
-#         projects = refine_mgr.get_projects(limit)
-        
-#         # 转换为可序列化的字典
-#         projects_data = [project.model_dump() for project in projects]
-        
-#         return {
-#             "success": True,
-#             "count": len(projects_data),
-#             "data": projects_data
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"获取项目列表失败: {str(e)}")
-#         return {
-#             "success": False,
-#             "message": f"获取项目列表失败: {str(e)}"
-#         }
-
-# @app.get("/projects/{project_id}/files")
-# def get_project_files(
-#     project_id: int,
-#     limit: int = 100,
-#     refine_mgr: RefineManager = Depends(lambda session=Depends(get_session): RefineManager(session))
-# ):
-#     """获取项目下的文件"""
-#     try:
-#         files = refine_mgr.get_by_project_id(project_id, limit)
-        
-#         # 转换为可序列化的字典
-#         files_data = [file.model_dump() for file in files]
-        
-#         return {
-#             "success": True,
-#             "count": len(files_data),
-#             "data": files_data
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"获取项目文件失败: {str(e)}")
 
 # 添加文件夹管理相关API
 @app.get("/directories")
