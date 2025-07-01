@@ -14,12 +14,12 @@ import {
 
 import { NavMain } from "@/components/nav-main"
 import { NavPinned } from "@/components/nav-pinned"
-// import { NavUser } from "@/components/nav-user"
+import { NavUser } from "@/components/nav-user"
 // import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
   SidebarContent,
-  // SidebarFooter,
+  SidebarFooter,
   SidebarHeader,
   SidebarRail,
   useSidebar,
@@ -40,11 +40,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
   const { t } = useTranslation();
   const data = {
-    // user: {
-    //   name: "Tom Cruise",
-    //   email: "tom.cruise@email.com",
-    //   avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
-    // },
+    user: {
+      name: "Tom Cruise",
+      email: "tom.cruise@email.com",
+      avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
+    },
     // teams: [
     //   {
     //     name: "Acme Inc",
@@ -232,9 +232,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavPinned folders={pinnedFolderDefinitions} />
         <NavMain items={data.navMain} />
       </SidebarContent>
-      {/* <SidebarFooter className="border-t border-whiskey-200 mt-auto">
+      <SidebarFooter className="border-t border-whiskey-200 mt-auto">
         <NavUser user={data.user} />
-      </SidebarFooter> */}
+      </SidebarFooter>
       <SidebarRail className="hover:after:bg-whiskey-300" />
     </Sidebar>
   )
