@@ -71,11 +71,12 @@ class ScreeningManager:
             logger.error(f"添加文件粗筛结果失败: {str(e)}")
             return None
     
-    def add_batch_screening_results(self, results_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def add_batch_screening_results(self, results_data: List[Dict[str, Any]], task_id: int = None) -> Dict[str, Any]:
         """批量添加文件粗筛结果
         
         Args:
-            results_data: 包含多个文件元数据和初步分类信息的字典列表
+            results_data: 包��多个文件元数据和初步分类信息的字典列表
+            task_id: 关联的任务ID
             
         Returns:
             包含成功和失败计数的结果字典
@@ -87,6 +88,10 @@ class ScreeningManager:
         
         for data_item in results_data: # Renamed 'data' to 'data_item' to avoid conflict
             try:
+                # 将 task_id 添加到每条记录中
+                if task_id:
+                    data_item['task_id'] = task_id
+
                 # Call add_screening_result with commit_session=False
                 result = self.add_screening_result(data_item, commit_session=False)
                 if result:

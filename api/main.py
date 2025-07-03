@@ -133,20 +133,20 @@ async def lifespan(app: FastAPI):
         except Exception as proc_err:
             logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
         
-        # 初始化进程池和任务处理者
+        # 初始化后台任务处理线程
         try:
-            # 强制使用单worker模式，以确保文件处理过程中具有全局一致的视角
-            from config import FORCE_SINGLE_WORKER
-            processes = 1 if FORCE_SINGLE_WORKER else max(1, multiprocessing.cpu_count() // 2)
-            logger.info(f"初始化进程池，强制单worker模式: {FORCE_SINGLE_WORKER}, 工作进程数: {processes}")
-            app.state.process_pool = multiprocessing.Pool(processes=processes)
-            
-            for processor_id in range(processes):
-                logger.info(f"启动工作进程 {processor_id}...")
-                app.state.process_pool.apply_async(task_processor, args=(processor_id, app.state.db_path))
-            logger.info(f"所有 {processes} 个工作进程已启动")
-        except Exception as pool_err:
-            logger.error(f"初始化进程池失败: {str(pool_err)}", exc_info=True)
+            logger.info("初始化后台任务处理线程...")
+            # 创建一个事件来优雅地停止线程
+            app.state.task_processor_stop_event = threading.Event()
+            app.state.task_processor_thread = threading.Thread(
+                target=task_processor,
+                args=(app.state.db_path, app.state.task_processor_stop_event),
+                daemon=True
+            )
+            app.state.task_processor_thread.start()
+            logger.info("后台任务处理线程已启动")
+        except Exception as e:
+            logger.error(f"初始化后台任务处理线程失败: {e}", exc_info=True)
             raise
         
         # 启动通知检查任务
@@ -177,14 +177,16 @@ async def lifespan(app: FastAPI):
         logger.info("应用开始关闭...")
         
         try:
-            if hasattr(app.state, "process_pool") and app.state.process_pool is not None:
-                logger.info("关闭进程池...")
-                app.state.process_pool.close()
-                app.state.process_pool.terminate()  # 终止所有工作进程
-                app.state.process_pool.join()
-                logger.info("进程池已关闭")
-        except Exception as pool_close_err:
-            logger.error(f"关闭进程池失败: {str(pool_close_err)}", exc_info=True)
+            if hasattr(app.state, "task_processor_thread") and app.state.task_processor_thread.is_alive():
+                logger.info("正在停止后台任务处理线程...")
+                app.state.task_processor_stop_event.set()
+                app.state.task_processor_thread.join(timeout=5) # 等待5秒
+                if app.state.task_processor_thread.is_alive():
+                    logger.warning("后台任务处理线程在5秒内未停止")
+                else:
+                    logger.info("后台任务处理线程已停止")
+        except Exception as e:
+            logger.error(f"停止后台任务处理线程失败: {e}", exc_info=True)
         
         # 在应用关闭时执行清理操作
         try:
@@ -346,114 +348,58 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
     }
 
 # 任务处理者
-def task_processor(processor_id: int, db_path: str = None):
-    """处理任务的工作进程(实现了超时控制)"""
-    logger.info(f"{processor_id}号任务处理者已启动")
+def task_processor(db_path: str, stop_event: threading.Event):
+    """处理任务的后台工作线程"""
+    logger.info(f"任务处理线程已启动")
     sqlite_url = f"sqlite:///{db_path}"
-    # Ensure connect_args is correctly formatted for SQLAlchemy, typically a dictionary.
     engine = create_engine(
         sqlite_url, 
         echo=False, 
-        connect_args={"check_same_thread": False, "timeout": 30},
-        pool_size=3,       # 任务处理者使用较小的连接池
-        max_overflow=5,    # 允许的最大溢出连接数
-        pool_timeout=30,   # 获取连接的超时时间
-        pool_recycle=1800  # 30分钟回收一次连接
+        connect_args={"check_same_thread": False, "timeout": 30}
     )
-    session = Session(engine)
     
-    _task_mgr = TaskManager(session)
-    _parsing_mgr = ParsingMgr(session)
-
-    with ThreadPoolExecutor(max_workers=1) as executor:
+    while not stop_event.is_set():
         try:
-            while True:
-                time.sleep(5)
-                task: Optional[Task] = None
-                try:
-                    task = _task_mgr.get_next_task()
-                except Exception as task_err:
-                    logger.error(f"获取任务失败: {str(task_err)}")
-                    continue
-                
+            with Session(engine) as session:
+                task_mgr = TaskManager(session)
+                task = task_mgr.get_next_task()
+
                 if not task:
+                    time.sleep(5) # 没有任务时，等待5秒
                     continue
-                
-                logger.info(f"{processor_id}号处理者接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
-                future = None
-                try:
-                    _task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
-                    session.commit() # Commit status update immediately
+
+                logger.info(f"任务处理线程接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
+                task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+
+                if task.task_type == TaskType.PARSING.value:
+                    parsing_mgr = ParsingMgr(session)
+                    logger.info(f"开始批量解析任务 (Task ID: {task.id})")
+                    result_data = parsing_mgr.process_all_pending_parsing_results()
                     
-                    if task.task_type == TaskType.PARSING.value:
-                        logger.info(f"开始批量解析任务 (Task ID: {task.id})")
-                        future = executor.submit(_parsing_mgr.process_all_pending_parsing_results())
+                    if result_data.get("success", False):
+                        task_mgr.update_task_status(
+                            task.id, 
+                            TaskStatus.COMPLETED, 
+                            result=TaskResult.SUCCESS, 
+                            message=f"成功处理 {result_data.get('processed', 0)} 个文件，成功: {result_data.get('success_count', 0)}, 失败: {result_data.get('failed_count', 0)}"
+                        )
                     else:
-                        logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
-                        session.commit()
-                        continue
+                        task_mgr.update_task_status(
+                            task.id, 
+                            TaskStatus.FAILED, 
+                            result=TaskResult.FAILURE, 
+                            message=f"批量解析失败: {result_data.get('error', '未知错误')}"
+                        )
+                else:
+                    logger.warning(f"未��的任务类型: {task.task_type} for task ID: {task.id}")
+                    task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
 
-                    if not future:
-                        continue
-
-                    task_result_data = future.result(timeout=300) # 5分钟超时
-
-                    if task.task_type == TaskType.PARSING.value:
-                        # 批量处理返回的不再是单个文件的结果，而是一个包含处理统计信息的字典
-                        if isinstance(task_result_data, dict):
-                            if task_result_data.get("success", False):
-                                _task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.COMPLETED, 
-                                    result=TaskResult.SUCCESS, 
-                                    message=f"成功处理 {task_result_data.get('processed', 0)} 个解析结果，成功: {task_result_data.get('success_count', 0)}, 失败: {task_result_data.get('failed_count', 0)}"
-                                )
-                            else:
-                                _task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.FAILED, 
-                                    result=TaskResult.FAILURE, 
-                                    message=f"批量解析失败: {task_result_data.get('error', '未知错误')}"
-                                )
-                        elif task_result_data is None:
-                             _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量解析失败: 没有找到可处理的粗筛结果")
-                        else:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="批量解析返回了意外的数据类型")
-
-                except TimeoutError:
-                    logger.error(f"任务 {task.id} ({task.task_name}) 超时")
-                    if task and task.id:
-                        _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.TIMEOUT, message="Task execution timed out")
-                except Exception as e:
-                    logger.error(f"处理任务 {task.id} ({task.task_name}) 失败: {str(e)}")
-                    # Ensure traceback is imported if you uncomment its usage
-                    # import traceback
-                    logger.error(traceback.format_exc()) # Log full traceback for unexpected errors
-                    if task and task.id:
-                        try:
-                            _task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(e))
-                        except Exception as update_err:
-                            logger.error(f"更新失败任务 {task.id} 状态时再次发生错误: {update_err}")
-                finally:
-                    if future and not future.done():
-                        future.cancel()
-                    if session.is_active: # Check if session is still active before committing
-                        try:
-                            session.commit() # Commit any final status updates
-                        except Exception as commit_err:
-                            logger.error(f"Task processor final commit failed for task {task.id if task else 'Unknown'}: {commit_err}")
-                            session.rollback()
-
-        except KeyboardInterrupt:
-            logger.info(f"{processor_id}号任务处理者被中断，正在关闭...")
         except Exception as e:
-            logger.error(f"{processor_id}号任务处理者发生意外错误，正在关闭: {e}")
-            logger.error(traceback.format_exc())
-        finally:
-            if session.is_active:
-                session.close()
-            logger.info(f"{processor_id}号任务处理者已关闭")
+            logger.error(f"任务处理线程发生意外错误: {e}", exc_info=True)
+            # 发生严重错误时，等待更长时间避免刷爆日志
+            time.sleep(30)
+
+    logger.info("任务处理线程已停止")
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
@@ -559,6 +505,36 @@ def get_latest_task(
             "message": f"获取最新任务失败: {str(e)}"
         }
 
+@app.post("/tasks/start-initial-parsing")
+def start_initial_parsing(task_mgr: TaskManager = Depends(get_task_manager)):
+    """由Rust在首次全盘扫描后调用，以触发内容解析和打标签任务"""
+    try:
+        # 检查是否已有正在运行或待处理的解析任务
+        existing_task = task_mgr.get_latest_task(TaskType.PARSING.value)
+        if existing_task and existing_task.status in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
+            logger.info(f"已存在一个正在进行中的解析任务 (ID: {existing_task.id}, Status: {existing_task.status})，无需创建新任务。")
+            return {
+                "success": True,
+                "task_id": existing_task.id,
+                "message": "已存在一个正在进行中的解析任务，无需创建新任务。"
+            }
+
+        # 创建一个新的解析任务作为“信号”
+        task = task_mgr.add_task(
+            task_name="Initial-Parsing-Trigger",
+            task_type=TaskType.PARSING.value,
+            priority=TaskPriority.LOW.value, # 首次全盘扫描后的解��，使用低优先级
+            extra_data={"trigger": "initial_scan_complete"}
+        )
+        logger.info(f"已创建首次解析的触发任务，ID: {task.id}")
+        return {
+            "success": True,
+            "task_id": task.id,
+            "message": "首次解析任务已成功触发。"
+        }
+    except Exception as e:
+        logger.error(f"触发首次解析任务失败: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
 
 # 添加用于处理文件粗筛结果的 API 接口
 @app.post("/file-screening")
@@ -683,6 +659,9 @@ def add_batch_file_screening_results(
             # 假设请求体本身就是列表
             data_list = request
             
+        if not data_list:
+            return {"success": True, "processed_count": 0, "failed_count": 0, "message": "没有需要处理的文件"}
+
         # 预处理每个文件记录中的时间戳，转换为Python datetime对象
         for data in data_list:
             # 处理Unix时间戳的转换 (从Rust发送的秒数转换为Python datetime)
@@ -703,7 +682,7 @@ def add_batch_file_screening_results(
                     try:
                         data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
                     except Exception as e:
-                        logger.warning(f"转换字符串时间字段 {time_field} 失败: {str(e)}")
+                        logger.warning(f"转换字符串时间字段 {time_field} 失���: {str(e)}")
                         # 如果是修改时间字段转换失败，设置为当前时间
                         if time_field == "modified_time":
                             data[time_field] = datetime.now()
@@ -716,35 +695,33 @@ def add_batch_file_screening_results(
             # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
             if "metadata" in data and "extra_metadata" not in data:
                 data["extra_metadata"] = data.pop("metadata")
+
+        # 1. 先创建任务，获取 task_id
+        task_name = f"批量处理文件: {len(data_list)} 个文件"
+        task = task_mgr.add_task(
+            task_name=task_name,
+            task_type=TaskType.PARSING.value,
+            priority=TaskPriority.HIGH.value,
+            extra_data={"file_count": len(data_list)}
+        )
+        logger.info(f"已创建解析任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
+
+        # 2. 批��添加粗筛结果，并关联 task_id
+        result = screening_mgr.add_batch_screening_results(data_list, task_id=task.id)
         
-        # 批量添加粗筛结果
-        result = screening_mgr.add_batch_screening_results(data_list)
-        
-        # 创建一个批处理任务（只要有成功添加的文件就创建任务）
+        # 3. 返回结果
         if result["success"] > 0:
-            # 取消之前的批量解析任务（如果有）
-            # 这确保我们只处理最新的任务，避免资源浪费在过时的任务上
-            canceled_tasks = task_mgr.cancel_old_tasks(TaskType.PARSING.value)
-            if canceled_tasks > 0:
-                logger.info(f"已取消 {canceled_tasks} 个旧的解析任务")
-                
-            # 创建一个新的批处理任务，使用高优先级确保及时处理
-            task_name = f"批量处理文件: {result['success']} 个文件"
-            task = task_mgr.add_task(
-                task_name=task_name,
-                task_type=TaskType.PARSING.value,  # 使用解析任务类型
-                priority=TaskPriority.HIGH.value,  # 设置为高优先级，确保最新批次优先处理
-                extra_data={"file_count": result["success"]}
-            )
-            result["task_id"] = task.id
-            logger.info(f"已创建解析任务 ID: {task.id}，处理 {result['success']} 个文件")
-        
+            message = f"已为 {result['success']} 个文件创建处理任务，失败 {result['failed']} 个"
+        else:
+            message = f"未能处理任何文件，失败 {result['failed']} 个"
+
         return {
             "success": result["success"] > 0,
             "processed_count": result["success"],
             "failed_count": result["failed"],
             "errors": result.get("errors"),
-            "message": f"已处理 {result['success']} 个文件，失败 {result['failed']} 个，并创建解析任务"
+            "task_id": task.id,
+            "message": message
         }
         
     except Exception as e:

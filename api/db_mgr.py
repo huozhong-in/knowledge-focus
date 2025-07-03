@@ -439,9 +439,8 @@ class DBManager:
             if not inspector.has_table('t_files_fts'):
                 conn.execute(text(f"""
                     CREATE VIRTUAL TABLE t_files_fts USING fts5(
-                        tags_search_ids,
-                        content='{FileScreeningResult.__tablename__}',
-                        content_rowid='id'
+                        file_id UNINDEXED,
+                        tags_search_ids
                     );
                 """))
             
@@ -454,7 +453,7 @@ class DBManager:
             conn.execute(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_insert AFTER INSERT ON {FileScreeningResult.__tablename__}
                 BEGIN
-                    INSERT INTO t_files_fts (rowid, tags_search_ids)
+                    INSERT INTO t_files_fts (file_id, tags_search_ids)
                     VALUES (NEW.id, REPLACE(IFNULL(NEW.tags_display_ids, ''), ',', ' '));
                 END;
             """))
@@ -462,15 +461,15 @@ class DBManager:
             conn.execute(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_delete AFTER DELETE ON {FileScreeningResult.__tablename__}
                 BEGIN
-                    DELETE FROM t_files_fts WHERE rowid = OLD.id;
+                    DELETE FROM t_files_fts WHERE file_id = OLD.id;
                 END;
             """))
 
             conn.execute(text(f"""
-                CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE OF tags_display_ids ON {FileScreeningResult.__tablename__}
+                CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE ON {FileScreeningResult.__tablename__}
                 BEGIN
-                    DELETE FROM t_files_fts WHERE rowid = OLD.id;
-                    INSERT INTO t_files_fts (rowid, tags_search_ids)
+                    DELETE FROM t_files_fts WHERE file_id = OLD.id;
+                    INSERT INTO t_files_fts (file_id, tags_search_ids)
                     VALUES (NEW.id, REPLACE(IFNULL(NEW.tags_display_ids, ''), ',', ' '));
                 END;
             """))

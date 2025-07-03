@@ -81,8 +81,16 @@ class TaggingMgr:
             except Exception as e:
                 logger.error(f"Error creating new tags: {e}")
                 self.session.rollback()
-                # Re-query to handle potential race conditions if another process created the tag
-                return self.get_or_create_tags(tag_names, tag_type)
+                
+                # 处理唯一约束错误，避免无限递归
+                if "UNIQUE constraint failed" in str(e):
+                    # 直接查询已存在的标签
+                    existing_tags_query = self.session.exec(select(Tags).where(Tags.name.in_(new_tag_names)))
+                    additional_existing_tags = existing_tags_query.all()
+                    return existing_tags + additional_existing_tags
+                else:
+                    # 仅在非唯一约束错误时进行递归，避免无限递归
+                    return self.get_or_create_tags(tag_names, tag_type)
 
         return existing_tags + new_tags
 
@@ -92,29 +100,29 @@ class TaggingMgr:
         """
         return self.session.exec(select(Tags)).all()
 
-    def link_tags_to_file(self, screening_result_id: int, tag_ids: List[int]) -> bool:
+    def get_all_tag_names_from_cache(self) -> List[str]:
+        """从缓存中获取所有标签的名称"""
+        self._refresh_cache_if_needed()
+        return list(self._tag_name_cache.keys())
+
+    def link_tags_to_file(self, screening_result: FileScreeningResult, tag_ids: List[int]) -> bool:
         """
-        Links a list of tag IDs to a file screening result.
+        Links a list of tag IDs to a file screening result object.
         This updates the `tags_display_ids` column, and a database trigger
         should handle updating the FTS table.
         """
-        if not tag_ids:
-            return False
-            
-        result = self.session.get(FileScreeningResult, screening_result_id)
-        if not result:
-            logger.error(f"File screening result with id {screening_result_id} not found.")
+        if not tag_ids or not screening_result:
             return False
 
         # Combine new tags with existing ones, ensuring no duplicates and sorted order
-        existing_ids = set(int(tid) for tid in result.tags_display_ids.split(',') if tid) if result.tags_display_ids else set()
+        existing_ids = set(int(tid) for tid in screening_result.tags_display_ids.split(',') if tid) if screening_result.tags_display_ids else set()
         all_ids = sorted(list(existing_ids.union(set(tag_ids))))
 
         # Convert list of ints to a comma-separated string
         tags_str = ",".join(map(str, all_ids))
         
-        result.tags_display_ids = tags_str
-        self.session.add(result)
+        screening_result.tags_display_ids = tags_str
+        self.session.add(screening_result)
         # The commit will be handled by the calling function (e.g., in ParsingMgr)
         
         return True
@@ -199,7 +207,7 @@ class TaggingMgr:
         
         # 执行FTS5查询
         sql = f"""
-        SELECT content_rowid FROM t_files_fts 
+        SELECT file_id FROM t_files_fts 
         WHERE tags_search_ids MATCH ?
         """
         
