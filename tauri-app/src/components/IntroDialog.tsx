@@ -243,7 +243,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         }
       }}
     >
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">欢迎使用 KnowledgeFocus</DialogTitle>
           <DialogDescription className="text-center">

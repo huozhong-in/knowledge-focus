@@ -306,9 +306,16 @@ class ModelProviderType(str, PyEnum):
     LM_STUDIO = "lm_studio"
     OPENAI_COMPATIBLE = "openai_compatible"
 
-# 新增本地模型配置表
-class LocalModelConfig(SQLModel, table=True):
-    __tablename__ = "t_local_model_configs"
+# # 模型角色类型的枚举
+# class ModelRoleType(str, PyEnum):
+#     BASE = "base"
+#     VISION = "vision"
+#     EMBEDDING = "embedding"
+#     RERANKING = "reranking"
+
+# 本地模型供应商配置表
+class LocalModelProviderConfig(SQLModel, table=True):
+    __tablename__ = "t_local_model_provider_configs"
     id: int = Field(default=None, primary_key=True)
     
     # 服务商类型，如 "ollama", "lm_studio"。这将作为唯一标识符。
@@ -476,11 +483,33 @@ class DBManager:
             
             conn.commit()  # 提交所有更改
             
-            # 创建本地模型配置表
-            if not inspector.has_table(LocalModelConfig.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[LocalModelConfig.__table__])
-                self._init_local_model_configs()  # 初始化本地模型配置数据
-                
+            # 创建本地模型供应商配置表
+            if not inspector.has_table(LocalModelProviderConfig.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[LocalModelProviderConfig.__table__])
+                # 初始化默认的本地模型服务商
+                default_providers = [
+                    {
+                        "provider_type": ModelProviderType.OLLAMA.value,
+                        "provider_name": "Ollama",
+                        "api_endpoint": "http://localhost:11434/v1",
+                        "api_key": None
+                    },
+                    {
+                        "provider_type": ModelProviderType.LM_STUDIO.value,
+                        "provider_name": "LM Studio",
+                        "api_endpoint": "http://localhost:1234/v1",
+                        "api_key": None
+                    }
+                ]
+                for provider in default_providers:
+                    provider_exists = self.session.exec(
+                        select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider["provider_type"])
+                    ).first()
+                    if not provider_exists:
+                        new_provider = LocalModelProviderConfig(**provider)
+                        self.session.add(new_provider)
+                        self.session.commit()
+
         return True
 
     def _init_bundle_extensions(self) -> None:
@@ -576,28 +605,23 @@ class DBManager:
                 "description": "Bundle扩展名规则版本"
             },
             {
+                "key": "selected_model_for_base",
+                "value": None,
+                "description": "用于基础任务的全局模型配置"
+            },
+            {
                 "key": "selected_model_for_vision",
-                "value": "{}",
+                "value": None,
                 "description": "用于视觉任务的全局模型配置"
             },
             {
-                "key": "selected_model_for_reasoning",
-                "value": "{}",
-                "description": "用于推理任务的全局模型配置"
-            },
-            {
-                "key": "selected_model_for_toolUse",
-                "value": "{}",
-                "description": "用于工具调用任务的全局模型配置"
-            },
-            {
                 "key": "selected_model_for_embedding",
-                "value": "{}",
+                "value": None,
                 "description": "用于嵌入任务的全局模型配置"
             },
             {
                 "key": "selected_model_for_reranking",
-                "value": "{}",
+                "value": None,
                 "description": "用于重排序任务的全局模型配置"
             }
         ]
@@ -643,10 +667,10 @@ class DBManager:
 
         for config_data in default_configs:
             # 检查是否已存在
-            stmt = select(LocalModelConfig).where(LocalModelConfig.provider_type == config_data["provider_type"])
+            stmt = select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == config_data["provider_type"])
             existing = self.session.exec(stmt).first()
             if not existing:
-                config_obj = LocalModelConfig(**config_data)
+                config_obj = LocalModelProviderConfig(**config_data)
                 self.session.add(config_obj)
         
         self.session.commit()
@@ -1435,6 +1459,7 @@ class DBManager:
         
         if default_dirs:
             self.session.add_all(default_dirs)
+
             self.session.commit()
 
 if __name__ == '__main__':

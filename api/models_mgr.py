@@ -1,122 +1,140 @@
-
-import json
-import logging
-from sqlmodel import Session, select
+from config import EMBEDDING_DIMENSIONS
 from typing import List, Dict, Any, Optional
-import httpx
-from db_mgr import LocalModelConfig, ModelProviderType, SystemConfig
+import logging
+import json
+import re
+from sqlmodel import Session, select
+from litellm import completion as litellm_completion, embedding as litellm_embedding
+from pydantic import BaseModel, Field
+
+from db_mgr import SystemConfig, LocalModelProviderConfig
 
 logger = logging.getLogger(__name__)
 
-class LocalModelsManager:
-    """管理本地大模型配置的业务逻辑"""
+class TagResponse(BaseModel):
+    tags: List[str] = Field(default_factory=list, description="List of generated tags")
 
+class ModelsMgr:
     def __init__(self, session: Session):
-        self.session: Session = session
+        self.session = session
 
-    def get_all_configs(self) -> List[LocalModelConfig]:
-        """获取所有本地模型服务商的配置"""
-        return self.session.exec(select(LocalModelConfig)).all()
+    def _get_model_config(self, role_type: str) -> tuple[str, str, Optional[str]]:
+        """
+        Fetches the configuration for a given role and returns the necessary
+        parameters for a litellm API call.
 
-    def get_config_by_provider(self, provider_type: str) -> Optional[LocalModelConfig]:
-        """根据服务商类型获取配置"""
-        return self.session.exec(
-            select(LocalModelConfig).where(LocalModelConfig.provider_type == provider_type)
+        Returns:
+            A tuple containing (model_string, api_base, api_key).
+            The model_string is in the format litellm expects (e.g., 'ollama/llama3').
+        """
+        key = f"selected_model_for_{role_type}"
+        config_entry = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
+        
+        if not config_entry or not config_entry.value or config_entry.value == 'null':
+            raise ValueError(f"No configuration found for role: {role_type}")
+
+        try:
+            role_config = json.loads(config_entry.value)
+            provider_type = role_config.get("provider_type")
+            model_id = role_config.get("model_id")
+        except (json.JSONDecodeError, AttributeError):
+            raise ValueError(f"Invalid configuration format for role: {role_type}")
+
+        if not provider_type or not model_id:
+            raise ValueError(f"Incomplete configuration for role: {role_type}")
+
+        provider_config = self.session.exec(
+            select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)
         ).first()
 
-    def update_config(self, provider_type: str, api_endpoint: str, api_key: str, enabled: bool) -> Optional[LocalModelConfig]:
-        """更新服务商配置"""
-        config = self.get_config_by_provider(provider_type)
-        if config:
-            config.api_endpoint = api_endpoint
-            config.api_key = api_key
-            config.enabled = enabled
-            self.session.add(config)
-            self.session.commit()
-            self.session.refresh(config)
-        return config
+        if not provider_config or not provider_config.enabled:
+            raise ValueError(f"Provider {provider_type} is not configured or not enabled.")
 
-    async def discover_models(self, provider_type: str) -> Optional[LocalModelConfig]:
-        """
-        通过API检测并更新指定服务商的可用模型列表
-        """
-        config = self.get_config_by_provider(provider_type)
-        if not config or not config.enabled or not config.api_endpoint:
-            return None
+        # Construct the model string for litellm (e.g., "ollama/llama3")
+        model_string = f"{provider_type}/{model_id}"
 
-        headers = {}
-        if config.api_key:
-            headers["Authorization"] = f"Bearer {config.api_key}"
+        return model_string, provider_config.api_endpoint, provider_config.api_key
 
-        models_list = []
+    def get_embedding(self, text: str) -> List[float]:
+        """Generates an embedding for the given text using litellm."""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{config.api_endpoint.rstrip('/')}/models", headers=headers, timeout=10.0)
-                response.raise_for_status()
-                data = response.json()
-                
-                # 根据API返回格式解析
-                if "data" in data and isinstance(data["data"], list):
-                    raw_models = data["data"]
-                else:
-                    raw_models = []
-
-                for model_data in raw_models:
-                    if isinstance(model_data, dict) and "id" in model_data:
-                        models_list.append({
-                            "id": model_data.get("id"),
-                            "name": model_data.get("id"), # 默认使用ID作为name
-                            "attributes": {
-                                "vision": False,
-                                "reasoning": True,
-                                "networking": False,
-                                "toolUse": False,
-                                "embedding": True,
-                                "reranking": False,
-                            }
-                        })
-            
-            config.available_models = models_list
-            self.session.add(config)
-            self.session.commit()
-            self.session.refresh(config)
-            return config
-        except httpx.RequestError as e:
-            # 网络或请求错误
-            print(f"Error discovering models for {provider_type}: {e}")
-            return None
+            model_string, api_base, api_key = self._get_model_config("embedding")
+            response = litellm_embedding(
+                model=model_string,
+                input=[text],
+                api_base=api_base,
+                api_key=api_key or "dummy-key"
+            )
+            return response.data[0]["embedding"]
         except Exception as e:
-            # 其他错误
-            print(f"An unexpected error occurred during model discovery for {provider_type}: {e}")
-            return None
+            logger.error(f"Failed to get embedding via litellm: {e}")
+            return []
 
-    def get_selected_model_for_role(self, role: str) -> Dict[str, Any]:
-        """获取指定功能角色的已选模型"""
-        key = f"selected_model_for_{role}"
-        config = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
-        if config and config.value:
-            try:
-                return json.loads(config.value)
-            except json.JSONDecodeError:
-                return {}
-        return {}
+    def get_tags_from_llm(self, file_summary: str, candidate_tags: List[str]) -> List[str]:
+        """Generates tags from the LLM using instructor and litellm."""
+        try:
+            model_string, api_base, api_key = self._get_model_config("base")
+            messages = [
+                {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
+                {"role": "user", "content": self._build_user_prompt(file_summary, candidate_tags)}
+            ]
+            # messages[-1]['content'] += ' /no_think'
+            response = litellm_completion(
+                model=model_string,
+                base_url=api_base,
+                api_key=api_key or "dummy-key",
+                messages=messages,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "type": "object",
+                        "name": "TagResponse",
+                        "schema": TagResponse.model_json_schema()
+                    }
+                }
+            )
+            tags = json.loads(response.choices[0].message.content).get("tags", [])
+            
+            # # 把每个tag中间可能的空格替换为连字符
+            tags = [tag.replace(" ", "-") for tag in tags]
+            # # 把每个tag前后的非字母数字字符去掉
+            tags = [re.sub(r"^[^\w]+|[^\w]+$", "", tag) for tag in tags]
+            return tags
 
-    def set_selected_model_for_role(self, role: str, model_info: Dict[str, Any]) -> bool:
-        """设置指定功能角色的模型"""
-        key = f"selected_model_for_{role}"
-        logger.info(f"Attempting to set model for role: '{role}' with key: '{key}'")
-        logger.info(f"Model info to save: {model_info}")
+        except Exception as e:
+            logger.error(f"Failed to get tags from LLM: {e}")
+            return []
 
-        config = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
-        
-        if config:
-            logger.info(f"Found config entry for key '{key}'. Updating value.")
-            config.value = json.dumps(model_info)
-            self.session.add(config)
-            self.session.commit()
-            logger.info(f"Successfully updated and committed model for role: '{role}'")
-            return True
-        else:
-            logger.error(f"Could not find config entry for key '{key}'. Update failed.")
-            return False
+    def _build_user_prompt(self, summary: str, candidates: List[str]) -> str:
+        candidate_str = ", ".join(f'"{t}"' for t in candidates) if candidates else "None"
+        return f'''
+Please analyze the following file summary and context to generate between 0 and 3 relevant tags.
 
+**Rules:**
+1.  **Language:** If any Chinese characters in summary, generate Chinese Tags as top priority. Use English only for globally recognized acronyms (e.g., `AI`, `API`, `RAG`).
+2.  **Format:** English tags must not contain spaces. Use a hyphen `-` to connect words (e.g., `project-management`).
+3.  **Quality:** Tags must be meaningful and concise. Avoid generic or redundant tags.
+4.  **Reuse First:** If any of the "Existing Candidate Tags" are highly relevant, reuse them.
+
+**Existing Candidate Tags:**
+[{candidate_str}]
+
+**File Content Summary:**
+---
+{summary}
+---
+
+Based on all information, provide the best tags for this file.
+        '''
+    
+if __name__ == "__main__":
+    # Example usage
+    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    from sqlmodel import create_engine
+    session = Session(create_engine(f'sqlite:///{db_file}'))
+    mgr = ModelsMgr(session)
+    tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
+    print("Generated Tags:", tags)
+    len_embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
+    print("Embedding Length:", len(len_embedding))
+    

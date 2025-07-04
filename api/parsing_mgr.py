@@ -9,6 +9,10 @@ from db_mgr import FileScreeningResult, Tags
 from markitdown import MarkItDown
 from openai import OpenAI
 
+# New imports
+from lancedb_mgr import LanceDBMgr
+from models_mgr import ModelsMgr
+
 logger = logging.getLogger(__name__)
 
 def configure_parsing_warnings():
@@ -33,72 +37,53 @@ MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json'] + MARKITDOWN_EXTENSIONS
 
 class ParsingMgr:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
         self.session = session
-        self.tagging_mgr = TaggingMgr(session)
+        self.lancedb_mgr = lancedb_mgr
+        self.models_mgr = models_mgr
+        self.tagging_mgr = TaggingMgr(session, self.lancedb_mgr, self.models_mgr)
         
         # 配置日志记录器，抑制markitdown和pdfminer的警告
         logging.getLogger('pdfminer').setLevel(logging.ERROR)
         logging.getLogger('markitdown').setLevel(logging.ERROR)
         
         self.md_parser = MarkItDown(enable_plugins=False)
-        # Configure OpenAI client to connect to a local LLM service like Ollama/LMStudio
-        self.llm_client = OpenAI(
-            base_url="http://localhost:1234/v1/",
-            api_key="sk-xxx",
-        )
-        self._use_model = "google/gemma-3-4b" # A fast and capable model for this task
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
         """
-        Parses the content of a file, generates tags using an LLM, 
-        and links them to the file. Does NOT commit the session.
+        Parses the content of a file, generates tags using the new vector-based
+        workflow, and links them to the file. Does NOT commit the session.
         """
         if not screening_result or not screening_result.file_path or not os.path.exists(screening_result.file_path):
             logger.warning(f"Skipping parsing for non-existent file: {screening_result.file_path if screening_result else 'N/A'}")
             return False
 
-        # 1. Extract content
+        # 1. Extract content summary (a portion of the full content)
         try:
             content = self._extract_content(screening_result.file_path)
-            if content == '':
-                # logger.info(f"No content extracted from {screening_result.file_path}. Skipping tagging.")
-                # self._update_tagged_time(screening_result)
+            if not content:
+                logger.info(f"No content extracted from {screening_result.file_path}. Marking as processed.")
+                self._update_tagged_time(screening_result)
                 return True # Mark as processed even if no content
+            
+            # Use a summary for efficiency
+            summary = content[:4000] # Use the first 4000 characters as a summary
+
         except Exception as e:
             logger.error(f"Error extracting content from {screening_result.file_path}: {e}")
             screening_result.error_message = f"Content extraction failed: {e}"
-            # No commit here
             return False
 
-        # 2. Generate tags with LLM
+        # 2. Orchestrate the new tagging process
         try:
-            generated_tag_names = self._generate_tags_with_llm(screening_result, content)
-            if not generated_tag_names:
-                logger.info(f"LLM did not generate any tags for {screening_result.file_path}. Skipping linking.")
+            success = self.tagging_mgr.generate_and_link_tags_for_file(screening_result, summary)
+            if success:
                 self._update_tagged_time(screening_result)
-                return True
+            return success
         except Exception as e:
-            logger.error(f"Error generating tags for {screening_result.file_path}: {e}")
-            screening_result.error_message = f"Tag generation failed: {e}"
-            # No commit here
+            logger.error(f"Error during vector-based tagging for {screening_result.file_path}: {e}")
+            screening_result.error_message = f"Vector tagging failed: {e}"
             return False
-
-        # 3. Get or create tag objects
-        tags = self.tagging_mgr.get_or_create_tags(generated_tag_names, tag_type='llm')
-        tag_ids = [tag.id for tag in tags]
-
-        # 4. Link tags to the file
-        success = self.tagging_mgr.link_tags_to_file(screening_result, tag_ids)
-        if success:
-            self._update_tagged_time(screening_result)
-            logger.info(f"Successfully linked {len(tag_ids)} tags to {screening_result.file_path}")
-        else:
-            logger.error(f"Failed to link tags to {screening_result.file_path}")
-            screening_result.error_message = "Failed to link tags."
-            # No commit here
-
-        return success
 
     def _extract_content(self, file_path: str) -> str:
         """Extracts text content from a file."""
@@ -125,64 +110,7 @@ class ParsingMgr:
             # logger.warning(f"Unsupported file type for parsing: {ext}")
             return ""
 
-    def _generate_tags_with_llm(self, screening_result: FileScreeningResult, content: str) -> List[str]:
-        """Generates tags for a file using an LLM."""
-        existing_tag_names = self.tagging_mgr.get_all_tag_names_from_cache()
-
-        # Truncate content to fit within the LLM's context window
-        max_content_length = 4000 # A safe limit for many models
-        truncated_content = content[:max_content_length]
-
-        prompt = self._build_prompt(screening_result, truncated_content, existing_tag_names)
-
-        try:
-            response = self.llm_client.chat.completions.create(
-                model=self._use_model,
-                messages=[
-                    {"role": "system", "content": "You are an expert at analyzing file content and metadata to generate relevant tags. Respond with a comma-separated list of tags and nothing else."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=100,
-            )
-            # Assuming the model returns a comma-separated string of tags
-            print(response)
-            tags_string = response.choices[0].message.content.strip()
-            if tags_string:
-                return [tag.strip() for tag in tags_string.split(',') if tag.strip()]
-            return []
-        except Exception as e:
-            logger.error(f"LLM API call failed: {e}")
-            raise
-
-    def _build_prompt(self, screening_result: FileScreeningResult, content_snippet: str, existing_tags: List[str]) -> str:
-        """
-        Builds a detailed prompt for the LLM to generate tags.
-        """
-        prompt = f"""
-        Analyze the following file information and generate 3-5 relevant tags.
-        Choose from the existing tags if they are a good fit, otherwise create new, specific tags.
-        Do not use generic tags like 'document' or 'file'.
-
-        **File Information:**
-        - **File Name:** {screening_result.file_name}
-        - **File Path:** {screening_result.file_path}
-        - **File Size:** {screening_result.file_size} bytes
-        - **Modified Time:** {screening_result.modified_time}
-        - **Initial Labels (from rules):** {screening_result.labels}
-
-        **Existing Tags Library (for reference):**
-        {', '.join(existing_tags)}
-
-        **Content Snippet:**
-        ---
-        {content_snippet}
-        ---
-
-        Based on all the information above, what are the best tags for this file?
-        Respond with a comma-separated list of tags. For example: project-alpha, quarterly-report, marketing, 2025
-        """
-        return prompt
+    
 
     def _update_tagged_time(self, screening_result: FileScreeningResult):
         """Updates the tagged_time for a screening result object. Does not commit."""
@@ -300,5 +228,3 @@ if __name__ == "__main__":
     # r = parsing_mgr.parse_and_tag_file(result)
     # parsing_mgr.session.commit()  # 提交更改
     # print(f"Parsing and tagging result: {r}")
-
-    print(parsing_mgr.process_files_for_task(17))

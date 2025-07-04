@@ -28,6 +28,8 @@ from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
 from parsing_mgr import ParsingMgr
 from task_mgr import TaskManager
+from lancedb_mgr import LanceDBMgr
+from models_mgr import ModelsMgr
 
 # --- Centralized Logging Setup ---
 def setup_logging():
@@ -258,15 +260,6 @@ def get_myfiles_manager(session: Session = Depends(get_session)):
     """获取文件/文件夹管理器实例"""
     return MyFilesManager(session)
 
-@app.post("/init_db")
-def init_db(session: Session = Depends(get_session)):
-    """首次打开App，初始化数据库结构"""
-    logger.info("初始化数据库结构")
-    db_mgr = DBManager(session)
-    db_mgr.init_db()
-
-    return {"message": "数据库结构已初始化"}
-
 # 获取所有配置信息的API端点
 @app.get("/config/all")
 async def get_all_configuration(
@@ -357,7 +350,11 @@ def task_processor(db_path: str, stop_event: threading.Event):
         echo=False, 
         connect_args={"check_same_thread": False, "timeout": 30}
     )
-    
+    # Initialize managers outside the loop
+    db_directory = os.path.dirname(db_path)
+    lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+    lancedb_mgr.init_db()
+
     while not stop_event.is_set():
         try:
             with Session(engine) as session:
@@ -372,7 +369,19 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
 
                 if task.task_type == TaskType.PARSING.value:
-                    parsing_mgr = ParsingMgr(session)
+                    # Check if a base model is configured before starting
+                    from model_config_mgr import ModelConfigMgr
+                    config_mgr = ModelConfigMgr(session)
+                    role_configs = config_mgr.get_role_configs()
+                    if not role_configs.get('base') or not role_configs['base'].get('model_id'):
+                        logger.info("No base model configured. Skipping parsing task and will retry later.")
+                        # Reschedule or simply wait
+                        task_mgr.update_task_status(task.id, TaskStatus.PENDING) # Re-queue the task
+                        time.sleep(30) # Wait longer before retrying
+                        continue
+                    
+                    models_mgr = ModelsMgr(session)
+                    parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
                     logger.info(f"开始批量解析任务 (Task ID: {task.id})")
                     result_data = parsing_mgr.process_all_pending_parsing_results()
                     
@@ -391,7 +400,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             message=f"批量解析失败: {result_data.get('error', '未知错误')}"
                         )
                 else:
-                    logger.warning(f"未��的任务类型: {task.task_type} for task ID: {task.id}")
+                    logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
                     task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
 
         except Exception as e:

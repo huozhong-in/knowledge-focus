@@ -8,11 +8,18 @@ from typing import List, Dict, Set, Optional
 import logging
 import time
 
+# New imports for vector-based tagging
+from lancedb_mgr import LanceDBMgr
+from models_mgr import ModelsMgr
+
 logger = logging.getLogger(__name__)
 
 class TaggingMgr:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
         self.session = session
+        self.lancedb_mgr = lancedb_mgr
+        self.models_mgr = models_mgr
+        
         # 标签缓存
         self._tag_name_cache = {}  # 名称 -> ID的映射
         self._tag_id_cache = {}    # ID -> 标签对象的映射
@@ -391,6 +398,53 @@ class TaggingMgr:
             return []
             
         return self.get_tags_by_ids(top_tag_ids)
+
+    def generate_and_link_tags_for_file(self, file_result: FileScreeningResult, file_summary: str) -> bool:
+        """
+        Orchestrates the entire vector-based tagging process for a single file.
+        """
+        if not file_summary:
+            logger.warning(f"File summary is empty for {file_result.file_path}. Skipping tagging.")
+            return False
+
+        # 1. Get embedding for the file summary
+        summary_vector = self.models_mgr.get_embedding(file_summary)
+        if not summary_vector:
+            logger.error(f"Failed to generate embedding for {file_result.file_path}. Skipping tagging.")
+            return False
+
+        # 2. Search for candidate tags in LanceDB
+        candidate_results = self.lancedb_mgr.search_tags(summary_vector)
+        candidate_tags = [tag['text'] for tag in candidate_results]
+
+        # 3. Get final tags from the LLM
+        final_tag_names = self.models_mgr.get_tags_from_llm(file_summary, candidate_tags)
+        if len(final_tag_names) == 0:
+            logger.warning(f"LLM returned no tags for {file_result.file_path}. Skipping linking.")
+            return False
+
+        # 4. Get or create tag objects in SQLite
+        # We use LLM type here as specified in the PRD
+        tag_objects = self.get_or_create_tags(final_tag_names, tag_type=TagsType.LLM)
+
+        # 5. For any newly created tags, add them to LanceDB
+        newly_created_tags = [tag for tag in tag_objects if tag.name not in candidate_tags]
+        if newly_created_tags:
+            new_tags_for_lancedb = []
+            for tag in newly_created_tags:
+                tag_vector = self.models_mgr.get_embedding(tag.name)
+                if tag_vector:
+                    new_tags_for_lancedb.append({"vector": tag_vector, "text": tag.name, "tag_id": tag.id})
+            
+            if new_tags_for_lancedb:
+                self.lancedb_mgr.add_tags(new_tags_for_lancedb)
+
+        # 6. Link the final tags to the file in SQLite
+        final_tag_ids = [tag.id for tag in tag_objects]
+        self.link_tags_to_file(file_result, final_tag_ids)
+        
+        logger.info(f"Successfully generated and linked {len(final_tag_ids)} tags for {file_result.file_path}")
+        return True
 
 # 测试用代码
 if __name__ == '__main__':

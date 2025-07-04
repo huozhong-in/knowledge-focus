@@ -28,7 +28,7 @@ interface ProviderConfig {
   isSaving?: boolean;
 }
 
-type ModelRole = "vision" | "reasoning" | "toolUse" | "embedding" | "reranking";
+type ModelRole = "base" | "vision" | "embedding" | "reranking";
 
 interface RoleAssignment {
   provider_type?: string;
@@ -38,9 +38,8 @@ interface RoleAssignment {
 // --- Helper Components & Functions ---
 
 const roleLabels: Record<ModelRole, string> = {
-  vision: "视觉任务",
-  reasoning: "核心推理",
-  toolUse: "工具调用",
+  base: "基础模型",
+  vision: "视觉模型",
   embedding: "嵌入模型",
   reranking: "重排序模型",
 };
@@ -50,9 +49,8 @@ const roleLabels: Record<ModelRole, string> = {
 function ModelsLocal() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [roleAssignments, setRoleAssignments] = useState<Record<ModelRole, RoleAssignment>>({
+    base: {},
     vision: {},
-    reasoning: {},
-    toolUse: {},
     embedding: {},
     reranking: {},
   });
