@@ -10,6 +10,7 @@ import {
   Map,
   PieChart,
   Settings2,
+  PanelLeftOpenIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
@@ -24,26 +25,30 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { AskMeForm } from "@/components/askme-form"
-import { Switch } from "@/components/ui/switch"
-import { useState } from "react"
-import { toast } from "sonner"
+import {
+  // SidebarInset,
+  // SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
+// import { Switch } from "@/components/ui/switch"
+// import { useState } from "react"
+// import { toast } from "sonner"
 import { useTranslation } from 'react-i18next';
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { state } = useSidebar()
+  const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
-  const [networkEnabled, setNetworkEnabled] = useState(true)
-  const handleNetworkSwitch = (checked: boolean) => {
-    setNetworkEnabled(checked)
-    toast.info(checked ? t('network-mode-enabled') : t('switched-to-local-mode'))
-  }
+  // const [networkEnabled, setNetworkEnabled] = useState(true)
+  // const handleNetworkSwitch = (checked: boolean) => {
+  //   setNetworkEnabled(checked)
+  //   toast.info(checked ? t('network-mode-enabled') : t('switched-to-local-mode'))
+  // }
   const { t } = useTranslation();
   const data = {
     user: {
-      name: "Tom Cruise",
-      email: "tom.cruise@email.com",
-      avatar: "https://pbs.twimg.com/profile_images/603269306026106880/42CwEF4n_x96.jpg",
+      name: "Settings",
+      description: "authorization and models",
+      icon: "/settings.png",
     },
     // teams: [
     //   {
@@ -193,12 +198,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" className="bg-whiskey-50 border-r border-whiskey-200" {...props}>
       <SidebarHeader className="border-b border-whiskey-200">
-        <div className="flex items-center">
-          <img src="/kf-logo.png" className="w-10 h-10 object-contain" alt="Logo" />
-          <AskMeForm collapsed={isCollapsed} />
+        <div className="flex items-center justify-between w-full">
+          <div className="relative">
+            <img 
+              src="/kf-logo.png" 
+              className={`w-10 h-10 object-contain ${isCollapsed ? "cursor-pointer" : ""}`} 
+              alt="Logo" 
+              onClick={isCollapsed ? toggleSidebar : undefined}
+            />
+            {isCollapsed && 
+                <div 
+                className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-80 cursor-pointer bg-white bg-opacity-0 hover:bg-opacity-70 rounded-md transition-all" 
+                onClick={toggleSidebar}
+                >
+                <PanelLeftOpenIcon className="h-10 w-10 p-2 text-whiskey-600" />
+                </div>
+            }
+          </div>
+          {!isCollapsed && <SidebarTrigger />}
         </div>
         {/* <TeamSwitcher teams={data.teams} /> */}
-        <div className="flex items-center justify-between p-2">
+        {/* <div className="flex items-center justify-between p-2">
           {isCollapsed ? (
             <div className="w-full flex justify-center">
               <Switch
@@ -226,7 +246,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </div>
             </>
           )}
-        </div>
+        </div> */}
       </SidebarHeader>
       <SidebarContent className="bg-whiskey-50">
         <NavPinned folders={pinnedFolderDefinitions} />

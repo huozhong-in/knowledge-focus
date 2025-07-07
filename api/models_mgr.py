@@ -94,9 +94,9 @@ class ModelsMgr:
                 }
             )
             tags = json.loads(response.choices[0].message.content).get("tags", [])
-            
-            # # 把每个tag中间可能的空格替换为连字符
-            tags = [tag.replace(" ", "-") for tag in tags]
+
+            # # 把每个tag中间可能的空格替换为下划线，因为要避开英语中用连字符作为合成词的情况
+            tags = [tag.replace(" ", "_") for tag in tags]
             # # 把每个tag前后的非字母数字字符去掉
             tags = [re.sub(r"^[^\w]+|[^\w]+$", "", tag) for tag in tags]
             return tags
@@ -112,7 +112,7 @@ Please analyze the following file summary and context to generate between 0 and 
 
 **Rules:**
 1.  **Language:** If any Chinese characters in summary, generate Chinese Tags as top priority. Use English only for globally recognized acronyms (e.g., `AI`, `API`, `RAG`).
-2.  **Format:** English tags must not contain spaces. Use a hyphen `-` to connect words (e.g., `project-management`).
+2.  **Format:** English tags must not contain spaces. Use a hyphen `_` to connect words (e.g., `project_management`), but keep hyphens `-` in compound words (e.g., `man-in-loop`).
 3.  **Quality:** Tags must be meaningful and concise. Avoid generic or redundant tags.
 4.  **Reuse First:** If any of the "Existing Candidate Tags" are highly relevant, reuse them.
 

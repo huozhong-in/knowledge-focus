@@ -350,7 +350,6 @@ def task_processor(db_path: str, stop_event: threading.Event):
         echo=False, 
         connect_args={"check_same_thread": False, "timeout": 30}
     )
-    # Initialize managers outside the loop
     db_directory = os.path.dirname(db_path)
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     lancedb_mgr.init_db()
@@ -365,39 +364,32 @@ def task_processor(db_path: str, stop_event: threading.Event):
                     time.sleep(5) # 没有任务时，等待5秒
                     continue
 
-                logger.info(f"任务处理线程接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}'")
+                logger.info(f"任务处理线程接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}', Priority={task.priority}")
                 task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
 
+                models_mgr = ModelsMgr(session)
+                parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
+
                 if task.task_type == TaskType.PARSING.value:
-                    # Check if a base model is configured before starting
-                    from model_config_mgr import ModelConfigMgr
-                    config_mgr = ModelConfigMgr(session)
-                    role_configs = config_mgr.get_role_configs()
-                    if not role_configs.get('base') or not role_configs['base'].get('model_id'):
-                        logger.info("No base model configured. Skipping parsing task and will retry later.")
-                        # Reschedule or simply wait
-                        task_mgr.update_task_status(task.id, TaskStatus.PENDING) # Re-queue the task
-                        time.sleep(30) # Wait longer before retrying
-                        continue
-                    
-                    models_mgr = ModelsMgr(session)
-                    parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
-                    logger.info(f"开始批量解析任务 (Task ID: {task.id})")
-                    result_data = parsing_mgr.process_all_pending_parsing_results()
-                    
-                    if result_data.get("success", False):
+                    # 高优先级任务: 通常是单个文件处理
+                    if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
+                        logger.info(f"开始处理高优先级解析任务 (Task ID: {task.id})")
+                        success = parsing_mgr.process_single_file_task(task.extra_data['screening_result_id'])
+                        if success:
+                            task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
+                        else:
+                            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
+                    # 低优先级任务: 批量处理
+                    else:
+                        logger.info(f"开始批量解析任务 (Task ID: {task.id})")
+                        result_data = parsing_mgr.process_pending_batch(batch_size=10) # 每次处理10个
+                        
+                        # 无论批量任务处理了多少文件，都将触发任务标记为完成
                         task_mgr.update_task_status(
                             task.id, 
                             TaskStatus.COMPLETED, 
                             result=TaskResult.SUCCESS, 
-                            message=f"成功处理 {result_data.get('processed', 0)} 个文件，成功: {result_data.get('success_count', 0)}, 失败: {result_data.get('failed_count', 0)}"
-                        )
-                    else:
-                        task_mgr.update_task_status(
-                            task.id, 
-                            TaskStatus.FAILED, 
-                            result=TaskResult.FAILURE, 
-                            message=f"批量解析失败: {result_data.get('error', '未知错误')}"
+                            message=f"批量处理完成: 处理了 {result_data.get('processed', 0)} 个文件。"
                         )
                 else:
                     logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
@@ -405,7 +397,6 @@ def task_processor(db_path: str, stop_event: threading.Event):
 
         except Exception as e:
             logger.error(f"任务处理线程发生意外错误: {e}", exc_info=True)
-            # 发生严重错误时，等待更长时间避免刷爆日志
             time.sleep(30)
 
     logger.info("任务处理线程已停止")

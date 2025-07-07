@@ -7,7 +7,6 @@ import warnings
 from tagging_mgr import TaggingMgr
 from db_mgr import FileScreeningResult, Tags
 from markitdown import MarkItDown
-from openai import OpenAI
 
 # New imports
 from lancedb_mgr import LanceDBMgr
@@ -130,21 +129,29 @@ class ParsingMgr:
         # For now, we return a dummy task ID
         return 1
     
-    def process_all_pending_parsing_results(self) -> Dict[str, Any]:
+    def process_pending_batch(self, batch_size: int = 10) -> Dict[str, Any]:
         """
-        Processes all pending file screening results to parse and tag them.
+        Processes a batch of pending file screening results.
         """
         from db_mgr import FileScreenResult
         from sqlmodel import select
         import time
 
+        logger.info(f"[PARSING_BATCH] Checking for a batch of {batch_size} pending files...")
+        start_time = time.time()
+
         results = self.session.exec(
-            select(FileScreeningResult).where(FileScreeningResult.status == FileScreenResult.PENDING.value)
+            select(FileScreeningResult)
+            .where(FileScreeningResult.status == FileScreenResult.PENDING.value)
+            .limit(batch_size)
         ).all()
 
         if not results:
-            logger.info("No pending parsing results to process.")
+            logger.info("[PARSING_BATCH] No pending files to process in this batch.")
             return {"success": True, "processed": 0, "success_count": 0, "failed_count": 0}
+
+        total_files = len(results)
+        logger.info(f"[PARSING_BATCH] Found {total_files} files to process in this batch.")
 
         processed_count = 0
         success_count = 0
@@ -152,7 +159,18 @@ class ParsingMgr:
 
         for result in results:
             processed_count += 1
+            file_process_start_time = time.time()
+            logger.info(f"[PARSING_BATCH] Processing file {processed_count}/{total_files}: {result.file_path}")
+
             try:
+                if result.tagged_time and result.modified_time and result.tagged_time > result.modified_time:
+                    logger.info(f"Skipping file, already tagged: {result.file_path}")
+                    result.status = FileScreenResult.PROCESSED.value
+                    self.session.add(result)
+                    self.session.commit()
+                    success_count += 1
+                    continue
+                
                 if self.parse_and_tag_file(result):
                     result.status = FileScreenResult.PROCESSED.value
                     success_count += 1
@@ -160,28 +178,66 @@ class ParsingMgr:
                     result.status = FileScreenResult.FAILED.value
                     failed_count += 1
                 
-                # 提交单条记录的变更
                 self.session.commit()
-                # 添加微小延时，平滑系统负载
+                file_process_duration = time.time() - file_process_start_time
+                logger.info(f"[PARSING_BATCH] Finished file {processed_count}/{total_files}. Duration: {file_process_duration:.2f}s")
                 time.sleep(0.5)
 
             except Exception as e:
-                logger.error(f"An unexpected error occurred while processing {result.file_path}: {e}")
+                logger.error(f"Error processing {result.file_path}: {e}")
                 self.session.rollback()
-                # 标记为失败并继续处理下一个
                 try:
                     result.status = FileScreenResult.FAILED.value
                     result.error_message = f"Unexpected error: {e}"
                     self.session.add(result)
                     self.session.commit()
                 except Exception as inner_e:
-                    logger.error(f"Failed to mark file as failed after error: {inner_e}")
+                    logger.error(f"Failed to mark file as failed: {inner_e}")
                     self.session.rollback()
-                
                 failed_count += 1
 
+        total_duration = time.time() - start_time
+        logger.info(f"[PARSING_BATCH] Finished batch. Duration: {total_duration:.2f}s")
         logger.info(f"Processed {processed_count} files. Succeeded: {success_count}, Failed: {failed_count}")
         return {"success": True, "processed": processed_count, "success_count": success_count, "failed_count": failed_count}
+
+    def process_single_file_task(self, screening_result_id: int) -> bool:
+        """
+        Processes a single high-priority file parsing task.
+        """
+        from db_mgr import FileScreenResult
+        from sqlmodel import select
+
+        logger.info(f"[PARSING_SINGLE] Starting to process high-priority file task for screening_result_id: {screening_result_id}")
+        result = self.session.get(FileScreeningResult, screening_result_id)
+
+        if not result:
+            logger.error(f"[PARSING_SINGLE] Could not find FileScreeningResult with id: {screening_result_id}")
+            return False
+
+        try:
+            if self.parse_and_tag_file(result):
+                result.status = FileScreenResult.PROCESSED.value
+                self.session.commit()
+                logger.info(f"[PARSING_SINGLE] Successfully processed file: {result.file_path}")
+                return True
+            else:
+                result.status = FileScreenResult.FAILED.value
+                self.session.commit()
+                logger.error(f"[PARSING_SINGLE] Failed to process file: {result.file_path}")
+                return False
+        except Exception as e:
+            logger.error(f"[PARSING_SINGLE] Error processing file {result.file_path}: {e}")
+            self.session.rollback()
+            try:
+                result.status = FileScreenResult.FAILED.value
+                result.error_message = f"Unexpected error: {e}"
+                self.session.add(result)
+                self.session.commit()
+            except Exception as inner_e:
+                logger.error(f"[PARSING_SINGLE] Failed to mark file as failed: {inner_e}")
+                self.session.rollback()
+            return False
     
     def create_sophisticated_parse_task(self, file_path: str) -> int:
         """

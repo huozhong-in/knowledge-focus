@@ -85,52 +85,12 @@ class TaskManager:
         return self.session.exec(statement).all()
     
     def get_next_task(self) -> Optional[Task]:
-        """获取下一个待处理的任务
-        
-        按优先级和创建时间排序，返回最高优先级且创建最早的待处理任务
-        
-        Returns:
-            任务对象，如果没有待处理任务则返回None
-        """
-        try:
-            # 查询待处理任务，使用SQL表达式直接设置优先级排序
-            # 避免使用cast，而是使用CASE表达式定义优先级顺序
-            statement = (
-                select(Task)
-                .where(Task.status == TaskStatus.PENDING.value)
-                .order_by(
-                    # 按优先级排序（高优先级在前）
-                    text("CASE "
-                         f"WHEN priority = '{TaskPriority.HIGH.value}' THEN 1 "
-                         f"WHEN priority = '{TaskPriority.MEDIUM.value}' THEN 2 "
-                         f"WHEN priority = '{TaskPriority.LOW.value}' THEN 3 "
-                         "ELSE 4 END"),
-                    # 创建时间早的在前
-                    asc(Task.created_at)
-                )
-                .limit(1)
-            )
-            
-            results = self.session.exec(statement).all()
-            task = results[0] if results else None
-            
-            # 如果找到任务，确保所有字段都是可序列化的
-            if task:                
-                # 确保task对象是可序列化的
-                # 将datetime对象转换为ISO格式字符串
-                if hasattr(task, 'created_at') and isinstance(task.created_at, datetime):
-                    task.created_at = task.created_at.isoformat()
-                if hasattr(task, 'updated_at') and isinstance(task.updated_at, datetime):
-                    task.updated_at = task.updated_at.isoformat()
-                if hasattr(task, 'start_time') and isinstance(task.start_time, datetime):
-                    task.start_time = task.start_time.isoformat()
-            
-            return task
-        except Exception as e:
-            logger.error(f"获取下一个待处理任务失败: {str(e)}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return None
+        """获取下一个待处理的任务，优先处理优先级高的任务"""
+        return self.session.exec(
+            select(Task)
+            .where(Task.status == TaskStatus.PENDING.value)
+            .order_by(Task.priority, Task.created_at)
+        ).first()
     
     def update_task_status(self, task_id: int, status: TaskStatus, 
                           result: TaskResult = None, message: str = None) -> bool:
