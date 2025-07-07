@@ -109,7 +109,7 @@ interface ConfigQueueStatus {
 }
 
 // 主组件
-function HomeAuthorization() {
+function SettingsAuthorization() {
   // 状态定义
   const [loading, setLoading] = useState<boolean>(true);
   
@@ -1239,4 +1239,4 @@ function HomeAuthorization() {
   );
 }
 
-export default HomeAuthorization;
+export default SettingsAuthorization;

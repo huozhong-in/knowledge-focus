@@ -1,41 +1,21 @@
 import "./index.css";
-import "./theme-whiskey.css"; // 引入威士忌主题
-import "./theme/whiskey-colors.css"; // 引入显式定义的威士忌颜色类
-import { AppSidebar } from "@/components/app-sidebar"
+import "./theme-whiskey.css";
+import "./theme/whiskey-colors.css";
 import { useEffect, useState } from "react";
-// import {
-//   Breadcrumb,
-//   BreadcrumbItem,
-//   BreadcrumbLink,
-//   BreadcrumbList,
-//   BreadcrumbPage,
-//   BreadcrumbSeparator,
-// } from "@/components/ui/breadcrumb"
-// import { Separator } from "@/components/ui/separator"
-import { Button } from "@/components/ui/button";
-import {
-  SidebarInset,
-  SidebarProvider,
-  // SidebarTrigger,
-} from "@/components/ui/sidebar"
+import { create } from 'zustand';
+import { useAppStore } from './main';
+import { listen } from '@tauri-apps/api/event';
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import IntroDialog from "./components/IntroDialog";
-import HomeKnowledgeBase from "./home-knowledgebase";
-import HomeAuthorization from "./home-authorization";
-import HomeWiseFolders from "./home-wisefolders";
-import ModelsLocal from "./models-local";
-import ModelsDomestic from "./models-domestic";
-import ModelsOverseas from "./models-overseas";
-import PromptsLibrary from "./prompts-library";
-import SearchPage from "./search-page";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Button } from "@/components/ui/button";
+import { AppSidebar } from "@/components/app-sidebar"
+import AppWorkspace from "./app-workspace";
+import IntroDialog from "./components/intro-dialog";
+import SettingsAuthorization from "./settings-authorization";
+import SettingsLocalModels from "./settings-local-models";
 import SettingsGeneral from "./settings-general";
-import SettingsDeveloperZone from "./settings-developerzone";
 import SettingsTheme from "./settings-theme";
-import { FullDiskFolderView } from './pinned-folders';
-import { create } from 'zustand';
-import { useAppStore } from './main'; // Correct import
-import { listen } from '@tauri-apps/api/event'; // Added for api-ready listener
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -46,9 +26,9 @@ interface PageState {
 }
 
 export const usePageStore = create<PageState>((set) => ({
-  currentPage: "today", // 默认为today页面，会在组件中根据是否首次启动进行调整
-  currentTitle: "今日更新",
-  currentSubtitle: "最近修改的文件",
+  currentPage: "new_task", // 默认为new_task页面，会在组件中根据是否首次启动进行调整
+  currentTitle: "新建任务",
+  currentSubtitle: "新建数据任务",
   setPage: (page, title, subtitle) => set({ 
     currentPage: page, 
     currentTitle: title,
@@ -110,10 +90,10 @@ export default function Page() {
 
     if (isFirstLaunch) {
       console.log("App.tsx: First launch & API ready, setting page to authorization");
-      setPage("home-authorization", "Home", "授权管理");
+      setPage("settings-authorization", "settings", "授权管理");
     } else {
-      console.log("App.tsx: Normal launch & API ready, setting page to today");
-      setPage("today", "今日更新", "最近修改的文件");
+      console.log("App.tsx: Normal launch & API ready, setting page to new_task");
+      setPage("new_task", "新建任务", "新建数据任务");
     }
   }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
 
@@ -270,46 +250,20 @@ export default function Page() {
       return null;
     }
     
-    // Ensure API is ready before rendering content that might depend on it
-    // However, some pages like settings might not need API ready.
-    // For now, we'll let individual components handle their "API not ready" state if needed.
-    // The FullDiskFolderView already does this.
-
     switch (currentPage) {
       case "home-knowledgebase":
-        return <HomeKnowledgeBase />;
-      case "home-wisefolders":
-        return <HomeWiseFolders />;
+        return <AppWorkspace />;
       case "home-authorization":
-        return <HomeAuthorization />;
+        return <SettingsAuthorization />;
       case "models-local":
-        return <ModelsLocal />;
-      case "models-domestic":
-        return <ModelsDomestic />;
-      case "models-overseas":
-        return <ModelsOverseas />;
-      case "prompts-library":
-        return <PromptsLibrary />;
-      case "file-search":
-        return <SearchPage />;
+        return <SettingsLocalModels />;
       case "settings-general":
         return <SettingsGeneral />;
       case "settings-theme":
         return <SettingsTheme />;
-      case "settings-developerzone":
-        return <SettingsDeveloperZone />;
-      // Render the single FullDiskFolderView for all pinned folder cases
-      case "today":
-      case "last7days":
-      case "last30days":
-      case "image":
-      case "audio-video":
-      case "archive":
-        // Pass the currentPage (which is the folderId) as a prop
-        return <FullDiskFolderView folderId={currentPage} />;
       default:
         // Fallback to a safe page if API is not ready, or a default page
-        return isApiReady ? <HomeKnowledgeBase /> : (
+        return isApiReady ? <AppWorkspace /> : (
           <div className="flex items-center justify-center h-full">
             <p>等待API服务就绪...</p>
           </div>
@@ -323,21 +277,6 @@ export default function Page() {
       <SidebarInset>
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
           <div className="flex items-center gap-2 px-4">
-            {/* <SidebarTrigger className="-ml-1" /> */}
-            {/* <Separator orientation="vertical" className="mr-2 h-4" />
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem className="hidden md:block">
-                  <BreadcrumbLink href="#">
-                    {currentTitle}
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                <BreadcrumbSeparator className="hidden md:block" />
-                <BreadcrumbItem>
-                  <BreadcrumbPage>{currentSubtitle}</BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb> */}
           </div>
         </header>
         {renderContent()}

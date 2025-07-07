@@ -7,8 +7,6 @@ import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import App from "./App";
 import { setupI18nWithStore } from './i18n';
 
-import { FileSearchResult } from './components/askme-form';
-
 interface AppGlobalState {
   showWelcomeDialog: boolean;
   setShowWelcomeDialog: (show: boolean) => Promise<void>;
@@ -24,10 +22,6 @@ interface AppGlobalState {
   // 语言设置
   language: string;
   
-  // 搜索相关状态
-  searchQuery: string;
-  searchResults: FileSearchResult[];
-  isSearching: boolean;
   
   // Actions
   setFirstLaunch: (pending: boolean) => void;
@@ -38,13 +32,6 @@ interface AppGlobalState {
   // 语言相关操作
   setLanguage: (lang: string) => Promise<void>;
   
-  // 搜索相关操作
-  setSearchQuery: (query: string) => void;
-  setSearchResults: (results: FileSearchResult[]) => void;
-  setIsSearching: (isSearching: boolean) => void;
-  
-  // 导航到文件搜索页面
-  navigateToSearch: () => void;
 }
 
 
@@ -81,11 +68,6 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   isApiReady: false, // Initialize API as not ready
   language: 'en', // 默认使用英文
 
-  // 搜索相关状态
-  searchQuery: '',
-  searchResults: [],
-  isSearching: false,
-
   setShowWelcomeDialog: async (show: boolean) => {
     try {
       const appDataPath = await appDataDir();
@@ -112,24 +94,7 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   setInitializationError: (error: string | null) => set({ initializationError: error }),
   setApiReady: (ready: boolean) => set({ isApiReady: ready }), // Implement new action
   
-  // 搜索相关操作
-  setSearchQuery: (query: string) => set({ searchQuery: query }),
-  setSearchResults: (results: FileSearchResult[]) => set({ searchResults: results }),
-  setIsSearching: (isSearching: boolean) => set({ isSearching }),
   
-  // 导航到搜索页面
-  navigateToSearch: () => {
-    try {
-      // 动态导入页面状态管理
-      import('./App').then(({ usePageStore }) => {
-        usePageStore.getState().setPage("file-search", "文件搜索", "");
-      }).catch(err => {
-        console.error("导入usePageStore失败:", err);
-      });
-    } catch (error) {
-      console.error("导航到搜索页面失败:", error);
-    }
-  },
   
   // 设置语言并保存到设置文件中
   setLanguage: async (lang: string) => {

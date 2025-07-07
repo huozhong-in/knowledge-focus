@@ -46,7 +46,7 @@ const roleLabels: Record<ModelRole, string> = {
 
 // --- Main Component ---
 
-function ModelsLocal() {
+function SettingsLocalModels() {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [roleAssignments, setRoleAssignments] = useState<Record<ModelRole, RoleAssignment>>({
     base: {},
@@ -351,4 +351,4 @@ function ProviderConfigCard({ provider, onChange, onSave, onDiscover }: Provider
   );
 }
 
-export default ModelsLocal;
+export default SettingsLocalModels;

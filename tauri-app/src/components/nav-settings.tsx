@@ -32,10 +32,10 @@ import {
 } from "@/components/ui/sidebar"
 import { useTranslation } from 'react-i18next';
 
-export function NavUser({
-  user,
+export function NavSettings({
+  config_item,
 }: {
-  user: {
+  config_item: {
     name: string
     description: string
     icon: string
@@ -55,12 +55,12 @@ export function NavUser({
               className="hover:bg-whiskey-100 bg-whiskey-50 data-[state=open]:bg-whiskey-200 data-[state=open]:text-whiskey-800"
             >
               <Avatar className="h-8 w-8 rounded-lg border-2 border-whiskey-300">
-                <AvatarImage src={user.icon} alt={user.name} />
+                <AvatarImage src={config_item.icon} alt={config_item.name} />
                 <AvatarFallback className="bg-whiskey-100 text-whiskey-500 rounded-lg"><Cog /></AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium text-whiskey-800">{user.name}</span>
-                <span className="truncate text-xs text-whiskey-600">{user.description}</span>
+                <span className="truncate font-medium text-whiskey-800">{config_item.name}</span>
+                <span className="truncate text-xs text-whiskey-600">{config_item.description}</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4 text-whiskey-500" />
             </SidebarMenuButton>
@@ -74,11 +74,11 @@ export function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm bg-whiskey-100 rounded-md m-1">
                 <Avatar className="h-8 w-8 rounded-lg border-2 border-whiskey-300">
-                  <AvatarImage src={user.icon} alt={user.name} />
+                  <AvatarImage src={config_item.icon} alt={config_item.name} />
                   <AvatarFallback className="bg-whiskey-50 text-whiskey-500 rounded-lg"><Cog /></AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium text-whiskey-800">{user.name}</span>
+                  <span className="truncate font-medium text-whiskey-800">{config_item.name}</span>
                   <span className="truncate text-xs text-whiskey-600">User preferences</span>
                 </div>
               </div>

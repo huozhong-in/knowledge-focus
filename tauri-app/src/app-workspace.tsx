@@ -46,7 +46,7 @@ const initialMessages = [
   }
 ]
 
-function HomeKnowledgeBase() {
+function AppWorkspace() {
   const [prompt, setPrompt] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [chatMessages, setChatMessages] = useState(initialMessages)
@@ -238,4 +238,4 @@ function HomeKnowledgeBase() {
   )
 }
 
-export default HomeKnowledgeBase;
+export default AppWorkspace;
