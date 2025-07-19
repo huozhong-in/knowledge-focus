@@ -2,15 +2,17 @@ from sqlmodel import (
     create_engine,
     Session, 
     select,
+    text,
 )
 from db_mgr import Tags, FileScreeningResult, TagsType
 from typing import List, Dict, Set, Optional
 import logging
 import time
-
-# New imports for vector-based tagging
+import json
+import os
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,17 @@ class TaggingMgr:
         # 预热缓存
         self._warm_cache()
         
+        # 确保FTS索引是最新的
+        try:
+            # 检查FTS表是否存在且结构正确
+            result = self.session.exec(text("SELECT name FROM sqlite_master WHERE type='table' AND name='t_files_fts'"))
+            if not result.fetchone():
+                logger.warning("FTS表不存在，将尝试重建")
+                self.rebuild_fts_index()
+        except Exception as e:
+            logger.error(f"检查FTS表时出错: {e}")
+            # 不抛出异常，让应用可以继续运行
+    
     def _warm_cache(self) -> None:
         """预热标签缓存，加载所有标签到内存"""
         try:
@@ -85,6 +98,10 @@ class TaggingMgr:
                 # Refresh new tags to get their IDs
                 for tag in new_tags:
                     self.session.refresh(tag)
+                
+                # 发送标签更新通知，但仅当实际创建了新标签时
+                if new_tags:
+                    self.notify_tags_updated()
             except Exception as e:
                 logger.error(f"Error creating new tags: {e}")
                 self.session.rollback()
@@ -131,6 +148,9 @@ class TaggingMgr:
         screening_result.tags_display_ids = tags_str
         self.session.add(screening_result)
         # The commit will be handled by the calling function (e.g., in ParsingMgr)
+        
+        # 发送标签更新通知
+        self.notify_tags_updated()
         
         return True
 
@@ -193,7 +213,11 @@ class TaggingMgr:
         tag_ids_str = [str(tid) for tid in tag_ids]
         
         # 构建查询字符串
-        return f" {operator} ".join(tag_ids_str)
+        # 正确处理单个标签的情况
+        if len(tag_ids_str) == 1:
+            return tag_ids_str[0]
+        else:
+            return " {} ".format(operator).join(tag_ids_str)
     
     def get_file_ids_by_tags(self, tag_ids: List[int], operator: str = "AND") -> List[int]:
         """
@@ -213,12 +237,12 @@ class TaggingMgr:
         query_str = self.build_tags_search_query(tag_ids, operator)
         
         # 执行FTS5查询
-        sql = f"""
+        sql = text("""
         SELECT file_id FROM t_files_fts 
-        WHERE tags_search_ids MATCH ?
-        """
+        WHERE tags_search_ids MATCH :query_str
+        """).bindparams(query_str=query_str)
         
-        result = self.session.execute(sql, [query_str])
+        result = self.session.exec(sql)
         # 提取文件ID
         return [row[0] for row in result.fetchall()]
     
@@ -251,36 +275,36 @@ class TaggingMgr:
             return []
             
         return self.session.exec(select(Tags).where(Tags.id.in_(tag_ids))).all()
-    
+
     def search_files_by_tag_names(self, tag_names: List[str], 
                                 operator: str = "AND", 
                                 offset: int = 0, 
                                 limit: int = 50) -> List[dict]:
         """
-        轻量级搜索：通过标签名列表搜索文件
-        适用于用户输入过程中的实时反馈
+        Lightweight search: searches for files by a list of tag names.
+        Suitable for real-time feedback during user input.
         
         Args:
-            tag_names: 标签名列表
-            operator: 查询逻辑操作符 ("AND" 或 "OR")
-            offset: 分页起始位置
-            limit: 每页记录数
+            tag_names: List of tag names.
+            operator: Query logical operator ("AND" or "OR").
+            offset: Pagination offset.
+            limit: Number of records per page.
             
         Returns:
-            匹配的文件信息列表 [{'id': 1, 'path': '...', ...}]
+            A list of matching file information dictionaries.
         """
-        # 1. 获取标签ID
+        # 1. Get tag IDs
         tag_ids = self.get_tag_ids_by_names(tag_names)
         if not tag_ids:
             return []
             
-        # 2. 获取文件ID
+        # 2. Get file IDs
         file_ids = self.get_file_ids_by_tags(tag_ids, operator)
         
-        # 3. 应用分页
+        # 3. Apply pagination
         paginated_ids = file_ids[offset:offset+limit] if file_ids else []
         
-        # 4. 获取文件详情
+        # 4. Get file details
         results = []
         for file_id in paginated_ids:
             file_result = self.session.get(FileScreeningResult, file_id)
@@ -288,7 +312,7 @@ class TaggingMgr:
                 results.append({
                     'id': file_id,
                     'path': file_result.file_path,
-                    # 添加其他需要的文件信息
+                    'file_name': os.path.basename(file_result.file_path), # Add file_name
                     'tags_display_ids': file_result.tags_display_ids
                 })
                 
@@ -446,20 +470,165 @@ class TaggingMgr:
         logger.info(f"Successfully generated and linked {len(final_tag_ids)} tags for {file_result.file_path}")
         return True
 
+    def rebuild_fts_index(self) -> bool:
+        """
+        重建FTS5索引，通常在表结构变更或修复问题后使用。
+        该函数会清空FTS表并从t_file_screening_results重新填充数据。
+        
+        Returns:
+            是否重建成功
+        """
+        try:
+            # 清空FTS表
+            self.session.exec(text("DELETE FROM t_files_fts"))
+            
+            # 获取所有文件筛选结果
+            file_results_query = self.session.exec(select(FileScreeningResult)
+                                                 .where(FileScreeningResult.tags_display_ids.is_not(None))
+                                                 .where(FileScreeningResult.tags_display_ids != ""))
+            file_results = file_results_query.all()
+            
+            # 重新填充FTS表
+            for result in file_results:
+                if result.tags_display_ids:
+                    # 将逗号分隔的ID转换为空格分隔
+                    tags_search_ids = result.tags_display_ids.replace(',', ' ')
+                    # 插入FTS表
+                    sql = text("INSERT INTO t_files_fts (file_id, tags_search_ids) VALUES (:file_id, :tags_search_ids)").bindparams(
+                        file_id=result.id, 
+                        tags_search_ids=tags_search_ids
+                    )
+                    self.session.exec(sql)
+            
+            self.session.commit()
+            logger.info(f"成功重建FTS索引，共处理 {len(file_results)} 条记录")
+            return True
+        except Exception as e:
+            logger.error(f"重建FTS索引失败: {e}")
+            self.session.rollback()
+            return False
+
+    def get_tag_cloud_data(self, limit: int = 100, min_weight: int = 1) -> List[Dict]:
+        """
+        获取标签云数据，包含标签ID、名称、权重和类型
+        
+        Args:
+            limit: 返回的最大标签数量
+            min_weight: 最小权重阈值，只返回权重大于或等于此值的标签
+        
+        Returns:
+            包含标签信息的字典列表，每个字典包含id、name、weight和type字段
+        """
+        try:
+            # 执行SQL查询，获取标签及其关联的文件数量
+            query = text("""
+                SELECT t.id, t.name, t.type, COUNT(DISTINCT fsr.id) as weight
+                FROM tags t
+                LEFT JOIN file_screening_results fsr ON fsr.tags_display_ids LIKE '%' || t.id || '%'
+                GROUP BY t.id, t.name, t.type
+                HAVING COUNT(DISTINCT fsr.id) >= :min_weight
+                ORDER BY weight DESC
+                LIMIT :limit
+            """)
+            
+            result = self.session.exec(query, {"limit": limit, "min_weight": min_weight})
+            
+            # 构建返回结果
+            tag_cloud = []
+            for row in result:
+                tag_cloud.append({
+                    "id": row[0],
+                    "name": row[1],
+                    "type": row[2],
+                    "weight": row[3]
+                })
+                
+            return tag_cloud
+        except Exception as e:
+            logger.error(f"获取标签云数据失败: {e}")
+            return []
+
+    def notify_tag_update(self):
+        """
+        向标准输出打印特定格式的消息，通知标签已更新。
+        Rust桥接层将捕获这些消息并转换为Tauri事件。
+        """
+        try:
+            print("[BRIDGE_EVENT] tags-updated", flush=True)
+            logger.info("已发送标签更新通知")
+        except Exception as e:
+            logger.error(f"发送标签更新通知失败: {e}")
+
+    def notify_tags_updated(self):
+        """
+        向前端通知标签已更新，同时支持新旧两种通知格式
+        
+        1. 老式格式: [BRIDGE_EVENT] event-name
+        2. 新式JSON格式: EVENT_NOTIFY_JSON:{json对象}
+        
+        Rust层会捕获这些消息并转发给前端
+        """
+        try:
+            # 发送旧格式消息以保持兼容性
+            print("[BRIDGE_EVENT] tags-updated", flush=True)
+            
+            # 同时发送新格式消息
+            notification = {
+                "event": "tags-updated",
+                "payload": {
+                    "timestamp": time.time()
+                }
+            }
+            # 输出到标准输出，确保是单行JSON，便于Rust层解析
+            print(f"EVENT_NOTIFY_JSON:{json.dumps(notification)}", flush=True)
+            logger.info("已发送标签更新通知")
+        except Exception as e:
+            logger.error(f"发送标签更新通知失败: {e}")
+            # 不要在这里抛出异常，避免影响正常流程
+
 # 测试用代码
 if __name__ == '__main__':
+    import sys
+    logger.setLevel(logging.INFO)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+
     db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    tagging_mgr = TaggingMgr(Session(create_engine(f'sqlite:///{db_file}')))
+    base_dir = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in"
+    session = Session(create_engine(f'sqlite:///{db_file}'))
+    lancedb_mgr = LanceDBMgr(base_dir=base_dir)
+    models_mgr = ModelsMgr(session=session)
+    tagging_mgr = TaggingMgr(
+        session=session,
+        lancedb_mgr=lancedb_mgr,
+        models_mgr=models_mgr
+    )
+
+    # 重建FTS索引
+    # print("重建FTS索引...")
+    # tagging_mgr.rebuild_fts_index()
+    # print("FTS索引重建完成")
+
+    # 测试根据标签搜索文件
+    test_tag_names = ["large_language_models"]
+    print(f"搜索包含标签 {test_tag_names} 的文件...")
+    search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
+    print(f"搜索结果数量: {len(search_results)}")
+    for i, result in enumerate(search_results):
+        print(f"{i+1}. ID: {result['id']}, 路径: {result['path']}")
+        print(f"   标签IDs: {result['tags_display_ids']}")
+        # 获取标签名称
+        if result['tags_display_ids']:
+            tag_ids = tagging_mgr.get_tags_display_ids_as_list(result['tags_display_ids'])
+            tags = tagging_mgr.get_tags_by_ids(tag_ids)
+            print(f"   标签名称: {[tag.name for tag in tags]}")
     
-    # 获取或创建标签
-    test_tag_names = ["test", "example", "sample"]
-    created_tags = tagging_mgr.get_or_create_tags(test_tag_names)
-    print("Created or fetched tags:", created_tags)
-    # 获取所有标签
-    all_tags = tagging_mgr.get_all_tags()
-    print("All tags:", all_tags)
-    # 链接标签到文件筛选结果
-    test_screening_result_id = 22  # 假设存在一个筛选结果ID为22
-    test_tag_ids = [tag.id for tag in created_tags]
-    tagging_mgr.link_tags_to_file(test_screening_result_id, test_tag_ids)
-    tagging_mgr.session.commit()
+    # 测试标签推荐
+    # if search_results:
+    #     first_result = search_results[0]
+    #     first_tags = tagging_mgr.get_tags_display_ids_as_list(first_result['tags_display_ids'])
+    #     print(f"\n为文件 {first_result['path']} 推荐相关标签...")
+    #     related_tags = tagging_mgr.recommend_related_tags(first_tags, limit=5)
+    #     print(f"推荐标签: {[tag.name for tag in related_tags]}")

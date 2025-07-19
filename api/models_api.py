@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends, Body
+from fastapi import APIRouter, Depends, Body, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import List, Dict, Any
 
 from model_config_mgr import ModelConfigMgr
+from models_mgr import ModelsMgr
 
 def get_router(external_get_session):
     router = APIRouter()
@@ -76,6 +78,41 @@ def get_router(external_get_session):
             return {"success": False, "message": "Failed to update role config"}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
+        return ModelsMgr(session)
+
+    @router.post("/chat/stream", tags=["local-models"])
+    async def chat_stream(
+        request_data: Dict[str, Any] = Body(...),
+        models_mgr: ModelsMgr = Depends(get_models_manager)
+    ):
+        """处理聊天流式请求"""
+        try:
+            messages = request_data.get("messages", [])
+            model_config = request_data.get("model_config", {})
+
+            if not messages or not model_config:
+                raise HTTPException(status_code=400, detail="Missing messages or model_config")
+
+            provider_type = model_config.get("provider_type")
+            model_name = model_config.get("model_name")
+
+            if not provider_type or not model_name:
+                raise HTTPException(status_code=400, detail="Missing provider_type or model_name in model_config")
+
+            return StreamingResponse(
+                models_mgr.stream_chat(
+                    provider_type=provider_type,
+                    model_name=model_name,
+                    messages=messages
+                ),
+                media_type="text/event-stream"
+            )
+        except Exception as e:
+            # Log the exception for debugging
+            print(f"Error in chat_stream: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     # 返回路由对象给主应用
     return router

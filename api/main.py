@@ -10,8 +10,8 @@ from datetime import datetime
 import traceback
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
-from fastapi import FastAPI, Body, Depends, WebSocket, WebSocketDisconnect
+# from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from fastapi import FastAPI, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
@@ -216,29 +216,13 @@ app.add_middleware(
     allow_headers=["*"],    # Allows all headers
 )
 
-# 存储活跃的WebSocket连接
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-    
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-    
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-    
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
 
-manager = ConnectionManager()
 # 周期性检查新通知并广播
-async def check_notifications():
-    while True:
-        # 广播消息
-        # await manager.broadcast("New notification")
-        await asyncio.sleep(8)
+# async def check_notifications():
+#     while True:
+#         # 广播消息
+#         # await manager.broadcast("New notification")
+#         await asyncio.sleep(8)
 
 def get_session():
     """FastAPI依赖函数，用于获取数据库会话"""
@@ -254,6 +238,11 @@ def get_session():
 from models_api import get_router as get_models_router
 models_router = get_models_router(external_get_session=get_session)
 app.include_router(models_router, prefix="", tags=["local-models"])
+
+# Add the new tagging API router
+from tagging_api import get_router as get_tagging_router
+tagging_router = get_tagging_router(get_session=get_session)
+app.include_router(tagging_router, prefix="", tags=["tagging"])
 
 # 获取 MyFilesManager 的依赖函数
 def get_myfiles_manager(session: Session = Depends(get_session)):
@@ -1106,17 +1095,6 @@ def health_check():
         }
     }
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            # 接收客户端消息（可选，因为这阶段产品设计只用websocket向前端推送通知）
-            _ = await websocket.receive_text()
-            
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-
 # 添加文件夹管理相关API
 @app.get("/directories")
 def get_directories(
@@ -1178,12 +1156,10 @@ def add_directory(
             # 检查返回值是否是字符串或MyFiles对象
             if isinstance(message_or_dir, str):
                 return {"status": "success", "message": message_or_dir}
-            else:
-                # 如果是MyFiles对象，调用model_dump()
-                
+            else:                
                 # 如果不是黑名单，前端会立即启动Rust监控
                 if not is_blacklist:
-                    # 添加Rust监控的触发信号（通过WebSocket通知前端或通过某种机制）
+                    # 添加Rust监控的触发信号
                     # 此处日志记录即可，实际监控由前端Tauri通过fetch_and_store_all_config获取最新配置
                     logger.info(f"[MONITOR] 新文件夹已添加，需要立即启动监控: {path}")
                     

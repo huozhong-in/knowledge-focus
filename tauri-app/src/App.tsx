@@ -1,21 +1,17 @@
 import "./index.css";
-import "./theme-whiskey.css";
-import "./theme/whiskey-colors.css";
+import "./tweakcn/app/globals.css";
 import { useEffect, useState } from "react";
 import { create } from 'zustand';
 import { useAppStore } from './main';
 import { listen } from '@tauri-apps/api/event';
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button";
-import { AppSidebar } from "@/components/app-sidebar"
-import AppWorkspace from "./app-workspace";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { AppSidebar } from "./AppSidebar";
+import { AppWorkspace } from "./AppWorkspace";
 import IntroDialog from "./components/intro-dialog";
-import SettingsAuthorization from "./settings-authorization";
-import SettingsLocalModels from "./settings-local-models";
-import SettingsGeneral from "./settings-general";
-import SettingsTheme from "./settings-theme";
+
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -37,10 +33,9 @@ export const usePageStore = create<PageState>((set) => ({
 }));
 
 export default function Page() {
-  const { currentPage, setPage } = usePageStore();
   const {
     isFirstLaunch,
-    isInitializing,
+    // isInitializing,
     initializationError,
     setIsInitializing,
     setInitializationError,
@@ -82,25 +77,24 @@ export default function Page() {
   }, [setApiReady]); // setApiReady is stable, so this runs once
 
   // 根据是否首次启动设置初始页面, dependent on global isApiReady
-  useEffect(() => {
-    if (!isApiReady) { // Use global isApiReady
-      console.log("App.tsx: Global API not ready yet, delaying page initialization");
-      return;
-    }
+  // useEffect(() => {
+  //   if (!isApiReady) { // Use global isApiReady
+  //     console.log("App.tsx: Global API not ready yet, delaying page initialization");
+  //     return;
+  //   }
 
-    if (isFirstLaunch) {
-      console.log("App.tsx: First launch & API ready, setting page to authorization");
-      setPage("settings-authorization", "settings", "授权管理");
-    } else {
-      console.log("App.tsx: Normal launch & API ready, setting page to new_task");
-      setPage("new_task", "新建任务", "新建数据任务");
-    }
-  }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
+  //   if (isFirstLaunch) {
+  //     console.log("App.tsx: First launch & API ready, setting page to authorization");
+  //     setPage("settings-authorization", "settings", "授权管理");
+  //   } else {
+  //     console.log("App.tsx: Normal launch & API ready, setting page to new_task");
+  //     setPage("new_task", "新建任务", "新建数据任务");
+  //   }
+  // }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
 
   // 始终显示 IntroDialog 作为 splash 屏幕，直到 API 就绪
   useEffect(() => {
-    // 移除条件检查，总是在启动时显示 IntroDialog
-    // IntroDialog 会根据 isFirstLaunch 和 isApiReady 决定行为:
+    // 总是在启动时显示 IntroDialog，会根据 isFirstLaunch 和 isApiReady 决定行为:
     // - 如果 API 未就绪：显示加载状态
     // - 如果 API 就绪且不是首次启动：自动关闭对话框，显示主界面
     // - 如果 API 就绪且是首次启动：启用"开始使用"按钮，用户手动关闭
@@ -112,9 +106,6 @@ export default function Page() {
     const startupSequence = async () => {
       // 日志首次启动状态
       console.log(`App.tsx: ${isFirstLaunch ? "First launch" : "Normal launch"} detected.`);
-
-      // 不再需要健康检查，我们已经在监听 api-ready 事件
-      // 后端会在 API 准备就绪后发送事件
       console.log("App.tsx: Waiting for API ready signal from backend...");
       
       try {
@@ -161,71 +152,6 @@ export default function Page() {
     startupSequence();
   }, [isFirstLaunch, setIsInitializing, setInitializationError, setApiReady]);
 
-  // WebSocket connection effect
-  useEffect(() => {
-    const canConnectWebSocket = isApiReady && !isInitializing && !initializationError;
-
-    if (!canConnectWebSocket) {
-      console.log("App.tsx: Conditions not met for WebSocket connection (API started:", isApiReady, ", initializing:", isInitializing, ", error:", initializationError,")");
-      // Corrected log to use isApiReady
-      console.log("App.tsx: Conditions not met for WebSocket connection (isApiReady:", isApiReady, ", initializing:", isInitializing, ", error:", initializationError,")");
-      return;
-    }
-
-    console.log("App.tsx: Conditions met. Attempting to connect WebSocket.");
-    let wsInstance: WebSocket | null = null;
-    
-    const connectWebSocket = () => {
-      if (wsInstance) {
-        wsInstance.onclose = null; 
-        wsInstance.close();
-      }
-      wsInstance = new WebSocket("ws://127.0.0.1:60315/ws");
-      wsInstance.onopen = (event) => {
-        console.log("WebSocket连接已建立", event);
-      };
-      wsInstance.onmessage = (event) => {
-        console.log("收到任务状态更新:", event.data);
-        try {
-          const notification = JSON.parse(event.data);
-          if (notification.status === "completed") {
-            toast.success(notification.message);
-          } else if (notification.status === "failed") {
-            toast.error(notification.message);
-          }
-        } catch (e) {
-          toast.info(event.data);
-        }
-      };
-      wsInstance.onclose = (event) => {
-        console.log("WebSocket连接已关闭，尝试重新连接...", event);
-        if (wsInstance && document.visibilityState === 'visible') { // Check if still relevant
-            setTimeout(() => {
-                if (wsInstance) connectWebSocket();
-            }, 5000);
-        }
-      };
-      wsInstance.onerror = (error) => {
-        console.error("WebSocket错误:", error);
-      };
-    };
-
-    connectWebSocket();
-
-    return () => {
-      console.log("App.tsx: Cleaning up WebSocket connection on effect re-run or unmount.");
-      if (wsInstance) {
-        wsInstance.onclose = null; // 防止卸载时触发重连
-        wsInstance.close();
-        wsInstance = null;
-
-      }
-    };
-  }, [isApiReady, isInitializing, initializationError]); // Depend on global isApiReady
-
-
-  // 不再使用单独的初始化页面，现在由 IntroDialog 充当 splash 屏幕
-  // 只保留初始化错误的处理
   if (initializationError) { // 初始化错误
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-background text-foreground p-4">
@@ -242,47 +168,54 @@ export default function Page() {
 
 
   // 根据currentPage返回对应的组件
-  const renderContent = () => {
-    console.log("App.tsx: Rendering content for page:", currentPage);
+  // const renderContent = () => {
+  //   console.log("App.tsx: Rendering content for page:", currentPage);
     
-    // 如果API尚未就绪且显示IntroDialog，则返回空内容，避免不必要的组件初始化
-    if (!isApiReady && showIntroDialog) {
-      return null;
-    }
+  //   // 如果API尚未就绪且显示IntroDialog，则返回空内容，避免不必要的组件初始化
+  //   if (!isApiReady && showIntroDialog) {
+  //     return null;
+  //   }
     
-    switch (currentPage) {
-      case "home-knowledgebase":
-        return <AppWorkspace />;
-      case "home-authorization":
-        return <SettingsAuthorization />;
-      case "models-local":
-        return <SettingsLocalModels />;
-      case "settings-general":
-        return <SettingsGeneral />;
-      case "settings-theme":
-        return <SettingsTheme />;
-      default:
-        // Fallback to a safe page if API is not ready, or a default page
-        return isApiReady ? <AppWorkspace /> : (
-          <div className="flex items-center justify-center h-full">
-            <p>等待API服务就绪...</p>
-          </div>
-        );
-    }
-  };
-
+  //   switch (currentPage) {
+  //     case "home-knowledgebase":
+  //       return <AppWorkspace />;
+  //     case "home-authorization":
+  //       return <SettingsAuthorization />;
+  //     case "models-local":
+  //       return <SettingsLocalModels />;
+  //     default:
+  //       // Fallback to a safe page if API is not ready, or a default page
+  //       return isApiReady ? <AppWorkspace /> : (
+  //         <div className="flex items-center justify-center h-full">
+  //           <p>等待API服务就绪...</p>
+  //         </div>
+  //       );
+  //   }
+  // };
   return (
     <SidebarProvider>
-      <AppSidebar />
-      <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-          <div className="flex items-center gap-2 px-4">
-          </div>
-        </header>
-        {renderContent()}
-        <IntroDialog open={showIntroDialog} onOpenChange={setShowIntroDialog} />
-        <Toaster />
-      </SidebarInset>
+      <div className="flex h-full">
+        <AppSidebar />
+        <SidebarInset>
+          {isApiReady ? <AppWorkspace /> : <div>等待API服务就绪...</div>}
+          <IntroDialog open={showIntroDialog} onOpenChange={setShowIntroDialog} />
+          <Toaster />
+        </SidebarInset>
+      </div>
     </SidebarProvider>
-  )
+  );
+  // return (
+  //   <SidebarProvider>
+  //     <AppSidebar />
+  //     <SidebarInset>
+  //       <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
+  //         <div className="flex items-center gap-2 px-4">
+  //         </div>
+  //       </header>
+  //       {renderContent()}
+  //       <IntroDialog open={showIntroDialog} onOpenChange={setShowIntroDialog} />
+  //       <Toaster />
+  //     </SidebarInset>
+  //   </SidebarProvider>
+  // )
 }

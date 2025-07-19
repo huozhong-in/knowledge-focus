@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useAppStore } from '../main';
-import { usePageStore } from '../App';
+import { useAppStore } from '@/main';
+import { usePageStore } from '@/App';
 import { Button } from "./ui/button";
 import { toast } from "sonner";
 import {
@@ -24,8 +24,10 @@ interface IntroDialogProps {
 }
 
 const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
-  // 使用引用而不是解构来避免无限循环问题
-  const appStore = useAppStore();
+  // 使用 selector 获取 Zustand store 中的状态，避免不必要的重渲染
+  const isApiReady = useAppStore(state => state.isApiReady);
+  const isFirstLaunch = useAppStore(state => state.isFirstLaunch);
+  const setShowWelcomeDialog = useAppStore(state => state.setShowWelcomeDialog);
   const setPage = usePageStore(state => state.setPage);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("正在检查系统权限...");
@@ -79,7 +81,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       
       // 提供明确的授权指导
       toast.success(
-        "请在系统设置中授权：\n" +
+        "请在系统设置中授权:\n" +
         "1. 点击'系统偏好设置' > '安全性与隐私' > '隐私'\n" +
         "2. 选择'完全磁盘访问权限'\n" +
         "3. 勾选'KnowledgeFocus'应用\n" +
@@ -116,9 +118,9 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       
       // 即使出错也给出明确的手动操作指南
       toast.info(
-        "手动授权步骤：\n" +
+        "手动授权步骤:\n" +
         "1. 系统偏好设置 > 安全性与隐私 > 隐私\n" +
-        "2. 选择'完全磁盘访问权限'\n" + 
+        "2. 选择'完全磁盘访问权限'\n" +
         "3. 添加并勾选'KnowledgeFocus'应用",
         { duration: 10000 }
       );
@@ -169,7 +171,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
   // 使用全局状态的 isApiReady 值而不是直接监听事件
   useEffect(() => {
     // 只有在已经获取到权限且API就绪的情况下才启动后端扫描
-    if (hasFullDiskAccess && appStore.isApiReady) {
+    if (hasFullDiskAccess && isApiReady) {
       console.log("[API就绪] 权限检查通过且API就绪，启动后端扫描");
       
       // 启动后端扫描（仅在权限和API都就绪时）
@@ -189,7 +191,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         setLoading(false); // 更新本地加载状态
         
         // 处理非首次启动的逻辑
-        if (!appStore.isFirstLaunch) {
+        if (!isFirstLaunch) {
           // 设置消息为自动关闭提示
           setLoadingMessage("初始化完成，正在进入应用...");
           // 略微延迟关闭对话框以便用户能看到成功信息
@@ -210,14 +212,14 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       console.log("[API就绪] API就绪但权限不足，阻止进入应用");
       setLoading(false);
     }
-  }, [appStore.isApiReady, appStore.isFirstLaunch, hasFullDiskAccess, onOpenChange]);
+  }, [isApiReady, isFirstLaunch, hasFullDiskAccess, onOpenChange]);
 
   const handleEnterApp = async () => {
     try {
       // 关闭对话框
       onOpenChange(false);
       // 更新状态以便将来不再显示首次启动对话框
-      await appStore.setShowWelcomeDialog(false);
+      await setShowWelcomeDialog(false);
       // 导航到文件夹授权页面（仅在首次启动时需要）
       setPage("home-authorization", "Home", "Authorization");
       console.log('首次启动流程：欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
@@ -285,7 +287,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         </div>
         
         <p className={`text-center mb-4 ${
-          hasFullDiskAccess && appStore.isApiReady 
+          hasFullDiskAccess && isApiReady 
             ? "text-green-600" 
             : !hasFullDiskAccess 
               ? "text-yellow-600 font-semibold" 
@@ -308,7 +310,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
 
         <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
           {/* 首次启动且已获得权限时显示"开始使用"按钮 */}
-          {appStore.isFirstLaunch && hasFullDiskAccess && appStore.isApiReady && (
+          {isFirstLaunch && hasFullDiskAccess && isApiReady && (
             <Button
               onClick={handleEnterApp}
               className="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 rounded-lg"

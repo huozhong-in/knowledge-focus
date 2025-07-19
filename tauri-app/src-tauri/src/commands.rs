@@ -1,9 +1,111 @@
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use crate::AppState;
-use tauri::{State, Manager}; // 添加Manager以使用app_handle方法
-use serde::Serialize;
+use crate::AppState; // Manager trait is needed for emit and other methods
+use tauri::{Emitter, Manager, State, Window};
+use serde::{Serialize, Deserialize};
+use futures_util::StreamExt;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Message {
+    id: String,
+    role: String,
+    content: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ModelConfig {
+    provider_type: String,
+    model_id: String,
+    model_name: String,
+}
+
+#[tauri::command]
+pub async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>, model_config: ModelConfig) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let sidecar_url = "http://127.0.0.1:60315/chat/stream";
+
+    let request_payload = serde_json::json!({
+        "messages": messages,
+        "model_config": model_config
+    });
+
+    let mut stream = match client.post(sidecar_url).json(&request_payload).send().await {
+        Ok(res) => res.bytes_stream(),
+        Err(e) => return Err(e.to_string()),
+    };
+
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(bytes) => {
+                if let Ok(chunk) = std::str::from_utf8(&bytes) {
+                    window.emit("ai_chunk", chunk).unwrap_or_else(|e| eprintln!("Failed to emit ai_chunk event: {}", e));
+                }
+            },
+            Err(e) => {
+                eprintln!("Error in stream: {}", e);
+                break;
+            }
+        }
+    }
+
+    window.emit("ai_stream_end", ()).unwrap_or_else(|e| eprintln!("Failed to emit ai_stream_end event: {}", e));
+    Ok(())
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ChatStreamEvent {
+  pub choices: Vec<ChatStreamChoice>,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ChatStreamChoice {
+  pub delta: ChatStreamDelta,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ChatStreamDelta {
+  pub content: String,
+}
+
+#[tauri::command]
+pub async fn chat(
+    body: serde_json::Value,
+    _window: tauri::Window,
+) -> Result<Vec<ChatStreamEvent>, String> {
+    // Simulate a streaming response
+    let messages = body["messages"].as_array().unwrap();
+    let last_message = messages.last().unwrap();
+    let content = last_message["content"].as_str().unwrap();
+
+    let initial_response = format!("Echo: ");
+    let mut events = vec![];
+
+    for char in initial_response.chars() {
+        events.push(ChatStreamEvent {
+            choices: vec![ChatStreamChoice {
+                delta: ChatStreamDelta {
+                    content: char.to_string(),
+                },
+            }],
+        });
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+
+    for char in content.chars() {
+        events.push(ChatStreamEvent {
+            choices: vec![ChatStreamChoice {
+                delta: ChatStreamDelta {
+                    content: char.to_string(),
+                },
+            }],
+        });
+        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+    }
+
+    Ok(events)
+}
+
 
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
 pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppState>, app_handle: tauri::AppHandle) -> Result<(), String> {
@@ -32,13 +134,13 @@ pub async fn scan_directory(path: String, state: tauri::State<'_, crate::AppStat
             println!("[CMD] scan_directory 文件监控器未初始化，尝试启动监控...");
             
             // 尝试启动文件监控
-            use crate::{ApiState, file_monitor::FileMonitor};
+            use crate::{file_monitor::FileMonitor};
             
             // 获取API信息
             let api_host;
             let api_port;
             {
-                let api_state = app_handle.state::<ApiState>();
+                let api_state = app_handle.state::<crate::ApiState>();
                 let api_state_guard = api_state.0.lock().unwrap();
                 
                 if api_state_guard.process_child.is_none() {
@@ -537,7 +639,7 @@ pub async fn queue_delete_folder(
     folder_path: String,
     is_blacklist: bool,
     state: tauri::State<'_, crate::AppState>,
-    _app_handle: tauri::AppHandle  // 使用下划线前缀表示故意不使用的参数
+    _app_handle: tauri::AppHandle  // 使用下划线前缀表示故意不使��的参数
 ) -> Result<serde_json::Value, String> {
     println!("[CMD] queue_delete_folder 被调用，ID: {}, 路径: {}, 是否黑名单: {}", folder_id, folder_path, is_blacklist);
     
@@ -678,129 +780,6 @@ pub fn get_config_queue_status(
 
 // --- 配置变更队列管理命令结束 ---
 
-// --- 文件监控配置扩展命令 ---
-
-/// 添加黑名单文件夹（支持层级结构）
-#[tauri::command(rename_all = "snake_case", async)]
-pub async fn add_blacklist_folder_with_path(
-    path: String, 
-    parent_id: Option<i32>,
-    state: tauri::State<'_, crate::AppState>
-) -> Result<serde_json::Value, String> {
-    println!("[CMD] add_blacklist_folder_with_path 被调用，路径: {}, 父ID: {:?}", path, parent_id);
-    
-    // 获取文件监控器
-    let monitor = {
-        let guard = state.file_monitor.lock().unwrap();
-        if let Some(monitor) = &*guard {
-            monitor.clone()
-        } else {
-            return Err("文件监控器未初始化".to_string());
-        }
-    };
-
-    // TODO: 实现层级黑名单添加逻辑（在阶段三B完成后实现）
-    // 目前只是简单地将路径添加到黑名单
-    let api_host = monitor.get_api_host();
-    let api_port = monitor.get_api_port();
-
-    // 构建请求URL
-    let url = format!(
-        "http://{}:{}/blacklist/add",
-        api_host, api_port
-    );
-
-    // 准备请求数据
-    let mut request_data = serde_json::Map::new();
-    request_data.insert("path".to_string(), serde_json::Value::String(path));
-    if let Some(pid) = parent_id {
-        request_data.insert("parent_id".to_string(), serde_json::Value::Number(serde_json::Number::from(pid)));
-    }
-    
-    // 发送请求到API
-    let client = reqwest::Client::new();
-    match client.post(&url).json(&request_data).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                let result = response.json::<serde_json::Value>().await
-                    .map_err(|e| format!("解析API响应失败: {}", e))?;
-                
-                // 刷新文件监控器的配置（异步，不等待完成）
-                let monitor_clone = monitor.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = monitor_clone.refresh_folder_configuration().await {
-                        eprintln!("[CMD] 刷新配置失败: {}", e);
-                    }
-                });
-                
-                Ok(result)
-            } else {
-                let error = response.text().await.unwrap_or_else(|_| "读取错误响应失败".to_string());
-                Err(format!("添加黑名单失败: {}", error))
-            }
-        },
-        Err(e) => Err(format!("请求API失败: {}", e))
-    }
-}
-
-/// 移除黑名单文件夹（通过路径）
-#[tauri::command(rename_all = "snake_case", async)]
-pub async fn remove_blacklist_folder_by_path(
-    path: String, 
-    state: tauri::State<'_, crate::AppState>
-) -> Result<serde_json::Value, String> {
-    println!("[CMD] remove_blacklist_folder_by_path 被调用，路径: {}", path);
-    
-    // 获取文件监控器
-    let monitor = {
-        let guard = state.file_monitor.lock().unwrap();
-        if let Some(monitor) = &*guard {
-            monitor.clone()
-        } else {
-            return Err("文件监控器未初始化".to_string());
-        }
-    };
-
-    // 构建请求URL
-    let url = format!(
-        "http://{}:{}/blacklist/remove",
-        monitor.get_api_host(), monitor.get_api_port()
-    );
-    
-    // 准备请求数据
-    let mut request_data = serde_json::Map::new();
-    request_data.insert("path".to_string(), serde_json::Value::String(path));
-    
-    // 发送请求到API
-    let client = reqwest::Client::new();
-    match client.post(&url).json(&request_data).send().await {
-        Ok(response) => {
-            if response.status().is_success() {
-                let result = response.json::<serde_json::Value>().await
-                    .map_err(|e| format!("解析API响应失败: {}", e))?;
-                
-                // 刷新文件监控器的配置（异步，不等待完成）
-                let monitor_clone = monitor.clone();
-                tokio::spawn(async move {
-                    if let Err(e) = monitor_clone.refresh_folder_configuration().await {
-                        eprintln!("[CMD] 刷新配置失败: {}", e);
-                    }
-                });
-                
-                Ok(result)
-            } else {
-                let error = response.text().await.unwrap_or_else(|_| "读取错误响应失败".to_string());
-                Err(format!("移除黑名单失败: {}", error))
-            }
-        },
-        Err(e) => Err(format!("请求API失败: {}", e))
-    }
-}
-
-// 删除重复的 refresh_monitoring_config 和 get_bundle_extensions 函数定义，
-// 因为这些函数已经在前面定义过了
-
-// --- End of 文件监控配置扩展命令 ---
 
 /// 【兼容旧版】添加黑名单文件夹到队列（重定向到queue_add_blacklist_folder）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
@@ -908,4 +887,110 @@ pub async fn restart_file_monitoring(
     
     println!("[CMD] restart_file_monitoring 已成功启动防抖动监控");
     Ok("文件监控系统已成功重启".to_string())
+}
+
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileInfo {
+    pub id: i64,
+    pub path: String,
+    pub file_name: String,
+    pub extension: Option<String>,
+    pub tags: Option<Vec<String>>,
+}
+
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn search_files_by_tags(
+    tag_names: Vec<String>,
+    operator: String,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<FileInfo>, String> {
+    println!("[CMD] search_files_by_tags called with tags: {:?}, operator: {}", tag_names, operator);
+
+    // Get API host and port from state
+    let (api_host, api_port) = {
+        let api_state = app_handle.state::<crate::ApiState>();
+        let api_state_guard = api_state.0.lock().unwrap();
+        (api_state_guard.host.clone(), api_state_guard.port)
+    };
+
+    // Build the API request
+    let client = reqwest::Client::new();
+    let url = format!("http://{}:{}/tagging/search-files", api_host, api_port);
+    
+    let request_data = serde_json::json!({
+        "tag_names": tag_names,
+        "operator": operator,
+        "limit": 50 // Set a reasonable limit for real-time search
+    });
+
+    // Send the POST request
+    match client.post(&url).json(&request_data).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<Vec<FileInfo>>().await {
+                    Ok(files) => {
+                        println!("[CMD] search_files_by_tags found {} files", files.len());
+                        Ok(files)
+                    }
+                    Err(e) => Err(format!("Failed to parse response: {}", e)),
+                }
+            } else {
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_else(|_| "Could not read error response".to_string());
+                Err(format!("API request failed with status {}: {}", status, error_text))
+            }
+        }
+        Err(e) => Err(format!("Failed to send request: {}", e)),
+    }
+}
+
+/// 获取标签云数据
+#[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
+pub async fn get_tag_cloud_data(
+    limit: Option<u32>,
+    app_handle: tauri::AppHandle
+) -> Result<Vec<serde_json::Value>, String> {
+    println!("[CMD] get_tag_cloud_data 被调用，limit: {:?}", limit);
+    
+    // 获取API信息
+    let (api_host, api_port) = {
+        let api_state = app_handle.state::<crate::ApiState>();
+        let api_state_guard = api_state.0.lock().unwrap();
+        
+        if api_state_guard.process_child.is_none() {
+            return Err("API服务未运行".to_string());
+        }
+        
+        (api_state_guard.host.clone(), api_state_guard.port)
+    };
+    
+    // 构建API请求
+    let client = reqwest::Client::new();
+    let mut url = format!("http://{}:{}/tagging/tag-cloud", api_host, api_port);
+    
+    // 添加查询参数
+    if let Some(lim) = limit {
+        url = format!("{}?limit={}", url, lim);
+    }
+    
+    // 发送GET请求
+    match client.get(&url).send().await {
+        Ok(response) => {
+            if response.status().is_success() {
+                match response.json::<Vec<serde_json::Value>>().await {
+                    Ok(tag_cloud) => {
+                        println!("[CMD] get_tag_cloud_data 成功获取标签云数据，共 {} 个标签", tag_cloud.len());
+                        Ok(tag_cloud)
+                    }
+                    Err(e) => Err(format!("解析标签云数据失败: {}", e))
+                }
+            } else {
+                let status = response.status();
+                let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
+                Err(format!("API请求失败 [{}]: {}", status, error_text))
+            }
+        }
+        Err(e) => Err(format!("发送请求失败: {}", e))
+    }
 }

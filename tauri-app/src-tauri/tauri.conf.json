@@ -10,15 +10,16 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
-        "title": "KnowledgeFocus",
-        "minWidth": 520,
-        "minHeight": 650,
-        "dragDropEnabled": true,
-        "decorations": true,
-        "visible": true
+        "title": "",
+        "titleBarStyle": "Overlay",
+        "width": 1350,
+        "height": 800,
+        "minWidth": 440,
+        "minHeight": 700
       }
     ],
     "security": {

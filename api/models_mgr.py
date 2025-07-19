@@ -126,6 +126,34 @@ Please analyze the following file summary and context to generate between 0 and 
 
 Based on all information, provide the best tags for this file.
         '''
+
+    async def stream_chat(self, provider_type: str, model_name: str, messages: List[Dict[str, Any]]):
+        """Streams a chat response from the specified model provider."""
+        provider_config = self.session.exec(
+            select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)
+        ).first()
+
+        if not provider_config or not provider_config.enabled:
+            raise ValueError(f"Provider {provider_type} is not configured or not enabled.")
+
+        model_string = f"{provider_type}/{model_name}"
+
+        try:
+            response = await litellm_completion(
+                model=model_string,
+                messages=messages,
+                api_base=provider_config.api_endpoint,
+                api_key=provider_config.api_key or "dummy-key",
+                stream=True
+            )
+
+            async for chunk in response:
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+        except Exception as e:
+            logger.error(f"Error during chat streaming: {e}")
+            yield f"Error: {str(e)}"
     
 if __name__ == "__main__":
     # Example usage

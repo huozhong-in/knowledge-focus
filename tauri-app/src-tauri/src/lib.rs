@@ -13,10 +13,52 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WindowEvent,
 };
-use tokio::time::{sleep, Duration}; // 添加sleep和Duration导入
+use tokio::time::{sleep, Duration};
 use file_monitor::FileMonitor;
-use file_monitor_debounced::DebouncedFileMonitor; // 导入 DebouncedFileMonitor
-use reqwest; // 导入reqwest用于API健康检查
+use file_monitor_debounced::DebouncedFileMonitor;
+use reqwest;
+// use serde::{Deserialize, Serialize};
+// use futures_util::StreamExt;
+// use tauri::Window;
+
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// struct Message {
+//     id: String,
+//     role: String,
+//     content: String,
+// }
+
+// #[tauri::command]
+// async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>) -> Result<(), String> {
+//     let client = reqwest::Client::new();
+//     // Your Python Sidecar address
+//     let sidecar_url = "http://127.0.0.1:60315/chat/stream";
+
+//     let mut stream = client.post(sidecar_url)
+//         .json(&messages)
+//         .send().await.map_err(|e| e.to_string())?
+//         .bytes_stream();
+
+//     while let Some(item) = stream.next().await {
+//         match item {
+//             Ok(bytes) => {
+//                 if let Ok(chunk) = std::str::from_utf8(&bytes) {
+//                     // Emit each chunk as an event
+//                     window.emit("ai_chunk", chunk).unwrap();
+//                 }
+//             },
+//             Err(e) => {
+//                 eprintln!("Error in stream: {}", e);
+//                 break;
+//             }
+//         }
+//     }
+
+//     // Notify the frontend that the stream has ended
+//     window.emit("ai_stream_end", ()).unwrap();
+//     Ok(())
+// }
+
 
 // 存储API进程的状态
 struct ApiProcessState {
@@ -694,6 +736,7 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(Option::<FileMonitor>::None)))
         .invoke_handler(tauri::generate_handler![
             get_api_status,
+            commands::chat,
             commands::resolve_directory_from_path,
             commands::get_file_monitor_stats,
             commands::scan_directory, // 添加目录后扫描目录
@@ -708,6 +751,8 @@ pub fn run() {
             commands::get_bundle_extensions,
             commands::get_configuration_summary,
             commands::read_directory, // 读取目录内容
+            // 标签管理命令
+            commands::get_tag_cloud_data, // 获取标签云数据
             // 配置变更队列管理命令（新版：使用queue_前缀）
             commands::queue_add_blacklist_folder,
             commands::queue_delete_folder,
@@ -722,8 +767,9 @@ pub fn run() {
             commands::get_config_queue_status,
             file_scanner::scan_files_by_time_range,
             file_scanner::scan_files_by_type,
-            // 后端扫描启动命令
-            file_scanner::start_backend_scanning,
+            file_scanner::start_backend_scanning, // 后端扫描启动命令
+            commands::search_files_by_tags,
+            commands::ask_ai_stream_bridge,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {

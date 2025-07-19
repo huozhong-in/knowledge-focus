@@ -6,6 +6,8 @@ import { TrayIcon } from '@tauri-apps/api/tray';
 import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import App from "./App";
 import { setupI18nWithStore } from './i18n';
+import { ThemeProvider } from "./tweakcn/components/theme-provider";
+import { TooltipProvider } from "./tweakcn/components/ui/tooltip";
 
 interface AppGlobalState {
   showWelcomeDialog: boolean;
@@ -22,7 +24,6 @@ interface AppGlobalState {
   // 语言设置
   language: string;
   
-  
   // Actions
   setFirstLaunch: (pending: boolean) => void;
   setIsInitializing: (initializing: boolean) => void;
@@ -31,9 +32,7 @@ interface AppGlobalState {
   
   // 语言相关操作
   setLanguage: (lang: string) => Promise<void>;
-  
 }
-
 
 // 设置系统托盘图标
 async function setTrayIcon() {
@@ -94,8 +93,6 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   setInitializationError: (error: string | null) => set({ initializationError: error }),
   setApiReady: (ready: boolean) => set({ isApiReady: ready }), // Implement new action
   
-  
-  
   // 设置语言并保存到设置文件中
   setLanguage: async (lang: string) => {
     try {
@@ -116,12 +113,6 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
     }
   }
 }));
-
-// Root组件现在直接渲染主应用，不再条件渲染Intro页面
-const Root: React.FC = () => {
-  // 直接渲染App组件，欢迎信息已改为Dialog形式
-  return <App />;
-};
 
 // 初始化检查是否首次启动
 const initializeApp = async () => {
@@ -157,7 +148,12 @@ const initializeApp = async () => {
     // 渲染应用
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
-        <Root />
+        <ThemeProvider>
+          {/* @ts-ignore */}
+          <TooltipProvider delayDuration={0}>
+            <App />
+          </TooltipProvider>
+        </ThemeProvider>
       </React.StrictMode>
     );
   } catch (error) {
@@ -167,3 +163,10 @@ const initializeApp = async () => {
 
 // 启动应用
 initializeApp();
+
+document.addEventListener("DOMContentLoaded", () => {
+  const dragRegionDiv = document.createElement("div");
+  dragRegionDiv.setAttribute("data-tauri-drag-region", "");
+  dragRegionDiv.className = "dragble-state";
+  document.documentElement.insertBefore(dragRegionDiv, document.body);
+});
