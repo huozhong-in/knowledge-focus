@@ -25,7 +25,7 @@ export default function SettingsTheme() {
   };
 
   return (
-    <Card className="w-full">
+    <Card>
       <CardHeader>
         <CardTitle>主题设置</CardTitle>
         <CardDescription>自定义您的主题颜色、字体和样式设置</CardDescription>

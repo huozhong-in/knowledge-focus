@@ -1001,7 +1001,7 @@ function SettingsAuthorization() {
                   添加白名单文件夹
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>添加白名单文件夹</DialogTitle>
                   <DialogDescription>
