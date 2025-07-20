@@ -908,7 +908,7 @@ function SettingsAuthorization() {
 
   // 渲染权限状态卡片
   const renderPermissionStatusCard = () => (
-    <Card className="mb-6">
+    <Card className="w-full mb-6">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5" />
@@ -982,7 +982,7 @@ function SettingsAuthorization() {
   // 渲染文件夹管理表格 - 支持层级显示
   const renderFolderManagementTable = () => {
     return (
-      <Card className="mb-6">
+      <Card className="w-full mb-6">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -1054,7 +1054,7 @@ function SettingsAuthorization() {
 
   // 渲染Bundle扩展名管理区域
   const renderBundleExtensionsSection = () => (
-    <Card className="mb-6">
+    <Card className="w-full mb-6">
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -1177,7 +1177,7 @@ function SettingsAuthorization() {
   // 主渲染
   if (loading) {
     return (
-      <div className="container mx-auto p-6 max-w-6xl">
+      <div className="w-full">
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4 mx-auto"></div>
@@ -1189,8 +1189,8 @@ function SettingsAuthorization() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-6xl">
-      <div className="mb-6">
+    <div className="flex flex-col gap-6 w-full">
+      <div className="mb-6 px-6">
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
           <Shield className="h-8 w-8" />
           系统授权管理
@@ -1200,13 +1200,15 @@ function SettingsAuthorization() {
         </p>
       </div>
 
-      {renderPermissionStatusCard()}
-      {renderFolderManagementTable()}
-      {renderBundleExtensionsSection()}
+      <div className="px-6 space-y-6">
+        {renderPermissionStatusCard()}
+        {renderFolderManagementTable()}
+        {renderBundleExtensionsSection()}
+      </div>
       
       {/* 黑名单子文件夹对话框 */}
       <Dialog open={isBlacklistDialogOpen} onOpenChange={setIsBlacklistDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>添加黑名单子文件夹</DialogTitle>
             <DialogDescription>

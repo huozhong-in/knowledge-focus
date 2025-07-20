@@ -4,7 +4,7 @@ import { AlertCircle } from "lucide-react";
 import React, { useState } from "react";
 
 import { Label } from "@/components/ui/label";
-import { CustomScrollbar } from "../../../CustomScrollbar";
+import { CustomScrollbar } from "../../../custom-scrollbar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList } from "@/components/ui/tabs";
 import {

@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
 import { ChatMessageAvatar } from "@/components/ui/chat-message";
-import { CustomScrollbar } from "./CustomScrollbar";
-import { InfiniteCanvas} from "./InfiniteCanvas";
+import { CustomScrollbar } from "./custom-scrollbar";
+import { InfiniteCanvas} from "./infinite-canvas";
 import { useSidebar } from "@/components/ui/sidebar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PanelLeftClose } from "lucide-react";
