@@ -28,7 +28,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
-  SidebarHeader,
+  // SidebarHeader,
 } from "@/components/ui/sidebar"
 import { ScrollArea } from "./components/ui/scroll-area"
 import SettingsAuthorization from "./settings-authorization"
@@ -245,8 +245,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
         <div onClick={() => setOpen(true)}>{children}</div>
 
         <DialogContent
-          // className="p-0 w-[85vw] h-[80vh] flex overflow-hidden"
-          className="overflow-hidden p-0 h-[80vh] w-[85vw] flex"
+          className="overflow-hidden p-0 h-[85vh] w-[85vw] flex"
           aria-describedby="settings-description"
           showCloseButton={true}
         >
@@ -308,7 +307,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
             </Sidebar>
 
             {/* 右侧内容区域 */}
-            <main className="flex h-[80vh] flex-1 flex-col overflow-hidden">
+            <main className="flex h-[85vh] flex-1 flex-col overflow-hidden">
               <div className="flex flex-1 flex-col overflow-y-auto pt-0">
                 <ScrollArea className="h-full">
                   {renderCurrentPage()}

@@ -165,7 +165,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <SidebarContent className="h-full">
           {!isCollapsed && (
-            <ScrollArea>
+            <ScrollArea className="h-full">
               <div className="space-y-1">
                 {mockTasksByTime.map((timeGroup) => (
                   <SidebarGroup key={timeGroup.period}>
