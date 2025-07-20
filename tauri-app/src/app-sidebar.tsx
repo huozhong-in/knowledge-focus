@@ -24,7 +24,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { UserProfileMenu } from "./UserProfileMenu";
-import { CustomScrollbar } from "./custom-scrollbar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [searchOpen, setSearchOpen] = React.useState(false);
@@ -165,7 +165,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <SidebarContent className="h-full">
           {!isCollapsed && (
-            <CustomScrollbar>
+            <ScrollArea>
               <div className="space-y-1">
                 {mockTasksByTime.map((timeGroup) => (
                   <SidebarGroup key={timeGroup.period}>
@@ -190,7 +190,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </SidebarGroup>
                 ))}
               </div>
-            </CustomScrollbar>
+            </ScrollArea>
           )}
         </SidebarContent>
 

@@ -18,7 +18,6 @@ import {
 } from "@/components/ui/select"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
-// import { CustomScrollbar } from "./custom-scrollbar"
 
 const API_BASE_URL = "http://127.0.0.1:60315"
 
@@ -270,7 +269,6 @@ function SettingsLocalModels() {
 
   return (
     <div className="flex flex-1 flex-col gap-6 p-6 pt-0">
-      {/* <CustomScrollbar> */}
       {/* Description Section */}
       <Card>
         <CardHeader>
@@ -359,7 +357,6 @@ function SettingsLocalModels() {
           ))}
         </div>
       </div>
-      {/* </CustomScrollbar> */}
     </div>
   )
 }

@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
-import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
-import { ChatMessageAvatar } from "@/components/ui/chat-message";
-import { CustomScrollbar } from "./custom-scrollbar";
-import { InfiniteCanvas} from "./infinite-canvas";
-import { useSidebar } from "@/components/ui/sidebar";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { PanelLeftClose } from "lucide-react";
+import { useSidebar } from "@/components/ui/sidebar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ChatMessageAvatar } from "@/components/ui/chat-message";
+import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
+import { InfiniteCanvas} from "./infinite-canvas";
 
 interface Message {
   id: string;
@@ -196,7 +196,7 @@ export function AppWorkspace() {
           </div>
 
           {/* Messages */}
-          <CustomScrollbar className="flex-1 p-4 rounded-md">
+          <ScrollArea className="flex-1 p-4 rounded-md">
             <div className="space-y-4">
               {messages.map((message) => (
                 <div key={message.id} className={`flex gap-4 w-full ${message.type === 'outgoing' ? 'justify-end ml-auto' : 'justify-start mr-auto'}`}>
@@ -222,7 +222,7 @@ export function AppWorkspace() {
                 </div>
               )}
             </div>
-          </CustomScrollbar>
+          </ScrollArea>
 
           {/* Input */}
           <div className="border-t p-4">
