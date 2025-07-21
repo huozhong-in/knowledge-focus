@@ -46,19 +46,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {
           id: "1",
           title: "Project Planning Assistant",
-          preview: "AI助手协助项目规划和任务分配...",
           icon: MessageCircle,
         },
         {
           id: "2",
           title: "Code Review Helper",
-          preview: "代码审查辅助工具，提高代码质量...",
           icon: MessageCircle,
         },
         {
           id: "3",
           title: "Bug Analysis Chat",
-          preview: "智能分析和诊断系统问题...",
           icon: MessageCircle,
         },
       ],
@@ -69,13 +66,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {
           id: "4",
           title: "API Design Discussion",
-          preview: "API接口设计讨论和优化建议...",
           icon: MessageCircle,
         },
         {
           id: "5",
           title: "Database Schema Planning",
-          preview: "数据库架构设计和表结构规划...",
           icon: MessageCircle,
         },
       ],
@@ -86,13 +81,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {
           id: "6",
           title: "Architecture Overview",
-          preview: "系统架构概览和技术选型讨论...",
           icon: MessageCircle,
         },
         {
           id: "7",
           title: "Performance Optimization",
-          preview: "性能优化分析和改进建议...",
           icon: MessageCircle,
         },
       ],
@@ -103,13 +96,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {
           id: "8",
           title: "Initial Project Setup",
-          preview: "项目初始化配置和环境搭建...",
           icon: MessageCircle,
         },
         {
           id: "9",
           title: "Requirements Analysis",
-          preview: "需求分析和功能规格定义...",
           icon: MessageCircle,
         },
       ],
@@ -240,9 +231,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                 {task.title}
                               </span>
                             </div>
-                            {/* <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                                {task.preview}
-                              </p> */}
                           </a>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
@@ -278,9 +266,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <task.icon className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
                     <span className="font-medium">{task.title}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {task.preview}
-                    </span>
                   </div>
                 </CommandItem>
               ))

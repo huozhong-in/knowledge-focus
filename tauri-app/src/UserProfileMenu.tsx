@@ -9,9 +9,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { SettingsDialog } from "./settings-dialog";
+import { useSettingsStore } from "./App";
 
 export function UserProfileMenu() {
   const { state } = useSidebar();
+  const { setSettingsOpen } = useSettingsStore();
   const isCollapsed = state === "collapsed";
 
   return (
@@ -21,6 +23,7 @@ export function UserProfileMenu() {
           <SidebarMenuButton
             size="lg"
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            onClick={() => setSettingsOpen(true)}
           >
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Settings className="h-4 w-4" />

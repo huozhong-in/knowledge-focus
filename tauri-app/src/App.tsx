@@ -12,6 +12,7 @@ import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./components/intro-dialog"
 import { Loader2 } from "lucide-react"
+import { SettingsDialog } from "./settings-dialog"
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -33,6 +34,21 @@ export const usePageStore = create<PageState>((set) => ({
     }),
 }))
 
+// 创建一个store来管理设置对话框状态
+interface SettingsState {
+  isSettingsOpen: boolean
+  initialPage: string
+  setSettingsOpen: (open: boolean) => void
+  setInitialPage: (page: string) => void
+}
+
+export const useSettingsStore = create<SettingsState>((set) => ({
+  isSettingsOpen: false,
+  initialPage: "general",
+  setSettingsOpen: (open) => set({ isSettingsOpen: open }),
+  setInitialPage: (page) => set({ initialPage: page }),
+}))
+
 export default function Page() {
   const {
     isFirstLaunch,
@@ -44,7 +60,49 @@ export default function Page() {
     setApiReady, // Get action to set API ready state
   } = useAppStore()
 
+  const { setSettingsOpen, setInitialPage } = useSettingsStore()
   const [showIntroDialog, setShowIntroDialog] = useState(false)
+
+  // 添加键盘快捷键监听
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 检测 Cmd+, (macOS) 或 Ctrl+, (Windows/Linux)
+      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+        event.preventDefault()
+        setSettingsOpen(true)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [setSettingsOpen])
+
+  // 监听菜单事件
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined
+
+    listen("menu-settings", (event) => {
+      const page = event.payload as string
+      console.log("收到菜单设置事件，要打开的页面:", page)
+      setSettingsOpen(true)
+      setInitialPage(page === "about" ? "about" : "general")
+    })
+      .then((fn) => {
+        unlistenFn = fn
+      })
+      .catch((err) => {
+        console.error("监听菜单事件失败:", err)
+      })
+
+    return () => {
+      if (unlistenFn) {
+        unlistenFn()
+      }
+    }
+  }, [setSettingsOpen, setInitialPage])
 
   // Listen for 'api-ready' event from backend ONCE
   // 这是应用中唯一需要监听 api-ready 事件的地方
@@ -205,6 +263,8 @@ export default function Page() {
           <Toaster />
         </SidebarInset>
       </div>
+      {/* 全局设置对话框，可通过快捷键打开 */}
+      <SettingsDialog />
     </SidebarProvider>
   )
 }

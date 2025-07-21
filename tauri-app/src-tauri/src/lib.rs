@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tauri::Manager;
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     WindowEvent,
 };
@@ -665,7 +665,84 @@ pub fn run() {
                 }
             });
 
-            
+            // 创建应用菜单（仅在 macOS 上显示）
+            #[cfg(target_os = "macos")]
+            {
+                // 创建菜单项
+                let settings_item = MenuItem::with_id(app, "settings", "Settings", true, Some("cmd+,"))?;
+                let about_item = PredefinedMenuItem::about(app, Some("About Knowledge Focus"), None)?;
+                let separator = PredefinedMenuItem::separator(app)?;
+                let quit_item = PredefinedMenuItem::quit(app, Some("Quit Knowledge Focus"))?;
+                
+                // 创建应用菜单
+                let app_menu = Submenu::with_id_and_items(
+                    app,
+                    "app",
+                    "Knowledge Focus",
+                    true,
+                    &[
+                        &about_item,
+                        &separator,
+                        &settings_item,
+                        &separator,
+                        &quit_item,
+                    ]
+                )?;
+                
+                // 创建编辑菜单（标准的剪切、复制、粘贴功能）
+                let edit_menu = Submenu::with_id_and_items(
+                    app,
+                    "edit",
+                    "Edit",
+                    true,
+                    &[
+                        &PredefinedMenuItem::undo(app, None)?,
+                        &PredefinedMenuItem::redo(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &PredefinedMenuItem::cut(app, None)?,
+                        &PredefinedMenuItem::copy(app, None)?,
+                        &PredefinedMenuItem::paste(app, None)?,
+                        &PredefinedMenuItem::select_all(app, None)?,
+                    ]
+                )?;
+                
+                // 创建窗口菜单
+                let window_menu = Submenu::with_id_and_items(
+                    app,
+                    "window",
+                    "Window",
+                    true,
+                    &[
+                        &PredefinedMenuItem::minimize(app, None)?,
+                        &PredefinedMenuItem::close_window(app, None)?,
+                    ]
+                )?;
+                
+                // 创建主菜单栏
+                let menu = Menu::with_items(app, &[&app_menu, &edit_menu, &window_menu])?;
+                
+                // 设置应用菜单
+                app.set_menu(menu)?;
+                
+                // 处理菜单事件
+                app.on_menu_event(move |app, event| {
+                    match event.id().as_ref() {
+                        "settings" => {
+                            println!("Settings 菜单项被点击");
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("menu-settings", "general");
+                            }
+                        }
+                        "about" => {
+                            println!("About 菜单项被点击");
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.emit("menu-settings", "about");
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+            }
             
             // 设置托盘图标和菜单
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;

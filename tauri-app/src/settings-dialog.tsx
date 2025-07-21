@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { openPath } from "@tauri-apps/plugin-opener"
 import {
   Settings,
@@ -37,6 +37,7 @@ import SettingsGeneral from "./settings-general"
 import SettingsBusinessApis from "./settings-business-apis"
 import SettingsAbout from "./settings-about"
 import SettingsTheme from "./settings-theme-content"
+import { useSettingsStore } from "./App"
 
 type SettingsPage =
   | "general"
@@ -47,12 +48,26 @@ type SettingsPage =
   | "about"
 
 interface SettingsDialogProps {
-  children: React.ReactNode
+  children?: React.ReactNode
 }
 
 export function SettingsDialog({ children }: SettingsDialogProps) {
-  const [open, setOpen] = useState(false)
+  const { isSettingsOpen, setSettingsOpen, initialPage, setInitialPage } = useSettingsStore()
   const [currentPage, setCurrentPage] = useState<SettingsPage>("general")
+
+  // 当对话框打开时，设置初始页面
+  useEffect(() => {
+    if (isSettingsOpen && initialPage) {
+      setCurrentPage(initialPage as SettingsPage)
+    }
+  }, [isSettingsOpen, initialPage])
+
+  // 当对话框关闭时，重置初始页面
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      setInitialPage("general")
+    }
+  }, [isSettingsOpen, setInitialPage])
 
   const handleExternalLink = async (url: string) => {
     try {
@@ -235,14 +250,14 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
   }, {} as Record<string, typeof externalLinks>)
 
   return (
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
         <DialogHeader className="sr-only">
           <DialogTitle>应用设置</DialogTitle>
           <DialogDescription>管理应用的各项配置设置</DialogDescription>
         </DialogHeader>
 
         {/* 触发器 */}
-        <div onClick={() => setOpen(true)}>{children}</div>
+        {children && <div onClick={() => setSettingsOpen(true)}>{children}</div>}
 
         <DialogContent
           className="overflow-hidden p-0 h-[85vh] w-[85vw] flex"

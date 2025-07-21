@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { VERSION_INFO } from "@/version";
 
 export default function SettingsAbout() {
   return (
@@ -12,7 +13,7 @@ export default function SettingsAbout() {
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium">版本:</span>
-            <Badge variant="secondary">1.0.0</Badge>
+            <Badge variant="secondary">{VERSION_INFO.version}</Badge>
           </div>
           
           <div className="space-y-2">
