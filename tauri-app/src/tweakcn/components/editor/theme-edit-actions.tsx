@@ -4,7 +4,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useEditorStore } from "@/tweakcn/store/editor-store";
 import { Theme } from "@/tweakcn/types/theme";
 import { Check, X } from "lucide-react";
-import { useState } from "react";
 
 interface ThemeEditActionsProps {
   theme: Theme;

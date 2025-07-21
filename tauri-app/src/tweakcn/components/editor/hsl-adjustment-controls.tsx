@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useMemo, useRef, useEffect, useState } from "react";
+import  { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import { SliderWithInput } from "./slider-with-input";
 import { useEditorStore } from "../../store/editor-store";
 import { COMMON_STYLES, defaultThemeState } from "../../config/theme";

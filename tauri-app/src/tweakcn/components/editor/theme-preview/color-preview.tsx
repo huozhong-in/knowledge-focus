@@ -1,16 +1,13 @@
 import { CopyButton } from "@/tweakcn/components/copy-button";
-import { Button } from "@/tweakcn/components/ui/button";
 import { Separator } from "@/tweakcn/components/ui/separator";
-
 import { ThemeEditorPreviewProps } from "@/tweakcn/types/theme";
-import { SquarePen } from "lucide-react";
 
 interface ColorPreviewProps {
   styles: ThemeEditorPreviewProps["styles"];
   currentMode: ThemeEditorPreviewProps["currentMode"];
 }
 
-function ColorPreviewItem({ label, color, name }: { label: string; color: string; name: string }) {
+function ColorPreviewItem({ label, color }: { label: string; color: string; name: string }) {
 
   return (
     <div className="group/color-preview hover:bg-muted relative flex items-center gap-4 rounded-md transition-colors">

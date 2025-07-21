@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useContrastChecker } from "../../hooks/use-contrast-checker";
 import { ThemeStyleProps } from "@/tweakcn/types/theme";
 import { Button } from "../ui/button";

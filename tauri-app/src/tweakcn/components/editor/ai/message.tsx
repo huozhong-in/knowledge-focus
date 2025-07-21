@@ -33,7 +33,7 @@ export default function Message({ message, onRetry }: MessageProps) {
       >
         {isAssistant && (
           <div className="border-border/50! bg-foreground relative flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full border select-none">
-            <Logo className="text-background size-full p-0.5" />
+            <Logo />
           </div>
         )}
 

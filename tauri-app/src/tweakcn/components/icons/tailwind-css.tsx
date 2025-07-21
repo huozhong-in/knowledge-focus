@@ -1,5 +1,4 @@
 import { cn } from "@/tweakcn/lib/utils";
-import * as React from "react";
 import type { SVGProps } from "react";
 
 export function TailwindCSS({ className, ...props }: SVGProps<SVGSVGElement>) {

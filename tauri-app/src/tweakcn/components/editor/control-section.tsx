@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/tweakcn/lib/utils";
 import { ControlSectionProps } from "@/tweakcn/types";

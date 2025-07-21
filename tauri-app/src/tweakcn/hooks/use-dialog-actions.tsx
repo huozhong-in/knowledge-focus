@@ -46,7 +46,7 @@ function useDialogActionsStore(): DialogActionsContextType {
   const [shareAfterSave, setShareAfterSave] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [shareUrl, setShareUrl] = useState("");
-  const [dialogKey, setDialogKey] = useState(0);
+  const [dialogKey] = useState(0);
 
   const { themeState, setThemeState, applyThemePreset, hasThemeChangedFromCheckpoint } =
     useEditorStore();

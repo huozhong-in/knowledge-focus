@@ -10,7 +10,7 @@ export function LoadingLogo() {
         <div className="absolute top-0 left-0 size-[30%]">
           <Sparkle className="size-full animate-pulse fill-current" />
         </div>
-        <Logo className="size-full animate-pulse p-0.5 delay-150" />
+        <Logo />
         <div className="absolute right-0 bottom-0 size-[20%]">
           <Sparkle className="size-full animate-pulse fill-current delay-300" />
         </div>

@@ -29,7 +29,7 @@ export function MoreOptions({ ...props }: MoreOptionsProps) {
         <DropdownMenuContent align="end" className="text-foreground">
           <DropdownMenuItem onClick={() => setMcpDialogOpen(true)} asChild>
             <Button variant="ghost" size="sm" className="w-full justify-start">
-              <McpIcon className="h-4 w-4" />
+              <McpIcon />
               <span className="text-sm">MCP</span>
             </Button>
           </DropdownMenuItem>
