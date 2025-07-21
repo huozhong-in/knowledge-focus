@@ -152,11 +152,11 @@ async def lifespan(app: FastAPI):
             raise
         
         # 启动通知检查任务
-        try:
-            logger.info("启动通知检查任务...")
-            asyncio.create_task(check_notifications())
-        except Exception as notify_err:
-            logger.error(f"启动通知检查任务失败: {str(notify_err)}", exc_info=True)
+        # try:
+        #     logger.info("启动通知检查任务...")
+        #     asyncio.create_task(check_notifications())
+        # except Exception as notify_err:
+        #     logger.error(f"启动通知检查任务失败: {str(notify_err)}", exc_info=True)
             
         # Start monitor can kill self process if parent process is dead or exit
         try:
