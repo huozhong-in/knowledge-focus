@@ -3,7 +3,7 @@ import { persist } from "zustand/middleware";
 import { ThemeEditorState } from "../types/editor";
 import { defaultThemeState } from "../config/theme";
 import { getPresetThemeStyles } from "../utils/theme-preset-helper";
-import { isEqual as isDeepEqual } from "@ngard/tiny-isequal";
+import { isEqual as isDeepEqual } from "../../lib/tiny-isequal";
 
 const MAX_HISTORY_COUNT = 30;
 const HISTORY_OVERRIDE_THRESHOLD_MS = 500; // 0.5 seconds
