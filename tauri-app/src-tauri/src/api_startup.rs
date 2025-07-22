@@ -97,16 +97,24 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
         };
         println!("脚本路径: {}", script_path);
 
-        // 构造参数
-        let command = sidecar.args(&[
-            &script_path,
-            "--port",
-            &port_to_use.to_string(),
-            "--host",
-            &host_to_use,
-            "--db-path",
-            &db_path_to_use,
-        ]);
+        // 构造基础参数
+        let mut args = vec![
+            script_path.clone(),
+            "--port".to_string(),
+            port_to_use.to_string(),
+            "--host".to_string(),
+            host_to_use.clone(),
+            "--db-path".to_string(),
+            db_path_to_use.clone(),
+        ];
+
+        // 如果是开发环境，添加 --mode=dev 参数
+        if cfg!(debug_assertions) {
+            args.push("--mode".to_string());
+            args.push("dev".to_string());
+        }
+
+        let command = sidecar.args(&args);
         println!("命令行: {:?}", command);
 
         match command.spawn() {

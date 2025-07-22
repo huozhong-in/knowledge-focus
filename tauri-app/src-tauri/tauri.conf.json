@@ -55,6 +55,7 @@
       },
       "files": {
         "MacOS/venv": "../../api/.venv",
+        "Resources/api/api_cache_optimization.py": "../../api/api_cache_optimization.py",
         "Resources/api/config.py": "../../api/config.py",
         "Resources/api/db_mgr.py": "../../api/db_mgr.py",
         "Resources/api/lancedb_mgr.py": "../../api/lancedb_mgr.py",

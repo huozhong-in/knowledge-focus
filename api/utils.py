@@ -8,7 +8,8 @@ import time
 import signal
 import sys
 
-logger = logging.getLogger()
+# 为当前模块创建专门的日志器（最佳实践）
+logger = logging.getLogger(__name__)
 
 
 def kill_process_on_port(port):
@@ -39,7 +40,7 @@ def kill_process_on_port_windows(port):
                 except:
                     process_name = "未知进程"
                 
-                logging.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
+                logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
 
                 # 终止所有子进程
                 kill_all_child_processes(pid)
@@ -49,20 +50,20 @@ def kill_process_on_port_windows(port):
                 kill_result = subprocess.run(kill_cmd, shell=True)
                 
                 if kill_result.returncode == 0:
-                    logging.info(f"已终止占用端口 {port} 的进程")
+                    logger.info(f"已终止占用端口 {port} 的进程")
                     # 等待短暂时间确保端口释放
                     import time
                     time.sleep(1)
                     return True
                 else:
-                    logging.error(f"无法终止进程 {pid}，可能需要管理员权限")
+                    logger.error(f"无法终止进程 {pid}，可能需要管理员权限")
             else:
-                logging.warning(f"找到端口 {port} 的占用，但无法确定进程PID")
+                logger.warning(f"找到端口 {port} 的占用，但无法确定进程PID")
         else:
             # 没有找到占用端口的进程
             return False
     except Exception as e:
-        logging.error(f"检查端口时发生错误: {str(e)}")
+        logger.error(f"检查端口时发生错误: {str(e)}")
     
     return False
 
@@ -88,7 +89,7 @@ def kill_process_on_port_unix(port):
             except:
                 process_name = "未知进程"
             
-            logging.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
+            logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
             
             # 终止所有子进程
             kill_all_child_processes(pid)
@@ -98,26 +99,26 @@ def kill_process_on_port_unix(port):
             kill_result = subprocess.run(kill_cmd, shell=True)
             
             if kill_result.returncode == 0:
-                logging.info(f"已终止占用端口 {port} 的进程")
+                logger.info(f"已终止占用端口 {port} 的进程")
                 return True
             else:
                 # 如果普通终止失败，可以尝试强制终止
-                logging.info(f"进程没有响应终止信号，尝试强制终止...")
+                logger.info(f"进程没有响应终止信号，尝试强制终止...")
                 force_kill_cmd = f"kill -9 {pid}"
                 force_kill_result = subprocess.run(force_kill_cmd, shell=True)
                 
                 if force_kill_result.returncode == 0:
-                    logging.info(f"已强制终止占用端口 {port} 的进程")
+                    logger.info(f"已强制终止占用端口 {port} 的进程")
                     return True
                 else:
-                    logging.info(f"无法终止进程 {pid}，可能需要管理员权限")
+                    logger.info(f"无法终止进程 {pid}，可能需要管理员权限")
         else:
             # 如果lsof没有找到占用端口的进程
             # 尝试查找并终止所有Python进程中的潜在子进程
             kill_orphaned_processes("python", "task_processor")
             return False
     except Exception as e:
-        logging.info(f"检查端口时发生错误: {str(e)}")
+        logger.info(f"检查端口时发生错误: {str(e)}")
     
     return False
 
@@ -130,16 +131,16 @@ def kill_all_child_processes(parent_pid):
         for child in children:
             try:
                 # 记录子进程信息
-                logging.info(f"终止子进程: {child.pid} ({child.name()})")
+                logger.info(f"终止子进程: {child.pid} ({child.name()})")
                 # 先尝试正常终止
                 child.terminate()
             except:
                 try:
                     # 如果正常终止失败，强制终止
-                    logging.info(f"强制终止子进程: {child.pid}")
+                    logger.info(f"强制终止子进程: {child.pid}")
                     child.kill()
                 except:
-                    logging.error(f"无法终止子进程 {child.pid}")
+                    logger.error(f"无法终止子进程 {child.pid}")
         
         # 等待短暂时间让子进程有时间终止
         psutil.wait_procs(children, timeout=3)
@@ -147,13 +148,13 @@ def kill_all_child_processes(parent_pid):
         # 检查是否有子进程仍然存活，再次尝试强制终止
         for child in children:
             if child.is_running():
-                logging.warning(f"子进程 {child.pid} 仍然活着，再次尝试强制终止")
+                logger.warning(f"子进程 {child.pid} 仍然活着，再次尝试强制终止")
                 try:
                     os.kill(child.pid, signal.SIGKILL)
                 except:
                     pass
     except Exception as e:
-        logging.error(f"终止子进程时出错: {str(e)}")
+        logger.error(f"终止子进程时出错: {str(e)}")
 
 def kill_orphaned_processes(process_name, function_name=None):
     """终止可能是孤立子进程的进程
@@ -163,7 +164,7 @@ def kill_orphaned_processes(process_name, function_name=None):
         function_name: 可选参数，进程中可能包含的函数名 (例如: "task_processor")
     """
     try:
-        logging.info(f"查找可能的孤立 {process_name} 进程...")
+        logger.info(f"查找可能的孤立 {process_name} 进程...")
         count = 0
         
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
@@ -175,7 +176,7 @@ def kill_orphaned_processes(process_name, function_name=None):
                         proc.info['cmdline'] and 
                         any(function_name in cmd for cmd in proc.info['cmdline'] if cmd)
                     ):
-                        logging.info(f"发现可能的孤立进程: {proc.info['pid']} {' '.join(proc.info['cmdline'] if proc.info['cmdline'] else [])}")
+                        logger.info(f"发现可能的孤立进程: {proc.info['pid']} {' '.join(proc.info['cmdline'] if proc.info['cmdline'] else [])}")
                         
                         # 终止该进程
                         try:
@@ -186,17 +187,17 @@ def kill_orphaned_processes(process_name, function_name=None):
                                 proc.kill()
                                 count += 1
                             except Exception as e:
-                                logging.error(f"无法终止进程 {proc.info['pid']}: {str(e)}")
+                                logger.error(f"无法终止进程 {proc.info['pid']}: {str(e)}")
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
         
         if count > 0:
-            logging.info(f"已终止 {count} 个可能的孤立 {process_name} 进程")
+            logger.info(f"已终止 {count} 个可能的孤立 {process_name} 进程")
         else:
-            logging.info(f"未发现孤立的 {process_name} 进程")
+            logger.info(f"未发现孤立的 {process_name} 进程")
             
     except Exception as e:
-        logging.error(f"查找孤立进程时出错: {str(e)}")
+        logger.error(f"查找孤立进程时出错: {str(e)}")
 
 def monitor_parent():
     """Monitor the parent process and exit if it's gone"""

@@ -7,22 +7,17 @@ import pathlib
 import asyncio
 import threading
 from datetime import datetime
-import traceback
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from contextlib import asynccontextmanager
-# from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from fastapi import FastAPI, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 from sqlmodel import create_engine, Session, select
-import multiprocessing
-# 导入缓存相关模块
 from api_cache_optimization import TimedCache, cached
 from db_mgr import (
     DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, 
     MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule,
-    Task,
 )
 from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
@@ -32,16 +27,23 @@ from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 
 # --- Centralized Logging Setup ---
-def setup_logging():
-    """Configures the root logger for the application."""
+def setup_logging(logging_dir: str = None):
+    """
+    Configures the root logger for the application.
+
+    args:
+        logging_dir (str): The directory where log files will be stored.
+    """
+    
     try:
         # Determine log directory
-        script_path = os.path.abspath(__file__)
-        log_dir = pathlib.Path(script_path).parent / 'logs'
+        if logging_dir is not None:
+            log_dir = pathlib.Path(logging_dir)
+        else:
+            script_path = os.path.abspath(__file__)
+            log_dir = pathlib.Path(script_path).parent / 'logs'
         if not log_dir.exists():
-            current_dir = pathlib.Path(os.getcwd())
-            log_dir = current_dir / 'api' / 'logs' if 'api' not in str(current_dir) else current_dir / 'logs'
-        log_dir.mkdir(exist_ok=True, parents=True)
+            log_dir.mkdir(exist_ok=True, parents=True)
 
         log_filename = f'api_{time.strftime("%Y%m%d")}.log'
         log_filepath = log_dir / log_filename
@@ -63,19 +65,11 @@ def setup_logging():
             file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
             file_handler.setFormatter(file_formatter)
             root_logger.addHandler(file_handler)
-        
-        logging.getLogger(__name__).info("Logging configured successfully.")
 
     except Exception as e:
         # Fallback to basic config if setup fails
         logging.basicConfig(level=logging.INFO)
         logging.error(f"Error setting up custom logging: {e}", exc_info=True)
-
-setup_logging()
-# --- End Logging Setup ---
-
-# Get a logger for this module
-logger = logging.getLogger(__name__)
 
 # 全局缓存实例
 config_cache = TimedCache[Dict[str, Any]](expiry_seconds=300)  # 5分钟过期
@@ -166,6 +160,14 @@ async def lifespan(app: FastAPI):
             logger.info("父进程监控线程已启动")
         except Exception as monitor_err:
             logger.error(f"启动父进程监控线程失败: {str(monitor_err)}", exc_info=True)
+
+        # 配置解析库的警告和日志级别
+        try:
+            from parsing_mgr import configure_parsing_warnings
+            configure_parsing_warnings()
+            logger.info("解析库日志配置已应用")
+        except Exception as parsing_config_err:
+            logger.error(f"配置解析库日志失败: {str(parsing_config_err)}", exc_info=True)
 
         # 正式开始服务
         logger.info("应用初始化完成，开始提供服务...")
@@ -1691,25 +1693,28 @@ def delete_screening_by_path(
         
 if __name__ == "__main__":
     try:
-        logger.info("API服务程序启动")
         parser = argparse.ArgumentParser()
         parser.add_argument("--port", type=int, default=60315, help="API服务监听端口")
         parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
         parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
-        
+        parser.add_argument("--mode", type=str, default="dev", help="标记是开发环境还是生产环境")
         args = parser.parse_args()
-        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
-        
+
         # 检查数据库路径是否存在
         db_dir = os.path.dirname(os.path.abspath(args.db_path))
         if db_dir and not os.path.exists(db_dir):
-            logger.warning(f"数据库目录 {db_dir} 不存在，尝试创建...")
-            try:
-                os.makedirs(db_dir, exist_ok=True)
-                logger.info(f"已创建数据库目录 {db_dir}")
-            except Exception as e:
-                logger.error(f"创建数据库目录失败: {str(e)}", exc_info=True)
-        
+            os.makedirs(db_dir, exist_ok=True)
+
+        if args.mode is not None:
+            setup_logging()
+        else:
+            logging_dir = os.path.join(db_dir, "logs")
+            setup_logging(logging_dir)
+
+        logger = logging.getLogger(__name__)
+        logger.info("API服务程序启动")
+        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}, mode={args.mode}")
+
         # 检查端口是否被占用，如果被占用则终止占用进程
         try:
             logger.info(f"检查端口 {args.port} 是否被占用...")

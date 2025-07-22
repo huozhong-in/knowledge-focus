@@ -12,23 +12,24 @@ from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 
+# 为当前模块创建日志器
 logger = logging.getLogger(__name__)
 
 def configure_parsing_warnings():
     """
-    配置解析相关的警告过滤器。
-    在应用启动时调用此函数可以抑制markitdown和pdfminer的警告。
+    配置解析相关的警告过滤器和日志级别。
+    在应用启动时调用此函数可以抑制markitdown和pdfminer的大量重复日志。
     """
-    # 过滤掉pdfminer的字体警告
+    # 过滤掉pdfminer的字体警告和其他不必要的警告
     warnings.filterwarnings("ignore", category=UserWarning, module="pdfminer")
     warnings.filterwarnings("ignore", category=Warning, module="pdfminer")
     warnings.filterwarnings("ignore", category=UserWarning, module="markitdown")
     
-    # 设置日志级别
+    # 设置第三方库的日志级别为ERROR，减少噪音
     logging.getLogger('pdfminer').setLevel(logging.ERROR)
     logging.getLogger('markitdown').setLevel(logging.ERROR)
     
-    logger.info("Parsing warnings configuration applied")
+    logger.info("解析库的警告和日志级别配置已应用")
 
 # 可被markitdown解析的文件扩展名
 MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
@@ -42,10 +43,7 @@ class ParsingMgr:
         self.models_mgr = models_mgr
         self.tagging_mgr = TaggingMgr(session, self.lancedb_mgr, self.models_mgr)
         
-        # 配置日志记录器，抑制markitdown和pdfminer的警告
-        logging.getLogger('pdfminer').setLevel(logging.ERROR)
-        logging.getLogger('markitdown').setLevel(logging.ERROR)
-        
+        # 初始化markitdown解析器
         self.md_parser = MarkItDown(enable_plugins=False)
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
@@ -85,28 +83,24 @@ class ParsingMgr:
             return False
 
     def _extract_content(self, file_path: str) -> str:
-        """Extracts text content from a file."""
+        """从文件中提取文本内容。"""
         ext = file_path.split('.')[-1].lower()
         if ext in MARKITDOWN_EXTENSIONS:
             try:
-                # 临时禁用特定日志记录器
-                pdfminer_logger = logging.getLogger('pdfminer')
-                original_level = pdfminer_logger.level
-                pdfminer_logger.setLevel(logging.ERROR)  # 仅显示ERROR及以上级别
-                
                 result = self.md_parser.convert(file_path, keep_data_uris=True)
-                
-                # 恢复原始日志级别
-                pdfminer_logger.setLevel(original_level)
                 return result.text_content
             except Exception as e:
-                logger.error(f"Error parsing file {file_path}: {e}")
+                logger.error(f"解析文件时出错 {file_path}: {e}")
                 return ""
         elif ext in ['md', 'markdown', 'txt', 'json']:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                return f.read()
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read()
+            except Exception as e:
+                logger.error(f"读取文件时出错 {file_path}: {e}")
+                return ""
         else:
-            # logger.warning(f"Unsupported file type for parsing: {ext}")
+            # 不支持的文件类型，静默跳过
             return ""
 
     
@@ -251,36 +245,60 @@ class ParsingMgr:
         # For now, we return a dummy task ID
         return 2
 
-# 测试用代码
+# 功能测试代码 - 相当于手动单元测试
 if __name__ == "__main__":
-    # 配置根日志记录器
-    logging.basicConfig(level=logging.INFO)
+    def setup_test_logging():
+        """为测试设置独立的日志配置"""
+        # 配置根日志记录器
+        logging.basicConfig(level=logging.INFO)
+        
+        # 创建测试专用的日志文件处理器
+        test_log_file = 'parsing_test.log'
+        file_handler = logging.FileHandler(test_log_file, mode='w', encoding='utf-8')
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # 为当前模块的日志器添加文件处理器
+        test_logger = logging.getLogger(__name__)
+        test_logger.addHandler(file_handler)
+        
+        # 配置第三方库的日志级别，减少噪音
+        configure_parsing_warnings()
+        
+        print(f"测试日志将保存到: {test_log_file}")
+        return test_logger
     
-    # 特别设置pdfminer库的日志级别为ERROR，抑制WARNING消息
-    logging.getLogger('pdfminer').setLevel(logging.ERROR)
-    logging.getLogger('markitdown').setLevel(logging.ERROR)
-    
-    # 配置自定义日志记录器
-    handler = logging.FileHandler('p1.log', mode='w')
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    # 设置测试日志
+    test_logger = setup_test_logging()
+    test_logger.info("开始解析管理器功能测试")
 
+    # 数据库连接
     db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
     session = Session(create_engine(f'sqlite:///{db_file}'))
 
+    # 测试文件路径
     test_file_path = "/Users/dio/Documents/纯CSS实现太极动态效果.pdf"
     
-    # 测试从指定全路径的文件中提取内容
-    parsing_mgr = ParsingMgr(session)
+    test_logger.info(f"测试文件: {test_file_path}")
+    
+    # 创建解析管理器实例进行测试
+    # parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
+    
+    # 测试示例：
+    # 1. 测试内容提取
     # extracted_content = parsing_mgr._extract_content(test_file_path)
-    # print("提取的内容:\n", extracted_content)
-
-    # 测试从粗筛结果表中得到一条记录，使用LLM生成标签
+    # test_logger.info(f"提取内容长度: {len(extracted_content) if extracted_content else 0}")
+    
+    # 2. 测试文件解析和标签生成
     # from screening_mgr import ScreeningManager
     # screening_mgr = ScreeningManager(session)
     # result: FileScreeningResult = screening_mgr.get_by_path(test_file_path)
-    # print(result.id)
-    # r = parsing_mgr.parse_and_tag_file(result)
-    # parsing_mgr.session.commit()  # 提交更改
-    # print(f"Parsing and tagging result: {r}")
+    # if result:
+    #     test_logger.info(f"找到粗筛结果ID: {result.id}")
+    #     success = parsing_mgr.parse_and_tag_file(result)
+    #     parsing_mgr.session.commit()
+    #     test_logger.info(f"解析和标签生成结果: {success}")
+    # else:
+    #     test_logger.warning("未找到对应的粗筛结果")
+    
+    test_logger.info("解析管理器功能测试完成")
