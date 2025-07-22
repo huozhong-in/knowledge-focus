@@ -3,6 +3,40 @@ use tauri::{AppHandle, Manager, Emitter};
 use tauri::path::BaseDirectory;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tokio::sync::oneshot;
+use serde::{Deserialize, Serialize};
+
+/// 桥接事件数据结构
+#[derive(Debug, Serialize, Deserialize)]
+struct BridgeEventData {
+    event: String,
+    payload: serde_json::Value,
+}
+
+/// 解析Python stdout输出中的桥接事件
+/// 
+/// 支持的格式：
+/// EVENT_NOTIFY_JSON:{"event":"event-name","payload":{...}}
+/// 
+/// 返回解析后的事件数据，如果不是桥接事件则返回None
+fn parse_bridge_event(line: &str) -> Option<BridgeEventData> {
+    let line = line.trim();
+    
+    // 检查新格式：EVENT_NOTIFY_JSON:
+    if let Some(json_part) = line.strip_prefix("EVENT_NOTIFY_JSON:") {
+        match serde_json::from_str::<BridgeEventData>(json_part) {
+            Ok(event_data) => {
+                return Some(event_data);
+            }
+            Err(e) => {
+                eprintln!("解析桥接事件JSON失败: {} - 原始内容: {}", e, json_part);
+                return None;
+            }
+        }
+    }
+
+    // 不是桥接事件
+    None
+}
 
 // Helper function to start the Python API service
 // 返回一个oneshot channel的接收端，当API成功启动且可访问后会发送信号
@@ -71,6 +105,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             } else {
                 // 普通开发模式
                 "../../api/main.py".to_string()
+                // "../../api/bridge_events.py".to_string()
             }
         } else {
             // Production environment - use resource path API
@@ -177,8 +212,22 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                             match event {
                                 CommandEvent::Stdout(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
-                                    // println!("Python API: {}", line_str);
-                                    let _ = window.emit("api-log", Some(line_str.to_string()));
+                                    
+                                    // 检查是否是桥接事件通知
+                                    if let Some(event_data) = parse_bridge_event(&line_str) {
+                                        // 这是一个标准化的桥接事件，转发给前端
+                                        let payload = if event_data.payload.is_null() {
+                                            None
+                                        } else {
+                                            Some(event_data.payload)
+                                        };
+                                        println!("桥接事件已转发: {} -> {:?}", event_data.event, payload);
+                                        let _ = window.emit(&event_data.event, payload);
+                                    } else {
+                                        // 普通的Python日志输出
+                                        // println!("Python API: {}", line_str);
+                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                                    }
                                 }
                                 CommandEvent::Stderr(line) => {
                                     let line_str = String::from_utf8_lossy(&line);

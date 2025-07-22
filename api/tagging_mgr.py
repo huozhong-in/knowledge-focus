@@ -12,7 +12,7 @@ import json
 import os
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
-import json
+from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ class TaggingMgr:
         self.session = session
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
+        
+        # 初始化桥接事件发送器
+        self.bridge_events = BridgeEventSender("tagging_mgr")
         
         # 标签缓存
         self._tag_name_cache = {}  # 名称 -> ID的映射
@@ -467,6 +470,9 @@ class TaggingMgr:
         final_tag_ids = [tag.id for tag in tag_objects]
         self.link_tags_to_file(file_result, final_tag_ids)
         
+        # 7. 通知文件处理完成
+        self.notify_file_processing_completed(file_result.file_path, len(final_tag_ids))
+        
         logger.info(f"Successfully generated and linked {len(final_tag_ids)} tags for {file_result.file_path}")
         return True
 
@@ -548,43 +554,34 @@ class TaggingMgr:
             logger.error(f"获取标签云数据失败: {e}")
             return []
 
-    def notify_tag_update(self):
-        """
-        向标准输出打印特定格式的消息，通知标签已更新。
-        Rust桥接层将捕获这些消息并转换为Tauri事件。
-        """
-        try:
-            print("[BRIDGE_EVENT] tags-updated", flush=True)
-            logger.info("已发送标签更新通知")
-        except Exception as e:
-            logger.error(f"发送标签更新通知失败: {e}")
-
     def notify_tags_updated(self):
         """
-        向前端通知标签已更新，同时支持新旧两种通知格式
+        向前端通知标签已更新
         
-        1. 老式格式: [BRIDGE_EVENT] event-name
-        2. 新式JSON格式: EVENT_NOTIFY_JSON:{json对象}
-        
-        Rust层会捕获这些消息并转发给前端
+        使用统一桥接模式向前端发送事件通知。
         """
         try:
-            # 发送旧格式消息以保持兼容性
-            print("[BRIDGE_EVENT] tags-updated", flush=True)
-            
-            # 同时发送新格式消息
-            notification = {
-                "event": "tags-updated",
-                "payload": {
-                    "timestamp": time.time()
-                }
-            }
-            # 输出到标准输出，确保是单行JSON，便于Rust层解析
-            print(f"EVENT_NOTIFY_JSON:{json.dumps(notification)}", flush=True)
-            logger.info("已发送标签更新通知")
+            self.bridge_events.tags_updated("标签数据已更新，前端应刷新标签云")
         except Exception as e:
             logger.error(f"发送标签更新通知失败: {e}")
-            # 不要在这里抛出异常，避免影响正常流程
+    
+    def notify_file_processing_completed(self, file_path: str, tags_count: int):
+        """
+        通知文件处理完成
+        
+        Args:
+            file_path: 处理的文件路径
+            tags_count: 添加的标签数量
+        """
+        try:
+            self.bridge_events.file_processed(
+                file_path=file_path,
+                tags_count=tags_count,
+                description=f"文件 {os.path.basename(file_path)} 已处理完成，添加了 {tags_count} 个标签"
+            )
+            logger.info(f"已发送文件处理完成通知: {file_path}")
+        except Exception as e:
+            logger.error(f"发送文件处理完成通知失败: {e}")
 
 # 测试用代码
 if __name__ == '__main__':

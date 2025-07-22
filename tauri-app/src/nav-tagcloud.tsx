@@ -1,30 +1,13 @@
 import { useEffect, useState } from "react";
 import { 
   Tag,
-  // FolderEdit,
-  // ListIcon,
-  // MoreHorizontal,
-  // Pin,
-  // PinOff,
-  // type LucideIcon,
 } from "lucide-react"
 
 import {
-  // DropdownMenu,
-  // DropdownMenuContent,
-  // DropdownMenuItem,
-  // DropdownMenuSeparator,
-  // DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-// import { usePageStore } from "@/App"
 import {
   SidebarGroup,
   SidebarGroupLabel,
-  // SidebarMenu,
-  // SidebarMenuAction,
-  // SidebarMenuButton,
-  // SidebarMenuItem,
-  // useSidebar,
 } from "@/components/ui/sidebar"
 import { useTranslation } from 'react-i18next';
 import { Badge } from "@/components/ui/badge";
@@ -117,9 +100,6 @@ export function NavTagCloud() {
   // 处理标签点击
   const handleTagClick = (tagId: number) => {
     console.log('Tag clicked:', tagId);
-    // 可以导航到标签搜索结果页面
-    // navigate(`/search?tagIds=${tagId}`);
-    // 或者通过其他方式处理
   };
   
   //  shadow-sm border border-border
