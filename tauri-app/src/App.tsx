@@ -59,7 +59,7 @@ export default function Page() {
     setApiReady, // Get action to set API ready state
   } = useAppStore()
 
-  const { setSettingsOpen, setInitialPage } = useSettingsStore()
+  const { setSettingsOpen } = useSettingsStore()
   const [showIntroDialog, setShowIntroDialog] = useState(false)
 
   // 添加键盘快捷键监听
@@ -116,34 +116,18 @@ export default function Page() {
   )
 
   // Fallback: 如果5秒内没有收到api-ready事件，自动设置为就绪
-  useEffect(() => {
-    const fallbackTimer = setTimeout(() => {
-      if (!useAppStore.getState().isApiReady) {
-        console.warn("App.tsx: Fallback - No 'api-ready' event received. Setting API ready after timeout.")
-        setApiReady(true)
-      }
-    }, 5000) // 5-second fallback delay
-
-    return () => {
-      clearTimeout(fallbackTimer)
-    }
-  }, [setApiReady])
-
-  // 根据是否首次启动设置初始页面, dependent on global isApiReady
   // useEffect(() => {
-  //   if (!isApiReady) { // Use global isApiReady
-  //     console.log("App.tsx: Global API not ready yet, delaying page initialization");
-  //     return;
-  //   }
+  //   const fallbackTimer = setTimeout(() => {
+  //     if (!useAppStore.getState().isApiReady) {
+  //       console.warn("App.tsx: Fallback - No 'api-ready' event received. Setting API ready after timeout.")
+  //       setApiReady(true)
+  //     }
+  //   }, 5000) // 5-second fallback delay
 
-  //   if (isFirstLaunch) {
-  //     console.log("App.tsx: First launch & API ready, setting page to authorization");
-  //     setPage("settings-authorization", "settings", "授权管理");
-  //   } else {
-  //     console.log("App.tsx: Normal launch & API ready, setting page to new_task");
-  //     setPage("new_task", "新建任务", "新建数据任务");
+  //   return () => {
+  //     clearTimeout(fallbackTimer)
   //   }
-  // }, [isFirstLaunch, setPage, isApiReady]); // Depend on global isApiReady
+  // }, [setApiReady])
 
   // 始终显示 IntroDialog 作为 splash 屏幕，直到 API 就绪
   useEffect(() => {

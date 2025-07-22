@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { 
   Tag,
 } from "lucide-react"
@@ -11,60 +11,24 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { invoke } from "@tauri-apps/api/core";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/main"; // 引入AppStore以获取API就绪状态
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 引入封装好的桥接事件Hook
-
-// 标签数据类型
-interface TagItem {
-  id: number;
-  name: string;
-  weight: number;
-  type: string;
-}
+import { useTagCloudStore } from "@/lib/tagCloudStore"; // 引入标签云全局状态
 
 export function NavTagCloud() {
   const { t } = useTranslation();
-  const [tags, setTags] = useState<TagItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const appStore = useAppStore(); // 获取全局AppStore实例
+  
+  // 使用全局标签云状态
+  const { tags, loading, error, fetchTagCloud } = useTagCloudStore();
   
   // 防抖定时器引用
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // 使用 ref 来保持最新的函数引用，避免依赖问题
-  const fetchTagCloudDataRef = useRef<() => Promise<void>>(async () => {});
-  
-  // 获取标签云数据
-  const fetchTagCloudData = useCallback(async () => {
-    if (!appStore.isApiReady) {
-      console.log('API尚未就绪，暂不获取标签云数据');
-      return;
-    }
-    
-    try {
-      setLoading(true);
-      setError(null);
-      // 调用后端API获取标签云数据
-      const tagData = await invoke<TagItem[]>('get_tag_cloud_data', { limit: 100 });
-      console.log('成功获取标签云数据:', tagData.length);
-      setTags(tagData);
-    } catch (error) {
-      console.error('Error fetching tag cloud data:', error);
-      setError('获取标签数据失败');
-    } finally {
-      setLoading(false);
-    }
-  }, [appStore.isApiReady]);
-  
-  // 更新 ref
-  fetchTagCloudDataRef.current = fetchTagCloudData;
-  
   // 防抖版本的数据获取函数
-  const debouncedFetchTagCloudData = useCallback(() => {
+  const debouncedFetchTagCloud = () => {
     // 清除之前的定时器
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -72,37 +36,44 @@ export function NavTagCloud() {
     
     // 设置新的定时器
     debounceTimerRef.current = setTimeout(() => {
-      console.log('防抖延迟后执行标签云数据获取');
-      fetchTagCloudDataRef.current?.();
-    }, 2000); // 2秒防抖延迟
-  }, []); // 移除依赖，使用 ref
+      console.log('⏰ 防抖延迟后执行标签云数据获取');
+      fetchTagCloud();
+    }, 1000); // 1秒防抖延迟
+  };
   
-  // 清理防抖定时器
+  // 组件挂载和卸载监控
   useEffect(() => {
-    console.log('🏷️ NavTagCloud 组件已挂载, API状态:', appStore.isApiReady);
+    console.log('🏷️ NavTagCloud 组件已挂载, API状态:', appStore.isApiReady, '时间:', new Date().toLocaleTimeString());
+    
+    // 如果 API 已就绪，立即尝试获取数据（会自动检查缓存）
+    if (appStore.isApiReady) {
+      console.log('🚀 组件挂载时尝试获取标签云数据');
+      fetchTagCloud();
+    }
+    
     return () => {
-      console.log('🏷️ NavTagCloud 组件正在卸载, API状态:', appStore.isApiReady);
+      console.log('🏷️ NavTagCloud 组件正在卸载, API状态:', appStore.isApiReady, '时间:', new Date().toLocaleTimeString());
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
-        console.log('🏷️ 清理了防抖定时器');
+        console.log('🧹 清理了防抖定时器');
       }
     };
-  }, []);
+  }, []); // 只在首次挂载时执行
   
-  // 监听API就绪状态变化，使用 ref 避免依赖
+  // 监听API就绪状态变化
   useEffect(() => {
     if (appStore.isApiReady) {
-      console.log('API就绪，获取标签云数据');
-      fetchTagCloudDataRef.current?.();
+      console.log('🔗 API就绪，尝试获取标签云数据');
+      fetchTagCloud();
     }
-  }, [appStore.isApiReady]);
+  }, [appStore.isApiReady, fetchTagCloud]);
   
   // 使用封装好的标签更新监听Hook（带API就绪状态检查）
   useTagsUpdateListenerWithApiCheck(
     () => {
       try {
         console.log('收到标签更新事件，触发防抖刷新');
-        debouncedFetchTagCloudData();
+        debouncedFetchTagCloud();
       } catch (error) {
         console.error('处理标签更新事件时出错:', error);
       }
