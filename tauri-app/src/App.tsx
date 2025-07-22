@@ -11,7 +11,6 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./intro-dialog"
-import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsDialog } from "./settings-dialog"
 
 // 创建一个store来管理页面内容

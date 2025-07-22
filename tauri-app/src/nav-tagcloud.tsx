@@ -121,15 +121,16 @@ export function NavTagCloud() {
     // navigate(`/search?tagIds=${tagId}`);
     // 或者通过其他方式处理
   };
-
+  
+  //  shadow-sm border border-border
   return (
-    <SidebarGroup>
+    <SidebarGroup className=" bg-background rounded-md">
       <SidebarGroupLabel>
         <Tag className="mr-2 h-4 w-4" />
         {t('File Tags')}
       </SidebarGroupLabel>
       
-      <ScrollArea className="h-[250px] px-0">
+      <ScrollArea className="h-[250px] p-0">
         <div className="flex flex-wrap gap-1 p-1 justify-start">
           {loading ? (
             <>

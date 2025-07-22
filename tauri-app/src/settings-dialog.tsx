@@ -251,11 +251,6 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
 
   return (
       <Dialog open={isSettingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogHeader className="sr-only">
-          <DialogTitle>应用设置</DialogTitle>
-          <DialogDescription>管理应用的各项配置设置</DialogDescription>
-        </DialogHeader>
-
         {/* 触发器 */}
         {children && <div onClick={() => setSettingsOpen(true)}>{children}</div>}
 
@@ -264,6 +259,10 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           aria-describedby="settings-description"
           showCloseButton={true}
         >
+          <DialogHeader className="sr-only">
+            <DialogTitle>应用设置</DialogTitle>
+            <DialogDescription>管理应用的各项配置设置</DialogDescription>
+          </DialogHeader>
           <SidebarProvider className="items-start">
             {/* 左侧导航 */}
             <Sidebar collapsible="none" 
