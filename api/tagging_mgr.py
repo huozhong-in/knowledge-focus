@@ -8,7 +8,6 @@ from db_mgr import Tags, FileScreeningResult, TagsType
 from typing import List, Dict
 import logging
 import time
-import json
 import os
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr

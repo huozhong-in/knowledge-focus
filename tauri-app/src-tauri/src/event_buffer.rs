@@ -116,7 +116,7 @@ impl EventBuffer {
     }
     
     /// 处理延迟合并事件
-    async fn handle_delayed_merge(&self, event_data: BridgeEventData, duration: Duration) {
+    async fn handle_delayed_merge(&self, event_data: BridgeEventData, _duration: Duration) {
         let mut events = self.buffered_events.write().await;
         let now = Instant::now();
         

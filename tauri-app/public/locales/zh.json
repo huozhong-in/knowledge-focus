@@ -27,5 +27,6 @@
     "settings": "设置",
     "general": "常规设置",
     "theme": "主题设置",
-    "developer-zone": "开发者区域"
+    "developer-zone": "开发者区域",
+    "file-tags": "文件标签"
 }

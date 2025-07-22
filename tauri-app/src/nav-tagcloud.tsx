@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { 
   Tag,
 } from "lucide-react"
-
 import {
 } from "@/components/ui/dropdown-menu"
 import {
@@ -13,10 +12,10 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/main"; // 引入AppStore以获取API就绪状态
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 引入封装好的桥接事件Hook
 
 // 标签数据类型
 interface TagItem {
@@ -30,13 +29,17 @@ export function NavTagCloud() {
   const { t } = useTranslation();
   const [tags, setTags] = useState<TagItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const appStore = useAppStore(); // 获取全局AppStore实例
   
   // 防抖定时器引用
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // 使用 ref 来保持最新的函数引用，避免依赖问题
+  const fetchTagCloudDataRef = useRef<() => Promise<void>>(async () => {});
+  
   // 获取标签云数据
-  const fetchTagCloudData = async () => {
+  const fetchTagCloudData = useCallback(async () => {
     if (!appStore.isApiReady) {
       console.log('API尚未就绪，暂不获取标签云数据');
       return;
@@ -44,16 +47,21 @@ export function NavTagCloud() {
     
     try {
       setLoading(true);
+      setError(null);
       // 调用后端API获取标签云数据
       const tagData = await invoke<TagItem[]>('get_tag_cloud_data', { limit: 100 });
       console.log('成功获取标签云数据:', tagData.length);
       setTags(tagData);
     } catch (error) {
       console.error('Error fetching tag cloud data:', error);
+      setError('获取标签数据失败');
     } finally {
       setLoading(false);
     }
-  };
+  }, [appStore.isApiReady]);
+  
+  // 更新 ref
+  fetchTagCloudDataRef.current = fetchTagCloudData;
   
   // 防抖版本的数据获取函数
   const debouncedFetchTagCloudData = useCallback(() => {
@@ -65,44 +73,43 @@ export function NavTagCloud() {
     // 设置新的定时器
     debounceTimerRef.current = setTimeout(() => {
       console.log('防抖延迟后执行标签云数据获取');
-      fetchTagCloudData();
+      fetchTagCloudDataRef.current?.();
     }, 2000); // 2秒防抖延迟
-  }, [appStore.isApiReady]);
+  }, []); // 移除依赖，使用 ref
   
   // 清理防抖定时器
   useEffect(() => {
+    console.log('🏷️ NavTagCloud 组件已挂载, API状态:', appStore.isApiReady);
     return () => {
+      console.log('🏷️ NavTagCloud 组件正在卸载, API状态:', appStore.isApiReady);
       if (debounceTimerRef.current) {
         clearTimeout(debounceTimerRef.current);
+        console.log('🏷️ 清理了防抖定时器');
       }
     };
   }, []);
   
-  // 监听API就绪状态变化
+  // 监听API就绪状态变化，使用 ref 避免依赖
   useEffect(() => {
     if (appStore.isApiReady) {
       console.log('API就绪，获取标签云数据');
-      fetchTagCloudData();
+      fetchTagCloudDataRef.current?.();
     }
   }, [appStore.isApiReady]);
   
-  // 监听标签更新事件
-  useEffect(() => {
-    if (!appStore.isApiReady) {
-      return; // API未就绪不设置监听器
-    }
-    
-    // 监听标签更新事件
-    const unlistenFn = listen('tags-updated', () => {
-      console.log('收到tags-updated事件，使用防抖机制刷新标签云');
-      debouncedFetchTagCloudData(); // 使用防抖版本
-    });
-    
-    return () => {
-      // 清理事件监听器
-      unlistenFn.then(unlisten => unlisten());
-    };
-  }, [appStore.isApiReady, debouncedFetchTagCloudData]);
+  // 使用封装好的标签更新监听Hook（带API就绪状态检查）
+  useTagsUpdateListenerWithApiCheck(
+    () => {
+      try {
+        console.log('收到标签更新事件，触发防抖刷新');
+        debouncedFetchTagCloudData();
+      } catch (error) {
+        console.error('处理标签更新事件时出错:', error);
+      }
+    },
+    appStore.isApiReady,
+    { showToasts: false } // 不显示toast，避免过多通知
+  );
   
   // 根据标签权重计算字体大小
   const getFontSize = (weight: number) => {
@@ -133,7 +140,7 @@ export function NavTagCloud() {
     <SidebarGroup className=" bg-background rounded-md">
       <SidebarGroupLabel>
         <Tag className="mr-2 h-4 w-4" />
-        {t('File Tags')}
+        {t('file-tags')}
       </SidebarGroupLabel>
       
       <ScrollArea className="h-[250px] p-0">
@@ -153,6 +160,10 @@ export function NavTagCloud() {
               <Skeleton className="h-6 w-26 rounded-full" />
               <Skeleton className="h-6 w-15 rounded-full" />
             </>
+          ) : error ? (
+            <div className="text-sm text-destructive">
+              {error}
+            </div>
           ) : tags.length > 0 ? (
             tags.map(tag => (
               <Badge

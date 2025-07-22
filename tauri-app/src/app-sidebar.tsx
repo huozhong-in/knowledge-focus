@@ -140,10 +140,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )}
         </div>
 
-        {/* Tag Cloud - show NavTagCloud component */}
-        { isCollapsed ? null : (
+        {/* Tag Cloud - always render but hide when collapsed */}
+        <div className={isCollapsed ? "hidden" : "block"}>
           <NavTagCloud />
-        )}
+        </div>
 
         {/* Buttons - different layout for collapsed/expanded */}
         {isCollapsed ? (

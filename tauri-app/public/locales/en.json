@@ -27,5 +27,6 @@
     "settings": "Settings",
     "general": "General",
     "theme": "Theme Settings",
-    "developer-zone": "Developer Zone"
+    "developer-zone": "Developer Zone",
+    "file-tags": "File Tags"
 }

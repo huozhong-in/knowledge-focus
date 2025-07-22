@@ -62,6 +62,7 @@ class ModelsMgr:
             response = litellm_embedding(
                 model=model_string,
                 input=[text],
+                # dimensions=EMBEDDING_DIMENSIONS,
                 api_base=api_base,
                 api_key=api_key or "dummy-key"
             )

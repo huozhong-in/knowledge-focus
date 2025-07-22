@@ -3,7 +3,6 @@ import "./tweakcn/app/globals.css"
 import { useEffect, useState } from "react"
 import { create } from "zustand"
 import { useAppStore } from "./main"
-import { listen } from "@tauri-apps/api/event"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -12,6 +11,7 @@ import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
+import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -80,63 +80,54 @@ export default function Page() {
   }, [setSettingsOpen])
 
   // 监听菜单事件
-  useEffect(() => {
-    let unlistenFn: (() => void) | undefined
+  // useEffect(() => {
+  //   let unlistenFn: (() => void) | undefined
 
-    listen("menu-settings", (event) => {
-      const page = event.payload as string
-      console.log("收到菜单设置事件，要打开的页面:", page)
-      setSettingsOpen(true)
-      setInitialPage(page === "about" ? "about" : "general")
-    })
-      .then((fn) => {
-        unlistenFn = fn
-      })
-      .catch((err) => {
-        console.error("监听菜单事件失败:", err)
-      })
+  //   listen("menu-settings", (event) => {
+  //     const page = event.payload as string
+  //     console.log("收到菜单设置事件，要打开的页面:", page)
+  //     setSettingsOpen(true)
+  //     setInitialPage(page === "about" ? "about" : "general")
+  //   })
+  //     .then((fn) => {
+  //       unlistenFn = fn
+  //     })
+  //     .catch((err) => {
+  //       console.error("监听菜单事件失败:", err)
+  //     })
 
-    return () => {
-      if (unlistenFn) {
-        unlistenFn()
-      }
-    }
-  }, [setSettingsOpen, setInitialPage])
+  //   return () => {
+  //     if (unlistenFn) {
+  //       unlistenFn()
+  //     }
+  //   }
+  // }, [setSettingsOpen, setInitialPage])
 
-  // Listen for 'api-ready' event from backend ONCE
+  // Listen for 'api-ready' event from backend ONCE using useBridgeEvents
   // 这是应用中唯一需要监听 api-ready 事件的地方
-  useEffect(() => {
-    console.log("App.tsx: Setting up 'api-ready' event listener.")
-    let unlistenFn: (() => void) | undefined
+  useBridgeEvents(
+    {
+      'api-ready': (payload: any) => {
+        console.log("App.tsx: Received 'api-ready' event from backend.", payload)
+        setApiReady(true) // Update global state so all components can react
+      }
+    },
+    { showToasts: false, logEvents: true }
+  )
 
-    listen("api-ready", (event) => {
-      console.log("App.tsx: Received 'api-ready' event from backend.", event)
-      setApiReady(true) // Update global state so all components can react
-    })
-      .then((fn) => {
-        unlistenFn = fn
-      })
-      .catch((err) => {
-        console.error("App.tsx: Failed to listen for 'api-ready' event", err)
-        // Fallback: if event listening fails, consider API ready after a delay
-        setTimeout(() => {
-          // Check global state before setting to avoid unnecessary updates
-          if (!useAppStore.getState().isApiReady) {
-            console.warn(
-              "App.tsx: Fallback - 'api-ready' event listener failed. Setting API ready after timeout."
-            )
-            setApiReady(true)
-          }
-        }, 5000) // 5-second fallback delay
-      })
+  // Fallback: 如果5秒内没有收到api-ready事件，自动设置为就绪
+  useEffect(() => {
+    const fallbackTimer = setTimeout(() => {
+      if (!useAppStore.getState().isApiReady) {
+        console.warn("App.tsx: Fallback - No 'api-ready' event received. Setting API ready after timeout.")
+        setApiReady(true)
+      }
+    }, 5000) // 5-second fallback delay
 
     return () => {
-      if (unlistenFn) {
-        console.log("App.tsx: Cleaning up 'api-ready' event listener.")
-        unlistenFn()
-      }
+      clearTimeout(fallbackTimer)
     }
-  }, [setApiReady]) // setApiReady is stable, so this runs once
+  }, [setApiReady])
 
   // 根据是否首次启动设置初始页面, dependent on global isApiReady
   // useEffect(() => {
