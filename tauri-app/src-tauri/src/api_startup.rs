@@ -3,14 +3,9 @@ use tauri::{AppHandle, Manager, Emitter};
 use tauri::path::BaseDirectory;
 use tauri_plugin_shell::{process::CommandEvent, ShellExt};
 use tokio::sync::oneshot;
-use serde::{Deserialize, Serialize};
 
-/// 桥接事件数据结构
-#[derive(Debug, Serialize, Deserialize)]
-struct BridgeEventData {
-    event: String,
-    payload: serde_json::Value,
-}
+// 引入事件缓冲器
+use crate::event_buffer::{EventBuffer, BridgeEventData};
 
 /// 解析Python stdout输出中的桥接事件
 /// 
@@ -46,6 +41,9 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
     
     // oneshot发送端不能克隆，但我们可以在开始健康检查前保存它
     let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+    
+    // 创建事件缓冲器
+    let event_buffer = Arc::new(EventBuffer::new(app_handle.clone()));
     
     tauri::async_runtime::spawn(async move {
         let port_to_use: u16;
@@ -104,8 +102,9 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 "./api/main.py".to_string()
             } else {
                 // 普通开发模式
-                "../../api/main.py".to_string()
-                // "../../api/bridge_events.py".to_string()
+                "../../api/main.py".to_string() // Python FastAPI 主入口
+                // "../../api/bridge_events.py".to_string() // 直接测试Python端事件桥接器
+                // "../../api/test_event_buffering.py".to_string() // 直接测试Python端事件缓冲器
             }
         } else {
             // Production environment - use resource path API
@@ -206,6 +205,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 });
                 
                 // 监听API进程事件
+                let event_buffer_clone = event_buffer.clone();
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
                         if let Some(window) = app_handle_clone.get_webview_window("main") {
@@ -215,14 +215,9 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                                     
                                     // 检查是否是桥接事件通知
                                     if let Some(event_data) = parse_bridge_event(&line_str) {
-                                        // 这是一个标准化的桥接事件，转发给前端
-                                        let payload = if event_data.payload.is_null() {
-                                            None
-                                        } else {
-                                            Some(event_data.payload)
-                                        };
-                                        println!("桥接事件已转发: {} -> {:?}", event_data.event, payload);
-                                        let _ = window.emit(&event_data.event, payload);
+                                        // 使用事件缓冲器处理桥接事件
+                                        println!("收到桥接事件: {} (通过缓冲器处理)", event_data.event);
+                                        event_buffer_clone.handle_event(event_data).await;
                                     } else {
                                         // 普通的Python日志输出
                                         // println!("Python API: {}", line_str);

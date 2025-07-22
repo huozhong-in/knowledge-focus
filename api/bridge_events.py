@@ -14,10 +14,28 @@
 import json
 import time
 import logging
+import sys
 from typing import Dict, Any
 from enum import Enum
 
 logger = logging.getLogger(__name__)
+
+# 保存原始的stdout引用，确保桥接事件能够直接输出到原始stdout
+# 避免被uvicorn或其他日志系统重定向
+_ORIGINAL_STDOUT = sys.stdout
+
+def test_stdout_accessibility():
+    """
+    测试原始stdout是否可访问
+    用于调试桥接事件输出问题
+    """
+    try:
+        _ORIGINAL_STDOUT.write("BRIDGE_STDOUT_TEST: Original stdout is accessible\n")
+        _ORIGINAL_STDOUT.flush()
+        return True
+    except Exception as e:
+        logger.error(f"原始stdout不可访问: {e}")
+        return False
 
 class BridgeEventSender:
     """桥接事件发送器"""
@@ -58,8 +76,10 @@ class BridgeEventSender:
                 "payload": self._enrich_payload(payload or {})
             }
             
-            # 发送JSON事件
-            print(f"EVENT_NOTIFY_JSON:{json.dumps(event_data)}", flush=True)
+            # 直接写入原始stdout，绕过任何可能的重定向
+            # 使用原始stdout确保Rust端能够捕获到输出
+            _ORIGINAL_STDOUT.write(f"EVENT_NOTIFY_JSON:{json.dumps(event_data)}\n")
+            _ORIGINAL_STDOUT.flush()
             
             logger.debug(f"桥接事件已发送: {event_name} from {self.source}")
             

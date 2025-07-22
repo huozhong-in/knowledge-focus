@@ -4,6 +4,7 @@ mod file_monitor_debounced; // 防抖动文件监控模块
 mod file_scanner; // 文件扫描模块
 mod setup_file_monitor;
 mod api_startup; // API启动模块
+mod event_buffer; // 事件缓冲模块
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
@@ -17,48 +18,6 @@ use tokio::time::{sleep, Duration};
 use file_monitor::FileMonitor;
 use file_monitor_debounced::DebouncedFileMonitor;
 use reqwest;
-// use serde::{Deserialize, Serialize};
-// use futures_util::StreamExt;
-// use tauri::Window;
-
-// #[derive(Serialize, Deserialize, Debug, Clone)]
-// struct Message {
-//     id: String,
-//     role: String,
-//     content: String,
-// }
-
-// #[tauri::command]
-// async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>) -> Result<(), String> {
-//     let client = reqwest::Client::new();
-//     // Your Python Sidecar address
-//     let sidecar_url = "http://127.0.0.1:60315/chat/stream";
-
-//     let mut stream = client.post(sidecar_url)
-//         .json(&messages)
-//         .send().await.map_err(|e| e.to_string())?
-//         .bytes_stream();
-
-//     while let Some(item) = stream.next().await {
-//         match item {
-//             Ok(bytes) => {
-//                 if let Ok(chunk) = std::str::from_utf8(&bytes) {
-//                     // Emit each chunk as an event
-//                     window.emit("ai_chunk", chunk).unwrap();
-//                 }
-//             },
-//             Err(e) => {
-//                 eprintln!("Error in stream: {}", e);
-//                 break;
-//             }
-//         }
-//     }
-
-//     // Notify the frontend that the stream has ended
-//     window.emit("ai_stream_end", ()).unwrap();
-//     Ok(())
-// }
-
 
 // 存储API进程的状态
 struct ApiProcessState {

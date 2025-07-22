@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { 
   Tag,
 } from "lucide-react"
@@ -32,6 +32,9 @@ export function NavTagCloud() {
   const [loading, setLoading] = useState<boolean>(true);
   const appStore = useAppStore(); // 获取全局AppStore实例
   
+  // 防抖定时器引用
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   // 获取标签云数据
   const fetchTagCloudData = async () => {
     if (!appStore.isApiReady) {
@@ -52,6 +55,29 @@ export function NavTagCloud() {
     }
   };
   
+  // 防抖版本的数据获取函数
+  const debouncedFetchTagCloudData = useCallback(() => {
+    // 清除之前的定时器
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    // 设置新的定时器
+    debounceTimerRef.current = setTimeout(() => {
+      console.log('防抖延迟后执行标签云数据获取');
+      fetchTagCloudData();
+    }, 2000); // 2秒防抖延迟
+  }, [appStore.isApiReady]);
+  
+  // 清理防抖定时器
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+  
   // 监听API就绪状态变化
   useEffect(() => {
     if (appStore.isApiReady) {
@@ -68,15 +94,15 @@ export function NavTagCloud() {
     
     // 监听标签更新事件
     const unlistenFn = listen('tags-updated', () => {
-      console.log('收到tags-updated事件，刷新标签云');
-      fetchTagCloudData();
+      console.log('收到tags-updated事件，使用防抖机制刷新标签云');
+      debouncedFetchTagCloudData(); // 使用防抖版本
     });
     
     return () => {
       // 清理事件监听器
       unlistenFn.then(unlisten => unlisten());
     };
-  }, [appStore.isApiReady]);
+  }, [appStore.isApiReady, debouncedFetchTagCloudData]);
   
   // 根据标签权重计算字体大小
   const getFontSize = (weight: number) => {

@@ -1690,7 +1690,14 @@ def delete_screening_by_path(
             "deleted_count": 0,
             "message": f"删除失败: {str(e)}"
         }
-        
+
+@app.get("/test-bridge-stdout")
+def test_bridge_stdout():
+    """测试桥接事件的stdout输出能力"""
+    from test_bridge_stdout import test_bridge_stdout_main
+    test_bridge_stdout_main()
+    return {"status": "ok"}
+
 if __name__ == "__main__":
     try:
         parser = argparse.ArgumentParser()
