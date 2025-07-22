@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
-import IntroDialog from "./components/intro-dialog"
-import { Loader2 } from "lucide-react"
+import IntroDialog from "./intro-dialog"
+import { Skeleton } from "@/components/ui/skeleton";
 import { SettingsDialog } from "./settings-dialog"
 
 // 创建一个store来管理页面内容
@@ -253,7 +253,18 @@ export default function Page() {
             <AppWorkspace />
           ) : (
             <div className="flex flex-1 items-center justify-center">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <div className="relative w-10 h-10">
+                <svg className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="#D29B71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="2" x2="12" y2="6"></line>
+                  <line x1="12" y1="18" x2="12" y2="22"></line>
+                  <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+                  <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+                  <line x1="2" y1="12" x2="6" y2="12"></line>
+                  <line x1="18" y1="12" x2="22" y2="12"></line>
+                  <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+                  <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+                </svg>
+              </div>
             </div>
           )}
           <IntroDialog

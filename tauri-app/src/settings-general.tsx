@@ -1,4 +1,4 @@
-import LanguageSwitcher from '@/components/language-switcher';
+import LanguageSwitcher from '@/language-switcher';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function SettingsGeneral() {

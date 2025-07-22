@@ -52,7 +52,7 @@ def get_router(get_session: callable) -> APIRouter:
 
     @router.get("/tagging/tag-cloud", response_model=List[Dict[str, Any]])
     async def get_tag_cloud(
-        limit: int = 100,
+        limit: int = 50,
         min_weight: int = 1,
         tagging_mgr: TaggingMgr = Depends(get_tagging_manager)
     ):

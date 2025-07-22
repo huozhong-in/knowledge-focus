@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/main';
 import { usePageStore } from '@/App';
-import { Button } from "./ui/button";
+import { Button } from "./components/ui/button";
 import { toast } from "sonner";
 import {
   Dialog,

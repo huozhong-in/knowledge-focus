@@ -2,13 +2,11 @@ import React from "react"
 import {
   MessageCircle,
   Plus,
-  Hash,
   Search,
   PanelLeftOpenIcon,
   MoreHorizontal,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +30,7 @@ import {
 } from "@/components/ui/command"
 import { UserProfileMenu } from "./UserProfileMenu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { NavTagCloud } from "./nav-tagcloud"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [searchOpen, setSearchOpen] = React.useState(false)
@@ -107,16 +106,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     },
   ]
 
-  // Mock data for tags
-  const mockTags = [
-    "数据分析",
-    "文档处理",
-    "知识管理",
-    "AI助手",
-    "自动化",
-    "报告生成",
-  ]
-
   return (
     <Sidebar collapsible="icon" {...props} className="h-full">
       <SidebarHeader>
@@ -151,21 +140,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           )}
         </div>
 
-        {/* Tag Cloud - only show when not collapsed */}
-        {!isCollapsed && (
-          <div className="space-y-2 px-2 py-2">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              文件标签云
-            </h3>
-            <div className="flex flex-wrap gap-1">
-              {mockTags.map((tag) => (
-                <Badge key={tag} variant="secondary" className="text-xs">
-                  <Hash className="h-3 w-3 mr-1" />
-                  {tag}
-                </Badge>
-              ))}
-            </div>
-          </div>
+        {/* Tag Cloud - show NavTagCloud component */}
+        { isCollapsed ? null : (
+          <NavTagCloud />
         )}
 
         {/* Buttons - different layout for collapsed/expanded */}

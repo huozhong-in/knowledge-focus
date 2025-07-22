@@ -5,7 +5,7 @@ from sqlmodel import (
     text,
 )
 from db_mgr import Tags, FileScreeningResult, TagsType
-from typing import List, Dict, Set, Optional
+from typing import List, Dict
 import logging
 import time
 import json
@@ -58,12 +58,12 @@ class TaggingMgr:
         if current_time - self._cache_timestamp > self._cache_ttl:
             self._warm_cache()
     
-    def get_tag_id_from_cache(self, tag_name: str) -> Optional[int]:
+    def get_tag_id_from_cache(self, tag_name: str) -> int | None:
         """从缓存中获取标签ID，如不存在返回None"""
         self._refresh_cache_if_needed()
         return self._tag_name_cache.get(tag_name)
-    
-    def get_tag_from_cache(self, tag_id: int) -> Optional[Tags]:
+
+    def get_tag_from_cache(self, tag_id: int) -> Tags | None:
         """从缓存中获取标签对象，如不存在返回None"""
         self._refresh_cache_if_needed()
         return self._tag_id_cache.get(tag_id)
@@ -508,7 +508,7 @@ class TaggingMgr:
             self.session.rollback()
             return False
 
-    def get_tag_cloud_data(self, limit: int = 100, min_weight: int = 1) -> List[Dict]:
+    def get_tag_cloud_data(self, limit: int = 50, min_weight: int = 1) -> List[Dict]:
         """
         获取标签云数据，包含标签ID、名称、权重和类型
         
@@ -523,15 +523,15 @@ class TaggingMgr:
             # 执行SQL查询，获取标签及其关联的文件数量
             query = text("""
                 SELECT t.id, t.name, t.type, COUNT(DISTINCT fsr.id) as weight
-                FROM tags t
-                LEFT JOIN file_screening_results fsr ON fsr.tags_display_ids LIKE '%' || t.id || '%'
+                FROM t_tags t
+                LEFT JOIN t_file_screening_results fsr ON fsr.tags_display_ids LIKE '%' || t.id || '%'
                 GROUP BY t.id, t.name, t.type
                 HAVING COUNT(DISTINCT fsr.id) >= :min_weight
                 ORDER BY weight DESC
                 LIMIT :limit
-            """)
+            """).bindparams(limit=limit, min_weight=min_weight)
             
-            result = self.session.exec(query, {"limit": limit, "min_weight": min_weight})
+            result = self.session.exec(query)
             
             # 构建返回结果
             tag_cloud = []
@@ -612,18 +612,18 @@ if __name__ == '__main__':
     # print("FTS索引重建完成")
 
     # 测试根据标签搜索文件
-    test_tag_names = ["large_language_models"]
-    print(f"搜索包含标签 {test_tag_names} 的文件...")
-    search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
-    print(f"搜索结果数量: {len(search_results)}")
-    for i, result in enumerate(search_results):
-        print(f"{i+1}. ID: {result['id']}, 路径: {result['path']}")
-        print(f"   标签IDs: {result['tags_display_ids']}")
-        # 获取标签名称
-        if result['tags_display_ids']:
-            tag_ids = tagging_mgr.get_tags_display_ids_as_list(result['tags_display_ids'])
-            tags = tagging_mgr.get_tags_by_ids(tag_ids)
-            print(f"   标签名称: {[tag.name for tag in tags]}")
+    # test_tag_names = ["large_language_models"]
+    # print(f"搜索包含标签 {test_tag_names} 的文件...")
+    # search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
+    # print(f"搜索结果数量: {len(search_results)}")
+    # for i, result in enumerate(search_results):
+    #     print(f"{i+1}. ID: {result['id']}, 路径: {result['path']}")
+    #     print(f"   标签IDs: {result['tags_display_ids']}")
+    #     # 获取标签名称
+    #     if result['tags_display_ids']:
+    #         tag_ids = tagging_mgr.get_tags_display_ids_as_list(result['tags_display_ids'])
+    #         tags = tagging_mgr.get_tags_by_ids(tag_ids)
+    #         print(f"   标签名称: {[tag.name for tag in tags]}")
     
     # 测试标签推荐
     # if search_results:
@@ -632,3 +632,8 @@ if __name__ == '__main__':
     #     print(f"\n为文件 {first_result['path']} 推荐相关标签...")
     #     related_tags = tagging_mgr.recommend_related_tags(first_tags, limit=5)
     #     print(f"推荐标签: {[tag.name for tag in related_tags]}")
+
+    # 测试标签云
+    print("\n获取标签云数据...")
+    tag_cloud = tagging_mgr.get_tag_cloud_data()
+    print(f"标签云数据: {tag_cloud}")

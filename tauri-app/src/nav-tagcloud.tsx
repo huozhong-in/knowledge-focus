@@ -24,7 +24,7 @@ import {
   // SidebarMenuAction,
   // SidebarMenuButton,
   // SidebarMenuItem,
-  useSidebar,
+  // useSidebar,
 } from "@/components/ui/sidebar"
 import { useTranslation } from 'react-i18next';
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +33,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/main"; // 引入AppStore以获取API就绪状态
+import { Skeleton } from "@/components/ui/skeleton";
 
 // 标签数据类型
 interface TagItem {
@@ -44,8 +45,6 @@ interface TagItem {
 
 export function NavTagCloud() {
   const { t } = useTranslation();
-  const { state } = useSidebar();
-  const isCollapsed = state === "collapsed";
   const [tags, setTags] = useState<TagItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const appStore = useAppStore(); // 获取全局AppStore实例
@@ -60,7 +59,7 @@ export function NavTagCloud() {
     try {
       setLoading(true);
       // 调用后端API获取标签云数据
-      const tagData = await invoke<TagItem[]>('get_tag_cloud_data', { limit: 1000 });
+      const tagData = await invoke<TagItem[]>('get_tag_cloud_data', { limit: 100 });
       console.log('成功获取标签云数据:', tagData.length);
       setTags(tagData);
     } catch (error) {
@@ -98,8 +97,8 @@ export function NavTagCloud() {
   
   // 根据标签权重计算字体大小
   const getFontSize = (weight: number) => {
-    const minSize = 12;
-    const maxSize = 20;
+    const minSize = 10;
+    const maxSize = 16;
     
     if (!tags || tags.length <= 1) return minSize;
     
@@ -127,23 +126,31 @@ export function NavTagCloud() {
     <SidebarGroup>
       <SidebarGroupLabel>
         <Tag className="mr-2 h-4 w-4" />
-        {!isCollapsed && t('Hot Tags')}
+        {t('File Tags')}
       </SidebarGroupLabel>
       
-      <ScrollArea className="h-[300px] px-1">
-        <div className={cn(
-          "flex flex-wrap gap-1 p-2", 
-          isCollapsed ? "justify-center" : "justify-start"
-        )}>
+      <ScrollArea className="h-[250px] px-0">
+        <div className="flex flex-wrap gap-1 p-1 justify-start">
           {loading ? (
-            <div className="text-sm text-muted-foreground">
-              {t('Loading...')}
-            </div>
+            <>
+              <Skeleton className="h-6 w-16 rounded-full" />
+              <Skeleton className="h-6 w-24 rounded-full" />
+              <Skeleton className="h-6 w-12 rounded-full" />
+              <Skeleton className="h-6 w-20 rounded-full" />
+              <Skeleton className="h-6 w-18 rounded-full" />
+              <Skeleton className="h-6 w-14 rounded-full" />
+              <Skeleton className="h-6 w-22 rounded-full" />
+              <Skeleton className="h-6 w-16 rounded-full" />
+              <Skeleton className="h-6 w-28 rounded-full" />
+              <Skeleton className="h-6 w-10 rounded-full" />
+              <Skeleton className="h-6 w-26 rounded-full" />
+              <Skeleton className="h-6 w-15 rounded-full" />
+            </>
           ) : tags.length > 0 ? (
             tags.map(tag => (
               <Badge
                 key={tag.id}
-                variant="outline"
+                variant="secondary"
                 className={cn(
                   "cursor-pointer hover:bg-muted transition-all", 
                   tag.type === 'SYSTEM' ? "border-primary" : "border-secondary"
@@ -152,11 +159,10 @@ export function NavTagCloud() {
                 onClick={() => handleTagClick(tag.id)}
               >
                 {tag.name}
-                {!isCollapsed && (
-                  <span className="ml-1 text-xs text-muted-foreground">
-                    ({tag.weight})
-                  </span>
-                )}
+                <span className="ml-1 text-xs text-muted-foreground">
+                  ({tag.weight})
+                </span>
+                
               </Badge>
             ))
           ) : (

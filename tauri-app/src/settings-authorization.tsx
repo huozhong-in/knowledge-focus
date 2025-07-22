@@ -8,7 +8,7 @@ import { basename } from '@tauri-apps/api/path';
 import {
   info
 } from '@tauri-apps/plugin-log';
-import { FolderTreeSelector } from "@/components/folder-tree-selector";
+import { FolderTreeSelector } from "@/folder-tree-selector";
 import { 
   Folder, 
   FolderPlus, 

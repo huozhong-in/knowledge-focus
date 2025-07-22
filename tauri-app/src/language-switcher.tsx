@@ -1,5 +1,5 @@
-import { Button } from './ui/button';
-import { useAppStore } from '../main';
+import { Button } from './components/ui/button';
+import { useAppStore } from './main';
 
 function LanguageSwitcher() {
   const { language, setLanguage } = useAppStore();
