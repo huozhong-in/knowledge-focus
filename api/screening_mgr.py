@@ -75,7 +75,7 @@ class ScreeningManager:
         """批量添加文件粗筛结果
         
         Args:
-            results_data: 包��多个文件元数据和初步分类信息的字典列表
+            results_data: 包含多个文件元数据和初步分类信息的字典列表
             task_id: 关联的任务ID
             
         Returns:

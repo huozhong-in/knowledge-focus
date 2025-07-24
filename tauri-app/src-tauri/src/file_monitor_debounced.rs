@@ -447,63 +447,6 @@ impl DebouncedFileMonitor {
         
         Ok(())
     }
-
-    /// Adds a new directory to be monitored with debouncing.
-    pub async fn add_directory_to_watch(&self, dir_path: String, debounce_time: Duration) -> std::result::Result<(), String> {
-        let tx_to_central_handler = match self.event_tx.as_ref() {
-            Some(tx) => tx.clone(),
-            None => return Err("DebouncedFileMonitor's event_tx is not initialized. Call start_monitoring first.".to_string()),
-        };
-        
-        // 创建一个通道来接收新目录的停止通道
-        let (stop_tx_sender, stop_tx_receiver) = std_mpsc::channel();
-        
-        // 调用设置函数并传递停止通道发送器
-        Self::setup_single_debounced_watch(
-            dir_path.clone(), // 路径字符串
-            debounce_time,
-            tx_to_central_handler,
-            Some(stop_tx_sender), // 传递停止通道发送器
-        ).await?;
-        
-        // 接收返回的停止通道
-        match stop_tx_receiver.recv() {
-            Ok(stop_tx) => {
-                // 将停止通道添加到表中
-                let mut watch_stop_channels = self.watch_stop_channels.lock().await;
-                watch_stop_channels.insert(dir_path.clone(), stop_tx);
-                println!("[防抖监控] 已注册 '{}' 的停止通道", dir_path);
-            }
-            Err(e) => {
-                println!("[防抖监控] 警告：无法获取 '{}' 的停止通道: {:?}", dir_path, e);
-                // 继续执行，但无法后续停止此监控
-            }
-        }
-
-        Ok(())
-    }
-    
-    /// 停止对指定路径的监控
-    /// 注意：当前实现存在限制，监控线程一旦启动就无法单独停止。对于删除的目录，我们有以下处理方式：
-    /// 1. 文件监控器会从监控列表中移除该目录，使得新的事件不会被处理
-    /// 2. 底层监控线程仍会继续运行，但事件不会被正常处理
-    /// 3. 下次应用启动时，该目录不会被监控
-    /// 
-    /// 这是一个已知的限制，未来可以改进：
-    /// - 使用线程安全的取消令牌来停止监控线程
-    /// - 重构监控架构，使用单一监控器同时监控多个目录
-    pub fn stop_monitoring_path(&self, path: &str) {
-        println!("[防抖监控] 警告：停止监控路径 '{}' - 监控线程仍将继续运行，直到应用重启", path);
-        println!("[防抖监控] 注意：该目录的文件变更事件将不再被处理，但心跳日志仍将继续输出");
-        
-        // 记录被停止监控的目录，供调试
-        println!("[防抖监控] 已标记停止监控路径: {}", path);
-        
-        // 添加一个更明显的标记，方便日志查看
-        println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
-        println!("▶▶▶ 已停止监控目录: {} ▶▶▶", path);
-        println!("▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶▶");
-    }
     
     /// 完全停止所有目录的监控
     /// 

@@ -1,6 +1,6 @@
 from sqlmodel import Session, create_engine
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Dict, Any
 import os
 import logging
 import warnings
@@ -9,6 +9,9 @@ from db_mgr import FileScreeningResult #, Tags
 from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
+from db_mgr import FileScreenResult
+from sqlmodel import select
+import time
 
 # 为当前模块创建日志器
 logger = logging.getLogger(__name__)
@@ -124,10 +127,7 @@ class ParsingMgr:
     def process_pending_batch(self, batch_size: int = 10) -> Dict[str, Any]:
         """
         Processes a batch of pending file screening results.
-        """
-        from db_mgr import FileScreenResult
-        from sqlmodel import select
-        import time
+        """        
 
         logger.info(f"[PARSING_BATCH] Checking for a batch of {batch_size} pending files...")
         start_time = time.time()
@@ -197,8 +197,6 @@ class ParsingMgr:
         """
         Processes a single high-priority file parsing task.
         """
-        from db_mgr import FileScreenResult
-        from sqlmodel import select
 
         logger.info(f"[PARSING_SINGLE] Starting to process high-priority file task for screening_result_id: {screening_result_id}")
         result = self.session.get(FileScreeningResult, screening_result_id)

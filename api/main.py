@@ -514,7 +514,7 @@ def start_initial_parsing(task_mgr: TaskManager = Depends(get_task_manager)):
         task = task_mgr.add_task(
             task_name="Initial-Parsing-Trigger",
             task_type=TaskType.PARSING.value,
-            priority=TaskPriority.LOW.value, # 首次全盘扫描后的解��，使用低优先级
+            priority=TaskPriority.LOW.value, # 首次全盘扫描后的解析任务，使用低优先级
             extra_data={"trigger": "initial_scan_complete"}
         )
         logger.info(f"已创建首次解析的触发任务，ID: {task.id}")
@@ -673,7 +673,7 @@ def add_batch_file_screening_results(
                     try:
                         data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
                     except Exception as e:
-                        logger.warning(f"转换字符串时间字段 {time_field} 失���: {str(e)}")
+                        logger.warning(f"转换字符串时间字段 {time_field} 失败: {str(e)}")
                         # 如果是修改时间字段转换失败，设置为当前时间
                         if time_field == "modified_time":
                             data[time_field] = datetime.now()
@@ -692,12 +692,12 @@ def add_batch_file_screening_results(
         task = task_mgr.add_task(
             task_name=task_name,
             task_type=TaskType.PARSING.value,
-            priority=TaskPriority.HIGH.value,
+            priority=TaskPriority.MEDIUM.value,
             extra_data={"file_count": len(data_list)}
         )
         logger.info(f"已创建解析任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
 
-        # 2. 批��添加粗筛结果，并关联 task_id
+        # 2. 批量添加粗筛结果，并关联 task_id
         result = screening_mgr.add_batch_screening_results(data_list, task_id=task.id)
         
         # 3. 返回结果

@@ -247,7 +247,7 @@ function SettingsAuthorization() {
   // 检查配置变更队列状态
   const checkQueueStatus = async () => {
     try {
-      const status = await invoke("get_config_queue_status") as ConfigQueueStatus;
+      const status = await invoke("queue_get_status") as ConfigQueueStatus;
       setQueueStatus(status);
       
       if (status.initial_scan_completed && status.has_pending_changes) {
@@ -343,7 +343,7 @@ function SettingsAuthorization() {
         
         // 使用新的队列机制处理配置变更
         try {
-          const queueResult = await invoke("add_whitelist_folder_queued", {
+          const queueResult = await invoke("queue_add_blacklist_folder", {
             folder_path: newDirPath,
             folder_alias: newDirAlias || null
           }) as { status: string; message: string };
@@ -391,7 +391,7 @@ function SettingsAuthorization() {
       const isBlacklist = folderInfo?.is_blacklist || false;
       
       // 第一步：使用队列版本的删除命令，这会将清理粗筛数据的任务加入队列
-      const queueResult = await invoke("remove_folder_queued", {
+      const queueResult = await invoke("queue_delete_folder", {
         folder_id: id,
         folder_path: folderPath,
         is_blacklist: isBlacklist
@@ -627,7 +627,7 @@ function SettingsAuthorization() {
         
         // 使用队列机制处理配置变更，包括清理粗筛结果
         try {
-          const queueResult = await invoke("add_blacklist_folder_queued", {
+          const queueResult = await invoke("queue_add_whitelist_folder", {
             parent_id: selectedParentId,
             folder_path: newBlacklistPath,
             folder_alias: newBlacklistAlias || null
@@ -691,7 +691,7 @@ function SettingsAuthorization() {
       const newIsBlacklist = !currentIsBlacklist;
       
       // 第一步：使用队列版本的切换命令，这会将清理粗筛数据的任务加入队列
-      const queueResult = await invoke("toggle_folder_status_queued", {
+      const queueResult = await invoke("queue_toggle_folder_status", {
         folder_id: folderId,
         folder_path: folderPath,
         is_blacklist: newIsBlacklist

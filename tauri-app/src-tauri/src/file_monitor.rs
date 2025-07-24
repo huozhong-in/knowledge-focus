@@ -250,24 +250,6 @@ pub struct MonitoredDirectory {
     pub updated_at: Option<String>, // Added field
 }
 
-// #[derive(Debug, Deserialize, PartialEq)]
-// enum DirectoryStatus {
-//     #[serde(rename = "success")]
-//     Success,
-//     #[serde(rename = "error")]
-//     Error,
-//     #[serde(rename = "unauthorized")]
-//     Unauthorized,
-// }
-
- // New struct for the API response from /directories
-// #[derive(Debug, Deserialize)]
-// struct DirectoryApiResponse {
-//     status: DirectoryStatus,
-//     full_disk_access: bool,
-//     data: Vec<MonitoredDirectory>,
-// }
-
 // 初始化文件监控器
 #[derive(Clone)]
 pub struct FileMonitor {
@@ -471,13 +453,6 @@ impl FileMonitor {
         self.api_port
     }
 
-    // 更新监控目录列表
-    pub async fn update_monitored_directories(&self) -> Result<(), String> {
-        println!("[DEBUG] update_monitored_directories called. It will now attempt to refresh all config.");
-        self.fetch_and_store_all_config().await?; // This will update self.monitored_dirs
-        Ok(())
-    }
-
     // --- Bundle扩展名处理机制 ---
     
     /// 从当前配置中提取Bundle扩展名列表
@@ -534,11 +509,6 @@ impl FileMonitor {
         // 如果没有从配置中获取到，使用默认列表
         println!("[BUNDLE_EXT] 使用默认Bundle扩展名列表，共 {} 项", fallback_extensions.len());
         fallback_extensions
-    }
-
-    /// 获取Bundle扩展名列表（对外接口）
-    pub fn get_bundle_extensions(&self) -> Vec<String> {
-        self.extract_bundle_extensions()
     }
 
 // --- End of Bundle扩展名处理机制 ---
@@ -743,7 +713,7 @@ impl FileMonitor {
         }
         
         // 从配置中获取bundle扩展名
-        let bundle_extensions = self.get_bundle_extensions();
+        let bundle_extensions = self.extract_bundle_extensions();
         
         // 创建引用切片
         let bundle_extension_refs: Vec<&str> = bundle_extensions.iter()
@@ -1838,52 +1808,6 @@ impl FileMonitor {
         });
         
         Ok(())
-    }
-
-    // 获取监控统计信息
-    pub fn get_monitor_stats(&self) -> MonitorStats {
-        match self.stats.lock() {
-            Ok(stats) => stats.clone(),
-            Err(_) => MonitorStats::default(), // 返回默认统计信息，以防锁定失败
-        }
-    }
-    
-    // 停止监控指定目录（从监控列表中移除）
-    pub async fn stop_monitoring_directory(&self, directory_id: i32) -> Result<(), String> {
-        println!("[MONITOR] 尝试停止监控目录 ID: {}", directory_id);
-        
-        // 1. 从监控目录列表中移除该目录
-        let mut directory_to_remove: Option<MonitoredDirectory> = None;
-        {
-            let mut dirs = self.monitored_dirs.lock().unwrap();
-            
-            // 查找对应ID的目录
-            if let Some(index) = dirs.iter().position(|dir| dir.id == Some(directory_id)) {
-                // 保存要移除的目录信息，用于日志
-                directory_to_remove = Some(dirs[index].clone());
-                // 从列表中移除
-                dirs.remove(index);
-                println!("[MONITOR] 已从监控列表中移除目录 ID: {}", directory_id);
-            } else {
-                println!("[MONITOR] 未找到ID为{}的目录，可能已被移除", directory_id);
-            }
-        }
-        
-        // 2. 如果目录存在且在黑名单中，确保其也从黑名单中移除
-        if let Some(directory) = &directory_to_remove {
-            let mut blacklist = self.blacklist_dirs.lock().unwrap();
-            if let Some(index) = blacklist.iter().position(|dir| dir.id == Some(directory_id)) {
-                blacklist.remove(index);
-                println!("[MONITOR] 已从黑名单中移除目录: {}", directory.path);
-            }
-        }
-        
-        // 3. 返回结果
-        if directory_to_remove.is_some() {
-            Ok(())
-        } else {
-            Err(format!("未找到ID为{}的目录", directory_id))
-        }
     }
 
     // 扫描单个目录

@@ -28,7 +28,6 @@ pub enum EventBufferStrategy {
 #[derive(Debug, Clone)]
 struct BufferedEvent {
     data: BridgeEventData,
-    first_time: Instant,
     last_time: Instant,
     count: u32,
 }
@@ -131,7 +130,6 @@ impl EventBuffer {
             // 创建新的缓冲事件
             events.insert(event_key, BufferedEvent {
                 data: event_data,
-                first_time: now,
                 last_time: now,
                 count: 1,
             });
@@ -160,7 +158,6 @@ impl EventBuffer {
         // 超过节流间隔或是首次发送，立即发送并更新记录
         events.insert(event_key, BufferedEvent {
             data: event_data.clone(),
-            first_time: now,
             last_time: now,
             count: 1,
         });
@@ -235,22 +232,4 @@ impl EventBuffer {
         });
     }
     
-    /// 强制flush所有缓冲的事件（用于应用关闭时）
-    pub async fn flush_all(&self) {
-        let mut events = self.buffered_events.write().await;
-        let events_to_send: Vec<_> = events.values().map(|b| b.data.clone()).collect();
-        events.clear();
-        
-        drop(events); // 释放锁
-        
-        for event_data in events_to_send {
-            self.emit_event(&event_data).await;
-        }
-    }
-    
-    /// 获取缓冲统计信息（用于调试）
-    pub async fn get_stats(&self) -> HashMap<String, u32> {
-        let events = self.buffered_events.read().await;
-        events.iter().map(|(k, v)| (k.clone(), v.count)).collect()
-    }
 }

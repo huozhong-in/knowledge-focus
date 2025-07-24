@@ -5,7 +5,7 @@ mod file_scanner; // 文件扫描模块
 mod setup_file_monitor;
 mod api_startup; // API启动模块
 mod event_buffer; // 事件缓冲模块
-use std::collections::HashMap;
+
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tauri::Manager;
@@ -416,34 +416,6 @@ pub enum ConfigChangeRequest {
     BundleExtensionChange,
 }
 
-// 获取API状态的命令
-#[tauri::command]
-fn get_api_status(
-    state: tauri::State<ApiState>,
-) -> Result<HashMap<String, serde_json::Value>, String> {
-    let api_state = state.0.lock().unwrap();
-    let mut response = HashMap::new();
-
-    response.insert(
-        "running".into(),
-        serde_json::Value::Bool(api_state.process_child.is_some()),
-    );
-    response.insert(
-        "port".into(),
-        serde_json::Value::Number(api_state.port.into()),
-    );
-    response.insert(
-        "host".into(),
-        serde_json::Value::String(api_state.host.clone()),
-    );
-    response.insert(
-        "url".into(),
-        serde_json::Value::String(format!("http://{}:{}", api_state.host, api_state.port)),
-    );
-
-    Ok(response)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -771,40 +743,18 @@ pub fn run() {
         // 管理文件监控状态
         .manage(Arc::new(Mutex::new(Option::<FileMonitor>::None)))
         .invoke_handler(tauri::generate_handler![
-            get_api_status,
-            commands::chat,
-            commands::resolve_directory_from_path,
-            commands::get_file_monitor_stats,
-            commands::scan_directory, // 添加目录后扫描目录
-            commands::stop_monitoring_directory, // 停止监控指定目录
-            commands::restart_file_monitoring, // 重启文件监控系统
-            // 文件夹层级管理命令
-            commands::add_blacklist_folder,
-            commands::remove_blacklist_folder,
-            commands::get_folder_hierarchy,
-            // 配置刷新管理命令
-            commands::refresh_monitoring_config,
-            commands::get_bundle_extensions,
-            commands::get_configuration_summary,
+            commands::refresh_monitoring_config, // 刷新监控配置
             commands::read_directory, // 读取目录内容
-            // 标签管理命令
             commands::get_tag_cloud_data, // 获取标签云数据
-            // 配置变更队列管理命令（新版：使用queue_前缀）
-            commands::queue_add_blacklist_folder,
-            commands::queue_delete_folder,
-            commands::queue_toggle_folder_status, 
-            commands::queue_add_whitelist_folder,
-            commands::queue_get_status,
-            // 配置变更队列管理命令（兼容旧版）
-            commands::add_blacklist_folder_queued,
-            commands::remove_folder_queued,
-            commands::toggle_folder_status_queued,
-            commands::add_whitelist_folder_queued,
-            commands::get_config_queue_status,
-            file_scanner::scan_files_by_time_range,
-            file_scanner::scan_files_by_type,
+            commands::search_files_by_tags, // 按标签搜索文件
+            commands::queue_add_blacklist_folder, // 添加黑名单文件夹
+            commands::queue_delete_folder, // 删除文件夹
+            commands::queue_toggle_folder_status, // 切换文件夹状态（黑名单/白名单）
+            commands::queue_add_whitelist_folder, // 添加白名单文件夹
+            commands::queue_get_status, // 获取队列状态
             file_scanner::start_backend_scanning, // 后端扫描启动命令
-            commands::search_files_by_tags,
+            file_scanner::scan_files_by_time_range, // 按时间范围扫描文件
+            file_scanner::scan_files_by_type, // 按类型扫描文件
             commands::ask_ai_stream_bridge,
         ])
         .on_window_event(|window, event| match event {
