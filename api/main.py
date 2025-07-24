@@ -16,7 +16,7 @@ from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 from sqlmodel import create_engine, Session, select
 from api_cache_optimization import TimedCache, cached
 from db_mgr import (
-    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, 
+    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, Task,
     MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule,
 )
 from myfiles_mgr import MyFilesManager
@@ -349,9 +349,9 @@ def task_processor(db_path: str, stop_event: threading.Event):
         try:
             with Session(engine) as session:
                 task_mgr = TaskManager(session)
-                task = task_mgr.get_next_task()
+                task: Task = task_mgr.get_next_task()
 
-                if not task:
+                if task is None:
                     time.sleep(5) # 没有任务时，等待5秒
                     continue
 
@@ -373,7 +373,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                     # 低优先级任务: 批量处理
                     else:
                         logger.info(f"开始批量解析任务 (Task ID: {task.id})")
-                        result_data = parsing_mgr.process_pending_batch(batch_size=10) # 每次处理10个
+                        result_data = parsing_mgr.process_pending_batch(task_id=task.id, batch_size=10) # 每次处理10个
                         
                         # 无论批量任务处理了多少文件，都将触发任务标记为完成
                         task_mgr.update_task_status(
@@ -407,230 +407,11 @@ def get_task_manager(session: Session = Depends(get_session)):
     """获取任务管理器实例"""
     return TaskManager(session)
 
-# 为单个文件创建解析任务
-@app.post("/tasks/parse")
-def create_parse_task(
-    file_path: str,
-    parsing_mgr: ParsingMgr = Depends(get_parsing_manager)
-):
-    """为单个文件创建解析任务
-
-    Args:
-        file_path: 文件路径
-
-    Returns:
-        任务ID
-    """
-    try:
-        task_id = parsing_mgr.create_rough_parse_task(file_path)
-        return {
-            "success": True,
-            "task_id": task_id
-        }
-    except Exception as e:
-        logger.error(f"创建解析任务失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"创建解析任务失败: {str(e)}"
-        }
-
-# 获取最新的指定类型任务
-@app.get("/tasks/latest/{task_type}")
-def get_latest_task(
-    task_type: str,
-    task_mgr: TaskManager = Depends(get_task_manager)
-):
-    """获取最新的指定类型任务
-    
-    Args:
-        task_type: 任务类型
-        
-    Returns:
-        最新任务信息
-    """
-    try:
-        if task_type not in [t.value for t in TaskType]:
-            raise ValueError(f"不支持的任务类型: {task_type}")
-        
-        # 查询最新的已完成任务
-        latest_task = task_mgr.get_latest_completed_task(task_type)
-        
-        if not latest_task:
-            # 如果没有已完成的任务，尝试查找正在运行的任务
-            running_task = task_mgr.get_latest_running_task(task_type)
-            if running_task:
-                return {
-                    "success": True,
-                    "task_id": str(running_task.id),
-                    "status": running_task.status,
-                    "created_at": running_task.created_at,
-                    "message": "任务正在运行中"
-                }
-            else:
-                # 如果没有正在运行的任务，查找最新的任务（无论状态如何）
-                any_task = task_mgr.get_latest_task(task_type)
-                if any_task:
-                    return {
-                        "success": True,
-                        "task_id": str(any_task.id),
-                        "status": any_task.status,
-                        "created_at": any_task.created_at,
-                        "message": f"找到一个状态为 {any_task.status} 的任务"
-                    }
-                else:
-                    return {
-                        "success": False,
-                        "message": f"未找到任何 {task_type} 类型的任务"
-                    }
-        
-        return {
-            "success": True,
-            "task_id": str(latest_task.id),
-            "status": latest_task.status,
-            "created_at": latest_task.created_at
-        }
-    except Exception as e:
-        logger.error(f"获取最新任务时出错: {str(e)}", exc_info=True)
-        return {
-            "success": False,
-            "message": f"获取最新任务失败: {str(e)}"
-        }
-
-@app.post("/tasks/start-initial-parsing")
-def start_initial_parsing(task_mgr: TaskManager = Depends(get_task_manager)):
-    """由Rust在首次全盘扫描后调用，以触发内容解析和打标签任务"""
-    try:
-        # 检查是否已有正在运行或待处理的解析任务
-        existing_task = task_mgr.get_latest_task(TaskType.PARSING.value)
-        if existing_task and existing_task.status in [TaskStatus.PENDING.value, TaskStatus.RUNNING.value]:
-            logger.info(f"已存在一个正在进行中的解析任务 (ID: {existing_task.id}, Status: {existing_task.status})，无需创建新任务。")
-            return {
-                "success": True,
-                "task_id": existing_task.id,
-                "message": "已存在一个正在进行中的解析任务，无需创建新任务。"
-            }
-
-        # 创建一个新的解析任务作为“信号”
-        task = task_mgr.add_task(
-            task_name="Initial-Parsing-Trigger",
-            task_type=TaskType.PARSING.value,
-            priority=TaskPriority.LOW.value, # 首次全盘扫描后的解析任务，使用低优先级
-            extra_data={"trigger": "initial_scan_complete"}
-        )
-        logger.info(f"已创建首次解析的触发任务，ID: {task.id}")
-        return {
-            "success": True,
-            "task_id": task.id,
-            "message": "首次解析任务已成功触发。"
-        }
-    except Exception as e:
-        logger.error(f"触发首次解析任务失败: {e}", exc_info=True)
-        return {"success": False, "message": str(e)}
-
-# 添加用于处理文件粗筛结果的 API 接口
-@app.post("/file-screening")
-def add_file_screening_result(
-    data: Dict[str, Any] = Body(...), 
-    screening_mgr: ScreeningManager = Depends(get_screening_manager),
-    task_mgr: TaskManager = Depends(lambda session=Depends(get_session): TaskManager(session))
-):
-    """添加单个文件粗筛结果，并可选地创建后续处理任务
-    
-    参数:
-    - file_path: 文件路径
-    - file_name: 文件名
-    - file_size: 文件大小（字节）
-    - extension: 扩展名（不含点）
-    - file_hash: 文件哈希（可选）
-    - created_time: 文件创建时间（可选）
-    - modified_time: 文件修改时间
-    - accessed_time: 文件访问时间（可选）
-    - category_id: 分类ID（可选）
-    - matched_rules: 匹配的规则ID列表（可选）    
-    - metadata: 其他元数据（可选）
-    - labels: 标牌列表（可选）
-    - auto_create_task: 是否自动创建任务（默认 True）
-    """
-    try:
-        # 处理Unix时间戳（从Rust发送的秒数转换为Python datetime）
-        for time_field in ["created_time", "modified_time", "accessed_time"]:
-            if time_field in data and isinstance(data[time_field], (int, float)):
-                data[time_field] = datetime.fromtimestamp(data[time_field])
-                
-        # 处理字符串格式的时间字段
-        for time_field in ["created_time", "modified_time", "accessed_time"]:
-            if time_field in data and isinstance(data[time_field], str):
-                try:
-                    data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
-                except Exception as e:
-                    logger.warning(f"转换时间字段 {time_field} 失败: {str(e)}")
-                    # 如果是修改时间字段转换失败，设置为当前时间
-                    if time_field == "modified_time":
-                        data[time_field] = datetime.now()
-        
-        # 确保必填字段有值
-        if "modified_time" not in data or data["modified_time"] is None:
-            data["modified_time"] = datetime.now()
-        
-        # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
-        if "metadata" in data and "extra_metadata" not in data:
-            data["extra_metadata"] = data.pop("metadata")
-
-        # 添加粗筛结果
-        # The screening_mgr.add_screening_result will now expect 'extra_metadata'
-        result = screening_mgr.add_screening_result(data)
-        if not result:
-            return {
-                "success": False,
-                "message": "添加文件粗筛结果失败"
-            }
-        
-        # 检查是否需要自动创建任务
-        auto_create_task = data.get("auto_create_task", True)
-        if auto_create_task and result.status == "pending":
-            # 创建一个处理此文件的任务
-            task_name = f"处理文件: {result.file_name}"
-            
-            # 这里我们使用解析任务类型统一处理
-            # 并将单一文件任务也设置为高优先级，确保优先处理单一文件任务
-            task = task_mgr.add_task(
-                task_name=task_name,
-                task_type=TaskType.PARSING.value,  # 使用解析任务类型，与批处理保持一致
-                priority=TaskPriority.HIGH.value,  # 高优先级
-                extra_data={"screening_result_id": result.id}  # 关联粗筛结果ID
-            )
-            
-            # 更新粗筛结果，关联任务ID
-            screening_mgr.update_screening_result(
-                result_id=result.id,
-                data={"task_id": task.id}
-            )
-            
-            return {
-                "success": True,
-                "screening_result_id": result.id,
-                "task_id": task.id,
-                "message": "文件粗筛结果已添加，并创建了处理任务"
-            }
-        
-        return {
-            "success": True,
-            "screening_result_id": result.id,
-            "message": "文件粗筛结果已添加"
-        }
-        
-    except Exception as e:
-        logger.error(f"处理文件粗筛结果失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"处理失败: {str(e)}"
-        }
-
 @app.post("/file-screening/batch")
 def add_batch_file_screening_results(
     request: Dict[str, Any] = Body(...), 
     screening_mgr: ScreeningManager = Depends(get_screening_manager),
-    task_mgr: TaskManager = Depends(lambda session=Depends(get_session): TaskManager(session))
+    task_mgr: TaskManager = Depends(get_task_manager)
 ):
     """批量添加文件粗筛结果
     
@@ -689,10 +470,10 @@ def add_batch_file_screening_results(
 
         # 1. 先创建任务，获取 task_id
         task_name = f"批量处理文件: {len(data_list)} 个文件"
-        task = task_mgr.add_task(
+        task: Task = task_mgr.add_task(
             task_name=task_name,
-            task_type=TaskType.PARSING.value,
-            priority=TaskPriority.MEDIUM.value,
+            task_type=TaskType.PARSING,
+            priority=TaskPriority.MEDIUM,
             extra_data={"file_count": len(data_list)}
         )
         logger.info(f"已创建解析任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
@@ -789,294 +570,6 @@ def get_file_screening_results(
         return {
             "success": False,
             "message": f"获取失败: {str(e)}"
-        }
-
-@app.get("/file-screening/pending")
-def get_pending_file_screenings(
-    limit: int = 500,  # 增加默认返回数量
-    category_id: int = None,  # 添加分类过滤
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """获取待处理的文件粗筛结果列表
-    
-    参数:
-    - limit: 最大返回结果数量
-    - category_id: 可选，按文件分类ID过滤
-    """
-    try:
-        # 获取待处理结果
-        results = screening_mgr.get_pending_results(limit)
-        
-        # 如果结果为空，直接返回
-        if not results:
-            return {
-                "success": True,
-                "count": 0,
-                "data": []
-            }
-            
-        # 将模型对象列表转换为可序列化的字典列表
-        results_dict = [result.model_dump() for result in results]
-        
-        # 按分类过滤（如果指定）
-        if category_id is not None:
-            results_dict = [r for r in results_dict if r.get('category_id') == category_id]
-        
-        logger.info(f"找到 {len(results_dict)} 个待处理的文件粗筛结果")
-        
-        return {
-            "success": True,
-            "count": len(results_dict),
-            "data": results_dict
-        }
-        
-    except Exception as e:
-        logger.error(f"获取待处理文件粗筛结果列表失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"获取待处理粗筛结果失败: {str(e)}"
-        }
-
-# 添加在适当的位置，比如在 get_file_screening_results 函数后面
-
-@app.get("/file-screening/by-time-range/{time_range}")
-def get_files_by_time_range(
-    time_range: str,
-    limit: int = 500,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """根据时间范围获取文件
-    
-    参数:
-    - time_range: 时间范围 ("today", "last7days", "last30days")
-    - limit: 最大返回结果数量
-    """
-    try:
-        # 验证时间范围参数
-        valid_time_ranges = ["today", "last7days", "last30days"]
-        if time_range not in valid_time_ranges:
-            logger.warning(f"请求了无效的时间范围: {time_range}")
-            return {
-                "success": False,
-                "message": f"无效的时间范围: {time_range}，有效值为: {valid_time_ranges}"
-            }
-            
-        # 开始计时，用于性能监控
-        start_time = time.time()
-        
-        # 调用 ScreeningManager 中的方法获取数据
-        files = screening_mgr.get_files_by_time_range(time_range, limit)
-        
-        # 计算查询耗时
-        query_time = time.time() - start_time
-        
-        logger.info(f"按时间范围 {time_range} 查询到 {len(files)} 个文件，耗时 {query_time:.3f} 秒")
-        
-        return {
-            "success": True,
-            "count": len(files),
-            "query_time_ms": int(query_time * 1000),
-            "data": files
-        }
-    except Exception as e:
-        logger.error(f"按时间范围获取文件失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"查询失败: {str(e)}"
-        }
-
-@app.get("/file-screening/by-category/{category_type}")
-def get_files_by_category(
-    category_type: str,
-    limit: int = 500,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """根据文件分类类型获取文件
-    
-    参数:
-    - category_type: 分类类型 ("image", "audio-video", "archive", 等)
-    - limit: 最大返回结果数量
-    """
-    try:
-        # 文件类型和分类ID的映射
-        category_mapping = {
-            "image": 2,       # 图片的分类ID
-            "audio-video": 3, # 音视频的分类ID
-            "archive": 4,     # 归档文件的分类ID
-            "document": 1     # 文档的分类ID
-        }
-        
-        # 检查类型是否有效
-        if category_type not in category_mapping:
-            logger.warning(f"请求了无效的分类类型: {category_type}")
-            return {
-                "success": False,
-                "message": f"无效的分类类型: {category_type}，有效值为: {list(category_mapping.keys())}"
-            }
-            
-        # 开始计时，用于性能监控
-        start_time = time.time()
-        
-        # 获取对应的分类ID
-        category_id = category_mapping[category_type]
-        
-        # 调用 ScreeningManager 中的方法获取数据
-        files = screening_mgr.get_files_by_category_id(category_id, limit)
-        
-        # 计算查询耗时
-        query_time = time.time() - start_time
-        
-        logger.info(f"按分类 {category_type} (ID: {category_id}) 查询到 {len(files)} 个文件，耗时 {query_time:.3f} 秒")
-        
-        return {
-            "success": True,
-            "count": len(files),
-            "query_time_ms": int(query_time * 1000),
-            "data": files
-        }
-    except Exception as e:
-        logger.error(f"按分类获取文件失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"查询失败: {str(e)}"
-        }
-
-# 将带参数的路由移到最后，避免与特定路由冲突
-@app.get("/file-screening/{screening_id}")
-def get_file_screening_result(
-    screening_id: int,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """获取单个文件粗筛结果"""
-    try:
-        result = screening_mgr.get_by_id(screening_id)
-        if not result:
-            return {
-                "success": False,
-                "message": f"未找到ID为 {screening_id} 的文件粗筛结果"
-            }
-        
-        # 将模型对象转换为可序列化的字典
-        result_dict = result.model_dump()
-        
-        return {
-            "success": True,
-            "data": result_dict
-        }
-        
-    except Exception as e:
-        logger.error(f"获取文件粗筛结果失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"获取失败: {str(e)}"
-        }
-
-@app.put("/file-screening/{screening_id}/status")
-def update_file_screening_status(
-    screening_id: int,
-    status_data: Dict[str, Any] = Body(...),
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """更新文件粗筛结果状态
-    
-    参数:
-    - status: 新状态，可选值: "pending", "processed", "ignored", "failed"
-    - error_message: 错误信息（如果状态为 "failed"）
-    """
-    try:
-        from db_mgr import FileScreenResult
-        
-        status_str = status_data.get("status")
-        error_message = status_data.get("error_message")
-        
-        # 验证状态值是否有效
-        try:
-            status = FileScreenResult(status_str)
-        except ValueError:
-            return {
-                "success": False,
-                "message": f"无效的状态值: {status_str}"
-            }
-        
-        # 更新状态
-        success = screening_mgr.update_status(screening_id, status, error_message)
-        
-        if not success:
-            return {
-                "success": False,
-                "message": f"更新ID为 {screening_id} 的文件粗筛结果状态失败"
-            }
-        
-        return {
-            "success": True,
-            "message": f"已将ID为 {screening_id} 的文件粗筛结果状态更新为 {status_str}"
-        }
-        
-    except Exception as e:
-        logger.error(f"更新文件粗筛结果状态失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"更新失败: {str(e)}"
-        }
-
-@app.get("/file-screening/similar")
-def find_similar_files(
-    file_hash: str = None,
-    file_name: str = None,
-    exclude_path: str = None,
-    limit: int = 10,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """查找相似文件
-    
-    可以根据文件哈希值或文件名查找相似文件。优先使用哈希值查找，如果没有指定哈希值则使用文件名。
-    
-    参数:
-    - file_hash: 文件哈希值（可选）
-    - file_name: 文件名（可选，当file_hash未提供时使用）
-    - exclude_path: 要排除的文件路径（通常是原始文件路径）
-    - limit: 返回结果的最大数量
-    """
-    try:
-        if not file_hash and not file_name:
-            return {
-                "success": False,
-                "message": "必须提供file_hash或file_name参数"
-            }
-        
-        # 优先使用哈希值查找（精确匹配）
-        if file_hash:
-            results = screening_mgr.find_similar_files_by_hash(file_hash, exclude_path, limit)
-            search_type = "hash"
-        else:
-            results = screening_mgr.find_similar_files_by_name(file_name, exclude_path, limit)
-            search_type = "name"
-        
-        # 转换为可序列化字典列表
-        results_dict = [result.model_dump() for result in results]
-        
-        logger.info(f"根据{search_type}查找到 {len(results_dict)} 个相似文件")
-        
-        return {
-            "success": True,
-            "count": len(results_dict),
-            "search_type": search_type,
-            "data": results_dict
-        }
-        
-    except Exception as e:
-        logger.error(f"查找相似文件失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"查找失败: {str(e)}"
         }
 
 @app.get("/")
@@ -1313,72 +806,6 @@ def check_directory_access_status(
         logger.error(f"检查目录访问状态失败: {directory_id}, {str(e)}")
         return {"status": "error", "message": f"检查目录访问状态失败: {str(e)}"}
 
-@app.get("/system/full-disk-access-status")
-def check_full_disk_access_status(
-    myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
-):
-    """
-    Checks the system's full disk access status for the application.
-    DEPRECATED: This information is now included in the /directories endpoint.
-    This endpoint may be removed in a future version.
-    Note: Currently always returns False as the full disk access check is not implemented.
-    """
-    try:
-        # 根据系统平台返回状态
-        status = False
-        if sys.platform == "darwin":  # macOS
-            # 在 macOS 上，我们可以通过检查特定目录的访问权限来判断是否有完全磁盘访问权限
-            # 这里简单返回 False，因为现在我们没有这个方法了
-            # 如果将来需要这个功能，可以实现新的检查方法
-            pass
-            
-        logger.info(f"[API DEBUG] /system/full-disk-access-status returning: {status}")
-        return {"status": "success", "full_disk_access_status": status}
-    except Exception as e:
-        logger.error(f"Error in check_full_disk_access_status: {e}", exc_info=True)
-        return {"status": "error", "message": str(e)}
-
-@app.get("/api/files/search", response_model=List[Dict[str, Any]])
-async def search_files(
-    query: str,
-    limit: int = 100,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """
-    搜索文件路径包含指定子字符串的文件
-    
-    Args:
-        query: 搜索查询字符串
-        limit: 返回结果数量限制
-        
-    Returns:
-        匹配的文件列表
-    """
-    try:
-        logger.info(f"搜索文件路径，查询: '{query}'")
-        results = screening_mgr.search_files_by_path_substring(query, limit)
-        
-        # 将结果转换为字典列表，以便返回给前端
-        file_list = []
-        for result in results:
-            file_dict = {
-                "id": result.id,
-                "file_path": result.file_path,
-                "file_name": result.file_name,
-                "file_size": result.file_size,
-                "extension": result.extension,
-                "modified_time": result.modified_time.strftime("%Y-%m-%d %H:%M:%S") if result.modified_time else None,
-                "category_id": result.category_id,
-                "labels": result.labels,
-                "status": result.status
-            }
-            file_list.append(file_dict)
-            
-        return file_list
-    except Exception as e:
-        logger.error(f"搜索文件路径时出错: {str(e)}")
-        return []
-
 # ========== Bundle扩展名管理端点 ==========
 @app.get("/bundle-extensions")
 def get_bundle_extensions(
@@ -1600,31 +1027,6 @@ def clean_screening_results_by_path(
         logger.error(f"手动清理粗筛结果失败: {str(e)}")
         return {"status": "error", "message": f"清理失败: {str(e)}"}
 
-@app.post("/clear-screening-data")
-def clear_screening_data(
-    data: Dict[str, Any] = Body(...),
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """清理指定路径的粗筛数据（供Rust后端调用）- 兼容旧版API
-    
-    此端点已弃用，只为了向后兼容，请使用 /screening/clean-by-path 代替。
-    """
-    try:
-        folder_path = data.get("folder_path", "").strip()
-        
-        if not folder_path:
-            return {"status": "error", "message": "文件夹路径不能为空"}
-        
-        # 重定向到新的接口内部实现
-        return clean_screening_results_by_path({"path": folder_path}, screening_mgr)
-    except Exception as e:
-        logger.error(f"清理粗筛数据失败（旧API）: {str(e)}")
-        return {"status": "error", "message": str(e)}
-            
-    except Exception as e:
-        logger.error(f"清理粗筛数据失败: {str(e)}")
-        return {"status": "error", "message": f"清理失败: {str(e)}"}
-
 def invalidate_config_caches():
     """使所有配置相关缓存失效"""
     config_cache.clear()
@@ -1697,6 +1099,7 @@ def test_bridge_stdout():
     from test_bridge_stdout import test_bridge_stdout_main
     test_bridge_stdout_main()
     return {"status": "ok"}
+
 
 if __name__ == "__main__":
     try:

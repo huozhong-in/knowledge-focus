@@ -1,20 +1,15 @@
 import multiprocessing
-from db_mgr import TaskStatus, TaskResult, Task, TaskPriority
-from typing import Dict, Any, Optional, List
+from db_mgr import TaskStatus, TaskResult, Task, TaskPriority, TaskType
+from typing import Dict, Any, List
 import threading
-# import time
 import logging
-# import os
-# import signal
-# import sys
-# import psutil
 from utils import monitor_parent
 from sqlmodel import (
     Session, 
     select, 
-    asc, 
+    # asc, 
     desc,
-    text,
+    # text,
 )
 from datetime import datetime
 
@@ -31,24 +26,24 @@ class TaskManager:
         """
         self.session: Session = session
 
-    def add_task(self, task_name: str, task_type: str, priority: str = "medium", extra_data: Dict[str, Any] = None) -> Task:
+    def add_task(self, task_name: str, task_type: TaskType, priority: TaskPriority = TaskPriority.MEDIUM, extra_data: Dict[str, Any] = None) -> Task:
         """添加新任务
         
         Args:
             task_name: 任务名称
             task_type: 任务类型
-            priority: 任务优先级，可选值: "low", "medium", "high"
+            priority: 任务优先级，TaskPriority类型的字符串值
             extra_data: 任务额外数据
             
         Returns:
             添加的任务对象
         """
-        logger.info(f"添加任务: {task_name}, 类型: {task_type}, 优先级: {priority}")
+        logger.info(f"添加任务: {task_name}, 类型: {task_type.value}, 优先级: {priority.value}")
         
         task = Task(
             task_name=task_name,
-            task_type=task_type,
-            priority=priority,
+            task_type=task_type.value,
+            priority=priority.value,
             status=TaskStatus.PENDING.value,
             created_at=datetime.now(),
             updated_at=datetime.now(),
@@ -61,7 +56,7 @@ class TaskManager:
         
         return task
     
-    def get_task(self, task_id: int) -> Optional[Task]:
+    def get_task(self, task_id: int) -> Task | None:
         """根据ID获取任务
         
         Args:
@@ -84,7 +79,7 @@ class TaskManager:
         statement = select(Task).limit(limit)
         return self.session.exec(statement).all()
     
-    def get_next_task(self) -> Optional[Task]:
+    def get_next_task(self) -> Task | None:
         """获取下一个待处理的任务，优先处理优先级高的任务"""
         return self.session.exec(
             select(Task)
@@ -274,7 +269,7 @@ class TaskManager:
             
         return canceled_count
     
-    def get_latest_completed_task(self, task_type: str) -> Optional[Task]:
+    def get_latest_completed_task(self, task_type: str) -> Task | None:
         """获取最新的已完成任务
         
         Args:
@@ -294,7 +289,7 @@ class TaskManager:
             logger.error(f"获取最新已完成任务失败: {e}")
             return None
     
-    def get_latest_running_task(self, task_type: str) -> Optional[Task]:
+    def get_latest_running_task(self, task_type: str) -> Task | None:
         """获取最新的运行中任务
         
         Args:
@@ -314,7 +309,7 @@ class TaskManager:
             logger.error(f"获取最新运行任务失败: {e}")
             return None
     
-    def get_latest_task(self, task_type: str) -> Optional[Task]:
+    def get_latest_task(self, task_type: str) -> Task | None:
         """获取最新的任务，无论状态如何
         
         Args:
@@ -337,10 +332,8 @@ class TaskManager:
 if __name__ == '__main__':
     from sqlmodel import (
         create_engine, 
-        Session, 
-        select, 
     )
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    session = Session(create_engine(f'sqlite:///{db_file}'))
+    from config import TEST_DB_PATH
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     task_mgr = TaskManager(session)
     print(task_mgr.get_next_task())

@@ -19,3 +19,6 @@ ENABLE_FILE_DEDUPLICATION = True  # 启用文件去重功能
 
 # 向量化维度数
 EMBEDDING_DIMENSIONS = 1024
+
+# 测试用本地SQLite数据库路径
+TEST_DB_PATH = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"

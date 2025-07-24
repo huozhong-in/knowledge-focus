@@ -2,8 +2,8 @@
 from config import EMBEDDING_DIMENSIONS
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
-from lancedb.embeddings import get_registry
-from typing import List, Optional
+# from lancedb.embeddings import get_registry
+from typing import List
 import os
 import logging
 
@@ -90,8 +90,10 @@ class LanceDBMgr:
 # Example usage
 if __name__ == '__main__':
     # This should be the directory where your SQLite DB is located
-    db_directory = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in"
-    
+    from config import TEST_DB_PATH
+    import pathlib
+    db_directory = pathlib.Path(TEST_DB_PATH).parent
+
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     lancedb_mgr.init_db()
     

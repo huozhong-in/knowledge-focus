@@ -591,9 +591,10 @@ if __name__ == '__main__':
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    base_dir = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in"
-    session = Session(create_engine(f'sqlite:///{db_file}'))
+    from config import TEST_DB_PATH
+    import pathlib
+    base_dir = pathlib.Path(TEST_DB_PATH).parent
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     lancedb_mgr = LanceDBMgr(base_dir=base_dir)
     models_mgr = ModelsMgr(session=session)
     tagging_mgr = TaggingMgr(

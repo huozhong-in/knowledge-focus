@@ -102,5 +102,5 @@ class RefineManager:
 
 # 测试用代码
 if __name__ == "__main__":
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    session = Session(create_engine(f'sqlite:///{db_file}'))
+    from config import TEST_DB_PATH
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))

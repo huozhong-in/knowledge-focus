@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 
-def get_router(external_get_session):
+def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
 
     def get_model_config_manager(session: Session = Depends(external_get_session)) -> ModelConfigMgr:

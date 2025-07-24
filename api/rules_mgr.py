@@ -1071,7 +1071,8 @@ class TestRulesManager(unittest.TestCase):
     def setUp(self):
         """Set up a test database and RulesManager instance."""
         # Use the same database file as db_mgr.py
-        self.session = Session(create_engine("sqlite:////Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"))
+        from config import TEST_DB_PATH
+        self.session = Session(create_engine(f"sqlite:///{TEST_DB_PATH}"))
         self.rules_manager = RulesManager(self.session)
         
     def tearDown(self):

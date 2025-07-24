@@ -10,7 +10,7 @@ from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from db_mgr import FileScreenResult
-from sqlmodel import select
+from sqlmodel import select, and_
 import time
 
 # 为当前模块创建日志器
@@ -104,27 +104,13 @@ class ParsingMgr:
             # 不支持的文件类型，静默跳过
             return ""
 
-    
-
     def _update_tagged_time(self, screening_result: FileScreeningResult):
         """Updates the tagged_time for a screening result object. Does not commit."""
         if screening_result:
             screening_result.tagged_time = datetime.now()
             self.session.add(screening_result)
     
-    def create_rough_parse_task(self, file_path: str) -> int:
-        """
-        Creates a rough parse task for a file.
-        This is a placeholder for future implementation.
-        """
-        # In a real application, you would create a task in the database
-        # and return its ID. Here we just log the action.
-        logger.info(f"Creating rough parse task for file: {file_path}")
-        
-        # For now, we return a dummy task ID
-        return 1
-    
-    def process_pending_batch(self, batch_size: int = 10) -> Dict[str, Any]:
+    def process_pending_batch(self, task_id: int, batch_size: int = 10) -> Dict[str, Any]:
         """
         Processes a batch of pending file screening results.
         """        
@@ -134,7 +120,10 @@ class ParsingMgr:
 
         results = self.session.exec(
             select(FileScreeningResult)
-            .where(FileScreeningResult.status == FileScreenResult.PENDING.value)
+            .where(and_(
+                FileScreeningResult.status == FileScreenResult.PENDING.value,
+                FileScreeningResult.task_id == task_id
+            ))
             .limit(batch_size)
         ).all()
 
@@ -228,18 +217,7 @@ class ParsingMgr:
                 logger.error(f"[PARSING_SINGLE] Failed to mark file as failed: {inner_e}")
                 self.session.rollback()
             return False
-    
-    def create_sophisticated_parse_task(self, file_path: str) -> int:
-        """
-        Creates a sophisticated parse task for a file.
-        This is a placeholder for future implementation.
-        """
-        # In a real application, you would create a task in the database
-        # and return its ID. Here we just log the action.
-        logger.info(f"Creating sophisticated parse task for file: {file_path}")
-        
-        # For now, we return a dummy task ID
-        return 2
+
 
 # 功能测试代码 - 相当于手动单元测试
 if __name__ == "__main__":
@@ -269,11 +247,16 @@ if __name__ == "__main__":
     test_logger.info("开始解析管理器功能测试")
 
     # 数据库连接
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    session = Session(create_engine(f'sqlite:///{db_file}'))
+    from config import TEST_DB_PATH
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
 
     # 测试文件路径
-    test_file_path = "/Users/dio/Documents/纯CSS实现太极动态效果.pdf"
+    import pathlib
+    user_home = pathlib.Path.home()
+    test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
+    if not test_file_path.exists():
+        test_logger.error(f"测试文件不存在: {test_file_path}")
+        raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
     
     test_logger.info(f"测试文件: {test_file_path}")
     

@@ -844,8 +844,8 @@ class ScreeningManager:
 if __name__ == "__main__":
     # 仅用于测试，实际使用时请通过依赖注入获取Session实例
     from sqlmodel import create_engine, Session
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    engine = create_engine(f"sqlite:///{db_file}")    
+    from config import TEST_DB_PATH
+    engine = create_engine(f"sqlite:///{TEST_DB_PATH}")
     with Session(engine) as session:
         mgr = ScreeningManager(session)
         # 测试get_files_by_category_id()

@@ -158,9 +158,9 @@ Based on all information, provide the best tags for this file.
     
 if __name__ == "__main__":
     # Example usage
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
+    from config import TEST_DB_PATH
     from sqlmodel import create_engine
-    session = Session(create_engine(f'sqlite:///{db_file}'))
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     mgr = ModelsMgr(session)
     tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
     print("Generated Tags:", tags)

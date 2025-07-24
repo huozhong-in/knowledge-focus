@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session
 from typing import List, Dict, Any
 import logging
-
+import pathlib
 from tagging_mgr import TaggingMgr
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
@@ -16,8 +16,7 @@ def get_router(get_session: callable) -> APIRouter:
         """FastAPI dependency to get a TaggingMgr instance."""
         # These dependencies will be resolved by FastAPI for each request.
         db_path = session.get_bind().url.database
-        base_dir = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in"
-        lancedb_mgr = LanceDBMgr(base_dir=base_dir)
+        lancedb_mgr = LanceDBMgr(base_dir=pathlib.Path(db_path).parent)
         models_mgr = ModelsMgr(session=session)
         return TaggingMgr(session=session, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
 

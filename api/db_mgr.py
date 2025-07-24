@@ -17,7 +17,7 @@ from sqlmodel import (
 )
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Any
 import os
     
 # 任务状态枚举
@@ -45,6 +45,7 @@ class TaskPriority(str, PyEnum):
 class TaskType(str, PyEnum):
     SCREENING = "screening"
     PARSING = "parsing"
+    EXTRACTION = "extraction"
     REFINE = "refine"
     MAINTENANCE = "maintenance"
 
@@ -441,6 +442,8 @@ class DBManager:
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
                 # 创建索引 - 为修改时间创建索引，便于按时间查询
                 conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
+                # 创建索引 - 为task_id创建索引，便于查询关联任务
+                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
 
             # 创建 FTS5 虚拟表和触发器
             if not inspector.has_table('t_files_fts'):
@@ -1463,7 +1466,7 @@ class DBManager:
             self.session.commit()
 
 if __name__ == '__main__':
-    db_file = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
-    db_mgr = DBManager(Session(create_engine(f'sqlite:///{db_file}')))
+    from config import TEST_DB_PATH
+    db_mgr = DBManager(Session(create_engine(f'sqlite:///{TEST_DB_PATH}')))
     db_mgr.init_db()
     print("数据库初始化完成")
