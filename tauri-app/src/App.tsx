@@ -220,9 +220,9 @@ export default function Page() {
 
   return (
     <SidebarProvider>
-      <div className="flex h-full">
+      {/* <div className="flex h-full"> */}
         <AppSidebar />
-        <SidebarInset>
+        {/* <SidebarInset> */}
           {isApiReady ? (
             <AppWorkspace />
           ) : (
@@ -246,8 +246,8 @@ export default function Page() {
             onOpenChange={setShowIntroDialog}
           />
           <Toaster />
-        </SidebarInset>
-      </div>
+        {/* </SidebarInset> */}
+      {/* </div> */}
       {/* 全局设置对话框，可通过快捷键打开 */}
       <SettingsDialog />
     </SidebarProvider>

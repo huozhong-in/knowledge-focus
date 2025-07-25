@@ -54,7 +54,7 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
   };
 
   return (
-    <div className={`w-[245px] border rounded-md p-2 mb-1.5 group relative ${file.pinned ? 'border-primary bg-primary/5' : 'border-border bg-background'} hover:bg-muted/50 transition-colors`}>
+    <div className={`w-[243px] border rounded-md p-2 mb-1.5 group relative ${file.pinned ? 'border-primary bg-primary/5' : 'border-border bg-background'} hover:bg-muted/50 transition-colors`}>
       <div className="flex items-start gap-1.5">
         <div className="mt-0.5 flex-shrink-0">
           {getFileIcon(file.extension)}
@@ -152,7 +152,7 @@ export function FileList() {
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 flex-shrink-0">
-          <p className="text-sm font-semibold">候选文件</p>
+          <p className="text-sm font-semibold">标签搜索结果</p>
           <p className="text-xs text-muted-foreground">正在搜索...</p>
         </div>
         <div className="p-2 space-y-1.5">
@@ -171,7 +171,7 @@ export function FileList() {
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 flex-shrink-0">
-          <p className="text-sm font-semibold">候选文件</p>
+          <p className="text-sm font-semibold">标签搜索结果</p>
           <p className="text-xs text-destructive">搜索出错</p>
         </div>
         <div className="p-2 text-center text-xs text-muted-foreground">
@@ -182,16 +182,16 @@ export function FileList() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="border-b p-2 flex-shrink-0">
-        <p className="text-sm font-semibold">候选文件</p>
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="border-b p-2 flex-shrink-0 h-[50px]">
+        <p className="text-sm font-semibold">标签搜索结果</p>
         <p className="text-xs text-muted-foreground">
-          {files.length > 0 ? `找到 ${files.length} 个文件` : "点击标签查看相关文件"}
+          固定文件以便在对话中参考
         </p>
       </div>
       
-      <ScrollArea className="flex-1">
-        <div className="p-2">
+      <ScrollArea className="flex-1 p-1 h-[calc(100vh-90px)]">
+        {/* <div className="p-0 h-full"> */}
           {files.length === 0 ? (
             <div className="text-center py-6">
               <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
@@ -211,8 +211,11 @@ export function FileList() {
               ))}
             </div>
           )}
-        </div>
+        {/* </div> */}
       </ScrollArea>
+      <div className="h-[40px] p-2 text-xs text-muted-foreground">
+        {files.length > 0 ? `找到 ${files.length} 个文件` : "点击标签查看相关文件"}
+      </div>
     </div>
   );
 }
