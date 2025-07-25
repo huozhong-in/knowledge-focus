@@ -37,3 +37,12 @@ export interface WiseFolderFile {
   category_id?: number;
   file_size: number;
 }
+
+export interface TaggedFile {
+  id: number;
+  path: string;
+  file_name: string;
+  extension?: string;
+  tags?: string[];
+  pinned?: boolean;
+}

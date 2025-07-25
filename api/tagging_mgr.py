@@ -311,11 +311,20 @@ class TaggingMgr:
         for file_id in paginated_ids:
             file_result = self.session.get(FileScreeningResult, file_id)
             if file_result:
+                # 获取标签名称列表
+                tag_names_list = []
+                if file_result.tags_display_ids:
+                    tag_ids = self.get_tags_display_ids_as_list(file_result.tags_display_ids)
+                    tags = self.get_tags_by_ids(tag_ids)
+                    tag_names_list = [tag.name for tag in tags]
+                
                 results.append({
                     'id': file_id,
                     'path': file_result.file_path,
-                    'file_name': os.path.basename(file_result.file_path), # Add file_name
-                    'tags_display_ids': file_result.tags_display_ids
+                    'file_name': os.path.basename(file_result.file_path),
+                    'extension': os.path.splitext(file_result.file_path)[1][1:] if '.' in file_result.file_path else None,
+                    'tags_display_ids': file_result.tags_display_ids,
+                    'tags': tag_names_list
                 })
                 
         return results
@@ -609,18 +618,18 @@ if __name__ == '__main__':
     # print("FTS索引重建完成")
 
     # 测试根据标签搜索文件
-    # test_tag_names = ["large_language_models"]
-    # print(f"搜索包含标签 {test_tag_names} 的文件...")
-    # search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
-    # print(f"搜索结果数量: {len(search_results)}")
-    # for i, result in enumerate(search_results):
-    #     print(f"{i+1}. ID: {result['id']}, 路径: {result['path']}")
-    #     print(f"   标签IDs: {result['tags_display_ids']}")
-    #     # 获取标签名称
-    #     if result['tags_display_ids']:
-    #         tag_ids = tagging_mgr.get_tags_display_ids_as_list(result['tags_display_ids'])
-    #         tags = tagging_mgr.get_tags_by_ids(tag_ids)
-    #         print(f"   标签名称: {[tag.name for tag in tags]}")
+    test_tag_names = ["large_language_models"]
+    print(f"搜索包含标签 {test_tag_names} 的文件...")
+    search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
+    print(f"搜索结果数量: {len(search_results)}")
+    for i, result in enumerate(search_results):
+        print(f"{i+1}. ID: {result['id']}, 路径: {result['path']}")
+        print(f"   标签IDs: {result['tags_display_ids']}")
+        # 获取标签名称
+        if result['tags_display_ids']:
+            tag_ids = tagging_mgr.get_tags_display_ids_as_list(result['tags_display_ids'])
+            tags = tagging_mgr.get_tags_by_ids(tag_ids)
+            print(f"   标签名称: {[tag.name for tag in tags]}")
     
     # 测试标签推荐
     # if search_results:
@@ -631,6 +640,6 @@ if __name__ == '__main__':
     #     print(f"推荐标签: {[tag.name for tag in related_tags]}")
 
     # 测试标签云
-    print("\n获取标签云数据...")
-    tag_cloud = tagging_mgr.get_tag_cloud_data()
-    print(f"标签云数据: {tag_cloud}")
+    # print("\n获取标签云数据...")
+    # tag_cloud = tagging_mgr.get_tag_cloud_data()
+    # print(f"标签云数据: {tag_cloud}")

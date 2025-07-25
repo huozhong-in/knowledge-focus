@@ -1,5 +1,5 @@
-from config import EMBEDDING_DIMENSIONS
-from typing import List, Dict, Any, Optional
+# from config import EMBEDDING_DIMENSIONS
+from typing import List, Dict, Any
 import logging
 import json
 import re
@@ -18,7 +18,7 @@ class ModelsMgr:
     def __init__(self, session: Session):
         self.session = session
 
-    def _get_model_config(self, role_type: str) -> tuple[str, str, Optional[str]]:
+    def _get_model_config(self, role_type: str) -> tuple[str, str, str | None]:
         """
         Fetches the configuration for a given role and returns the necessary
         parameters for a litellm API call.

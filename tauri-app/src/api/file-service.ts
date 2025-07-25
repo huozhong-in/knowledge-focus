@@ -1,4 +1,5 @@
-import { FileScreeningResult } from "../types/file-types";
+import { FileScreeningResult, TaggedFile } from "../types/file-types";
+import { invoke } from "@tauri-apps/api/core";
 
 const API_BASE_URL = 'http://127.0.0.1:60315';
 
@@ -70,6 +71,28 @@ export const FileService = {
       return data.data;
     } catch (error) {
       console.error('获取文件分类失败:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * 按标签搜索文件
+   * @param tagNames 标签名称列表
+   * @param operator 操作符: AND或OR
+   * @returns 匹配的文件列表
+   */
+  async searchFilesByTags(
+    tagNames: string[], 
+    operator: string = 'AND'
+  ): Promise<TaggedFile[]> {
+    try {
+      const files = await invoke<TaggedFile[]>('search_files_by_tags', {
+        tag_names: tagNames,
+        operator
+      });
+      return files;
+    } catch (error) {
+      console.error('按标签搜索文件失败:', error);
       throw error;
     }
   }

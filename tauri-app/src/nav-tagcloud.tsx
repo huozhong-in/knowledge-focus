@@ -16,6 +16,8 @@ import { useAppStore } from "@/main"; // 引入AppStore以获取API就绪状态
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 引入封装好的桥接事件Hook
 import { useTagCloudStore } from "@/lib/tagCloudStore"; // 引入标签云全局状态
+import { useFileListStore } from "@/lib/fileListStore"; // 引入文件列表状态
+import { FileService } from "@/api/file-service"; // 引入文件服务
 
 export function NavTagCloud() {
   const { t } = useTranslation();
@@ -23,6 +25,9 @@ export function NavTagCloud() {
   
   // 使用全局标签云状态
   const { tags, loading, error, fetchTagCloud } = useTagCloudStore();
+  
+  // 使用文件列表状态
+  const { setFiles, setLoading, setError } = useFileListStore();
   
   // 防抖定时器引用
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -102,8 +107,31 @@ export function NavTagCloud() {
   };
   
   // 处理标签点击
-  const handleTagClick = (tagId: number) => {
+  const handleTagClick = async (tagId: number) => {
     console.log('Tag clicked:', tagId);
+    
+    // 找到对应的标签
+    const tag = tags.find(t => t.id === tagId);
+    if (!tag) {
+      console.error('Tag not found:', tagId);
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // 按标签名搜索文件
+      const files = await FileService.searchFilesByTags([tag.name], 'AND');
+      setFiles(files);
+      
+      console.log(`Found ${files.length} files for tag: ${tag.name}`);
+    } catch (error) {
+      console.error('Error searching files by tag:', error);
+      setError(error instanceof Error ? error.message : '搜索失败');
+    } finally {
+      setLoading(false);
+    }
   };
   
   //  shadow-sm border border-border

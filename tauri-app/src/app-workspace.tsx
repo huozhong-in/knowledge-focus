@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ChatMessageAvatar } from "@/components/ui/chat-message";
 import { ChatInput, ChatInputTextArea, ChatInputSubmit } from "@/components/ui/chat-input";
 import { InfiniteCanvas} from "./infinite-canvas";
+import { FileList } from "./file-list";
 
 interface Message {
   id: string;
@@ -151,26 +152,7 @@ export function AppWorkspace() {
           className="border-r bg-background flex-shrink-0"
           style={{ width: `${fileListWidth}px` }}
         >
-          <div className="border-b p-4">
-            <h2 className="text-lg font-semibold">标签聚合</h2>
-            <p className="text-sm text-muted-foreground">文件标签聚合结果</p>
-          </div>
-          <div className="p-4">
-            <div className="space-y-2">
-              <div className="p-3 border rounded-lg">
-                <div className="text-sm font-medium">文档类型</div>
-                <div className="text-xs text-muted-foreground">PDF (15) | DOCX (8) | TXT (23)</div>
-              </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-sm font-medium">主题标签</div>
-                <div className="text-xs text-muted-foreground">技术文档 (12) | 报告 (8) | 笔记 (26)</div>
-              </div>
-              <div className="p-3 border rounded-lg">
-                <div className="text-sm font-medium">时间范围</div>
-                <div className="text-xs text-muted-foreground">本周 (5) | 本月 (18) | 更早 (23)</div>
-              </div>
-            </div>
-          </div>
+          <FileList />
         </div>
       )}
 
