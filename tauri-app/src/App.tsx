@@ -6,7 +6,7 @@ import { useAppStore } from "./main"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
+import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./intro-dialog"
@@ -220,9 +220,7 @@ export default function Page() {
 
   return (
     <SidebarProvider>
-      {/* <div className="flex h-full"> */}
         <AppSidebar />
-        {/* <SidebarInset> */}
           {isApiReady ? (
             <AppWorkspace />
           ) : (
@@ -246,8 +244,6 @@ export default function Page() {
             onOpenChange={setShowIntroDialog}
           />
           <Toaster />
-        {/* </SidebarInset> */}
-      {/* </div> */}
       {/* 全局设置对话框，可通过快捷键打开 */}
       <SettingsDialog />
     </SidebarProvider>

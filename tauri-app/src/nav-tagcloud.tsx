@@ -136,15 +136,15 @@ export function NavTagCloud() {
   
   //  shadow-sm border border-border
   return (
-    <SidebarGroup className=" bg-background rounded-md">
+    <SidebarGroup className=" bg-background rounded-md pr-0">
       <SidebarGroupLabel>
         <Tag className="mr-2 h-4 w-4" />
         {t('file-tags')}
       </SidebarGroupLabel>
       
-      <ScrollArea className="h-[250px] p-0">
+      <ScrollArea className="h-[250px] p-0 m-0">
         <div className="flex flex-wrap gap-1 p-1 justify-start">
-          {loading ? (
+          {loading || tags.length === 0 ? (
             <>
               <Skeleton className="h-6 w-16 rounded-full" />
               <Skeleton className="h-6 w-24 rounded-full" />
@@ -163,7 +163,7 @@ export function NavTagCloud() {
             <div className="text-sm text-destructive">
               {error}
             </div>
-          ) : tags.length > 0 ? (
+          ) : (
             tags.map(tag => (
               <Badge
                 key={tag.id}
@@ -172,7 +172,7 @@ export function NavTagCloud() {
                   "cursor-pointer hover:bg-muted transition-all", 
                   tag.type === 'SYSTEM' ? "border-primary" : "border-secondary"
                 )}
-                style={{ fontSize: `${getFontSize(tag.weight)}px` }}
+                // style={{ fontSize: `${getFontSize(tag.weight)}px` }}
                 onClick={() => handleTagClick(tag.id)}
               >
                 {tag.name}
@@ -182,10 +182,6 @@ export function NavTagCloud() {
                 
               </Badge>
             ))
-          ) : (
-            <div className="text-sm text-muted-foreground">
-              {t('No tags yet')}
-            </div>
           )}
         </div>
       </ScrollArea>
