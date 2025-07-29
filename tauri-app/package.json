@@ -101,7 +101,6 @@
     "openai": "5.10.1",
     "posthog-js": "^1.257.0",
     "react": "19.1.0",
-    "react-custom-scrollbars-2": "^4.5.0",
     "react-day-picker": "^9.6.7",
     "react-dom": "19.1.0",
     "react-dropzone": "^14.3.8",
@@ -148,6 +147,6 @@
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.11",
     "raw-loader": "^4.0.2",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4.1.11"
   }
 }
