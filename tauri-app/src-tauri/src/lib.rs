@@ -605,6 +605,10 @@ pub fn run() {
                 let separator = PredefinedMenuItem::separator(app)?;
                 let quit_item = PredefinedMenuItem::quit(app, Some("Quit Knowledge Focus"))?;
                 
+                // 创建窗口定位菜单项
+                let move_left_item = MenuItem::with_id(app, "move_left", "Move Left", true, Some("cmd+shift+left"))?;
+                let move_right_item = MenuItem::with_id(app, "move_right", "Move Right", true, Some("cmd+shift+right"))?;
+                
                 // 创建应用菜单
                 let app_menu = Submenu::with_id_and_items(
                     app,
@@ -637,7 +641,7 @@ pub fn run() {
                     ]
                 )?;
                 
-                // 创建窗口菜单
+                // 创建窗口菜单（包含 macOS 标准窗口管理项目和自定义定位功能）
                 let window_menu = Submenu::with_id_and_items(
                     app,
                     "window",
@@ -645,6 +649,10 @@ pub fn run() {
                     true,
                     &[
                         &PredefinedMenuItem::minimize(app, None)?,
+                        &PredefinedMenuItem::separator(app)?,
+                        &move_left_item,
+                        &move_right_item,
+                        &PredefinedMenuItem::separator(app)?,
                         &PredefinedMenuItem::close_window(app, None)?,
                     ]
                 )?;
@@ -668,6 +676,56 @@ pub fn run() {
                             println!("About 菜单项被点击");
                             if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.emit("menu-settings", "about");
+                            }
+                        }
+                        "move_left" => {
+                            println!("Move Left 菜单项被点击");
+                            if let Some(window) = app.get_webview_window("main") {
+                                // 获取屏幕尺寸并将窗口移动到左半屏
+                                if let Ok(monitor) = window.current_monitor() {
+                                    if let Some(monitor) = monitor {
+                                        let screen_size = monitor.size();
+                                        let screen_position = monitor.position();
+                                        
+                                        let window_width = screen_size.width / 2;
+                                        let window_height = screen_size.height;
+                                        
+                                        // 设置窗口位置和大小
+                                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                                            x: screen_position.x,
+                                            y: screen_position.y,
+                                        }));
+                                        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                                            width: window_width,
+                                            height: window_height,
+                                        }));
+                                    }
+                                }
+                            }
+                        }
+                        "move_right" => {
+                            println!("Move Right 菜单项被点击");
+                            if let Some(window) = app.get_webview_window("main") {
+                                // 获取屏幕尺寸并将窗口移动到右半屏
+                                if let Ok(monitor) = window.current_monitor() {
+                                    if let Some(monitor) = monitor {
+                                        let screen_size = monitor.size();
+                                        let screen_position = monitor.position();
+                                        
+                                        let window_width = screen_size.width / 2;
+                                        let window_height = screen_size.height;
+                                        
+                                        // 设置窗口位置和大小
+                                        let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
+                                            x: screen_position.x + (screen_size.width / 2) as i32,
+                                            y: screen_position.y,
+                                        }));
+                                        let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+                                            width: window_width,
+                                            height: window_height,
+                                        }));
+                                    }
+                                }
                             }
                         }
                         _ => {}

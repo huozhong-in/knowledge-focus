@@ -109,7 +109,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar variant="sidebar" collapsible="icon" {...props} className="h-full">
       <SidebarHeader>
-        <div className="flex items-center gap-2 mt-6">
+        <div className="flex items-center gap-2 mt-5">
           <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
             <div className="relative">
               <img

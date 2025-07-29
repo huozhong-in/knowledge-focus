@@ -88,23 +88,23 @@ export function NavTagCloud() {
   );
   
   // 根据标签权重计算字体大小
-  const getFontSize = (weight: number) => {
-    const minSize = 10;
-    const maxSize = 16;
+  // const getFontSize = (weight: number) => {
+  //   const minSize = 10;
+  //   const maxSize = 16;
     
-    if (!tags || tags.length <= 1) return minSize;
+  //   if (!tags || tags.length <= 1) return minSize;
     
-    // 找出最大和最小权重
-    const weights = tags.map(tag => tag.weight);
-    const maxWeight = Math.max(...weights);
-    const minWeight = Math.min(...weights);
+  //   // 找出最大和最小权重
+  //   const weights = tags.map(tag => tag.weight);
+  //   const maxWeight = Math.max(...weights);
+  //   const minWeight = Math.min(...weights);
     
-    if (maxWeight === minWeight) return minSize;
+  //   if (maxWeight === minWeight) return minSize;
     
-    // 计算权重对应的字体大小
-    const size = minSize + ((weight - minWeight) / (maxWeight - minWeight)) * (maxSize - minSize);
-    return Math.round(size);
-  };
+  //   // 计算权重对应的字体大小
+  //   const size = minSize + ((weight - minWeight) / (maxWeight - minWeight)) * (maxSize - minSize);
+  //   return Math.round(size);
+  // };
   
   // 处理标签点击
   const handleTagClick = async (tagId: number) => {
