@@ -1,16 +1,22 @@
-import { useState, useEffect } from "react"
-import { PanelLeftClose } from "lucide-react"
-import { useSidebar } from "@/components/ui/sidebar"
+import { useState, useEffect, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge";
 import { ChatMessageAvatar } from "@/components/ui/chat-message"
+import { PanelRightIcon} from "lucide-react"
 import {
   ChatInput,
   ChatInputTextArea,
   ChatInputSubmit,
 } from "@/components/ui/chat-input"
 import { InfiniteCanvas } from "./infinite-canvas"
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable"
+import { ImperativePanelHandle } from "react-resizable-panels"
 import { FileList } from "./file-list"
+import { RagLocal } from "./rag-local"
 
 interface Message {
   id: string
@@ -43,90 +49,43 @@ export function AppWorkspace() {
     },
   ])
 
+  const [dynamicTags, setDynamicTags] = useState<string[]>([
+    "数据分析",
+    "项目管理",
+    "AI助手",
+    "文档处理",
+  ])
+
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [windowWidth, setWindowWidth] = useState(window.innerWidth)
-  const [userPrefersSidebarExpanded, setUserPrefersSidebarExpanded] =
-    useState(true) // 用户偏好
-
-  const { state } = useSidebar()
-  const isCollapsed = state === "collapsed"
+  // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+  // const { state, setOpen } = useSidebar()
+  // const isCollapsed = state === "collapsed"
+  const [isInfiniteCanvasCollapsed, setIsInfiniteCanvasCollapsed] = useState(false)
+  const infiniteCanvasPanelRef = useRef<ImperativePanelHandle>(null)
 
   // 监听窗口大小变化
-  useEffect(() => {
-    const handleResize = () => {
-      setWindowWidth(window.innerWidth)
+  // useEffect(() => {
+  //   const handleResize = () => {
+  //     setWindowWidth(window.innerWidth)
+  //   }
+
+  //   window.addEventListener("resize", handleResize)
+  //   return () => window.removeEventListener("resize", handleResize)
+  // }, [])
+
+  // 处理无限画布面板的收起/展开
+  const handleCanvasToggle = () => {
+    if (infiniteCanvasPanelRef.current) {
+      if (isInfiniteCanvasCollapsed) {
+        infiniteCanvasPanelRef.current.expand()
+      } else {
+        infiniteCanvasPanelRef.current.collapse()
+      }
     }
-
-    window.addEventListener("resize", handleResize)
-    return () => window.removeEventListener("resize", handleResize)
-  }, [])
-
-  // 监听侧边栏状态变化，记录用户偏好
-  useEffect(() => {
-    setUserPrefersSidebarExpanded(!isCollapsed)
-  }, [isCollapsed])
-
-  // 响应式显示逻辑 - 用户意图优先
-
-  // 各种组合的最小宽度需求
-  const CANVAS_MIN = 380
-  const CHATUI_MIN = 430
-  const FILELIST_MIN = 260
-  const SIDEBAR_EXPANDED = 280
-  const SIDEBAR_COLLAPSED = 60
-
-  // 当前实际的侧边栏宽度
-  const currentSidebarWidth = isCollapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED
-
-  // 计算主工作区可用宽度（总宽度减去侧边栏宽度）
-  const workspaceWidth = windowWidth - currentSidebarWidth
-
-  // 判断当前主工作区能容纳哪些组合
-  const canFitExpandedSidebarWithChatUI =
-    windowWidth >= SIDEBAR_EXPANDED + CHATUI_MIN + CANVAS_MIN
-
-  // 智能建议收起侧边栏（仅提示，不强制）
-  const shouldSuggestCollapse =
-    userPrefersSidebarExpanded &&
-    !isCollapsed &&
-    !canFitExpandedSidebarWithChatUI
-
-  // 判断是否显示各个区域（基于主工作区可用宽度）
-  const shouldShowFileList =
-    workspaceWidth >= FILELIST_MIN + CHATUI_MIN + CANVAS_MIN
-  const shouldShowChatUI = workspaceWidth >= CHATUI_MIN + CANVAS_MIN
-
-  // 计算各区域宽度
-  const getLayoutWidths = () => {
-    const fileListWidth = shouldShowFileList
-      ? Math.min(
-          350,
-          Math.max(
-            FILELIST_MIN,
-            (workspaceWidth - CHATUI_MIN - CANVAS_MIN) * 0.2
-          )
-        )
-      : 0
-    const chatUIWidth = shouldShowChatUI
-      ? Math.min(
-          650,
-          Math.max(
-            CHATUI_MIN,
-            (workspaceWidth - fileListWidth - CANVAS_MIN) * 0.4
-          )
-        )
-      : 0
-    const canvasWidth = Math.max(
-      CANVAS_MIN,
-      workspaceWidth - fileListWidth - chatUIWidth
-    )
-
-    return { fileListWidth, chatUIWidth, canvasWidth }
   }
 
-  const { fileListWidth, chatUIWidth, canvasWidth } = getLayoutWidths()
-
+  
   const handleSendMessage = async () => {
     if (!inputValue.trim()) return
 
@@ -157,111 +116,130 @@ export function AppWorkspace() {
   }
 
   return (
-    <main className="flex h-full overflow-hidden w-full">
-      {/* 空间不足提示 */}
-      {/* {shouldSuggestCollapse && (
-        <div className="absolute top-4 left-4 z-50">
-          <Alert className="max-w-sm shadow-lg">
-            <PanelLeftClose className="h-4 w-4" />
-            <AlertDescription className="flex items-center justify-between">
-              <span className="text-sm">空间不足，建议收起侧边栏</span>
-              <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={toggleSidebar}
-                  className="h-6 px-2 text-xs ml-2"
-                >
-                  收起
-                </Button>
-            </AlertDescription>
-          </Alert>
-        </div>
-      )} */}
-
-      {/* 文件列表区 - 响应式显示 */}
-      {shouldShowFileList && (
-        <div
-          className="border-r bg-background flex-shrink-0 h-full"
-          style={{ width: `${fileListWidth}px` }}
-        >
-          <FileList />
-        </div>
-      )}
-
-      {/* ChatUI区 - 响应式显示 */}
-      {shouldShowChatUI && (
-        <div
-          className="flex flex-col border-r flex-shrink-0 h-full overflow-hidden"
-          style={{ width: `${chatUIWidth}px` }}
-        >
-          {/* Header */}
-          {/* <div className="border-b p-2 flex items-center gap-4">
-              <div className="text-xl font-semibold">AI对话</div>
-              <div className="text-sm text-muted-foreground ml-auto">知识挖掘助手</div>
-            </div> */}
-
-          {/* Messages */}
-          <ScrollArea className="flex-1 p-4 rounded-md h-[calc(100vh-100px)]">
-            <div className="space-y-4">
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`flex gap-4 w-full ${message.type === "outgoing" ? "justify-end ml-auto" : "justify-start mr-auto"}`}
-                >
-                  <ChatMessageAvatar />
-                  <div className="flex flex-col gap-2">
-                    <div
-                      className={`rounded-xl px-3 py-2 ${message.type === "incoming" ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground"}`}
-                    >
-                      {message.content}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {message.timestamp.toLocaleTimeString()}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {isLoading && (
-                <div className="flex gap-4 w-full justify-start mr-auto">
-                  <ChatMessageAvatar />
-                  <div className="flex flex-col gap-2">
-                    <div className="rounded-xl px-3 py-2 bg-secondary text-secondary-foreground">
-                      正在输入...
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-
-          {/* Input */}
-          <div className="p-2 h-[100px]">
-            <ChatInput
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onSubmit={handleSendMessage}
-              loading={isLoading}
-            >
-              <ChatInputTextArea placeholder="和你的文件聊天吧..." />
-              <ChatInputSubmit />
-            </ChatInput>
-          </div>
-        </div>
-      )}
-
-      {/* 无限画布区 - 始终显示，是核心价值区域 */}
-      <div
-        className="flex-1 bg-background h-full"
-        style={{ minWidth: `${Math.max(CANVAS_MIN, canvasWidth)}px` }}
+    <main className="flex flex-row h-full overflow-hidden w-full">
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="w-full"
       >
-        {/* <div className="border-b p-4 flex items-center gap-4">
-            <div className="text-xl font-semibold">知识图谱</div>
-            <div className="text-sm text-muted-foreground ml-auto">精炼知识可视化</div>
+        <ResizablePanel defaultSize={20} minSize={20}>
+          <ResizablePanelGroup direction="vertical">
+            <ResizablePanel defaultSize={70} minSize={20}>
+              {/* <div className="flex h-full items-center justify-center p-6">
+                <span className="font-semibold">One</span>
+              </div> */}
+              {/* 文件列表区 - 始终显示 */}
+              {/* <div
+                className={`flex flex-col h-[400px] bg-background @container`}
+              > */}
+                <FileList />
+              {/* </div> */}
+            </ResizablePanel>
+            <ResizableHandle withHandle className="bg-primary" />
+            <ResizablePanel defaultSize={30} minSize={20}>
+              <div className="flex flex-col h-full p-1">
+                {/* <span className="font-semibold">Two</span> */}
+                <RagLocal />
+              </div>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ResizablePanel>
+        <ResizableHandle withHandle className="bg-primary" />
+        <ResizablePanel defaultSize={40} minSize={20}>
+          {/* <div className="flex h-[400px] items-center justify-center p-6">
+            <span className="font-semibold">Three</span>
           </div> */}
-        <div className="flex-1">
-          <InfiniteCanvas />
-        </div>
-      </div>
+          {/* ChatUI区 - 始终显示 */}
+          <div
+            className={`flex flex-col flex-auto h-full overflow-hidden`}
+          >
+            {/* Header */}
+            <div className="border-b p-2 flex flex-row h-[50px] relative">
+              <div className="text-md text-muted-foreground">Project Planning Assistant</div>
+              <div className="absolute bottom-0 right-1 z-10">
+                <PanelRightIcon 
+                  className={`size-7 cursor-pointer hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 rounded-md p-1.5 transition-all ${isInfiniteCanvasCollapsed ? "rotate-180" : ""}`} 
+                  onClick={handleCanvasToggle} />
+              </div>
+            </div>
+
+            {/* Messages */}
+            <ScrollArea className="flex-1 p-4 rounded-md h-[calc(100vh-180px)]">
+              <div className={`space-y-4 mx-auto`}>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex gap-4 w-full justify-start ${message.type === "outgoing" ? "ml-auto flex-row-reverse" : "mr-auto "}`}
+                  >
+                    <ChatMessageAvatar />
+                    <div className="flex flex-col gap-2">
+                      <div
+                        className={`rounded-xl max-w-3/4 px-3 py-2 ${message.type === "incoming" ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground ml-auto"}`}
+                      >
+                        {message.content}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {message.timestamp.toLocaleTimeString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {isLoading && (
+                  <div className="flex gap-4 w-full justify-start mr-auto">
+                    <ChatMessageAvatar />
+                    <div className="flex flex-col gap-2">
+                      <div className="rounded-xl px-3 py-2 bg-secondary text-secondary-foreground">
+                        正在输入...
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+
+            {/* Input */}
+            <div className="p-2 h-[130px]">
+              <div className="flex flex-wrap gap-1 mb-1">
+                <span className="text-muted-foreground text-xs px-2 py-1">
+                  即时标签感知
+                </span>
+                {dynamicTags.map((tag) => (
+                  <Badge key={tag} variant="outline" className="text-xs px-2 rounded-xl cursor-pointer hover:bg-accent hover:text-accent-foreground transition-all">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+              <ChatInput
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onSubmit={handleSendMessage}
+                loading={isLoading}
+              >
+                <ChatInputTextArea placeholder="Pin个文件聊天吧..." />
+                <ChatInputSubmit />
+              </ChatInput>
+            </div>
+          </div>
+        </ResizablePanel>
+        <ResizableHandle withHandle className="bg-primary" />
+        <ResizablePanel 
+          ref={infiniteCanvasPanelRef}
+          defaultSize={40} 
+          minSize={10} 
+          collapsible 
+          onCollapse={() => setIsInfiniteCanvasCollapsed(true)}
+          onExpand={() => setIsInfiniteCanvasCollapsed(false)}
+          >
+          {/* <div>
+            <span className="font-semibold">Four</span>
+          </div> */}
+          {/* 无限画布区 - 响应式显示 */}
+          <div className={`flex flex-auto w-full bg-background h-full`}>
+            <div className="flex-1">
+              <InfiniteCanvas />
+            </div>
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
     </main>
   )
 }

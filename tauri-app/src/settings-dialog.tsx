@@ -266,7 +266,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <SidebarProvider className="items-start">
             {/* 左侧导航 */}
             <Sidebar collapsible="none" 
-              className="w-64 border-r flex-shrink-0 hidden md:flex"
+              className="w-64 border-r shrink-0 hidden md:flex"
               >
               {/* <SidebarHeader>
                 <div className="p-4">

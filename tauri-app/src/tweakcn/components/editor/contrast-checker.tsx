@@ -310,7 +310,7 @@ const ContrastChecker = ({ currentStyles }: ContrastCheckerProps) => {
                                   style={{
                                     backgroundColor: pair.background ?? "#000000",
                                   }}
-                                  className="h-12 w-12 flex-shrink-0 rounded-md border shadow-sm"
+                                  className="h-12 w-12 shrink-0 rounded-md border shadow-sm"
                                 ></div>
                                 <div className="flex flex-col">
                                   <span className="text-xs font-medium">Background</span>
@@ -325,7 +325,7 @@ const ContrastChecker = ({ currentStyles }: ContrastCheckerProps) => {
                                   style={{
                                     backgroundColor: pair.foreground ?? "#ffffff",
                                   }}
-                                  className="h-12 w-12 flex-shrink-0 rounded-md border shadow-sm"
+                                  className="h-12 w-12 shrink-0 rounded-md border shadow-sm"
                                 ></div>
                                 <div className="flex flex-col">
                                   <span className="text-xs font-medium">Foreground</span>

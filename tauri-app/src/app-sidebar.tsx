@@ -203,7 +203,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                             className="flex flex-col items-start h-auto p-1"
                           >
                             <div className="flex items-center gap-2 w-full">
-                              <task.icon className="h-4 w-4 flex-shrink-0" />
+                              <task.icon className="h-4 w-4 shrink-0" />
                               <span className="font-medium text-sm truncate">
                                 {task.title}
                               </span>

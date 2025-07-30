@@ -100,7 +100,7 @@ const ThemeControlPanel = ({
           onValueChange={setTab}
           className="flex min-h-0 w-full flex-1 flex-col"
         >
-          <div className="flex-shrink-0 border-b border-border">
+          <div className="shrink-0 border-b border-border">
             <div className="mt-2 mb-1 px-4">
               <TabsList className="bg-background text-muted-foreground inline-flex w-fit items-center justify-center rounded-full px-0">
                 <TabsTriggerPill value="colors">Colors</TabsTriggerPill>

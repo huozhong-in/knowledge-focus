@@ -5,6 +5,7 @@ import { useFileListStore } from "@/lib/fileListStore";
 import { TaggedFile } from "@/types/file-types";
 import { FileService } from "@/api/file-service";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { Progress } from "@/components/ui/progress";
 
 interface FileItemProps {
   file: TaggedFile;
@@ -54,12 +55,12 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
   };
 
   return (
-    <div className={`w-[243px] border rounded-md p-2 mb-1.5 group relative ${file.pinned ? 'border-primary bg-primary/5' : 'border-border bg-background'} hover:bg-muted/50 transition-colors`}>
-      <div className="flex items-start gap-1.5">
-        <div className="mt-0.5 flex-shrink-0">
+    <div className={`flex flex-1 border rounded-md p-2 mb-1.5 group relative min-w-0 @container ${file.pinned ? 'border-primary bg-primary/5' : 'border-border bg-background'} hover:bg-muted/50 transition-colors`}>
+      <div className="flex items-start gap-1.5 min-w-0 flex-1">
+        <div className="mt-0.5 shrink-0">
           {getFileIcon(file.extension)}
         </div>
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 w-0 pr-12"> {/* w-0 强制宽度为0，flex-1让它填充，pr-12为按钮留空间 */}
           <div className="font-medium text-xs truncate leading-tight" title={file.file_name}>
             {file.file_name}
           </div>
@@ -71,14 +72,14 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
           {file.tags && file.tags.length > 0 && (
             <div className="flex flex-wrap gap-0.5 mt-1">
               {file.tags.slice(0, 3).map((tag, index) => (
-                <button
+                <Button
                   key={index}
-                  className={`inline-block text-[9px] px-1 py-0.5 rounded leading-none cursor-pointer transition-colors ${getTagColorClass(index)}`}
+                  className={`h-4 inline-block text-[9px] px-1 py-0.5 rounded leading-none cursor-pointer transition-colors ${getTagColorClass(index)}`}
                   title={tag}
                   onClick={(e) => handleTagClick(tag, e)}
                 >
                   {tag.length > 8 ? `${tag.slice(0, 8)}..` : tag}
-                </button>
+                </Button>
               ))}
               {file.tags.length > 3 && (
                 <span className="inline-block bg-muted text-muted-foreground text-[9px] px-1 py-0.5 rounded leading-none">
@@ -151,7 +152,7 @@ export function FileList() {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
-        <div className="border-b p-2 flex-shrink-0">
+        <div className="border-b p-2 shrink-0">
           <p className="text-sm font-semibold">标签搜索结果</p>
           <p className="text-xs text-muted-foreground">正在搜索...</p>
         </div>
@@ -170,7 +171,7 @@ export function FileList() {
   if (error) {
     return (
       <div className="flex flex-col h-full">
-        <div className="border-b p-2 flex-shrink-0">
+        <div className="border-b p-2 shrink-0">
           <p className="text-sm font-semibold">标签搜索结果</p>
           <p className="text-xs text-destructive">搜索出错</p>
         </div>
@@ -182,40 +183,40 @@ export function FileList() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="border-b p-2 flex-shrink-0 h-[50px]">
+    <div className="flex flex-col w-full h-full overflow-auto">
+      <div className="border-b p-3 shrink-0 h-[50px]">
         <p className="text-sm font-semibold">标签搜索结果</p>
         <p className="text-xs text-muted-foreground">
           固定文件以便在对话中参考
         </p>
       </div>
-      
-      <ScrollArea className="flex-1 p-1 h-[calc(100vh-90px)]">
-        {/* <div className="p-0 h-full"> */}
-          {files.length === 0 ? (
-            <div className="text-center py-6">
-              <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
-              <p className="text-xs text-muted-foreground px-2 leading-relaxed">
-                请点击左侧标签云中的标签来搜索相关文件
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-0">
-              {files.map((file) => (
-                <FileItem 
-                  key={file.id}
-                  file={file} 
-                  onTogglePin={handleTogglePin}
-                  onTagClick={handleTagClick}
-                />
-              ))}
-            </div>
-          )}
-        {/* </div> */}
+
+      <ScrollArea className="flex-1 p-3 h-[calc(100%-90px)] @container">
+        {files.length === 0 ? (
+          <div className="text-center py-6">
+            <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
+            <p className="text-xs text-muted-foreground px-2 leading-relaxed">
+              请点击左侧标签云中的标签来搜索相关文件
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-0 min-w-0 w-[98cqw]">
+            {files.map((file) => (
+              <FileItem 
+                key={file.id}
+                file={file} 
+                onTogglePin={handleTogglePin}
+                onTagClick={handleTagClick}
+              />
+            ))}
+          </div>
+        )}
+        
       </ScrollArea>
       <div className="h-[40px] p-2 text-xs text-muted-foreground">
         {files.length > 0 ? `找到 ${files.length} 个文件` : "点击标签查看相关文件"}
       </div>
+      
     </div>
   );
 }

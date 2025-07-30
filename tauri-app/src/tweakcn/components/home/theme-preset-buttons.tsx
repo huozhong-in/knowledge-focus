@@ -110,7 +110,7 @@ export function ThemePresetButtons({
           options={rowData!.transition}
         >
           {/* Inner div necessary for spacing when using justify-content */}
-          <div className="flex flex-shrink-0" style={{ gap: `${gapPx}px` }}>
+          <div className="flex shrink-0" style={{ gap: `${gapPx}px` }}>
             {rowData!.presets.map((presetName, index) => {
               const themeStyles = getPresetThemeStyles(presetName)[mode];
               const bgColor = colorFormatter(themeStyles.primary, "hsl", "4");
@@ -120,7 +120,7 @@ export function ThemePresetButtons({
                 // Wrapper for each button
                 <motion.div
                   key={`${presetName}-${rowData!.key}-${index}`} // More unique key
-                  className="flex-shrink-0 min-w-[160px]" // Fixed width
+                  className="shrink-0 min-w-[160px]" // Fixed width
                   whileHover={{ scale: 1.02, y: -3, zIndex: 20 }} // Pop on hover
                   transition={{ duration: 0.2, ease: "easeOut" }}
                 >
