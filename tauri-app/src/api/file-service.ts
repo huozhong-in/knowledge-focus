@@ -95,5 +95,45 @@ export const FileService = {
       console.error('按标签搜索文件失败:', error);
       throw error;
     }
+  },
+
+  /**
+   * 按路径关键字搜索文件
+   * @param substring 路径中的关键字
+   * @param limit 最大返回结果数量
+   * @returns 匹配的文件列表
+   */
+  async searchFilesByPath(
+    substring: string,
+    limit: number = 100
+  ): Promise<TaggedFile[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/file-screening/results/search?substring=${encodeURIComponent(substring)}&limit=${limit}`);
+      
+      if (!response.ok) {
+        throw new Error(`API返回错误: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(`API返回错误: ${data.message}`);
+      }
+      
+      // 将FileScreeningResult格式转换为TaggedFile格式
+      const taggedFiles: TaggedFile[] = data.data.map((file: any) => ({
+        id: file.id,
+        path: file.file_path,
+        file_name: file.file_name,
+        extension: file.extension,
+        tags: [], // 路径搜索暂时不包含标签信息
+        pinned: false
+      }));
+      
+      return taggedFiles;
+    } catch (error) {
+      console.error('按路径搜索文件失败:', error);
+      throw error;
+    }
   }
 };

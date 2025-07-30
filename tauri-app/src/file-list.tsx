@@ -1,11 +1,12 @@
 import { Pin, PinOff, FileText, File, FolderOpen } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useFileListStore } from "@/lib/fileListStore";
 import { TaggedFile } from "@/types/file-types";
 import { FileService } from "@/api/file-service";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Progress } from "@/components/ui/progress";
+import { useState } from "react";
 
 interface FileItemProps {
   file: TaggedFile;
@@ -126,6 +127,9 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
 export function FileList() {
   const { getFilteredFiles, togglePinnedFile, isLoading, error, setFiles, setLoading, setError } = useFileListStore();
   const files = getFilteredFiles();
+  
+  // 搜索框状态
+  const [searchKeyword, setSearchKeyword] = useState("");
 
   const handleTogglePin = (fileId: number) => {
     togglePinnedFile(fileId);
@@ -149,11 +153,41 @@ export function FileList() {
     }
   };
 
+  // 处理路径搜索
+  const handlePathSearch = async () => {
+    if (!searchKeyword.trim()) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // 按路径关键字搜索文件
+      const newFiles = await FileService.searchFilesByPath(searchKeyword.trim());
+      setFiles(newFiles);
+      
+      console.log(`Found ${newFiles.length} files for path keyword: ${searchKeyword}`);
+    } catch (error) {
+      console.error('Error searching files by path:', error);
+      setError(error instanceof Error ? error.message : '搜索失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 处理回车键搜索
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') {
+      handlePathSearch();
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 shrink-0">
-          <p className="text-sm font-semibold">标签搜索结果</p>
+          <p className="text-sm">文件搜索结果</p>
           <p className="text-xs text-muted-foreground">正在搜索...</p>
         </div>
         <div className="p-2 space-y-1.5">
@@ -172,7 +206,7 @@ export function FileList() {
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 shrink-0">
-          <p className="text-sm font-semibold">标签搜索结果</p>
+          <p className="text-sm">文件搜索结果</p>
           <p className="text-xs text-destructive">搜索出错</p>
         </div>
         <div className="p-2 text-center text-xs text-muted-foreground">
@@ -185,7 +219,7 @@ export function FileList() {
   return (
     <div className="flex flex-col w-full h-full overflow-auto">
       <div className="border-b p-3 shrink-0 h-[50px]">
-        <p className="text-sm font-semibold">标签搜索结果</p>
+        <p className="text-sm">文件搜索结果</p>
         <p className="text-xs text-muted-foreground">
           固定文件以便在对话中参考
         </p>
@@ -213,8 +247,25 @@ export function FileList() {
         )}
         
       </ScrollArea>
-      <div className="h-[40px] p-2 text-xs text-muted-foreground">
-        {files.length > 0 ? `找到 ${files.length} 个文件` : "点击标签查看相关文件"}
+      <div className="h-[40px] flex flex-row w-full items-center justify-end p-2 gap-2 bg-background/60 backdrop-blur-sm border-t border-border/50">
+        <Input 
+          type="text" 
+          placeholder="路径关键字搜索..." 
+          value={searchKeyword}
+          onChange={(e) => setSearchKeyword(e.target.value)}
+          onKeyDown={handleKeyPress}
+          className="h-6 text-[9px] shrink max-w-36 border border-muted-foreground/30 bg-background/90 px-2 py-1 focus:border-primary/50 focus:bg-background transition-all duration-200" 
+        />
+        <Button 
+          type="submit" 
+          variant="secondary" 
+          size="sm"
+          onClick={handlePathSearch}
+          disabled={isLoading || !searchKeyword.trim()}
+          className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 rounded disabled:opacity-50"
+        >
+          搜索
+        </Button>
       </div>
       
     </div>

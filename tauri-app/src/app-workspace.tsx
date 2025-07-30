@@ -124,20 +124,12 @@ export function AppWorkspace() {
         <ResizablePanel defaultSize={20} minSize={20}>
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={70} minSize={20}>
-              {/* <div className="flex h-full items-center justify-center p-6">
-                <span className="font-semibold">One</span>
-              </div> */}
-              {/* 文件列表区 - 始终显示 */}
-              {/* <div
-                className={`flex flex-col h-[400px] bg-background @container`}
-              > */}
-                <FileList />
-              {/* </div> */}
+              {/* 文件列表区 */}
+              <FileList />
             </ResizablePanel>
             <ResizableHandle withHandle className="bg-primary" />
             <ResizablePanel defaultSize={30} minSize={20}>
               <div className="flex flex-col h-full p-1">
-                {/* <span className="font-semibold">Two</span> */}
                 <RagLocal />
               </div>
             </ResizablePanel>
@@ -145,23 +137,17 @@ export function AppWorkspace() {
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-primary" />
         <ResizablePanel defaultSize={40} minSize={20}>
-          {/* <div className="flex h-[400px] items-center justify-center p-6">
-            <span className="font-semibold">Three</span>
-          </div> */}
-          {/* ChatUI区 - 始终显示 */}
-          <div
-            className={`flex flex-col flex-auto h-full overflow-hidden`}
-          >
+          {/* ChatUI区 */}
+          <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
             {/* Header */}
             <div className="border-b p-2 flex flex-row h-[50px] relative">
-              <div className="text-md text-muted-foreground">Project Planning Assistant</div>
+              <div className="text-md font-semibold text-muted-foreground">Project Planning Assistant</div>
               <div className="absolute bottom-0 right-1 z-10">
                 <PanelRightIcon 
                   className={`size-7 cursor-pointer hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 rounded-md p-1.5 transition-all ${isInfiniteCanvasCollapsed ? "rotate-180" : ""}`} 
                   onClick={handleCanvasToggle} />
               </div>
             </div>
-
             {/* Messages */}
             <ScrollArea className="flex-1 p-4 rounded-md h-[calc(100vh-180px)]">
               <div className={`space-y-4 mx-auto`}>
@@ -195,7 +181,6 @@ export function AppWorkspace() {
                 )}
               </div>
             </ScrollArea>
-
             {/* Input */}
             <div className="p-2 h-[130px]">
               <div className="flex flex-wrap gap-1 mb-1">
@@ -229,10 +214,7 @@ export function AppWorkspace() {
           onCollapse={() => setIsInfiniteCanvasCollapsed(true)}
           onExpand={() => setIsInfiniteCanvasCollapsed(false)}
           >
-          {/* <div>
-            <span className="font-semibold">Four</span>
-          </div> */}
-          {/* 无限画布区 - 响应式显示 */}
+          {/* 无限画布区 */}
           <div className={`flex flex-auto w-full bg-background h-full`}>
             <div className="flex-1">
               <InfiniteCanvas />

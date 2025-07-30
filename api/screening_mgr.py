@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional, Tuple, Union
+from typing import List, Dict, Any
 from sqlmodel import Session, select, delete, update
 from sqlalchemy import text
 from db_mgr import FileScreeningResult, FileScreenResult
@@ -14,8 +14,8 @@ class ScreeningManager:
     
     def __init__(self, session: Session): # No change to __init__
         self.session: Session = session
-    
-    def add_screening_result(self, data: Dict[str, Any], commit_session: bool = True) -> Optional[FileScreeningResult]:
+
+    def add_screening_result(self, data: Dict[str, Any], commit_session: bool = True) -> FileScreeningResult | None:
         """添加一条文件粗筛结果
         
         Args:
@@ -126,12 +126,12 @@ class ScreeningManager:
             "errors": errors if errors else None
         }
 
-    def get_by_path(self, file_path: str) -> Optional[FileScreeningResult]:
+    def get_by_path(self, file_path: str) -> FileScreeningResult | None:
         """根据文件路径获取粗筛结果"""
         statement = select(FileScreeningResult).where(FileScreeningResult.file_path == file_path)
         return self.session.exec(statement).first()
     
-    def get_by_path_and_hash(self, file_path: str, file_hash: str = None) -> Optional[FileScreeningResult]:
+    def get_by_path_and_hash(self, file_path: str, file_hash: str = None) -> FileScreeningResult | None:
         """根据文件路径和哈希值获取粗筛结果
         
         如果同时提供路径和哈希值，则进行更严格的匹配；
@@ -153,8 +153,8 @@ class ScreeningManager:
             (FileScreeningResult.file_hash == file_hash)
         )
         return self.session.exec(statement).first()
-    
-    def get_by_id(self, result_id: int) -> Optional[FileScreeningResult]:
+
+    def get_by_id(self, result_id: int) -> FileScreeningResult | None:
         """根据ID获取粗筛结果"""
         return self.session.get(FileScreeningResult, result_id)
     
@@ -227,8 +227,8 @@ class ScreeningManager:
             import traceback
             logger.error(traceback.format_exc())
             return []
-    
-    def update_screening_result(self, result_id: int, data: Dict[str, Any]) -> Optional[FileScreeningResult]:
+
+    def update_screening_result(self, result_id: int, data: Dict[str, Any]) -> FileScreeningResult | None:
         """更新粗筛结果
         
         Args:
@@ -710,7 +710,7 @@ class ScreeningManager:
             
         return file_info
 
-    def search_files_by_path_substring(self, substring: str, limit: int = 100) -> List[FileScreeningResult]:
+    def search_files_by_path_substring(self, substring: str, limit: int = 100) -> List[Dict[str, Any]]:
         """根据路径子字符串搜索文件
         
         搜索文件全路径中含有指定子字符串的所有文件
@@ -720,7 +720,7 @@ class ScreeningManager:
             limit: 最大返回结果数量
             
         Returns:
-            匹配的文件列表
+            匹配的文件字典列表，格式与前端兼容
         """
         try:
             if not substring:
@@ -735,10 +735,14 @@ class ScreeningManager:
                 .limit(limit)
             
             results = self.session.exec(statement).all()
-            # 判断结果中的每个文件是否存在
-            existing_files = [file for file in results if os.path.exists(file.file_path)]
-            logger.debug(f"按路径子字符串'{substring}'搜索到{len(existing_files)}个文件结果")
-            return existing_files
+            # 判断结果中的每个文件是否存在，并转换为字典格式
+            result_dicts = []
+            for file in results:
+                if os.path.exists(file.file_path):
+                    result_dicts.append(self._result_to_dict(file))
+            
+            logger.debug(f"按路径子字符串'{substring}'搜索到{len(result_dicts)}个文件结果")
+            return result_dicts
         except Exception as e:
             logger.error(f"按路径子字符串搜索文件失败: {e}")
             return []
@@ -848,7 +852,13 @@ if __name__ == "__main__":
     engine = create_engine(f"sqlite:///{TEST_DB_PATH}")
     with Session(engine) as session:
         mgr = ScreeningManager(session)
+        
         # 测试get_files_by_category_id()
-        category_id = 1  # 假设我们要查询的分类ID
-        files = mgr.get_files_by_category_id(category_id)
-        print(f"分类ID {category_id} 下的文件: {files}")
+        # category_id = 1  # 假设我们要查询的分类ID
+        # files = mgr.get_files_by_category_id(category_id)
+        # print(f"分类ID {category_id} 下的文件: {files}")
+
+        # test search_files_by_path_substring()
+        substring = "大模型"  # 假设我们要查询的子字符串
+        files = mgr.search_files_by_path_substring(substring)
+        print(f"包含子字符串 '{substring}' 的文件: {files}")

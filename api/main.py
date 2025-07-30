@@ -571,6 +571,34 @@ def get_file_screening_results(
             "success": False,
             "message": f"获取失败: {str(e)}"
         }
+@app.get("/file-screening/results/search")
+def search_files_by_path_substring(
+    substring: str,
+    limit: int = 100,
+    screening_mgr: ScreeningManager = Depends(get_screening_manager)
+):
+    """根据路径子字符串搜索文件粗筛结果
+    
+    参数:
+    - substring: 要搜索的路径子字符串
+    - limit: 最大返回结果数
+    """
+    try:
+        # 使用 ScreeningManager 的搜索方法，现在返回字典列表
+        results_dict = screening_mgr.search_files_by_path_substring(substring, limit)
+        
+        return {
+            "success": True,
+            "count": len(results_dict),
+            "data": results_dict
+        }
+        
+    except Exception as e:
+        logger.error(f"根据路径子字符串搜索文件粗筛结果失败: {str(e)}")
+        return {
+            "success": False,
+            "message": f"搜索失败: {str(e)}"
+        }
 
 @app.get("/")
 def read_root():
