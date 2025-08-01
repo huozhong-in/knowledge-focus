@@ -110,6 +110,24 @@ export default function Page() {
       'api-ready': (payload: any) => {
         console.log("App.tsx: Received 'api-ready' event from backend.", payload)
         setApiReady(true) // Update global state so all components can react
+      },
+      'model-validation-failed': (payload: any) => {
+        console.warn("App.tsx: Model validation failed:", payload)
+        
+        const { provider_type, model_id, role_type, available_models, error_message } = payload
+        
+        // 显示详细的错误toast
+        toast.error(
+          `模型配置错误: ${error_message}`,
+          {
+            description: `角色: ${role_type} | 提供商: ${provider_type} | 模型: ${model_id}${available_models?.length > 0 ? `\n可用模型: ${available_models.slice(0, 5).join(', ')}${available_models.length > 5 ? '...' : ''}` : ''}`,
+            duration: 8000, // 显示8秒，让用户有时间阅读
+            action: {
+              label: "打开设置",
+              onClick: () => setSettingsOpen(true)
+            }
+          }
+        )
       }
     },
     { showToasts: false, logEvents: true }

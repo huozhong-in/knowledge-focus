@@ -48,6 +48,7 @@ class BridgeEventSender:
         PARSING_PROGRESS = "parsing-progress"
         SCREENING_PROGRESS = "screening-progress"
         MODEL_STATUS_CHANGED = "model-status-changed"
+        MODEL_VALIDATION_FAILED = "model-validation-failed"
         DATABASE_UPDATED = "database-updated"
         ERROR_OCCURRED = "error-occurred"
         SYSTEM_STATUS = "system-status"
@@ -150,6 +151,17 @@ class BridgeEventSender:
             "message": message,
             "details": details or {}
         })
+    
+    def model_validation_failed(self, provider_type: str, model_id: str, role_type: str, 
+                               available_models: list = None, error_message: str = ""):
+        """通知模型验证失败"""
+        self.send_event(self.Events.MODEL_VALIDATION_FAILED, {
+            "provider_type": provider_type,
+            "model_id": model_id,
+            "role_type": role_type,
+            "available_models": available_models or [],
+            "error_message": error_message
+        })
 
 # 测试代码
 if __name__ == "__main__":
@@ -177,6 +189,15 @@ if __name__ == "__main__":
         
         sender.system_status("ready", "系统准备就绪", {"version": "1.0.0"})
         time.sleep(1)
+        
+        sender.model_validation_failed(
+            provider_type="ollama",
+            model_id="test-model",
+            role_type="embedding",
+            available_models=["qwen2.5:7b", "llama3.2:3b"],
+            error_message="测试模型验证失败事件"
+        )
+        time.sleep(1)
 
 
     def test_custom_events(sender: BridgeEventSender):
@@ -200,8 +221,27 @@ if __name__ == "__main__":
     print("开始桥接事件系统测试...")
     print("Rust端应该能够捕获这些输出并转发给前端\n")
     
+    # 测试基本事件发送
     test_basic_events(bridge_events)
+    
+    # 测试自定义事件
     test_custom_events(bridge_events)
 
+    # 模拟模型验证失败
+    print("开始测试模型验证失败事件...")
+    bridge_events.model_validation_failed(
+        provider_type="ollama",
+        model_id="nonexistent-model",
+        role_type="base",
+        available_models=[
+            "qwen/qwen2.5-7b-instruct",
+            "llama3.2:3b",
+            "gemma2:9b"
+        ],
+        error_message="模型 'nonexistent-model' 在提供商 'ollama' 中不可用"
+    )
+    print("请检查前端是否收到 toast 通知")
+    
+    # All Done
     print("\n=== 测试完成 ===")
     print("如果Rust桥接正常工作，前端应该收到上述所有事件")

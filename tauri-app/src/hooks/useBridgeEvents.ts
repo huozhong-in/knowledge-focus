@@ -22,6 +22,7 @@ interface EventHandlers {
   'parsing-progress'?: (payload: BridgeEventPayload) => void;
   'screening-progress'?: (payload: BridgeEventPayload) => void;
   'model-status-changed'?: (payload: BridgeEventPayload) => void;
+  'model-validation-failed'?: (payload: BridgeEventPayload) => void;
   'database-updated'?: (payload: BridgeEventPayload) => void;
   'error-occurred'?: (payload: BridgeEventPayload) => void;
   'system-status'?: (payload: BridgeEventPayload) => void;

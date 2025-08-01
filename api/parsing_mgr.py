@@ -46,6 +46,7 @@ class ParsingMgr:
         
         # 初始化markitdown解析器
         self.md_parser = MarkItDown(enable_plugins=False)
+        # ! markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
         """
