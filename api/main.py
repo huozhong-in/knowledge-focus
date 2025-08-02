@@ -361,10 +361,10 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 models_mgr = ModelsMgr(session)
                 parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
 
-                if task.task_type == TaskType.PARSING.value:
+                if task.task_type == TaskType.TAGGING.value:
                     # 高优先级任务: 通常是单个文件处理
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
-                        logger.info(f"开始处理高优先级解析任务 (Task ID: {task.id})")
+                        logger.info(f"开始处理高优先级标记任务 (Task ID: {task.id})")
                         success = parsing_mgr.process_single_file_task(task.extra_data['screening_result_id'])
                         if success:
                             task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
@@ -372,7 +372,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
                     # 低优先级任务: 批量处理
                     else:
-                        logger.info(f"开始批量解析任务 (Task ID: {task.id})")
+                        logger.info(f"开始批量标记任务 (Task ID: {task.id})")
                         result_data = parsing_mgr.process_pending_batch(task_id=task.id, batch_size=10) # 每次处理10个
                         
                         # 无论批量任务处理了多少文件，都将触发任务标记为完成
@@ -472,11 +472,11 @@ def add_batch_file_screening_results(
         task_name = f"批量处理文件: {len(data_list)} 个文件"
         task: Task = task_mgr.add_task(
             task_name=task_name,
-            task_type=TaskType.PARSING,
+            task_type=TaskType.TAGGING,
             priority=TaskPriority.MEDIUM,
             extra_data={"file_count": len(data_list)}
         )
-        logger.info(f"已创建解析任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
+        logger.info(f"已创建标记任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
 
         # 2. 批量添加粗筛结果，并关联 task_id
         result = screening_mgr.add_batch_screening_results(data_list, task_id=task.id)

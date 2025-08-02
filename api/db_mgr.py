@@ -44,17 +44,17 @@ class TaskPriority(str, PyEnum):
 # 任务类型
 class TaskType(str, PyEnum):
     SCREENING = "screening"
-    PARSING = "parsing"
-    EXTRACTION = "extraction"
-    REFINE = "refine"
-    MAINTENANCE = "maintenance"
+    TAGGING = "tagging"
+    MULTIVECTOR = "multivector"
+    # REFINE = "refine"
+    # MAINTENANCE = "maintenance"
 
 # 供worker使用的tasks表
 class Task(SQLModel, table=True):
     __tablename__ = "t_tasks"
     id: int = Field(default=None, primary_key=True)
     task_name: str
-    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.PARSING.value))
+    task_type: str = Field(sa_column=Column(Enum(TaskType, values_callable=lambda obj: [e.value for e in obj]), default=TaskType.TAGGING.value))
     priority: str = Field(sa_column=Column(Enum(TaskPriority, values_callable=lambda obj: [e.value for e in obj]), default=TaskPriority.MEDIUM.value))
     status: str = Field(sa_column=Column(Enum(TaskStatus, values_callable=lambda obj: [e.value for e in obj]), default=TaskStatus.PENDING.value))
     created_at: datetime = Field(default=datetime.now())  # 创建时间
@@ -346,6 +346,47 @@ class LocalModelProviderConfig(SQLModel, table=True):
         json_encoders = {
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
+
+# 文档表 (t_documents)
+# 用于记录被处理的原始文件信息。
+# 设计意图: 管理最原始的入口文件，file_hash能避免重复处理未变更的文件，status字段则可以支持异步处理和失败重试机制。
+class Document(SQLModel, table=True):
+    __tablename__ = "t_documents"
+    id: int = Field(default=None, primary_key=True)
+    file_path: str = Field(index=True, unique=True) # 文件的绝对路径，唯一且索引
+    file_hash: str # 文件内容的哈希值，用于检测文件是否变更
+    docling_json_path: str # Docling解析后存储的JSON文件路径，便于复用
+    status: str = Field(default="pending") # 处理状态: pending, processing, done, error
+    processed_at: datetime = Field(default_factory=datetime.now)
+
+# 父块表 (t_parent_chunks)
+# 这是系统的核心实体，代表了我们最终要提供给LLM进行答案合成的“原始内容块”。
+# 设计意图: 这是“父文档”策略的直接体现。无论原始形态是文字、图片还是我们后来创造的知识卡片，都在这里有一个统一的表示。通过document_id与源文档关联。
+class ParentChunk(SQLModel, table=True):
+    __tablename__ = "t_parent_chunks"
+    id: int = Field(default=None, primary_key=True)
+    document_id: int = Field(foreign_key="t_documents.id", index=True) # 关联的原始文档
+    
+    chunk_type: str = Field(index=True) # 类型: 'text', 'image', 'table', 'knowledge_card'
+    
+    # 原始内容或其引用
+    content: str # 如果是text/knowledge_card, 直接存内容; 如果是image/table, 存储其图片文件的路径
+    
+    metadata_json: str # 存储额外元数据, 如页码、位置坐标等
+    created_at: datetime = Field(default_factory=datetime.now)
+
+# 子块表 (t_child_chunks)
+# 代表了用于向量化和检索的“代理”单元。
+# 设计意图: 这是连接关系世界和向量世界的“桥梁”。parent_chunk_id建立了清晰的从属关系，而vector_id则指向了它在LanceDB中的“向量化身”。
+class ChildChunk(SQLModel, table=True):
+    __tablename__ = "t_child_chunks"
+    id: int = Field(default=None, primary_key=True)
+    parent_chunk_id: int = Field(foreign_key="t_parent_chunks.id", index=True) # 明确的父子关系
+    
+    # 用于向量化的文本内容
+    retrieval_content: str # 可能是文本摘要、图片描述、或者“图片描述+周围文本”的组合
+    
+    vector_id: str = Field(unique=True, index=True) # 与LanceDB中向量记录对应的唯一ID, 如UUID
 
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
