@@ -2,7 +2,7 @@
 import json
 import httpx
 from sqlmodel import Session, select
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Tuple, Optional
 
 from db_mgr import LocalModelProviderConfig, SystemConfig, ModelProviderType
 
@@ -90,3 +90,44 @@ class ModelConfigMgr:
         self.session.commit()
         self.session.refresh(config_entry)
         return config_entry
+    
+    # 取得视觉模型的api_endpoint和model_id
+    def get_vision_model_config(self) -> Tuple[str, str]:
+        """Gets the configuration for the vision model."""
+        # 获取视觉模型的角色配置
+        key = "selected_model_for_vision"
+        config_entry = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
+        
+        if not config_entry or not config_entry.value or config_entry.value == 'null':
+            raise ValueError("No configuration found for vision model")
+
+        try:
+            role_config = json.loads(config_entry.value)
+            provider_type = role_config.get("provider_type")
+            model_id = role_config.get("model_id")
+        except (json.JSONDecodeError, AttributeError):
+            raise ValueError("Invalid configuration format for vision model")
+
+        if not provider_type or not model_id:
+            raise ValueError("Incomplete configuration for vision model")
+
+        # 获取提供商配置
+        provider_config = self.session.exec(
+            select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)
+        ).first()
+
+        if not provider_config or not provider_config.enabled:
+            raise ValueError(f"Provider {provider_type} is not configured or not enabled.")
+
+        return provider_config.api_endpoint, model_id
+        
+    
+if __name__ == "__main__":
+    from sqlmodel import create_engine
+    from config import TEST_DB_PATH
+
+    # Initialize the session
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
+    with Session(engine) as session:
+        mgr = ModelConfigMgr(session)
+        print(mgr.get_vision_model_config())

@@ -91,7 +91,7 @@ class ModelsMgr:
 
     def _get_available_models(self, api_endpoint: str, api_key: str | None) -> List[Dict[str, Any]]:
         """
-        Fetch available models from the provider's /v1/models endpoint.
+        Fetch available models from the provider's /models endpoint.
         
         Returns:
             List of model dictionaries with 'id', 'object', 'owned_by' fields.
@@ -106,8 +106,8 @@ class ModelsMgr:
             ]
         """
         try:
-            # Ensure the endpoint ends with /v1/models
-            models_url = api_endpoint.rstrip('/') + '/v1/models'
+            # Ensure the endpoint ends with /models
+            models_url = api_endpoint.rstrip('/') + '/models'
             
             headers = {"Content-Type": "application/json"}
             if api_key and api_key != "dummy-key":
@@ -176,7 +176,7 @@ class ModelsMgr:
             model_string, api_base, api_key = self._get_model_config("base", silent_validation=False)
             messages = [
                 {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
-                {"role": "user", "content": self._build_user_prompt(file_summary, candidate_tags)}
+                {"role": "user", "content": self._build_tagging_prompt(file_summary, candidate_tags)}
             ]
             # messages[-1]['content'] += ' /no_think'
             response = litellm_completion(
@@ -205,7 +205,7 @@ class ModelsMgr:
             logger.error(f"Failed to get tags from LLM: {e}")
             return []
 
-    def _build_user_prompt(self, summary: str, candidates: List[str]) -> str:
+    def _build_tagging_prompt(self, summary: str, candidates: List[str]) -> str:
         candidate_str = ", ".join(f'"{t}"' for t in candidates) if candidates else "None"
         return f'''
 Please analyze the following file summary and context to generate between 0 and 3 relevant tags.
@@ -296,7 +296,7 @@ Based on all information, provide the best tags for this file.
         Public method to validate if a model is available in the specified provider.
         
         Args:
-            provider_type: The provider type (e.g., "ollama", "lm-studio")
+            provider_type: The provider type (e.g., "ollama", "lm_studio")
             model_id: The model ID to validate
             
         Returns:
@@ -362,13 +362,13 @@ if __name__ == "__main__":
     print("Embedding Length:", len(len_embedding))
     
     # Test manual model validation (will send IPC events on failure)
-    validation_result = mgr.validate_model_availability("ollama", "qwen/qwen3-30b-a3b-2507")
+    validation_result = mgr.validate_model_availability("lm_studio", "qwen/qwen3-30b-a3b-2507")
     print("Model Validation Result:", validation_result)
     
     # Test chat completion (you can choose whether to send IPC events)
     try:
         chat_response = mgr.get_chat_completion([
-            {"role": "user", "content": "Hello, how are you?"}
+            {"role": "user", "content": "尽量列举一些首都城市的名字"}
         ])
         print("Chat Response:", chat_response)
     except Exception as e:

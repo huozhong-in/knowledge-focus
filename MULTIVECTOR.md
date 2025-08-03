@@ -15,7 +15,7 @@ Option 3 是最适合您产品定位和未来愿景的选择。 它完美地平�
 
 内容解析与分块: 将文档（PPT, PDF, DOCX）解析为文本块、图像和表格。
 
-本地智能处理 (MLX/Llama.cpp/ollama/lm-studio):
+本地智能处理 (MLX/Llama.cpp/ollama/lm_studio):
 
 文本: 使用一个轻量级的纯文本 embedding 模型进行向量化。
 

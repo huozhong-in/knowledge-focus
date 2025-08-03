@@ -554,6 +554,17 @@ class DBManager:
                         self.session.add(new_provider)
                         self.session.commit()
 
+            # 创建文档表
+            # TODO 根据后续代码里的要求创建索引
+            if not inspector.has_table(Document.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[Document.__table__])
+            # 创建父块表
+            if not inspector.has_table(ParentChunk.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ParentChunk.__table__])
+            # 创建子块表
+            if not inspector.has_table(ChildChunk.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ChildChunk.__table__])
+        
         return True
 
     def _init_bundle_extensions(self) -> None:

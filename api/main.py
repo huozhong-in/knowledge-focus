@@ -343,7 +343,6 @@ def task_processor(db_path: str, stop_event: threading.Event):
     )
     db_directory = os.path.dirname(db_path)
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
-    lancedb_mgr.init_db()
 
     while not stop_event.is_set():
         try:
