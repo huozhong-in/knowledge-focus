@@ -18,10 +18,18 @@ import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional, Tuple
+from typing import (
+    # Dict, 
+    # Any, 
+    List, 
+    Optional, 
+    Tuple,
+)
 from uuid import uuid4
 
-# 生成短ID的工具函数（替代nanoid）
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+# 生成短ID的工具函数
 def generate_vector_id() -> str:
     """生成用于vector_id的短ID"""
     return str(uuid4()).replace('-', '')[:16]
@@ -31,7 +39,7 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PictureDescriptionApiOptions,
     PdfPipelineOptions,
-    RapidOcrOptions,
+    # RapidOcrOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import (
@@ -375,11 +383,11 @@ Give a concise summary of the image that is well optimized for retrieval.
             json_filename = f"{file_stem}.json"
             json_path = output_dir / json_filename
             
-            # 保存JSON
+            # 保存JSON和图片文件
             result.document.save_as_json(
                 filename=json_path,
                 indent=2,
-                image_mode=ImageRefMode.PLACEHOLDER,
+                image_mode=ImageRefMode.REFERENCED,  # 自动保存图片到artifacts_dir
                 artifacts_dir=output_dir
             )
             
@@ -693,19 +701,32 @@ Give a concise summary of the image that is well optimized for retrieval.
         Returns:
             Tuple[ParentChunk, ChildChunk]: 父块和子块的元组
         """
-        # 创建父块 - 存储原始纯净内容
+        # 准备metadata，对于图片类型需要额外保存文件路径
+        metadata = {
+            "chunk_index": chunk_index,
+            "original_text_length": len(raw_content),
+            "contextualized_length": len(contextualized_content),
+            "doc_items_refs": [item.self_ref for item in chunk.meta.doc_items] if hasattr(chunk.meta, 'doc_items') else [],
+            "chunk_id": chunk.meta.chunk_id if hasattr(chunk.meta, 'chunk_id') else None,
+            "source": "hybrid_chunker_split" if isinstance(chunk_index, str) else "hybrid_chunker"
+        }
+        
+        # 对于图片类型，将文件路径保存到metadata中
+        if chunk_type == "image":
+            # 尝试从chunk的doc_items中提取图片文件路径
+            image_file_path = self._extract_image_file_path(chunk)
+            if image_file_path:
+                metadata["image_file_path"] = image_file_path
+                logger.debug(f"[CHUNKING] Image chunk {chunk_index}: saved file path to metadata: {image_file_path}")
+            else:
+                logger.warning(f"[CHUNKING] Image chunk {chunk_index}: could not extract file path")
+        
+        # 创建父块 - content统一存储"内容"（文本内容或图片描述）
         parent_chunk = ParentChunk(
             document_id=document_id,
             chunk_type=chunk_type,
-            content=raw_content,  # 使用原始内容，保持数据纯净性
-            metadata_json=json.dumps({
-                "chunk_index": chunk_index,
-                "original_text_length": len(raw_content),
-                "contextualized_length": len(contextualized_content),
-                "doc_items_refs": [item.self_ref for item in chunk.meta.doc_items] if hasattr(chunk.meta, 'doc_items') else [],
-                "chunk_id": chunk.meta.chunk_id if hasattr(chunk.meta, 'chunk_id') else None,
-                "source": "hybrid_chunker_split" if isinstance(chunk_index, str) else "hybrid_chunker"
-            })
+            content=raw_content,  # 统一存储内容：文本内容或图片描述
+            metadata_json=json.dumps(metadata)
         )
         
         # 生成检索友好的子块内容
@@ -719,6 +740,77 @@ Give a concise summary of the image that is well optimized for retrieval.
         )
         
         return parent_chunk, child_chunk
+    
+    def _extract_image_file_path(self, chunk) -> str | None:
+        """
+        从chunk的doc_items中提取图片文件路径
+        使用doc_items_refs中的图片索引来匹配docling生成的图片文件
+        
+        Args:
+            chunk: HybridChunker生成的chunk对象
+            
+        Returns:
+            str | None: 图片文件的绝对路径，如果未找到则返回None
+        """
+        try:
+            if not hasattr(chunk.meta, 'doc_items') or not chunk.meta.doc_items:
+                return None
+            
+            # 从doc_items中提取pictures引用索引
+            picture_refs = []
+            for item in chunk.meta.doc_items:
+                if hasattr(item, 'self_ref') and item.self_ref:
+                    ref_str = str(item.self_ref)
+                    if "/pictures/" in ref_str:
+                        # 例如: "#/pictures/1" -> 提取 "1"
+                        try:
+                            picture_index = ref_str.split("/pictures/")[-1]
+                            picture_refs.append(picture_index)
+                        except:
+                            continue
+            
+            # 根据图片索引查找对应的文件
+            for picture_index in picture_refs:
+                try:
+                    # docling生成的文件名格式: image_{6位数字索引}_{hash}.png
+                    # 例如: image_000001_hash.png 对应 pictures/1
+                    padded_index = str(picture_index).zfill(6)
+                    pattern = f"image_{padded_index}_*.png"
+                    
+                    # 在docling_cache_dir中查找匹配的文件
+                    from pathlib import Path
+                    matching_files = list(self.docling_cache_dir.glob(pattern))
+                    
+                    if matching_files:
+                        # 返回第一个匹配的文件
+                        image_file = matching_files[0]
+                        logger.debug(f"Found image file for index {picture_index}: {image_file.name}")
+                        return str(image_file)
+                    else:
+                        logger.debug(f"No image file found for pattern: {pattern}")
+                        
+                except Exception as e:
+                    logger.warning(f"Error processing picture index {picture_index}: {e}")
+                    continue
+            
+            # 备用方案：尝试原来的方法
+            for item in chunk.meta.doc_items:
+                if hasattr(item, 'label') and 'PICTURE' in str(item.label).upper():
+                    # 检查是否有file attribute
+                    if hasattr(item, 'file') and item.file:
+                        # 构建完整的文件路径
+                        if hasattr(item.file, 'filename') and item.file.filename:
+                            # 图片文件保存在docling_cache_dir中
+                            image_filename = item.file.filename
+                            full_path = self.docling_cache_dir / image_filename
+                            if full_path.exists():
+                                return str(full_path)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to extract image file path from chunk: {e}")
+            return None
     
     def _generate_retrieval_summary(self, content: str, chunk_type: str) -> str:
         """
@@ -848,9 +940,11 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             
             for chunk_idx, image_chunk in image_chunks:
                 try:
-                    # 获取图像描述内容
+                    # 获取图像描述内容 - 现在直接从content字段获取
                     image_description = image_chunk.content
+                    
                     if not image_description or len(image_description.strip()) < 10:
+                        logger.warning(f"Image chunk {chunk_idx}: description too short or empty")
                         continue
                     
                     # 获取周围的文本块内容进行摘要
