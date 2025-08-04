@@ -8,6 +8,7 @@ import asyncio
 import threading
 from datetime import datetime
 from typing import List, Dict, Any
+from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -367,6 +368,9 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         success = parsing_mgr.process_single_file_task(task.extra_data['screening_result_id'])
                         if success:
                             task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
+                            
+                            # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
+                            _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
                         else:
                             task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
                     # 低优先级任务: 批量处理
@@ -381,6 +385,54 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             result=TaskResult.SUCCESS, 
                             message=f"批量处理完成: 处理了 {result_data.get('processed', 0)} 个文件。"
                         )
+                
+                elif task.task_type == TaskType.MULTIVECTOR.value:
+                    # 引入ChunkingMgr
+                    from chunking_mgr import ChunkingMgr
+                    chunking_mgr = ChunkingMgr(session, lancedb_mgr, models_mgr)
+                    
+                    # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
+                    if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
+                        file_path = task.extra_data['file_path']
+                        logger.info(f"开始处理高优先级多模态向量化任务 (Task ID: {task.id}): {file_path}")
+                        
+                        try:
+                            success = chunking_mgr.process_document(file_path)
+                            if success:
+                                task_mgr.update_task_status(
+                                    task.id, 
+                                    TaskStatus.COMPLETED, 
+                                    result=TaskResult.SUCCESS,
+                                    message=f"多模态向量化完成: {file_path}"
+                                )
+                                logger.info(f"多模态向量化成功完成: {file_path}")
+                            else:
+                                task_mgr.update_task_status(
+                                    task.id, 
+                                    TaskStatus.FAILED, 
+                                    result=TaskResult.FAILURE,
+                                    message=f"多模态向量化失败: {file_path}"
+                                )
+                                logger.error(f"多模态向量化失败: {file_path}")
+                        except Exception as e:
+                            error_msg = f"多模态向量化异常: {file_path} - {str(e)}"
+                            task_mgr.update_task_status(
+                                task.id, 
+                                TaskStatus.FAILED, 
+                                result=TaskResult.FAILURE,
+                                message=error_msg
+                            )
+                            logger.error(error_msg, exc_info=True)
+                    else:
+                        # 中低优先级任务: 批量处理（未来支持）
+                        logger.info(f"批量多模态向量化任务暂未实现 (Task ID: {task.id})")
+                        task_mgr.update_task_status(
+                            task.id, 
+                            TaskStatus.COMPLETED, 
+                            result=TaskResult.SUCCESS,
+                            message="批量多模态向量化任务已跳过"
+                        )
+                
                 else:
                     logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
                     task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
@@ -390,6 +442,65 @@ def task_processor(db_path: str, stop_event: threading.Event):
             time.sleep(30)
 
     logger.info("任务处理线程已停止")
+
+def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, screening_result_id: int):
+    """
+    检查文件是否处于pin状态，如果是则自动创建MULTIVECTOR任务
+    
+    Args:
+        session: 数据库会话
+        task_mgr: 任务管理器
+        screening_result_id: 粗筛结果ID
+    """
+    if not screening_result_id:
+        return
+    
+    try:
+        from screening_mgr import ScreeningResult
+        # 获取粗筛结果，包含文件路径信息
+        screening_result = session.get(ScreeningResult, screening_result_id)
+        if not screening_result:
+            logger.warning(f"未找到screening_result_id: {screening_result_id}")
+            return
+        
+        file_path = screening_result.file_path
+        
+        # 检查文件是否在最近8小时内被pin过
+        is_recently_pinned = _check_file_pin_status(file_path, session)
+        
+        if is_recently_pinned:
+            logger.info(f"文件 {file_path} 在最近8小时内被pin过，创建MULTIVECTOR任务")
+            task_mgr.add_task(
+                task_name=f"多模态向量化: {Path(file_path).name}",
+                task_type=TaskType.MULTIVECTOR,
+                priority=TaskPriority.HIGH,
+                extra_data={"file_path": file_path},
+                target_file_path=file_path  # 设置冗余字段便于查询
+            )
+        else:
+            logger.info(f"文件 {file_path} 在最近8小时内未被pin过，跳过MULTIVECTOR任务")
+            
+    except Exception as e:
+        logger.error(f"检查和创建MULTIVECTOR任务时发生错误: {e}", exc_info=True)
+
+def _check_file_pin_status(file_path: str, session: Session) -> bool:
+    """
+    检查文件是否在最近8小时内被pin过（即有成功的MULTIVECTOR任务）
+    
+    Args:
+        file_path: 文件路径
+        session: 数据库会话
+        
+    Returns:
+        bool: 文件是否在最近8小时内被pin过
+    """
+    try:
+        task_mgr = TaskManager(session)
+        return task_mgr.is_file_recently_pinned(file_path, hours=8)
+    except Exception as e:
+        logger.error(f"检查文件pin状态时发生错误: {e}", exc_info=True)
+        return False
+    return file_ext in important_extensions
 
 # 获取 ScreeningManager 的依赖函数
 def get_screening_manager(session: Session = Depends(get_session)):
@@ -405,6 +516,98 @@ def get_parsing_manager(session: Session = Depends(get_session)):
 def get_task_manager(session: Session = Depends(get_session)):
     """获取任务管理器实例"""
     return TaskManager(session)
+
+@app.post("/pin-file")
+def pin_file(
+    request: Dict[str, Any] = Body(...),
+    task_mgr: TaskManager = Depends(get_task_manager)
+):
+    """
+    Pin一个文件，创建高优先级的多模态向量化任务
+    
+    参数:
+    - file_path: 文件的绝对路径
+    
+    返回:
+    - task_id: 创建的任务ID
+    - message: 状态信息
+    """
+    try:
+        file_path = request.get("file_path")
+        if not file_path:
+            return {"success": False, "error": "缺少file_path参数"}
+        
+        # 验证文件路径
+        if not os.path.exists(file_path):
+            return {"success": False, "error": f"文件不存在: {file_path}"}
+        
+        if not os.path.isfile(file_path):
+            return {"success": False, "error": f"路径不是文件: {file_path}"}
+        
+        # 检查文件权限
+        if not os.access(file_path, os.R_OK):
+            return {"success": False, "error": f"文件无读取权限: {file_path}"}
+        
+        # 创建高优先级MULTIVECTOR任务
+        file_name = os.path.basename(file_path)
+        task = task_mgr.add_task(
+            task_name=f"Pin文件向量化: {file_name}",
+            task_type=TaskType.MULTIVECTOR,
+            priority=TaskPriority.HIGH,
+            extra_data={"file_path": file_path, "source": "user_pin"},
+            target_file_path=file_path
+        )
+        
+        logger.info(f"用户Pin文件成功，创建任务ID: {task.id}, 文件: {file_path}")
+        
+        return {
+            "success": True,
+            "task_id": task.id,
+            "message": f"文件Pin成功，正在处理: {file_name}",
+            "file_path": file_path
+        }
+        
+    except Exception as e:
+        logger.error(f"Pin文件时发生错误: {e}", exc_info=True)
+        return {"success": False, "error": f"Pin文件失败: {str(e)}"}
+
+@app.get("/task/{task_id}")
+def get_task_status(task_id: int, task_mgr: TaskManager = Depends(get_task_manager)):
+    """
+    获取任务状态
+    
+    参数:
+    - task_id: 任务ID
+    
+    返回:
+    - 任务详细信息
+    """
+    try:
+        task = task_mgr.get_task(task_id)
+        if not task:
+            return {"success": False, "error": f"任务不存在: {task_id}"}
+        
+        return {
+            "success": True,
+            "task": {
+                "id": task.id,
+                "task_name": task.task_name,
+                "task_type": task.task_type,
+                "priority": task.priority,
+                "status": task.status,
+                "result": task.result,
+                "error_message": task.error_message,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
+                "start_time": task.start_time,
+                "extra_data": task.extra_data,
+                "target_file_path": task.target_file_path
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"获取任务状态时发生错误: {e}", exc_info=True)
+        return {"success": False, "error": f"获取任务状态失败: {str(e)}"}
 
 @app.post("/file-screening/batch")
 def add_batch_file_screening_results(
@@ -1118,6 +1321,86 @@ def delete_screening_by_path(
             "success": False,
             "deleted_count": 0,
             "message": f"删除失败: {str(e)}"
+        }
+
+@app.post("/pin-file")
+async def pin_file(
+    data: Dict[str, Any] = Body(...),
+    task_mgr: TaskManager = Depends(get_task_manager)
+):
+    """Pin文件并创建多模态向量化任务
+    
+    用户pin文件时调用此端点，立即创建HIGH优先级的MULTIVECTOR任务
+    
+    请求体:
+    - file_path: 要pin的文件绝对路径
+    
+    返回:
+    - success: 操作是否成功
+    - task_id: 创建的任务ID
+    - message: 操作结果消息
+    """
+    try:
+        file_path = data.get("file_path")
+        
+        if not file_path:
+            logger.warning("Pin文件请求中未提供文件路径")
+            return {
+                "success": False,
+                "task_id": None,
+                "message": "文件路径不能为空"
+            }
+        
+        # 验证文件路径和权限
+        if not os.path.exists(file_path):
+            logger.warning(f"Pin文件失败，文件不存在: {file_path}")
+            return {
+                "success": False,
+                "task_id": None,
+                "message": f"文件不存在: {file_path}"
+            }
+        
+        if not os.access(file_path, os.R_OK):
+            logger.warning(f"Pin文件失败，文件无读取权限: {file_path}")
+            return {
+                "success": False,
+                "task_id": None,
+                "message": f"文件无读取权限: {file_path}"
+            }
+        
+        # 检查文件类型是否支持
+        supported_extensions = {'.pdf', '.docx', '.pptx', '.doc', '.ppt'}
+        file_ext = Path(file_path).suffix.lower()
+        if file_ext not in supported_extensions:
+            logger.warning(f"Pin文件失败，不支持的文件类型: {file_ext}")
+            return {
+                "success": False,
+                "task_id": None,
+                "message": f"不支持的文件类型: {file_ext}，支持的类型: {supported_extensions}"
+            }
+        
+        # 创建HIGH优先级MULTIVECTOR任务
+        task = task_mgr.add_task(
+            task_name=f"Pin文件多模态向量化: {Path(file_path).name}",
+            task_type=TaskType.MULTIVECTOR,
+            priority=TaskPriority.HIGH,
+            extra_data={"file_path": file_path}
+        )
+        
+        logger.info(f"成功创建Pin文件的多模态向量化任务: {file_path} (Task ID: {task.id})")
+        
+        return {
+            "success": True,
+            "task_id": task.id,
+            "message": f"已创建多模态向量化任务，Task ID: {task.id}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Pin文件失败: {str(e)}", exc_info=True)
+        return {
+            "success": False,
+            "task_id": None,
+            "message": f"Pin文件失败: {str(e)}"
         }
 
 @app.get("/test-bridge-stdout")

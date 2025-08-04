@@ -63,6 +63,7 @@ class Task(SQLModel, table=True):
     result: str | None = Field(sa_column=Column(Enum(TaskResult, values_callable=lambda obj: [e.value for e in obj]), default=None))
     error_message: str | None = Field(default=None)  # 错误信息
     extra_data: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 任务额外数据
+    target_file_path: str | None = Field(default=None, index=True)  # 目标文件路径，专门用于MULTIVECTOR任务的高效查询
     
     class Config:
         json_encoders = {

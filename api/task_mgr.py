@@ -26,7 +26,8 @@ class TaskManager:
         """
         self.session: Session = session
 
-    def add_task(self, task_name: str, task_type: TaskType, priority: TaskPriority = TaskPriority.MEDIUM, extra_data: Dict[str, Any] = None) -> Task:
+    def add_task(self, task_name: str, task_type: TaskType, priority: TaskPriority = TaskPriority.MEDIUM, 
+                 extra_data: Dict[str, Any] = None, target_file_path: str = None) -> Task:
         """添加新任务
         
         Args:
@@ -34,6 +35,7 @@ class TaskManager:
             task_type: 任务类型
             priority: 任务优先级，TaskPriority类型的字符串值
             extra_data: 任务额外数据
+            target_file_path: 目标文件路径（用于MULTIVECTOR任务的快速查询）
             
         Returns:
             添加的任务对象
@@ -47,7 +49,8 @@ class TaskManager:
             status=TaskStatus.PENDING.value,
             created_at=datetime.now(),
             updated_at=datetime.now(),
-            extra_data=extra_data
+            extra_data=extra_data,
+            target_file_path=target_file_path
         )
         
         self.session.add(task)
@@ -328,6 +331,42 @@ class TaskManager:
         except Exception as e:
             logger.error(f"获取最新任务失败: {e}")
             return None
+    
+    def is_file_recently_pinned(self, file_path: str, hours: int = 8) -> bool:
+        """
+        检查文件是否在指定时间内被成功pin过（即有成功的MULTIVECTOR任务）
+        
+        Args:
+            file_path: 文件绝对路径
+            hours: 检查的时间窗口（小时），默认8小时
+            
+        Returns:
+            bool: 如果文件在指定时间内有成功的MULTIVECTOR任务则返回True
+        """
+        try:
+            from datetime import timedelta
+            cutoff_time = datetime.now() - timedelta(hours=hours)
+            
+            task = self.session.exec(
+                select(Task)
+                .where(Task.task_type == TaskType.MULTIVECTOR.value)
+                .where(Task.target_file_path == file_path)
+                .where(Task.updated_at > cutoff_time)
+                .where(Task.status == TaskStatus.COMPLETED.value)
+                .where(Task.result == TaskResult.SUCCESS.value)
+                .order_by(desc(Task.updated_at))
+            ).first()
+            
+            result = task is not None
+            if result:
+                logger.info(f"文件 {file_path} 在最近{hours}小时内被pin过，最后任务ID: {task.id}")
+            else:
+                logger.info(f"文件 {file_path} 在最近{hours}小时内未被pin过")
+            return result
+            
+        except Exception as e:
+            logger.error(f"检查文件pin状态失败: {e}")
+            return False
 
 if __name__ == '__main__':
     from sqlmodel import (
