@@ -169,15 +169,7 @@ class BridgeEventSender:
             "error_message": error_message
         })
     
-    # 多模态向量化便捷方法
-    def multivector_started(self, file_path: str, task_id: str):
-        """通知多模态向量化开始"""
-        self.send_event(self.Events.MULTIVECTOR_STARTED, {
-            "file_path": file_path,
-            "task_id": task_id,
-            "stage": "started"
-        })
-    
+    # 多模态向量化便捷方法    
     def multivector_progress(self, file_path: str, task_id: str, current: int, total: int, 
                            stage: str = "", message: str = ""):
         """通知多模态向量化进度"""

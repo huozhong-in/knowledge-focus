@@ -134,19 +134,12 @@ export default function Page() {
         )
       },
       // 多模态向量化事件处理
-      'multivector-started': (payload: any) => {
-        // console.log("App.tsx: Multivector started:", payload)
-        const { file_path, task_id } = payload
-        if (file_path) {
-          vectorizationStore.setFileStarted(file_path, task_id)
-        }
-      },
       'multivector-progress': (payload: any) => {
         // console.log("App.tsx: Multivector progress:", payload)
-        const { file_path, current, total, percentage, stage, message } = payload
+        const { file_path, task_id, current, total, percentage, stage, message } = payload
         if (file_path) {
           const progressValue = percentage || (total > 0 ? Math.round((current / total) * 100) : 0)
-          vectorizationStore.setFileProgress(file_path, progressValue, stage, message)
+          vectorizationStore.setFileProgress(file_path, progressValue, stage, message, task_id)
         }
       },
       'multivector-completed': (payload: any) => {

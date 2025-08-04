@@ -3,10 +3,10 @@ import { persist } from 'zustand/middleware'
 
 export interface VectorizationState {
   [filePath: string]: {
-    status: 'idle' | 'processing' | 'completed' | 'failed'
+    status: 'queued' | 'processing' | 'completed' | 'failed'
     progress: number // 0-100
     taskId?: string
-    stage?: string // parsing, chunking, vectorizing, completed, failed
+    stage?: string // queued, parsing, chunking, vectorizing, completed, failed
     message?: string
     error?: {
       message: string
@@ -25,7 +25,7 @@ interface VectorizationStore {
   
   // 操作方法
   setFileStatus: (filePath: string, status: VectorizationState[string]['status']) => void
-  setFileProgress: (filePath: string, progress: number, stage?: string, message?: string) => void
+  setFileProgress: (filePath: string, progress: number, stage?: string, message?: string, taskId?: string) => void
   setFileStarted: (filePath: string, taskId: string) => void
   setFileCompleted: (filePath: string, taskId: string, parentCount?: number, childCount?: number) => void
   setFileFailed: (filePath: string, taskId: string, error: VectorizationState[string]['error']) => void
@@ -35,7 +35,7 @@ interface VectorizationStore {
   // 查询方法
   getFileStatus: (filePath: string) => VectorizationState[string] | undefined
   getProcessingFiles: () => string[]
-  getIdleFiles: () => string[]
+  getQueuedFiles: () => string[]
   getCompletedFiles: () => string[]
   getFailedFiles: () => string[]
 }
@@ -57,15 +57,17 @@ export const useVectorizationStore = create<VectorizationStore>()(
           },
         })),
       
-      setFileProgress: (filePath, progress, stage, message) =>
+      setFileProgress: (filePath, progress, stage, message, taskId) =>
         set((state) => ({
           files: {
             ...state.files,
             [filePath]: {
               ...state.files[filePath],
+              status: state.files[filePath]?.status === 'queued' ? 'processing' as const : state.files[filePath]?.status || 'processing' as const,
               progress,
               stage,
               message,
+              taskId: taskId || state.files[filePath]?.taskId, // 更新taskId或保持原值
               lastUpdated: Date.now(),
             },
           },
@@ -76,11 +78,11 @@ export const useVectorizationStore = create<VectorizationStore>()(
           files: {
             ...state.files,
             [filePath]: {
-              status: 'processing' as const,
+              status: 'queued' as const,
               progress: 0,
               taskId,
-              stage: 'parsing',
-              message: '开始处理...',
+              stage: 'queued',
+              message: '等待处理',
               createdAt: state.files[filePath]?.createdAt || Date.now(),
               lastUpdated: Date.now(),
             },
@@ -138,9 +140,9 @@ export const useVectorizationStore = create<VectorizationStore>()(
           (filePath) => get().files[filePath].status === 'processing'
         ),
       
-      getIdleFiles: () =>
+      getQueuedFiles: () =>
         Object.keys(get().files).filter(
-          (filePath) => get().files[filePath].status === 'idle'
+          (filePath) => get().files[filePath].status === 'queued'
         ),
       
       getCompletedFiles: () =>

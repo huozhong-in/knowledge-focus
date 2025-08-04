@@ -1,13 +1,14 @@
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { CheckCircle, Clock, AlertCircle, RotateCcw, ExternalLink } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 // 使用useVectorizationStore中的状态结构
 type VectorizationFileState = {
-  status: 'idle' | 'processing' | 'completed' | 'failed'
+  status: 'queued' | 'processing' | 'completed' | 'failed'
   progress: number // 0-100
   taskId?: string
-  stage?: string // parsing, chunking, vectorizing, completed, failed
+  stage?: string // queued, parsing, chunking, vectorizing, completed, failed
   message?: string
   error?: {
     message: string
@@ -32,7 +33,15 @@ export function VectorizationProgress({
   onRetry,
   className 
 }: VectorizationProgressProps) {
+  const { t } = useTranslation();
+  
   if (!state) {
+    return null;
+  }
+
+  // 防御性检查：确保state有必要的属性
+  if (!state.status || typeof state.progress !== 'number') {
+    // console.warn('VectorizationProgress: Invalid state object:', state);
     return null;
   }
 
@@ -41,7 +50,7 @@ export function VectorizationProgress({
   // 状态图标和颜色
   const getStatusConfig = () => {
     switch (status) {
-      case 'idle':
+      case 'queued':
         return {
           icon: <Clock className="h-3 w-3" />,
           color: 'text-muted-foreground',
@@ -69,23 +78,60 @@ export function VectorizationProgress({
           bgColor: 'bg-red-50',
           borderColor: 'border-red-200'
         };
+      default:
+        // 未知状态的默认配置
+        console.warn(`Unknown vectorization status: ${status}`);
+        return {
+          icon: <AlertCircle className="h-3 w-3" />,
+          color: 'text-muted-foreground',
+          bgColor: 'bg-muted',
+          borderColor: 'border-muted'
+        };
     }
   };
 
   const config = getStatusConfig();
+  
+  // 额外的安全检查
+  if (!config || !config.bgColor) {
+    console.error('VectorizationProgress: Invalid config for status:', status);
+    return (
+      <div className="bg-muted border border-muted rounded-md p-2">
+        <div className="text-xs text-muted-foreground">状态显示错误</div>
+      </div>
+    );
+  }
+  
   const progressValue = Math.max(0, Math.min(100, progress));
 
   // 状态文本
   const getStatusText = () => {
     switch (status) {
-      case 'idle':
-        return '排队中...';
+      case 'queued':
+        return t('queued');
       case 'processing':
-        return stage ? `${stage}...` : '处理中...';
+        // 如果有具体的stage，显示stage；否则显示通用的processing
+        if (stage) {
+          switch (stage) {
+            case 'queued':
+              return t('queued');
+            case 'parsing':
+              return '解析中...';
+            case 'chunking':
+              return '分块中...';
+            case 'vectorizing':
+              return '向量化中...';
+            default:
+              return stage + '...';
+          }
+        }
+        return t('processing');
       case 'completed':
-        return '向量化完成';
+        return t('completed');
       case 'failed':
-        return '向量化失败';
+        return t('failed');
+      default:
+        return 'Unknown status'; // 未知状态
     }
   };
 
@@ -159,11 +205,11 @@ export function VectorizationProgress({
       )}
 
       {/* 完成状态的统计信息 */}
-      {status === 'completed' && (state.parentChunksCount || state.childChunksCount) && (
+      {/* {status === 'completed' && (state.parentChunksCount || state.childChunksCount) && (
         <p className="text-xs text-muted-foreground mt-1">
           已生成 {state.parentChunksCount || 0} 个父块，{state.childChunksCount || 0} 个子块
         </p>
-      )}
+      )} */}
     </div>
   );
 }

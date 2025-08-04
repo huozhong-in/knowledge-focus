@@ -131,7 +131,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           {!isCollapsed && (
             <>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">Knowledge focus</span>
+                <span className="truncate font-semibold">KnowledgeFocus</span>
               </div>
               <div>
                 <SidebarTrigger className="-ml-1" />

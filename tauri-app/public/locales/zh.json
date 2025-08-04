@@ -29,5 +29,9 @@
     "theme": "主题设置",
     "developer-zone": "开发者区域",
     "file-tags": "文件标签",
-    "No tags yet": "暂无标签"
+    "No tags yet": "暂无标签",
+    "queued": "等待处理",
+    "processing": "正在处理",
+    "completed": "向量化完成",
+    "failed": "异常失败"
 }

@@ -29,5 +29,9 @@
     "theme": "Theme Settings",
     "developer-zone": "Developer Zone",
     "file-tags": "File Tags",
-    "No tags yet": "No tags yet"
+    "No tags yet": "No tags yet",
+    "queued": "Queued",
+    "processing": "Processing",
+    "completed": "Completed",
+    "failed": "Failed"
 }

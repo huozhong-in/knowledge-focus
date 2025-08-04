@@ -189,7 +189,7 @@ export function FileList() {
     // 如果要pin文件，调用API并设置向量化状态
     try {
       // 设置初始状态
-      setFileStatus(filePath, 'idle');
+      setFileStatus(filePath, 'queued');
 
       // 调用API
       const result = await pinFileAPI(filePath);

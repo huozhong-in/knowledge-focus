@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-export type VectorizationStatus = 'idle' | 'processing' | 'completed' | 'failed'
+export type VectorizationStatus = 'queued' | 'processing' | 'completed' | 'failed'
 
 export interface VectorizationState {
   status: VectorizationStatus
@@ -158,7 +158,7 @@ export const useVectorizationStore = create<VectorizationStore>()(
       getQueuedFiles: () => {
         const { vectorizations } = get()
         return Object.keys(vectorizations)
-          .filter((filePath) => vectorizations[filePath].status === 'idle')
+          .filter((filePath) => vectorizations[filePath].status === 'queued')
           .sort((a, b) => vectorizations[a].createdAt - vectorizations[b].createdAt)
       },
     }),
