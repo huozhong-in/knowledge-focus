@@ -6,15 +6,21 @@ import { useFileListStore } from "@/lib/fileListStore";
 import { TaggedFile } from "@/types/file-types";
 import { FileService } from "@/api/file-service";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { fetch } from '@tauri-apps/plugin-http';
 import { useState } from "react";
+import { VectorizationProgress } from "@/components/VectorizationProgress";
+import { useVectorizationStore } from "@/stores/useVectorizationStore";
+import { toast } from "sonner";
 
 interface FileItemProps {
   file: TaggedFile;
-  onTogglePin: (fileId: number) => void;
+  onTogglePin: (fileId: number, filePath: string) => void;
   onTagClick: (tagName: string) => void;
 }
 
 function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
+  const { getFileStatus } = useVectorizationStore();
+  const vectorizationState = getFileStatus(file.path);
   const getFileIcon = (extension?: string) => {
     if (!extension) return <File className="h-3 w-3" />;
     
@@ -89,6 +95,18 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
               )}
             </div>
           )}
+
+          {/* 向量化进度显示 */}
+          {vectorizationState && (
+            <div className="mt-1">
+              <VectorizationProgress
+                filePath={file.path}
+                state={vectorizationState}
+                onRetry={() => onTogglePin(file.id, file.path)}
+                className="text-xs"
+              />
+            </div>
+          )}
         </div>
       </div>
       
@@ -109,7 +127,7 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
         <Button
           variant={file.pinned ? "default" : "ghost"}
           size="sm"
-          onClick={() => onTogglePin(file.id)}
+          onClick={() => onTogglePin(file.id, file.path)}
           className={`h-5 w-5 p-0 transition-opacity ${
             file.pinned 
               ? 'opacity-100' 
@@ -126,13 +144,80 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
 
 export function FileList() {
   const { getFilteredFiles, togglePinnedFile, isLoading, error, setFiles, setLoading, setError } = useFileListStore();
+  const { setFileStatus, setFileStarted, setFileFailed } = useVectorizationStore();
   const files = getFilteredFiles();
   
   // 搜索框状态
   const [searchKeyword, setSearchKeyword] = useState("");
 
-  const handleTogglePin = (fileId: number) => {
-    togglePinnedFile(fileId);
+  // Pin文件API调用
+  const pinFileAPI = async (filePath: string): Promise<{ success: boolean; taskId?: number; error?: string }> => {
+    try {
+      const response = await fetch('http://127.0.0.1:60315/pin-file', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ file_path: filePath }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error('Pin file API error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '未知错误'
+      };
+    }
+  };
+
+  const handleTogglePin = async (fileId: number, filePath: string) => {
+    const file = files.find(f => f.id === fileId);
+    if (!file) return;
+
+    // 如果要取消pin，直接调用本地toggle
+    if (file.pinned) {
+      togglePinnedFile(fileId);
+      return;
+    }
+
+    // 如果要pin文件，调用API并设置向量化状态
+    try {
+      // 设置初始状态
+      setFileStatus(filePath, 'idle');
+
+      // 调用API
+      const result = await pinFileAPI(filePath);
+      
+      if (result.success) {
+        // API成功，更新pin状态和向量化任务ID
+        togglePinnedFile(fileId);
+        setFileStarted(filePath, result.taskId?.toString() || '');
+
+        toast.success(`文件 ${file.file_name} 已开始向量化处理`);
+      } else {
+        // API失败，设置错误状态
+        setFileFailed(filePath, '', {
+          message: result.error || '向量化启动失败',
+          helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
+        });
+
+        toast.error(`向量化失败：${result.error}`);
+      }
+    } catch (error) {
+      // 网络或其他错误
+      setFileFailed(filePath, '', {
+        message: error instanceof Error ? error.message : '网络连接失败',
+        helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
+      });
+
+      toast.error('向量化请求失败，请检查网络连接');
+    }
   };
 
   const handleTagClick = async (tagName: string) => {

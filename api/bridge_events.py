@@ -52,6 +52,12 @@ class BridgeEventSender:
         DATABASE_UPDATED = "database-updated"
         ERROR_OCCURRED = "error-occurred"
         SYSTEM_STATUS = "system-status"
+        
+        # 多模态向量化事件
+        MULTIVECTOR_STARTED = "multivector-started"
+        MULTIVECTOR_PROGRESS = "multivector-progress"
+        MULTIVECTOR_COMPLETED = "multivector-completed"
+        MULTIVECTOR_FAILED = "multivector-failed"
     
     def __init__(self, source: str = "python-backend"):
         """
@@ -161,6 +167,51 @@ class BridgeEventSender:
             "role_type": role_type,
             "available_models": available_models or [],
             "error_message": error_message
+        })
+    
+    # 多模态向量化便捷方法
+    def multivector_started(self, file_path: str, task_id: str):
+        """通知多模态向量化开始"""
+        self.send_event(self.Events.MULTIVECTOR_STARTED, {
+            "file_path": file_path,
+            "task_id": task_id,
+            "stage": "started"
+        })
+    
+    def multivector_progress(self, file_path: str, task_id: str, current: int, total: int, 
+                           stage: str = "", message: str = ""):
+        """通知多模态向量化进度"""
+        self.send_event(self.Events.MULTIVECTOR_PROGRESS, {
+            "file_path": file_path,
+            "task_id": task_id,
+            "current": current,
+            "total": total,
+            "percentage": round((current / total) * 100, 2) if total > 0 else 0,
+            "stage": stage,  # parsing, chunking, vectorizing
+            "message": message
+        })
+    
+    def multivector_completed(self, file_path: str, task_id: str, 
+                            parent_chunks_count: int = 0, child_chunks_count: int = 0):
+        """通知多模态向量化完成"""
+        self.send_event(self.Events.MULTIVECTOR_COMPLETED, {
+            "file_path": file_path,
+            "task_id": task_id,
+            "parent_chunks_count": parent_chunks_count,
+            "child_chunks_count": child_chunks_count,
+            "stage": "completed"
+        })
+    
+    def multivector_failed(self, file_path: str, task_id: str, error_message: str, 
+                          help_link: str = "", error_code: str = ""):
+        """通知多模态向量化失败"""
+        self.send_event(self.Events.MULTIVECTOR_FAILED, {
+            "file_path": file_path,
+            "task_id": task_id,
+            "error_message": error_message,
+            "help_link": help_link,
+            "error_code": error_code,
+            "stage": "failed"
         })
 
 # 测试代码

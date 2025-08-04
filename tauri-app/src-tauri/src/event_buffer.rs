@@ -68,6 +68,10 @@ impl EventBuffer {
         strategies.insert("system-status".to_string(), Immediate);
         // 模型状态变化影响用户操作，需要立即通知
         strategies.insert("model-status-changed".to_string(), Immediate);
+        // 多模态向量化关键状态变化需要立即通知
+        strategies.insert("multivector-started".to_string(), Immediate);
+        strategies.insert("multivector-completed".to_string(), Immediate);
+        strategies.insert("multivector-failed".to_string(), Immediate);
         
         // === 延迟合并类（可缓冲，适合批量场景） ===
         // 标签更新：用户首次启动或大量文件处理时会频繁更新，5秒内合并
@@ -84,6 +88,8 @@ impl EventBuffer {
         strategies.insert("screening-progress".to_string(), Throttle(Duration::from_secs(1)));
         // 文件处理：批量处理时控制通知频率，每2秒最多一次
         strategies.insert("file-processed".to_string(), Throttle(Duration::from_secs(2)));
+        // 多模态向量化进度：控制UI更新频率，最多每秒1次
+        strategies.insert("multivector-progress".to_string(), Throttle(Duration::from_secs(1)));
         
         // 注意：未在此配置的事件类型将使用默认策略（500ms延迟合并）
     }

@@ -34,7 +34,7 @@ def generate_vector_id() -> str:
     """生成用于vector_id的短ID"""
     return str(uuid4()).replace('-', '')[:16]
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PictureDescriptionApiOptions,
@@ -231,19 +231,26 @@ Give a concise summary of the image that is well optimized for retrieval.
             logger.error(f"Failed to initialize chunker: {e}")
             raise
     
-    def process_document(self, file_path: str) -> bool:
+    def process_document(self, file_path: str, task_id: str = None) -> bool:
         """
         处理单个文档的完整流程
         
         Args:
             file_path: 文档文件的绝对路径
+            task_id: 任务ID，用于事件追踪
             
         Returns:
             bool: 处理是否成功
         """
         try:
             logger.info(f"[CHUNKING] Starting document processing: {file_path}")
-            self.bridge_events.progress_update("multivector", 0, 100, "开始解析文档...")
+            
+            # 发送开始事件
+            if task_id:
+                self.bridge_events.multivector_started(file_path, task_id)
+            
+            self.bridge_events.multivector_progress(file_path, task_id or "", 0, 100, 
+                                                   "parsing", "开始解析文档...")
             
             # 1. 验证文件
             if not os.path.exists(file_path):
@@ -256,30 +263,43 @@ Give a concise summary of the image that is well optimized for retrieval.
             existing_doc = self._get_existing_document(file_path, file_hash)
             if existing_doc:
                 logger.info(f"[CHUNKING] Document already processed and unchanged: {file_path}")
-                self.bridge_events.progress_update("multivector", 100, 100, "文档已处理，无需重复处理")
+                if task_id:
+                    # 获取已有chunk统计
+                    parent_stmt = select(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
+                    parent_count = len(self.session.exec(parent_stmt).all())
+                    
+                    child_stmt = select(ChildChunk).join(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
+                    child_count = len(self.session.exec(child_stmt).all())
+                    
+                    self.bridge_events.multivector_completed(file_path, task_id, parent_count, child_count)
                 return True
             
             # 4. 使用docling解析文档
-            self.bridge_events.progress_update("multivector", 20, 100, "正在解析文档结构...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 20, 100, 
+                                                   "parsing", "正在解析文档结构...")
             docling_result = self._parse_with_docling(file_path)
             
             # 5. 保存docling解析结果
             docling_json_path = self._save_docling_result(file_path, docling_result)
             
             # 6. 创建/更新Document记录
-            self.bridge_events.progress_update("multivector", 40, 100, "创建文档记录...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 40, 100, 
+                                                   "chunking", "创建文档记录...")
             document = self._create_or_update_document(file_path, file_hash, docling_json_path)
             
             # 7. 生成父块和子块
-            self.bridge_events.progress_update("multivector", 60, 100, "生成内容块...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 60, 100, 
+                                                   "chunking", "生成内容块...")
             parent_chunks, child_chunks = self._generate_chunks(document.id, docling_result.document)
             
             # 8. 存储到数据库
-            self.bridge_events.progress_update("multivector", 80, 100, "存储到数据库...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 80, 100, 
+                                                   "chunking", "存储到数据库...")
             self._store_chunks(parent_chunks, child_chunks)
             
             # 8.5. 为图片chunks创建图文关系子块（关键设计）
-            self.bridge_events.progress_update("multivector", 85, 100, "创建图文关系子块...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 85, 100, 
+                                                   "chunking", "创建图文关系子块...")
             all_parent_chunks, all_child_chunks = self._create_image_context_chunks(parent_chunks, child_chunks, document.id)
             
             # 如果创建了额外的上下文块，更新chunk列表
@@ -296,7 +316,8 @@ Give a concise summary of the image that is well optimized for retrieval.
                 child_chunks = all_child_chunks
             
             # 9. 向量化和存储
-            self.bridge_events.progress_update("multivector", 90, 100, "向量化和存储...")
+            self.bridge_events.multivector_progress(file_path, task_id or "", 90, 100, 
+                                                   "vectorizing", "向量化和存储...")
             self._vectorize_and_store(parent_chunks, child_chunks)
             
             # 10. 更新文档状态
@@ -305,17 +326,31 @@ Give a concise summary of the image that is well optimized for retrieval.
             self.session.add(document)
             self.session.commit()
             
-            self.bridge_events.progress_update("multivector", 100, 100, "文档处理完成")
+            # 发送完成事件
+            if task_id:
+                self.bridge_events.multivector_completed(file_path, task_id, 
+                                                        len(parent_chunks), len(child_chunks))
+            else:
+                self.bridge_events.multivector_progress(file_path, "", 100, 100, 
+                                                       "completed", "文档处理完成")
+            
             logger.info(f"[CHUNKING] Document processing completed: {file_path}")
             
             return True
             
         except Exception as e:
             logger.error(f"[CHUNKING] Document processing failed for {file_path}: {e}", exc_info=True)
-            self.bridge_events.error_occurred("chunking_error", f"文档处理失败: {str(e)}", {
-                "file_path": file_path,
-                "error_type": type(e).__name__
-            })
+            
+            # 发送失败事件
+            error_msg = f"文档处理失败: {str(e)}"
+            help_link = "https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting"
+            if task_id:
+                self.bridge_events.multivector_failed(file_path, task_id, error_msg, help_link, type(e).__name__)
+            else:
+                self.bridge_events.error_occurred("chunking_error", error_msg, {
+                    "file_path": file_path,
+                    "error_type": type(e).__name__
+                })
             
             # 更新文档状态为错误
             try:
@@ -1245,4 +1280,9 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+    # 10秒倒计时
+    import time
+    for i in range(10, 0, -1):
+        print(f"倒计时: {i}秒")
+        time.sleep(1)
     test_chunking_mgr()

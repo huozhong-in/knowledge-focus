@@ -398,7 +398,8 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         logger.info(f"开始处理高优先级多模态向量化任务 (Task ID: {task.id}): {file_path}")
                         
                         try:
-                            success = chunking_mgr.process_document(file_path)
+                            # 传递task_id以便事件追踪
+                            success = chunking_mgr.process_document(file_path, str(task.id))
                             if success:
                                 task_mgr.update_task_status(
                                     task.id, 

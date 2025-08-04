@@ -12,6 +12,7 @@ import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
+import { useVectorizationStore } from "@/stores/useVectorizationStore"
 
 // 创建一个store来管理页面内容
 interface PageState {
@@ -61,6 +62,9 @@ export default function Page() {
 
   const { setSettingsOpen } = useSettingsStore()
   const [showIntroDialog, setShowIntroDialog] = useState(false)
+
+  // 获取向量化store的actions
+  const vectorizationStore = useVectorizationStore()
 
   // 添加键盘快捷键监听
   useEffect(() => {
@@ -121,31 +125,73 @@ export default function Page() {
           `模型配置错误: ${error_message}`,
           {
             description: `角色: ${role_type} | 提供商: ${provider_type} | 模型: ${model_id}${available_models?.length > 0 ? `\n可用模型: ${available_models.slice(0, 5).join(', ')}${available_models.length > 5 ? '...' : ''}` : ''}`,
-            duration: 8000, // 显示8秒，让用户有时间阅读
+            duration: 8000,
             action: {
               label: "打开设置",
               onClick: () => setSettingsOpen(true)
             }
           }
         )
+      },
+      // 多模态向量化事件处理
+      'multivector-started': (payload: any) => {
+        // console.log("App.tsx: Multivector started:", payload)
+        const { file_path, task_id } = payload
+        if (file_path) {
+          vectorizationStore.setFileStarted(file_path, task_id)
+        }
+      },
+      'multivector-progress': (payload: any) => {
+        // console.log("App.tsx: Multivector progress:", payload)
+        const { file_path, current, total, percentage, stage, message } = payload
+        if (file_path) {
+          const progressValue = percentage || (total > 0 ? Math.round((current / total) * 100) : 0)
+          vectorizationStore.setFileProgress(file_path, progressValue, stage, message)
+        }
+      },
+      'multivector-completed': (payload: any) => {
+        // console.log("App.tsx: Multivector completed:", payload)
+        const { file_path, task_id, parent_chunks_count, child_chunks_count } = payload
+        if (file_path) {
+          vectorizationStore.setFileCompleted(file_path, task_id, parent_chunks_count, child_chunks_count)
+          
+          // 显示成功toast
+          toast.success(
+            `文档向量化完成`,
+            {
+              description: `${file_path.split('/').pop()} • ${parent_chunks_count || 0}个父块 • ${child_chunks_count || 0}个子块`,
+              duration: 4000
+            }
+          )
+        }
+      },
+      'multivector-failed': (payload: any) => {
+        console.warn("App.tsx: Multivector failed:", payload)
+        const { file_path, task_id, error_message, help_link, error_code } = payload
+        if (file_path) {
+          vectorizationStore.setFileFailed(file_path, task_id, {
+            message: error_message || '向量化失败',
+            helpLink: help_link,
+            errorCode: error_code
+          })
+          
+          // 显示错误toast
+          toast.error(
+            `文档向量化失败`,
+            {
+              description: `${file_path.split('/').pop()}: ${error_message}`,
+              duration: 6000,
+              action: help_link ? {
+                label: "获取帮助",
+                onClick: () => window.open(help_link, '_blank')
+              } : undefined
+            }
+          )
+        }
       }
     },
     { showToasts: false, logEvents: true }
   )
-
-  // Fallback: 如果5秒内没有收到api-ready事件，自动设置为就绪
-  // useEffect(() => {
-  //   const fallbackTimer = setTimeout(() => {
-  //     if (!useAppStore.getState().isApiReady) {
-  //       console.warn("App.tsx: Fallback - No 'api-ready' event received. Setting API ready after timeout.")
-  //       setApiReady(true)
-  //     }
-  //   }, 5000) // 5-second fallback delay
-
-  //   return () => {
-  //     clearTimeout(fallbackTimer)
-  //   }
-  // }, [setApiReady])
 
   // 始终显示 IntroDialog 作为 splash 屏幕，直到 API 就绪
   useEffect(() => {

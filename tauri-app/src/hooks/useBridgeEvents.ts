@@ -27,6 +27,11 @@ interface EventHandlers {
   'error-occurred'?: (payload: BridgeEventPayload) => void;
   'system-status'?: (payload: BridgeEventPayload) => void;
   'api-ready'?: (payload: BridgeEventPayload) => void;
+  // 多模态向量化事件
+  'multivector-started'?: (payload: BridgeEventPayload) => void;
+  'multivector-progress'?: (payload: BridgeEventPayload) => void;
+  'multivector-completed'?: (payload: BridgeEventPayload) => void;
+  'multivector-failed'?: (payload: BridgeEventPayload) => void;
   [eventName: string]: ((payload: BridgeEventPayload) => void) | undefined;
 }
 
