@@ -352,25 +352,27 @@ if __name__ == "__main__":
     from sqlmodel import create_engine
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     mgr = ModelsMgr(session)
+
+    print(mgr._get_model_config("base", silent_validation=False))
     
-    # Test tag generation (backend processing - will send IPC events on failure)
-    tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
-    print("Generated Tags:", tags)
+    # # Test tag generation (backend processing - will send IPC events on failure)
+    # tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
+    # print("Generated Tags:", tags)
     
-    # Test embedding generation (backend processing - will send IPC events on failure)
-    len_embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
-    print("Embedding Length:", len(len_embedding))
+    # # Test embedding generation (backend processing - will send IPC events on failure)
+    # len_embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
+    # print("Embedding Length:", len(len_embedding))
     
-    # Test manual model validation (will send IPC events on failure)
-    validation_result = mgr.validate_model_availability("lm_studio", "qwen/qwen3-30b-a3b-2507")
-    print("Model Validation Result:", validation_result)
+    # # Test manual model validation (will send IPC events on failure)
+    # validation_result = mgr.validate_model_availability("lm_studio", "qwen/qwen3-30b-a3b-2507")
+    # print("Model Validation Result:", validation_result)
     
-    # Test chat completion (you can choose whether to send IPC events)
-    try:
-        chat_response = mgr.get_chat_completion([
-            {"role": "user", "content": "尽量列举一些首都城市的名字"}
-        ])
-        print("Chat Response:", chat_response)
-    except Exception as e:
-        print("Chat Error:", e)
+    # # Test chat completion (you can choose whether to send IPC events)
+    # try:
+    #     chat_response = mgr.get_chat_completion([
+    #         {"role": "user", "content": "尽量列举一些首都城市的名字"}
+    #     ])
+    #     print("Chat Response:", chat_response)
+    # except Exception as e:
+    #     print("Chat Error:", e)
     

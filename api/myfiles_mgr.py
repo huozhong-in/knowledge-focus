@@ -16,7 +16,7 @@ from sqlmodel import (
     JSON,
 )
 from datetime import datetime
-from db_mgr import MyFiles, BundleExtension, SystemConfig
+from db_mgr import MyFiles, BundleExtension
 from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform

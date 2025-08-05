@@ -17,7 +17,7 @@ sys.path.append(str(Path(__file__).parent))
 from sqlmodel import Session, create_engine
 from db_mgr import TaskType, TaskPriority, TaskStatus, TaskResult
 from task_mgr import TaskManager
-from api.multivector_mgr import MultiVectorMgr
+from multivector_mgr import MultiVectorMgr
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 

@@ -5,7 +5,7 @@
 测试场景：
 1. 通过/pin-file API创建MULTIVECTOR任务
 2. 验证task_processor能够正确处理MULTIVECTOR任务
-3. 验证ChunkingMgr集成是否正常工作
+3. 验证MultivectorMgr集成是否正常工作
 """
 
 import logging
@@ -23,7 +23,7 @@ from db_mgr import TaskType, TaskPriority, Task
 from task_mgr import TaskManager
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
-from api.multivector_mgr import MultiVectorMgr
+from multivector_mgr import MultiVectorMgr
 
 def setup_logging():
     """设置测试日志"""

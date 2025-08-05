@@ -1,5 +1,5 @@
 """
-多模态分块管理器 (ChunkingMgr)
+多模态检索管理器 (MultivectorMgr)
 
 负责使用docling解析文档，实现分层分块策略，生成父块和子块，
 并调用模型进行图片描述生成和文本向量化。
@@ -98,7 +98,24 @@ class MultiVectorMgr:
         # 初始化chunker
         self._init_chunker()
         
-        logger.info("ChunkingMgr initialized successfully")
+        logger.info("MultivectorMgr initialized successfully")
+    
+    def check_vision_embedding_model_availability(self) -> bool:
+        """
+        检查视觉模型和向量模型的可用性
+        
+        Returns:
+            bool: 是否可用
+        """
+        try:
+            vision_model_available =  self.models_mgr._get_model_config("vision")
+            embedding_model_available =  self.models_mgr._get_model_config("embedding")
+
+            return vision_model_available and embedding_model_available
+
+        except Exception as e:
+            logger.error(f"Error checking 'vision and embedding' model availability: {e}")
+            return False
     
     def _init_base_paths(self):
         """初始化基础路径，使用数据库目录的父目录"""
@@ -243,7 +260,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             bool: 处理是否成功
         """
         try:
-            logger.info(f"[CHUNKING] Starting document processing: {file_path}")
+            logger.info(f"[MULTIVECTOR] Starting document processing: {file_path}")
             
             # 发送开始事件
             if task_id:
@@ -262,7 +279,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             # 3. 检查是否已处理过且文件未变更
             existing_doc = self._get_existing_document(file_path, file_hash)
             if existing_doc:
-                logger.info(f"[CHUNKING] Document already processed and unchanged: {file_path}")
+                logger.info(f"[MULTIVECTOR] Document already processed and unchanged: {file_path}")
                 if task_id:
                     # 获取已有chunk统计
                     parent_stmt = select(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
@@ -334,12 +351,12 @@ Give a concise summary of the image that is well optimized for retrieval.
                 self.bridge_events.multivector_progress(file_path, "", 100, 100, 
                                                        "completed", "文档处理完成")
             
-            logger.info(f"[CHUNKING] Document processing completed: {file_path}")
+            logger.info(f"[MULTIVECTOR] Document processing completed: {file_path}")
             
             return True
             
         except Exception as e:
-            logger.error(f"[CHUNKING] Document processing failed for {file_path}: {e}", exc_info=True)
+            logger.error(f"[MULTIVECTOR] Document processing failed for {file_path}: {e}", exc_info=True)
             
             # 发送失败事件
             error_msg = f"文档处理失败: {str(e)}"
@@ -394,13 +411,13 @@ Give a concise summary of the image that is well optimized for retrieval.
     def _parse_with_docling(self, file_path: str) -> ConversionResult:
         """使用docling解析文档"""
         try:
-            logger.info(f"[CHUNKING] Parsing document with docling: {file_path}")
+            logger.info(f"[MULTIVECTOR] Parsing document with docling: {file_path}")
             result = self.converter.convert(source=file_path)
             
             if not result or not result.document:
                 raise ValueError("Docling parsing returned empty result")
             
-            logger.info(f"[CHUNKING] Docling parsing completed. Document has {len(result.document.pages)} pages")
+            logger.info(f"[MULTIVECTOR] Docling parsing completed. Document has {len(result.document.pages)} pages")
             return result
             
         except Exception as e:
@@ -426,7 +443,7 @@ Give a concise summary of the image that is well optimized for retrieval.
                 artifacts_dir=output_dir
             )
             
-            logger.info(f"[CHUNKING] Docling result saved to: {json_path}")
+            logger.info(f"[MULTIVECTOR] Docling result saved to: {json_path}")
             return str(json_path)
             
         except Exception as e:
@@ -463,7 +480,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             self.session.commit()
             self.session.refresh(document)
             
-            logger.info(f"[CHUNKING] Document record created/updated: ID={document.id}")
+            logger.info(f"[MULTIVECTOR] Document record created/updated: ID={document.id}")
             return document
             
         except Exception as e:
@@ -500,7 +517,7 @@ Give a concise summary of the image that is well optimized for retrieval.
         Returns:
             (parent_chunks, child_chunks): 父块和子块的元组
         """
-        logger.info(f"[CHUNKING] Generating chunks using HybridChunker for document ID: {document_id}")
+        logger.info(f"[MULTIVECTOR] Generating chunks using HybridChunker for document ID: {document_id}")
         
         all_parent_chunks = []
         all_child_chunks = []
@@ -510,7 +527,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             chunk_iter = self.chunker.chunk(dl_doc=docling_doc)
             chunks = list(chunk_iter)
             
-            logger.info(f"[CHUNKING] HybridChunker generated {len(chunks)} chunks")
+            logger.info(f"[MULTIVECTOR] HybridChunker generated {len(chunks)} chunks")
             
             # 为每个chunk创建父块和对应的子块
             for i, chunk in enumerate(chunks):
@@ -524,11 +541,11 @@ Give a concise summary of the image that is well optimized for retrieval.
                     # 确定chunk类型
                     chunk_type = self._determine_chunk_type(chunk)
                     
-                    logger.debug(f"[CHUNKING] Chunk {i}: type={chunk_type}, raw_length={len(raw_content)}, contextualized_length={len(contextualized_content)}")
+                    logger.debug(f"[MULTIVECTOR] Chunk {i}: type={chunk_type}, raw_length={len(raw_content)}, contextualized_length={len(contextualized_content)}")
                     
                     # 如果是图片类型且包含混合内容，需要进行分割处理
                     if chunk_type == "image" and self._contains_mixed_content(raw_content):
-                        logger.debug(f"[CHUNKING] Chunk {i} contains mixed content, splitting...")
+                        logger.debug(f"[MULTIVECTOR] Chunk {i} contains mixed content, splitting...")
                         # 分割混合内容为纯图片描述和纯文本部分
                         sub_chunks = self._split_mixed_chunk(chunk, document_id, i)
                         all_parent_chunks.extend([sc[0] for sc in sub_chunks])
@@ -545,7 +562,7 @@ Give a concise summary of the image that is well optimized for retrieval.
                     logger.error(f"Failed to process chunk {i}: {e}")
                     continue
             
-            logger.info(f"[CHUNKING] Successfully generated {len(all_parent_chunks)} parent chunks and {len(all_child_chunks)} child chunks")
+            logger.info(f"[MULTIVECTOR] Successfully generated {len(all_parent_chunks)} parent chunks and {len(all_child_chunks)} child chunks")
             
         except Exception as e:
             logger.error(f"Failed to generate chunks using HybridChunker: {e}")
@@ -708,7 +725,7 @@ Give a concise summary of the image that is well optimized for retrieval.
                 )
                 result_chunks.append((parent_chunk, child_chunk))
             
-            logger.debug(f"[CHUNKING] Split chunk {chunk_index} into {len(result_chunks)} sub-chunks")
+            logger.debug(f"[MULTIVECTOR] Split chunk {chunk_index} into {len(result_chunks)} sub-chunks")
             
         except Exception as e:
             logger.error(f"Failed to split mixed chunk {chunk_index}: {e}")
@@ -752,9 +769,9 @@ Give a concise summary of the image that is well optimized for retrieval.
             image_file_path = self._extract_image_file_path(chunk)
             if image_file_path:
                 metadata["image_file_path"] = image_file_path
-                logger.debug(f"[CHUNKING] Image chunk {chunk_index}: saved file path to metadata: {image_file_path}")
+                logger.debug(f"[MULTIVECTOR] Image chunk {chunk_index}: saved file path to metadata: {image_file_path}")
             else:
-                logger.warning(f"[CHUNKING] Image chunk {chunk_index}: could not extract file path")
+                logger.warning(f"[MULTIVECTOR] Image chunk {chunk_index}: could not extract file path")
         
         # 创建父块 - content统一存储"内容"（文本内容或图片描述）
         parent_chunk = ParentChunk(
@@ -1137,7 +1154,7 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
                 for chunk in parent_chunks:
                     self.session.refresh(chunk)
                 
-                logger.info(f"[CHUNKING] Stored {len(parent_chunks)} parent chunks")
+                logger.info(f"[MULTIVECTOR] Stored {len(parent_chunks)} parent chunks")
             
             # 2. 设置子块的parent_chunk_id并存储
             if child_chunks:
@@ -1151,7 +1168,7 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
                 for chunk in child_chunks:
                     self.session.refresh(chunk)
                 
-                logger.info(f"[CHUNKING] Stored {len(child_chunks)} child chunks")
+                logger.info(f"[MULTIVECTOR] Stored {len(child_chunks)} child chunks")
             
         except Exception as e:
             logger.error(f"Failed to store chunks: {e}")
@@ -1197,9 +1214,9 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             # 批量存储到LanceDB
             if vector_records:
                 self.lancedb_mgr.add_vectors(vector_records)
-                logger.info(f"[CHUNKING] Vectorized and stored {len(vector_records)} child chunk vectors")
+                logger.info(f"[MULTIVECTOR] Vectorized and stored {len(vector_records)} child chunk vectors")
             
-            logger.info(f"[CHUNKING] Vector storage completed - {len(parent_chunks)} parent chunks stored in SQLite only, {len(child_chunks)} child chunks vectorized in LanceDB")
+            logger.info(f"[MULTIVECTOR] Vector storage completed - {len(parent_chunks)} parent chunks stored in SQLite only, {len(child_chunks)} child chunks vectorized in LanceDB")
             
         except Exception as e:
             logger.error(f"Failed to vectorize and store: {e}")
@@ -1225,7 +1242,7 @@ def test_multivector_mgr():
     # 分块管理器
     try:
         multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
-        logging.info('✅ ChunkingManager初始化成功')
+        logging.info('✅ MultivectorMgr初始化成功')
         logging.info(f'✅ Tokenizer解耦架构已启用')
         logging.info(f'✅ 配置的embedding维度: {multivector_mgr.embedding_dimensions}')
         logging.info(f'✅ Chunker最大tokens: {multivector_mgr.chunker.tokenizer.get_max_tokens()}')

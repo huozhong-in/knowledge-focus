@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
 
         # 配置解析库的警告和日志级别
         try:
-            from api.file_tagging_mgr import configure_parsing_warnings
+            from file_tagging_mgr import configure_parsing_warnings
             configure_parsing_warnings()
             logger.info("解析库日志配置已应用")
         except Exception as parsing_config_err:
@@ -321,7 +321,7 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
     # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
     bundle_extensions = myfiles_mgr.get_bundle_extensions_for_rust()
     logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-    from api.file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
+    from file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
     return {
         "file_categories": file_categories,
         "file_filter_rules": file_filter_rules,
@@ -360,13 +360,17 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
 
                 models_mgr = ModelsMgr(session)
-                parsing_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
+                file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
 
                 if task.task_type == TaskType.TAGGING.value:
+                    # 检查基础模型可用性
+                    if not file_tagging_mgr.check_base_model_availability():
+                        logger.error("基础模型不可用，无法处理文件打标签任务")
+                        return
                     # 高优先级任务: 通常是单个文件处理
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
-                        logger.info(f"开始处理高优先级标记任务 (Task ID: {task.id})")
-                        success = parsing_mgr.process_single_file_task(task.extra_data['screening_result_id'])
+                        logger.info(f"开始处理高优先级文件打标签任务 (Task ID: {task.id})")
+                        success = file_tagging_mgr.process_single_file_task(task.extra_data['screening_result_id'])
                         if success:
                             task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
                             
@@ -376,10 +380,10 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
                     # 低优先级任务: 批量处理
                     else:
-                        logger.info(f"开始批量标记任务 (Task ID: {task.id})")
-                        result_data = parsing_mgr.process_pending_batch(task_id=task.id, batch_size=10) # 每次处理10个
+                        logger.info(f"开始批量文件打标签任务 (Task ID: {task.id})")
+                        result_data = file_tagging_mgr.process_pending_batch(task_id=task.id, batch_size=10) # 每次处理10个
                         
-                        # 无论批量任务处理了多少文件，都将触发任务标记为完成
+                        # 无论批量任务处理了多少文件，都将触发任务文件打标签为完成
                         task_mgr.update_task_status(
                             task.id, 
                             TaskStatus.COMPLETED, 
@@ -388,10 +392,11 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         )
                 
                 elif task.task_type == TaskType.MULTIVECTOR.value:
-                    # 引入ChunkingMgr
                     from multivector_mgr import MultiVectorMgr
                     mv_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
-                    
+                    if not mv_mgr.check_vision_embedding_model_availability():
+                        logger.error("视觉模型或向量模型不可用，无法处理多模态向量化任务")
+                        return
                     # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
                         file_path = task.extra_data['file_path']

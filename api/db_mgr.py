@@ -662,22 +662,22 @@ class DBManager:
             },
             {
                 "key": "selected_model_for_base",
-                "value": None,
+                "value": "",
                 "description": "用于基础任务的全局模型配置"
             },
             {
                 "key": "selected_model_for_vision",
-                "value": None,
+                "value": "",
                 "description": "用于视觉任务的全局模型配置"
             },
             {
                 "key": "selected_model_for_embedding",
-                "value": None,
+                "value": "",
                 "description": "用于嵌入任务的全局模型配置"
             },
             {
                 "key": "selected_model_for_reranking",
-                "value": None,
+                "value": "",
                 "description": "用于重排序任务的全局模型配置"
             }
         ]

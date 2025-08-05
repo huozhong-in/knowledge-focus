@@ -12,6 +12,7 @@ from models_mgr import ModelsMgr
 from db_mgr import FileScreenResult
 from sqlmodel import select, and_
 import time
+from bridge_events import BridgeEventSender
 
 # 为当前模块创建日志器
 logger = logging.getLogger(__name__)
@@ -47,6 +48,19 @@ class FileTaggingMgr:
         # 初始化markitdown解析器
         self.md_parser = MarkItDown(enable_plugins=False)
         # ! markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
+        self.bridge_event_sender = BridgeEventSender()
+
+    def check_base_model_availability(self) -> bool:
+        """
+        检查是否有可用的基础模型。
+        如果没有可用模型，返回False并记录警告。
+        """
+        try:
+            self.models_mgr._get_model_config("base")
+        except ValueError as e:
+            logger.warning(f"Base model for file tagging is not available: {e}")
+            return False
+        return True
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
         """
@@ -78,6 +92,7 @@ class FileTaggingMgr:
             success = self.tagging_mgr.generate_and_link_tags_for_file(screening_result, summary)
             if success:
                 self._update_tagged_time(screening_result)
+                self.bridge_event_sender.tags_updated()
             return success
         except Exception as e:
             logger.error(f"Error during vector-based tagging for {screening_result.file_path}: {e}")
@@ -252,21 +267,25 @@ if __name__ == "__main__":
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
 
     # 测试文件路径
-    import pathlib
-    user_home = pathlib.Path.home()
-    test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
-    if not test_file_path.exists():
-        test_logger.error(f"测试文件不存在: {test_file_path}")
-        raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
+    # import pathlib
+    # user_home = pathlib.Path.home()
+    # test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
+    # if not test_file_path.exists():
+    #     test_logger.error(f"测试文件不存在: {test_file_path}")
+    #     raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
     
-    test_logger.info(f"测试文件: {test_file_path}")
+    # test_logger.info(f"测试文件: {test_file_path}")
     
     # 创建解析管理器实例进行测试
-    # parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
+    db_directory = os.path.dirname(TEST_DB_PATH)
+    lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+    models_mgr = ModelsMgr(session)
+    file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
+    print(file_tagging_mgr.check_base_model_availability())
     
     # 测试示例：
     # 1. 测试内容提取
-    # extracted_content = parsing_mgr._extract_content(test_file_path)
+    # extracted_content = file_tagging_mgr._extract_content(test_file_path)
     # test_logger.info(f"提取内容长度: {len(extracted_content) if extracted_content else 0}")
     
     # 2. 测试文件解析和标签生成
@@ -275,8 +294,8 @@ if __name__ == "__main__":
     # result: FileScreeningResult = screening_mgr.get_by_path(test_file_path)
     # if result:
     #     test_logger.info(f"找到粗筛结果ID: {result.id}")
-    #     success = parsing_mgr.parse_and_tag_file(result)
-    #     parsing_mgr.session.commit()
+    #     success = file_tagging_mgr.parse_and_tag_file(result)
+    #     file_tagging_mgr.session.commit()
     #     test_logger.info(f"解析和标签生成结果: {success}")
     # else:
     #     test_logger.warning("未找到对应的粗筛结果")

@@ -153,7 +153,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               variant="default"
               size="icon"
               className="h-8 w-8"
-              title="新数据任务"
+              title="新对话"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -172,7 +172,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <div className="flex gap-2 p-2 justify-between">
             <Button variant="default" className="flex-1 gap-2" size="sm">
               <Plus className="h-4 w-4" />
-              <span>新数据任务</span>
+              <span>新对话</span>
             </Button>
             <Button
               variant="ghost"
@@ -181,7 +181,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               onClick={() => setSearchOpen(true)}
             >
               <Search className="h-4 w-4" />
-              <span>搜索</span>
+              <span>搜索对话</span>
             </Button>
           </div>
         )}
