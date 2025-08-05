@@ -131,7 +131,7 @@ class FileTaggingMgr:
         Processes a batch of pending file screening results.
         """        
 
-        logger.info(f"[PARSING_BATCH] Checking for a batch of {batch_size} pending files...")
+        logger.info(f"[FILE_TAGGING_BATCH] Checking for a batch of {batch_size} pending files...")
         start_time = time.time()
 
         results = self.session.exec(
@@ -144,11 +144,11 @@ class FileTaggingMgr:
         ).all()
 
         if not results:
-            logger.info("[PARSING_BATCH] No pending files to process in this batch.")
+            logger.info("[FILE_TAGGING_BATCH] No pending files to process in this batch.")
             return {"success": True, "processed": 0, "success_count": 0, "failed_count": 0}
 
         total_files = len(results)
-        logger.info(f"[PARSING_BATCH] Found {total_files} files to process in this batch.")
+        logger.info(f"[FILE_TAGGING_BATCH] Found {total_files} files to process in this batch.")
 
         processed_count = 0
         success_count = 0
@@ -157,7 +157,7 @@ class FileTaggingMgr:
         for result in results:
             processed_count += 1
             file_process_start_time = time.time()
-            logger.info(f"[PARSING_BATCH] Processing file {processed_count}/{total_files}: {result.file_path}")
+            logger.info(f"[FILE_TAGGING_BATCH] Processing file {processed_count}/{total_files}: {result.file_path}")
 
             try:
                 if result.tagged_time and result.modified_time and result.tagged_time > result.modified_time:
@@ -177,7 +177,7 @@ class FileTaggingMgr:
                 
                 self.session.commit()
                 file_process_duration = time.time() - file_process_start_time
-                logger.info(f"[PARSING_BATCH] Finished file {processed_count}/{total_files}. Duration: {file_process_duration:.2f}s")
+                logger.info(f"[FILE_TAGGING_BATCH] Finished file {processed_count}/{total_files}. Duration: {file_process_duration:.2f}s")
                 time.sleep(0.5)
 
             except Exception as e:
@@ -194,7 +194,7 @@ class FileTaggingMgr:
                 failed_count += 1
 
         total_duration = time.time() - start_time
-        logger.info(f"[PARSING_BATCH] Finished batch. Duration: {total_duration:.2f}s")
+        logger.info(f"[FILE_TAGGING_BATCH] Finished batch. Duration: {total_duration:.2f}s")
         logger.info(f"Processed {processed_count} files. Succeeded: {success_count}, Failed: {failed_count}")
         return {"success": True, "processed": processed_count, "success_count": success_count, "failed_count": failed_count}
 

@@ -262,10 +262,7 @@ Give a concise summary of the image that is well optimized for retrieval.
         try:
             logger.info(f"[MULTIVECTOR] Starting document processing: {file_path}")
             
-            # 发送开始事件
-            if task_id:
-                self.bridge_events.multivector_started(file_path, task_id)
-            
+            # 发送进度事件            
             self.bridge_events.multivector_progress(file_path, task_id or "", 0, 100, 
                                                    "parsing", "开始解析文档...")
             
