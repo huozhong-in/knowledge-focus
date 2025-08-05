@@ -40,7 +40,7 @@ class LanceDBMgr:
         try:
             # First try to create with exist_ok=True
             self.tags_tbl = self.db.create_table(table_name, schema=Tags, exist_ok=True)
-            logger.info(f"LanceDB table '{table_name}' initialized successfully at {self.uri}")
+            # logger.info(f"LanceDB table '{table_name}' initialized successfully at {self.uri}")
         except ValueError as e:
             if "Schema Error" in str(e):
                 # If schema doesn't match, drop the existing table and recreate
@@ -64,7 +64,7 @@ class LanceDBMgr:
         try:
             # First try to create with exist_ok=True
             self.vectors_tbl = self.db.create_table(table_name, schema=VectorRecord, exist_ok=True)
-            logger.info(f"LanceDB vectors table '{table_name}' initialized successfully at {self.uri}")
+            # logger.info(f"LanceDB vectors table '{table_name}' initialized successfully at {self.uri}")
         except ValueError as e:
             if "Schema Error" in str(e):
                 # If schema doesn't match, drop the existing table and recreate
@@ -145,7 +145,7 @@ class LanceDBMgr:
             return []
 
     def search_vectors(self, query_vector: List[float], limit: int = 50, 
-                      document_ids: List[int] = None) -> List[dict]:
+                      document_ids: List[int] = None, distance_threshold: float = None) -> List[dict]:
         """
         Searches for similar vectors in the multivector table.
         
@@ -153,6 +153,7 @@ class LanceDBMgr:
             query_vector: The vector to search with.
             limit: The maximum number of results to return.
             document_ids: Optional list of document IDs to filter by.
+            distance_threshold: Optional similarity threshold (cosine distance).
             
         Returns:
             A list of dictionaries representing the nearest vectors.
@@ -161,6 +162,7 @@ class LanceDBMgr:
             self.init_vectors_table()
 
         try:
+            # 使用余弦相似度进行搜索 (LanceDB默认使用cosine距离)
             query = self.vectors_tbl.search(query_vector).limit(limit)
             
             # Apply document filter if provided
@@ -169,32 +171,149 @@ class LanceDBMgr:
                 doc_ids_str = ','.join(map(str, document_ids))
                 query = query.where(f"document_id IN ({doc_ids_str})")
             
-            results = query.to_pydantic(VectorRecord)
-            logger.info(f"LanceDB vector search found {len(results)} results.")
+            # 先获取原始结果（包含距离信息）
+            raw_results = query.to_list()
+            logger.info(f"LanceDB vector search found {len(raw_results)} results,")
             
-            # Convert Pydantic models to dictionaries for easier use
-            return [result.model_dump() for result in results]
+            # 转换为Pydantic对象但保留距离信息
+            results = query.to_pydantic(VectorRecord)
+            
+            # Convert Pydantic models to dictionaries and add distance info
+            results_dict = []
+            for i, result in enumerate(results):
+                result_dict = result.model_dump(exclude={"vector"})
+                # 从原始结果中添加距离信息
+                if i < len(raw_results) and '_distance' in raw_results[i]:
+                    result_dict['_distance'] = raw_results[i]['_distance']
+                    # logger.info(f"Distance: {result_dict['_distance']}")
+                results_dict.append(result_dict)
+            
+            # Apply distance threshold filtering if provided
+            if distance_threshold is not None:
+                filtered_results = []
+                for result in results_dict:
+                    # LanceDB returns _distance field in results
+                    if '_distance' in result and result['_distance'] <= distance_threshold:
+                        filtered_results.append(result)
+                results_dict = filtered_results
+                logger.info(f"After distance {distance_threshold} filtering: {len(results_dict)} results remain.")
+
+            return results_dict
         except Exception as e:
             logger.error(f"Failed to search vectors in LanceDB: {e}")
             return []
 
-# Example usage
-if __name__ == '__main__':
-    # This should be the directory where your SQLite DB is located
-    from config import TEST_DB_PATH
-    import pathlib
-    db_directory = pathlib.Path(TEST_DB_PATH).parent
+    def search_by_query(self, query_text: str, models_mgr, top_k: int = 10, 
+                       document_ids: List[int] = None, distance_threshold: float = None) -> List[dict]:
+        """
+        基础查询接口 - P0核心功能
+        通过自然语言查询文档内容
+        
+        Args:
+            query_text: 自然语言查询文本
+            models_mgr: 模型管理器，用于生成embedding
+            top_k: 返回的最大结果数
+            document_ids: 可选的文档ID过滤列表
+            distance_threshold: 可选的相似度阈值
+            
+        Returns:
+            包含检索结果的字典列表，每个结果包含：
+            - vector_id: 向量ID
+            - parent_chunk_id: 父块ID  
+            - document_id: 文档ID
+            - retrieval_content: 检索内容
+            - _distance: 相似度距离
+        """
+        try:
+            # 1. 生成查询向量
+            query_vector = models_mgr.get_embedding(query_text)
+            logger.info(f"Generated query vector for: '{query_text[:50]}...'")
+            
+            # 2. 执行向量检索
+            results = self.search_vectors(
+                query_vector=query_vector,
+                limit=top_k,
+                document_ids=document_ids,
+                distance_threshold=distance_threshold
+            )
 
-    lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+            logger.info(f"Query '{query_text[:50]}...' returned {len(results)} results")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to search by query '{query_text}': {e}")
+            return []
+
+    def search_by_vector(self, query_vector: List[float], top_k: int = 10, 
+                        filters: dict = None) -> List[dict]:
+        """
+        通过向量直接进行检索
+        
+        Args:
+            query_vector: 查询向量
+            top_k: 返回的最大结果数
+            filters: 过滤条件字典，如 {"document_ids": [1,2,3]}
+            
+        Returns:
+            检索结果列表
+        """
+        try:
+            document_ids = None
+            distance_threshold = None
+            
+            if filters:
+                document_ids = filters.get('document_ids')
+                distance_threshold = filters.get('distance_threshold')
+            
+            results = self.search_vectors(
+                query_vector=query_vector,
+                limit=top_k,
+                document_ids=document_ids,
+                distance_threshold=distance_threshold
+            )
+            
+            logger.info(f"Vector search returned {len(results)} results")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Failed to search by vector: {e}")
+            return []
+
+# for testing purposes
+if __name__ == '__main__':
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    # SQLite DB
+    from config import TEST_DB_PATH
+    from sqlmodel import create_engine, Session
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
+    # LanceDB
+    from pathlib import Path
+    lancedb_mgr = LanceDBMgr(base_dir=Path(TEST_DB_PATH).parent)
+    # 模型管理器
+    from models_mgr import ModelsMgr
+    models_mgr = ModelsMgr(session)
     
-    # Example data
-    sample_tags = [
-        {"vector": [0.1] * EMBEDDING_DIMENSIONS, "text": "人工智能", "tag_id": 1},
-        {"vector": [0.2] * EMBEDDING_DIMENSIONS, "text": "机器学习", "tag_id": 2},
-    ]
+    # # prepare the tables
+    # sample_tags = [
+    #     {"vector": [0.1] * EMBEDDING_DIMENSIONS, "text": "人工智能", "tag_id": 1},
+    #     {"vector": [0.2] * EMBEDDING_DIMENSIONS, "text": "机器学习", "tag_id": 2},
+    # ]
     
-    lancedb_mgr.add_tags(sample_tags)
+    # lancedb_mgr.add_tags(sample_tags)
     
-    # Example search
-    search_results = lancedb_mgr.search_tags(query_vector=[0.15] * EMBEDDING_DIMENSIONS)
-    print("Search results:", search_results)
+    # # prepare the vectors
+    # search_results = lancedb_mgr.search_tags(query_vector=[0.15] * EMBEDDING_DIMENSIONS)
+    # print("Search results:", search_results)
+
+    # test search_by_query()
+    results = lancedb_mgr.search_by_query(
+        query_text="咨询顾问",
+        models_mgr=models_mgr,
+        top_k=5,
+        document_ids=[3, 2],  # 假设我们只关心文档ID为3和2的结果
+        distance_threshold=0.05  # 更合适的阈值：保留距离小于0.05的结果
+    )
+    logger.info("Search by query results: %s", results)
