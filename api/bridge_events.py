@@ -45,7 +45,7 @@ class BridgeEventSender:
         TAGS_UPDATED = "tags-updated"
         TASK_COMPLETED = "task-completed"
         FILE_PROCESSED = "file-processed"
-        PARSING_PROGRESS = "parsing-progress"
+        FILE_TAGGING_PROGRESS = "file-tagging-progress"
         SCREENING_PROGRESS = "screening-progress"
         MODEL_STATUS_CHANGED = "model-status-changed"
         MODEL_VALIDATION_FAILED = "model-validation-failed"

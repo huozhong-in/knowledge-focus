@@ -19,7 +19,7 @@ interface EventHandlers {
   'tags-updated'?: (payload: BridgeEventPayload) => void;
   'task-completed'?: (payload: BridgeEventPayload) => void;
   'file-processed'?: (payload: BridgeEventPayload) => void;
-  'parsing-progress'?: (payload: BridgeEventPayload) => void;
+  'file-tagging-progress'?: (payload: BridgeEventPayload) => void;
   'screening-progress'?: (payload: BridgeEventPayload) => void;
   'model-status-changed'?: (payload: BridgeEventPayload) => void;
   'model-validation-failed'?: (payload: BridgeEventPayload) => void;
@@ -219,7 +219,7 @@ export function useProgressEvents(
   onProgressRef.current = onProgress;
 
   useEffect(() => {
-    const progressEventTypes = ['parsing-progress', 'screening-progress'];
+    const progressEventTypes = ['file-tagging-progress', 'screening-progress'];
     const unlistenFunctions: UnlistenFn[] = [];
     let isMounted = true;
 
