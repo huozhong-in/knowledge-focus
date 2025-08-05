@@ -105,7 +105,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 "../../api/main.py".to_string() // Python FastAPI 主入口
                 // "../../api/bridge_events.py".to_string() // 直接测试Python端事件桥接器
                 // "../../api/test_event_buffering.py".to_string() // 直接测试Python端事件缓冲器
-                // "../../api/chunking_mgr.py".to_string() // 直接测试Python端多模态向量化
+                // "../../api/multivector_mgr.py".to_string() // 直接测试Python端多模态向量化
             }
         } else {
             // Production environment - use resource path API

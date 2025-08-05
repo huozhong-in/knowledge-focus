@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useRef } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge";
 import { ChatMessageAvatar } from "@/components/ui/chat-message"
@@ -49,7 +49,7 @@ export function AppWorkspace() {
     },
   ])
 
-  const [dynamicTags, setDynamicTags] = useState<string[]>([
+  const [dynamicTags, _setDynamicTags] = useState<string[]>([
     "数据分析",
     "项目管理",
     "AI助手",

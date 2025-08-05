@@ -79,10 +79,10 @@
 
 ---
 
-### 进度项1: 创建chunking_mgr.py核心管理类
+### 进度项1: 创建multivector_mgr.py核心管理类
 
 - [x] **1.1 基础类结构创建**
-  - [x] 创建ChunkingMgr类，定义初始化方法
+  - [x] 创建MultiVectorMgr类，定义初始化方法
   - [x] 集成session、lancedb_mgr、models_mgr依赖
   - [x] 添加必要的日志配置和错误处理基础框架
 

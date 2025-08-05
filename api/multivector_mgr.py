@@ -62,7 +62,7 @@ from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
 
-class ChunkingMgr:
+class MultiVectorMgr:
     """多模态分块管理器"""
     
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr):
@@ -1207,7 +1207,7 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
 
 
 # 为了测试和调试使用
-def test_chunking_mgr():
+def test_multivector_mgr():
     """测试分块管理器的基本功能"""
     # 1. 初始化各个组件
     logger.info("🔧 初始化组件...")
@@ -1224,11 +1224,11 @@ def test_chunking_mgr():
     bridge_events = BridgeEventSender()
     # 分块管理器
     try:
-        chunking_mgr = ChunkingMgr(session, lancedb_mgr, models_mgr)
+        multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
         logging.info('✅ ChunkingManager初始化成功')
         logging.info(f'✅ Tokenizer解耦架构已启用')
-        logging.info(f'✅ 配置的embedding维度: {chunking_mgr.embedding_dimensions}')
-        logging.info(f'✅ Chunker最大tokens: {chunking_mgr.chunker.tokenizer.get_max_tokens()}')
+        logging.info(f'✅ 配置的embedding维度: {multivector_mgr.embedding_dimensions}')
+        logging.info(f'✅ Chunker最大tokens: {multivector_mgr.chunker.tokenizer.get_max_tokens()}')
     except Exception as e:
         logger.info(f"❌ Docling转换器创建失败: {e}")
         import traceback
@@ -1240,32 +1240,32 @@ def test_chunking_mgr():
     
     # # 3. 从process_document()中拆分出的方法进行独立测试
     # logger.info("🧪 测试基本方法...")
-    # file_hash = chunking_mgr._calculate_file_hash(file_path)
+    # file_hash = multivector_mgr._calculate_file_hash(file_path)
     # logger.info(f"✅ 文件哈希计算完成: {file_hash}")
-    # existing_doc = chunking_mgr._get_existing_document(file_path, file_hash)
+    # existing_doc = multivector_mgr._get_existing_document(file_path, file_hash)
     # if existing_doc:
     #     logger.info(f"✅ 已存在文档记录: {existing_doc.id}, 状态: {existing_doc.status}")
     # else:
     #     logger.info("✅ 未找到现有文档记录")
-    # docling_result = chunking_mgr._parse_with_docling(file_path)
+    # docling_result = multivector_mgr._parse_with_docling(file_path)
     # logger.info(f"✅ Docling解析完成: {len(docling_result.document.pages)}页")
-    # docling_json_path = chunking_mgr._save_docling_result(file_path, docling_result)
+    # docling_json_path = multivector_mgr._save_docling_result(file_path, docling_result)
     # logger.info(f"✅ Docling结果保存完成: {docling_json_path}")
-    # document = chunking_mgr._create_or_update_document(file_path, file_hash, docling_json_path)
+    # document = multivector_mgr._create_or_update_document(file_path, file_hash, docling_json_path)
     # logger.info(f"✅ 文档记录创建/更新完成, ID: {document.id}")
-    # parent_chunks, child_chunks = chunking_mgr._generate_chunks(document.id, docling_result.document)
+    # parent_chunks, child_chunks = multivector_mgr._generate_chunks(document.id, docling_result.document)
     # logger.info(f"✅ 生成内容块完成: {len(parent_chunks)}父块, {len(child_chunks)}子块")
-    # chunking_mgr._store_chunks(parent_chunks, child_chunks)        
-    # chunking_mgr._vectorize_and_store(parent_chunks, child_chunks)
+    # multivector_mgr._store_chunks(parent_chunks, child_chunks)        
+    # multivector_mgr._vectorize_and_store(parent_chunks, child_chunks)
     # document.status = "done"
     # document.processed_at = datetime.now()
-    # chunking_mgr.session.add(document)
-    # chunking_mgr.session.commit()
+    # multivector_mgr.session.add(document)
+    # multivector_mgr.session.commit()
 
     # 4. 最后集成测试文档处理
     try:
         # 处理文档
-        result = chunking_mgr.process_document(str(file_path))
+        result = multivector_mgr.process_document(str(file_path))
         logger.info(f"✅ 文档处理完成: {result}")
     
     except Exception as e:
@@ -1285,4 +1285,4 @@ if __name__ == "__main__":
     for i in range(10, 0, -1):
         print(f"倒计时: {i}秒")
         time.sleep(1)
-    test_chunking_mgr()
+    test_multivector_mgr()

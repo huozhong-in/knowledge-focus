@@ -23,7 +23,7 @@ from db_mgr import TaskType, TaskPriority, Task
 from task_mgr import TaskManager
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
-from chunking_mgr import ChunkingMgr
+from api.multivector_mgr import MultiVectorMgr
 
 def setup_logging():
     """设置测试日志"""
@@ -70,7 +70,7 @@ def test_pin_file_integration():
             # 初始化组件
             lancedb_mgr = LanceDBMgr(base_dir=db_directory)
             models_mgr = ModelsMgr(session)
-            chunking_mgr = ChunkingMgr(session, lancedb_mgr, models_mgr)
+            multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
             
             # 获取任务并更新状态
             task_mgr.update_task_status(task.id, "running")
@@ -81,7 +81,7 @@ def test_pin_file_integration():
                 logger.info(f"📄 开始处理文件: {file_path}")
                 
                 try:
-                    success = chunking_mgr.process_document(file_path)
+                    success = multivector_mgr.process_document(file_path)
                     if success:
                         task_mgr.update_task_status(task.id, "completed", result="success",
                                                   message=f"多模态向量化完成: {file_path}")

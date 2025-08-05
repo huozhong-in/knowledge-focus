@@ -37,7 +37,7 @@ MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 # 所有可解析的文件扩展名
 PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json'] + MARKITDOWN_EXTENSIONS
 
-class ParsingMgr:
+class FileTaggingMgr:
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
         self.session = session
         self.lancedb_mgr = lancedb_mgr

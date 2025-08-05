@@ -20,7 +20,7 @@
 #### 实现细节
 
 ```python
-# chunking_mgr.py中的实现
+# multivector_mgr.py中的实现
 def _init_chunker(self):
     # 使用通用tokenizer进行chunk大小控制
     tokenizer = HuggingFaceTokenizer(
@@ -66,7 +66,7 @@ EMBEDDING_DIMENSIONS = 1024  # 已设置为Qwen3模型的维度
 运行以下测试验证配置：
 ```bash
 cd api
-python chunking_mgr.py
+python multivector_mgr.py
 ```
 
 检查日志中的关键信息：

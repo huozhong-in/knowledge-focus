@@ -23,7 +23,7 @@ from db_mgr import (
 )
 from myfiles_mgr import MyFilesManager
 from screening_mgr import ScreeningManager
-from parsing_mgr import ParsingMgr
+from file_tagging_mgr import FileTaggingMgr
 from task_mgr import TaskManager
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
@@ -165,7 +165,7 @@ async def lifespan(app: FastAPI):
 
         # 配置解析库的警告和日志级别
         try:
-            from parsing_mgr import configure_parsing_warnings
+            from api.file_tagging_mgr import configure_parsing_warnings
             configure_parsing_warnings()
             logger.info("解析库日志配置已应用")
         except Exception as parsing_config_err:
@@ -321,7 +321,7 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
     # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
     bundle_extensions = myfiles_mgr.get_bundle_extensions_for_rust()
     logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-    from parsing_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
+    from api.file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
     return {
         "file_categories": file_categories,
         "file_filter_rules": file_filter_rules,
@@ -360,7 +360,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
 
                 models_mgr = ModelsMgr(session)
-                parsing_mgr = ParsingMgr(session, lancedb_mgr, models_mgr)
+                parsing_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
 
                 if task.task_type == TaskType.TAGGING.value:
                     # 高优先级任务: 通常是单个文件处理
@@ -389,8 +389,8 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 
                 elif task.task_type == TaskType.MULTIVECTOR.value:
                     # 引入ChunkingMgr
-                    from chunking_mgr import ChunkingMgr
-                    chunking_mgr = ChunkingMgr(session, lancedb_mgr, models_mgr)
+                    from multivector_mgr import MultiVectorMgr
+                    mv_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
                     
                     # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
@@ -399,7 +399,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         
                         try:
                             # 传递task_id以便事件追踪
-                            success = chunking_mgr.process_document(file_path, str(task.id))
+                            success = mv_mgr.process_document(file_path, str(task.id))
                             if success:
                                 task_mgr.update_task_status(
                                     task.id, 
@@ -512,7 +512,7 @@ def get_screening_manager(session: Session = Depends(get_session)):
 # 获取 ParsingMgr 的依赖函数
 def get_parsing_manager(session: Session = Depends(get_session)):
     """获取文件解析管理类实例"""
-    return ParsingMgr(session)
+    return FileTaggingMgr(session)
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
