@@ -1804,7 +1804,7 @@ if __name__ == "__main__":
         if db_dir and not os.path.exists(db_dir):
             os.makedirs(db_dir, exist_ok=True)
 
-        if args.mode is not None:
+        if args.mode is not None and args.mode == "dev":
             setup_logging()
         else:
             logging_dir = os.path.join(db_dir, "logs")
@@ -1830,6 +1830,20 @@ if __name__ == "__main__":
         
         # 启动服务器
         logger.info(f"API服务启动在: http://{args.host}:{args.port}")
+        
+        # # 开发模式启用热重载
+        # if args.mode is not None and args.mode == "dev":
+        #     logger.info("开发模式：启用热重载功能")
+        #     uvicorn.run(
+        #         "main:app", 
+        #         host=args.host, 
+        #         port=args.port, 
+        #         log_level="info",
+        #         reload=True,
+        #         reload_dirs=["./"]
+        #     )
+        # else:
+        #     logger.info("生产模式：禁用热重载功能")
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     except Exception as e:
         logger.critical(f"API服务启动失败: {str(e)}", exc_info=True)

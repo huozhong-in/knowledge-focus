@@ -14,6 +14,7 @@ import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 
+
 // 创建一个store来管理页面内容
 interface PageState {
   currentPage: string

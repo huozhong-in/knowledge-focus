@@ -328,12 +328,12 @@ GET /documents/1/images
 **API接口验证**：
 ```bash
 # 全局内容搜索
-curl -X POST "http://localhost:8000/search/content" \
+curl -X POST "http://localhost:60315/search/content" \
   -H "Content-Type: application/json" \
   -d '{"query": "人工智能", "top_k": 5, "distance_threshold": 0.05}'
 
 # 文档内搜索  
-curl -X POST "http://localhost:8000/documents/2/search/content" \
+curl -X POST "http://localhost:60315/documents/2/search/content" \
   -H "Content-Type: application/json" \
   -d '{"query": "多模态", "top_k": 3, "distance_threshold": 0.05}'
 ```
@@ -714,7 +714,7 @@ GET /documents/1/images
 - 📈 平均检索延迟（< 500ms目标）
 - 📈 用户满意度评分
 
-### �️ 文件组织规划
+### 📁 文件组织规划
 
 #### 🔥 P0核心文件（必须实现）
 

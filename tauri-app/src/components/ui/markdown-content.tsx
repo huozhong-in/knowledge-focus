@@ -313,17 +313,19 @@ export const MarkdownContent = memo(
 			[content],
 		);
 
-		return blocks.map((block, index) => (
-			<MemoizedMarkdownBlock
-				content={block}
-				// @ts-ignore
-				className={className}
-				key={`${id}-block-${
-					// biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
-					index
-				}`}
-			/>
-		));
+		return (
+			<div className={className}>
+				{blocks.map((block, index) => (
+					<MemoizedMarkdownBlock
+						content={block}
+						key={`${id}-block-${
+							// biome-ignore lint/suspicious/noArrayIndexKey: <explanation>
+							index
+						}`}
+					/>
+				))}
+			</div>
+		);
 	},
 );
 

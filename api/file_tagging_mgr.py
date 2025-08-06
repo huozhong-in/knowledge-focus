@@ -55,10 +55,8 @@ class FileTaggingMgr:
         检查是否有可用的基础模型。
         如果没有可用模型，返回False并记录警告。
         """
-        try:
-            self.models_mgr._get_model_config("base")
-        except ValueError as e:
-            logger.warning(f"Base model for file tagging is not available: {e}")
+        if not self.models_mgr.is_model_available("base"):
+            logger.warning("Base model for file tagging is not available")
             return False
         return True
 

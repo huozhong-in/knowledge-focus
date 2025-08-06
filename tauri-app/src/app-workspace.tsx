@@ -1,13 +1,5 @@
 import { useState, useRef } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Badge } from "@/components/ui/badge";
-import { ChatMessageAvatar } from "@/components/ui/chat-message"
 import { PanelRightIcon} from "lucide-react"
-import {
-  ChatInput,
-  ChatInputTextArea,
-  ChatInputSubmit,
-} from "@/components/ui/chat-input"
 import { InfiniteCanvas } from "./infinite-canvas"
 import {
   ResizableHandle,
@@ -17,6 +9,7 @@ import {
 import { ImperativePanelHandle } from "react-resizable-panels"
 import { FileList } from "./file-list"
 import { RagLocal } from "./rag-local"
+import { AiSdkChat } from "./ai-sdk-chat"
 
 interface Message {
   id: string
@@ -26,38 +19,39 @@ interface Message {
 }
 
 export function AppWorkspace() {
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages] = useState<Message[]>([
     {
       id: "1",
-      content:
-        "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
+      content: `# 欢迎使用AI助手！🤖
+
+我是您的**智能数据助手**，可以帮您：
+
+- 📄 分析和处理文档
+- 🏷️ 提取关键信息和标签  
+- 📊 生成数据摘要
+- 💡 回答各种问题
+
+请随时向我提问，我会以**实时打字机效果**回答您！
+
+> 💡 **提示**: 我支持完整的Markdown格式，包括代码块、表格等。`,
       type: "incoming",
       timestamp: new Date(Date.now() - 1000 * 60 * 5),
     },
-    {
-      id: "2",
-      content: "如何开始一个新的数据任务？",
-      type: "outgoing",
-      timestamp: new Date(Date.now() - 1000 * 60 * 3),
-    },
-    {
-      id: "3",
-      content:
-        '您可以点击左侧的"新对话"按钮开始，或者直接在这里告诉我您想要处理什么样的数据。我可以帮您分析文档、提取关键信息、生成摘要等。',
-      type: "incoming",
-      timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    },
+    // {
+    //   id: "2",
+    //   content: "如何开始一个新的数据任务？",
+    //   type: "outgoing",
+    //   timestamp: new Date(Date.now() - 1000 * 60 * 3),
+    // },
+    // {
+    //   id: "3",
+    //   content:
+    //     '您可以点击左侧的"新对话"按钮开始，或者直接在这里告诉我您想要处理什么样的数据。我可以帮您分析文档、提取关键信息、生成摘要等。',
+    //   type: "incoming",
+    //   timestamp: new Date(Date.now() - 1000 * 60 * 2),
+    // },
   ])
 
-  const [dynamicTags, _setDynamicTags] = useState<string[]>([
-    "数据分析",
-    "项目管理",
-    "AI助手",
-    "文档处理",
-  ])
-
-  const [inputValue, setInputValue] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
   // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
   // const { state, setOpen } = useSidebar()
   // const isCollapsed = state === "collapsed"
@@ -85,36 +79,6 @@ export function AppWorkspace() {
     }
   }
 
-  
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return
-
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content: inputValue,
-      type: "outgoing",
-      timestamp: new Date(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
-    setInputValue("")
-    setIsLoading(true)
-
-    // Simulate AI response
-    setTimeout(() => {
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content:
-          "这是一个模拟的AI回复。在实际应用中，这里会连接到真正的AI服务。",
-        type: "incoming",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, aiMessage])
-      setIsLoading(false)
-    }, 1000)
-  }
-
   return (
     <main className="flex flex-row h-full overflow-hidden w-full">
       <ResizablePanelGroup
@@ -139,70 +103,17 @@ export function AppWorkspace() {
         <ResizablePanel defaultSize={40} minSize={20}>
           {/* ChatUI区 */}
           <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
-            {/* Header */}
             <div className="border-b p-2 flex flex-row h-[50px] relative">
-              <div className="text-md font-semibold text-muted-foreground">Project Planning Assistant</div>
+              <div className="text-md font-semibold text-muted-foreground">
+                Project Planning Assistant (AI SDK v5)
+              </div>
               <div className="absolute bottom-0 right-1 z-10">
                 <PanelRightIcon 
                   className={`size-7 cursor-pointer hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 rounded-md p-1.5 transition-all ${isInfiniteCanvasCollapsed ? "rotate-180" : ""}`} 
                   onClick={handleCanvasToggle} />
               </div>
             </div>
-            {/* Messages */}
-            <ScrollArea className="flex-1 p-4 rounded-md h-[calc(100vh-180px)]">
-              <div className={`space-y-4 mx-auto`}>
-                {messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex gap-4 w-full justify-start ${message.type === "outgoing" ? "ml-auto flex-row-reverse" : "mr-auto "}`}
-                  >
-                    <ChatMessageAvatar />
-                    <div className="flex flex-col gap-2">
-                      <div
-                        className={`rounded-xl max-w-3/4 px-3 py-2 ${message.type === "incoming" ? "bg-secondary text-secondary-foreground" : "bg-primary text-primary-foreground ml-auto"}`}
-                      >
-                        {message.content}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {message.timestamp.toLocaleTimeString()}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {isLoading && (
-                  <div className="flex gap-4 w-full justify-start mr-auto">
-                    <ChatMessageAvatar />
-                    <div className="flex flex-col gap-2">
-                      <div className="rounded-xl px-3 py-2 bg-secondary text-secondary-foreground">
-                        正在输入...
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-            {/* Input */}
-            <div className="p-2 h-[130px]">
-              <div className="flex flex-wrap gap-1 mb-1">
-                <span className="text-muted-foreground text-xs px-2 py-1">
-                  即时标签感知
-                </span>
-                {dynamicTags.map((tag) => (
-                  <Badge key={tag} variant="outline" className="text-xs px-2 rounded-xl cursor-pointer hover:bg-accent hover:text-accent-foreground transition-all">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-              <ChatInput
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onSubmit={handleSendMessage}
-                loading={isLoading}
-              >
-                <ChatInputTextArea placeholder="Pin个文件聊天吧..." />
-                <ChatInputSubmit />
-              </ChatInput>
-            </div>
+            <AiSdkChat initialMessages={messages} />
           </div>
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-primary" />

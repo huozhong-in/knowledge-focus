@@ -98,7 +98,7 @@ export function Chat() {
 async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>) -> Result<(), String> {
     let client = reqwest::Client::new();
     // 你的Python Sidecar地址
-    let sidecar_url = "http://127.0.0.1:8000/chat/stream"; 
+    let sidecar_url = "http://127.0.0.1:60315/chat/stream"; 
 
     let mut stream = client.post(sidecar_url)
         .json(&messages)

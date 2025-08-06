@@ -22,6 +22,38 @@ class ModelsMgr:
         # 初始化桥接事件发送器
         self.bridge_events = BridgeEventSender(source="models-manager")
 
+    def is_model_available(self, role_type: str) -> bool:
+        """
+        Check if a model for the given role type is available and configured.
+        
+        Args:
+            role_type: The role type (e.g., "base", "embedding", "vision", "reranking")
+            
+        Returns:
+            bool: True if model is available, False otherwise
+        """
+        try:
+            self.get_model_config(role_type, silent_validation=True)
+            return True
+        except (ValueError, Exception):
+            return False
+
+    def get_model_config(self, role_type: str, silent_validation: bool = False) -> tuple[str, str, str | None]:
+        """
+        Public method to fetch the configuration for a given role and returns the necessary
+        parameters for a litellm API call.
+
+        Args:
+            role_type: The role type (e.g., "base", "embedding", "vision", "reranking")
+            silent_validation: If True, model validation failures won't trigger IPC events
+                              (useful for chat requests where frontend handles errors directly)
+
+        Returns:
+            A tuple containing (model_string, api_base, api_key).
+            The model_string is in the format litellm expects (e.g., 'ollama/llama3').
+        """
+        return self._get_model_config(role_type, silent_validation)
+
     def _get_model_config(self, role_type: str, silent_validation: bool = False) -> tuple[str, str, str | None]:
         """
         Fetches the configuration for a given role and returns the necessary
@@ -244,7 +276,8 @@ Based on all information, provide the best tags for this file.
         model_string = f"{provider_type}/{model_name}"
 
         try:
-            response = await litellm_completion(
+            # 对于流式响应，litellm使用同步调用
+            response = litellm_completion(
                 model=model_string,
                 messages=messages,
                 api_base=provider_config.api_endpoint,
@@ -252,10 +285,21 @@ Based on all information, provide the best tags for this file.
                 stream=True
             )
 
-            async for chunk in response:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content
+            # litellm的流式响应是同步迭代器，不是异步的
+            for chunk in response:
+                if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if hasattr(delta, 'content') and delta.content:
+                        # 为了更好的打字机效果，按字符分割内容
+                        content = delta.content
+                        
+                        # 如果内容很短（1-2个字符），直接发送
+                        if len(content) <= 2:
+                            yield content
+                        else:
+                            # 对于较长的内容，按字符逐个发送以获得更好的打字机效果
+                            for char in content:
+                                yield char
         except Exception as e:
             logger.error(f"Error during chat streaming: {e}")
             yield f"Error: {str(e)}"

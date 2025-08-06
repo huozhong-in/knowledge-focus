@@ -108,8 +108,8 @@ class MultiVectorMgr:
             bool: 是否可用
         """
         try:
-            vision_model_available =  self.models_mgr._get_model_config("vision")
-            embedding_model_available =  self.models_mgr._get_model_config("embedding")
+            vision_model_available = self.models_mgr.is_model_available("vision")
+            embedding_model_available = self.models_mgr.is_model_available("embedding")
 
             return vision_model_available and embedding_model_available
 
