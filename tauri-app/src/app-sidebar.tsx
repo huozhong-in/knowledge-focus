@@ -1,4 +1,4 @@
-import React from "react"
+import React, { useState, useEffect } from "react"
 import {
   MessageCircle,
   Plus,
@@ -31,81 +31,86 @@ import {
 import { UserProfileMenu } from "./UserProfileMenu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { NavTagCloud } from "./nav-tagcloud"
+import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
+import { useAppStore } from "./main" // 新增：引入AppStore以获取API就绪状态
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const [searchOpen, setSearchOpen] = React.useState(false)
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  currentSessionId?: number
+  onSessionSwitch?: (session: ChatSession) => void
+  onCreateSession?: () => void // 修改为不接收参数的函数
+  refreshTrigger?: number // 新增：刷新触发器，每次数值改变都会刷新列表
+}
+
+export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession, refreshTrigger, ...props }: AppSidebarProps) {
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [sessions, setSessions] = useState<ChatSession[]>([])
   const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
+  
+  // 获取全局AppStore实例
+  const appStore = useAppStore()
 
-  // Mock data for tasks organized by time periods
-  const mockTasksByTime = [
-    {
-      period: "Recent",
-      tasks: [
-        {
-          id: "1",
-          title: "Project Planning Assistant",
-          icon: MessageCircle,
-        },
-        {
-          id: "2",
-          title: "Code Review Helper",
-          icon: MessageCircle,
-        },
-        {
-          id: "3",
-          title: "Bug Analysis Chat",
-          icon: MessageCircle,
-        },
-      ],
-    },
-    {
-      period: "Previous 7 Days",
-      tasks: [
-        {
-          id: "4",
-          title: "API Design Discussion",
-          icon: MessageCircle,
-        },
-        {
-          id: "5",
-          title: "Database Schema Planning",
-          icon: MessageCircle,
-        },
-      ],
-    },
-    {
-      period: "Previous 30 Days",
-      tasks: [
-        {
-          id: "6",
-          title: "Architecture Overview",
-          icon: MessageCircle,
-        },
-        {
-          id: "7",
-          title: "Performance Optimization",
-          icon: MessageCircle,
-        },
-      ],
-    },
-    {
-      period: "Previous Years",
-      tasks: [
-        {
-          id: "8",
-          title: "Initial Project Setup",
-          icon: MessageCircle,
-        },
-        {
-          id: "9",
-          title: "Requirements Analysis",
-          icon: MessageCircle,
-        },
-      ],
-    },
-  ]
+  // 加载会话列表
+  const loadSessions = async (search?: string) => {
+    try {
+      const result = await getSessions(1, 50, search) // 获取前50个会话
+      setSessions(result.sessions)
+    } catch (error) {
+      console.error('Failed to load sessions:', error)
+    }
+  }
 
+  // 组件挂载时加载会话列表 - 等待API就绪
+  useEffect(() => {
+    console.log('📋 AppSidebar 组件已挂载, API状态:', appStore.isApiReady, '时间:', new Date().toLocaleTimeString());
+    
+    // 如果 API 已就绪，立即尝试获取会话列表
+    if (appStore.isApiReady) {
+      console.log('🚀 组件挂载时尝试获取会话列表');
+      loadSessions();
+    }
+  }, []) // 只在首次挂载时执行
+
+  // 监听API就绪状态变化
+  useEffect(() => {
+    if (appStore.isApiReady) {
+      console.log('🔗 API就绪，尝试获取会话列表');
+      loadSessions();
+    }
+  }, [appStore.isApiReady])
+
+  // 监听刷新触发器变化
+  useEffect(() => {
+    if (refreshTrigger !== undefined && appStore.isApiReady) {
+      console.log('🔄 收到刷新触发器，重新获取会话列表, trigger:', refreshTrigger);
+      loadSessions();
+    }
+  }, [refreshTrigger, appStore.isApiReady])
+
+  // 创建新会话准备
+  const handleCreateSession = () => {
+    try {
+      // 不再立即创建会话，只是通知父组件准备新会话状态
+      onCreateSession?.()
+    } catch (error) {
+      console.error('Failed to prepare new session:', error)
+    }
+  }
+
+  // 会话点击处理
+  const handleSessionClick = (session: ChatSession) => {
+    onSessionSwitch?.(session)
+  }
+
+    // 将会话按时间分组
+  const sessionsByTime = groupSessionsByTime(sessions).map(group => ({
+    ...group,
+    chat_sessions: group.chat_sessions.map(item => ({
+      ...item,
+      icon: MessageCircle,
+      isActive: item.session.id === currentSessionId
+    }))
+  }))
   return (
     <Sidebar variant="sidebar" collapsible="icon" {...props} className="h-full">
       <SidebarHeader>
@@ -153,6 +158,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               variant="default"
               size="icon"
               className="h-8 w-8"
+              onClick={handleCreateSession}
               title="新对话"
             >
               <Plus className="h-4 w-4" />
@@ -170,7 +176,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ) : (
           // Expanded state - full buttons horizontally
           <div className="flex gap-2 p-2 justify-between">
-            <Button variant="default" className="flex-1 gap-2" size="sm">
+            <Button 
+              variant="default" 
+              className="flex-1 gap-2" 
+              size="sm"
+              onClick={handleCreateSession}
+            >
               <Plus className="h-4 w-4" />
               <span>新对话</span>
             </Button>
@@ -191,24 +202,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {!isCollapsed && (
           <ScrollArea className="h-full">
             <div className="space-y-1">
-              {mockTasksByTime.map((timeGroup) => (
+              {sessionsByTime.map((timeGroup) => (
                 <SidebarGroup key={timeGroup.period}>
                   <SidebarGroupLabel>{timeGroup.period}</SidebarGroupLabel>
                   <SidebarMenu>
-                    {timeGroup.tasks.map((task) => (
-                      <SidebarMenuItem key={task.id}>
-                        <SidebarMenuButton asChild>
-                          <a
-                            href="#"
-                            className="flex flex-col items-start h-auto p-1"
+                    {timeGroup.chat_sessions.map((chat_session) => (
+                      <SidebarMenuItem key={chat_session.id}>
+                        <SidebarMenuButton 
+                          asChild
+                          isActive={chat_session.isActive}
+                        >
+                          <button
+                            onClick={() => handleSessionClick(chat_session.session)}
+                            className="flex flex-col items-start h-auto p-1 w-full text-left"
                           >
                             <div className="flex items-center gap-2 w-full">
-                              <task.icon className="h-4 w-4 shrink-0" />
+                              <chat_session.icon className="h-4 w-4 shrink-0" />
                               <span className="font-medium text-sm truncate">
-                                {task.title}
+                                {chat_session.title}
                               </span>
                             </div>
-                          </a>
+                          </button>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
@@ -234,15 +248,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <CommandList>
           <CommandEmpty>未找到任务。</CommandEmpty>
           <CommandGroup heading="任务列表">
-            {mockTasksByTime.flatMap((timeGroup) =>
-              timeGroup.tasks.map((task) => (
+            {sessionsByTime.flatMap((timeGroup) =>
+              timeGroup.chat_sessions.map((chat_session) => (
                 <CommandItem
-                  key={task.id}
+                  key={chat_session.id}
                   onSelect={() => setSearchOpen(false)}
                 >
-                  <task.icon className="mr-2 h-4 w-4" />
+                  <chat_session.icon className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
-                    <span className="font-medium">{task.title}</span>
+                    <span className="font-medium">{chat_session.title}</span>
                   </div>
                 </CommandItem>
               ))

@@ -2,6 +2,8 @@ import "./index.css"
 import "./tweakcn/app/globals.css"
 import { useEffect, useState } from "react"
 import { create } from "zustand"
+import { load } from '@tauri-apps/plugin-store'
+import { appDataDir, join } from '@tauri-apps/api/path'
 import { useAppStore } from "./main"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
@@ -13,6 +15,7 @@ import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
+import { ChatSession, createSession, pinFile } from "./lib/chat-session-api"
 
 
 // 创建一个store来管理页面内容
@@ -50,6 +53,49 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setInitialPage: (page) => set({ initialPage: page }),
 }))
 
+// ==================== 工具函数 ====================
+
+// 从消息内容生成智能会话名称
+function generateSessionName(firstMessageContent: string): string {
+  // 简化版本：取前20个字符作为会话名称
+  let name = firstMessageContent.trim().substring(0, 20)
+  if (firstMessageContent.length > 20) {
+    name += "..."
+  }
+  return name || "新会话"
+}
+
+// 保存最近使用的会话ID到Tauri Store
+async function saveLastUsedSession(sessionId: number): Promise<void> {
+  try {
+    const appDataPath = await appDataDir()
+    const storePath = await join(appDataPath, 'settings.json')
+    const store = await load(storePath, { autoSave: false })
+    
+    await store.set('lastUsedSessionId', sessionId)
+    await store.save()
+    console.log('Last used session saved to settings.json:', sessionId)
+  } catch (error) {
+    console.error('Failed to save last used session:', error)
+  }
+}
+
+// 从Tauri Store读取最近使用的会话ID
+async function getLastUsedSession(): Promise<number | null> {
+  try {
+    const appDataPath = await appDataDir()
+    const storePath = await join(appDataPath, 'settings.json')
+    const store = await load(storePath, { autoSave: false })
+    
+    const sessionId = await store.get('lastUsedSessionId') as number | null
+    console.log('Last used session loaded from settings.json:', sessionId)
+    return sessionId
+  } catch (error) {
+    console.error('Failed to load last used session:', error)
+    return null
+  }
+}
+
 export default function Page() {
   const {
     isFirstLaunch,
@@ -64,8 +110,142 @@ export default function Page() {
   const { setSettingsOpen } = useSettingsStore()
   const [showIntroDialog, setShowIntroDialog] = useState(false)
 
+  // 会话状态管理
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null)
+  
+  // 临时Pin文件状态（在会话创建前临时保存）
+  const [tempPinnedFiles, setTempPinnedFiles] = useState<Array<{
+    file_path: string
+    file_name: string
+    metadata?: Record<string, any>
+  }>>([])
+  
+  // 聊天重置触发器
+  const [chatResetTrigger, setChatResetTrigger] = useState(0)
+  
+  // Sidebar刷新触发器
+  const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)
+
   // 获取向量化store的actions
   const vectorizationStore = useVectorizationStore()
+
+  // 恢复最近使用的会话
+  const restoreLastUsedSession = async () => {
+    if (!isApiReady) return
+    
+    try {
+      const lastSessionId = await getLastUsedSession()
+      if (lastSessionId) {
+        // 尝试从API获取会话信息
+        const { getSessions } = await import('./lib/chat-session-api')
+        const result = await getSessions(1, 50) // 获取会话列表
+        const session = result.sessions.find(s => s.id === lastSessionId)
+        
+        if (session) {
+          setCurrentSession(session)
+          setCurrentSessionId(session.id)
+          console.log('Restored last used session:', session.name, session.id)
+        } else {
+          console.log('Last used session not found:', lastSessionId)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to restore last used session:', error)
+    }
+  }
+
+  // API就绪后恢复最近会话
+  useEffect(() => {
+    if (isApiReady) {
+      restoreLastUsedSession()
+    }
+  }, [isApiReady])
+
+  // 会话处理函数
+  const handleSessionSwitch = async (session: ChatSession) => {
+    try {
+      setCurrentSession(session)
+      setCurrentSessionId(session.id)
+      
+      // 清空临时Pin文件（切换到已存在的会话）
+      setTempPinnedFiles([])
+      
+      // 保存到Tauri Store
+      await saveLastUsedSession(session.id)
+      
+      console.log('Switched to session:', session.name, session.id)
+    } catch (error) {
+      console.error('Failed to switch session:', error)
+    }
+  }
+
+  // 创建新会话的处理（仅设置为准备状态，实际创建延迟到第一条消息）
+  const handleCreateSession = () => {
+    try {
+      // 清空当前会话状态，准备新会话
+      setCurrentSession(null)
+      setCurrentSessionId(null)
+      
+      // 触发聊天组件重置
+      setChatResetTrigger(prev => prev + 1)
+      
+      // 保持临时Pin文件不变，它们将在第一条消息时绑定到新会话
+      console.log('Prepared for new session creation (delayed until first message)')
+    } catch (error) {
+      console.error('Failed to prepare new session:', error)
+    }
+  }
+  
+  // 实际创建会话（在用户发送第一条消息时调用）
+  const createSessionFromMessage = async (firstMessageContent: string): Promise<ChatSession> => {
+    try {
+      // 从消息内容生成智能会话名称
+      const sessionName = generateSessionName(firstMessageContent)
+      
+      // 创建会话
+      const newSession = await createSession(sessionName)
+      
+      // 设置为当前会话
+      setCurrentSession(newSession)
+      setCurrentSessionId(newSession.id)
+      
+      // 将临时Pin文件绑定到新会话
+      if (tempPinnedFiles.length > 0) {
+        for (const file of tempPinnedFiles) {
+          try {
+            await pinFile(newSession.id, file.file_path, file.file_name, file.metadata)
+          } catch (error) {
+            console.error('Failed to bind temp pinned file to new session:', error)
+          }
+        }
+        // 清空临时Pin文件
+        setTempPinnedFiles([])
+      }
+      
+      // 保存到Tauri Store
+      await saveLastUsedSession(newSession.id)
+      
+      // 触发sidebar刷新列表
+      setSidebarRefreshTrigger(prev => prev + 1)
+      
+      console.log('Created new session:', newSession.name, newSession.id)
+      return newSession
+    } catch (error) {
+      console.error('Failed to create session from message:', error)
+      throw error
+    }
+  }
+
+  // 添加临时Pin文件
+  const addTempPinnedFile = (filePath: string, fileName: string, metadata?: Record<string, any>) => {
+    setTempPinnedFiles(prev => [...prev, { file_path: filePath, file_name: fileName, metadata }])
+  }
+
+  // 移除临时Pin文件
+  const removeTempPinnedFile = (filePath: string) => {
+    setTempPinnedFiles(prev => prev.filter(file => file.file_path !== filePath))
+  }
 
   // 添加键盘快捷键监听
   useEffect(() => {
@@ -278,9 +458,22 @@ export default function Page() {
 
   return (
     <SidebarProvider>
-        <AppSidebar />
+        <AppSidebar 
+          currentSessionId={currentSessionId ?? undefined}
+          onSessionSwitch={handleSessionSwitch}
+          onCreateSession={handleCreateSession}
+          refreshTrigger={sidebarRefreshTrigger}
+        />
           {isApiReady ? (
-            <AppWorkspace />
+            <AppWorkspace 
+              currentSession={currentSession}
+              currentSessionId={currentSessionId}
+              tempPinnedFiles={tempPinnedFiles}
+              onCreateSessionFromMessage={createSessionFromMessage}
+              onAddTempPinnedFile={addTempPinnedFile}
+              onRemoveTempPinnedFile={removeTempPinnedFile}
+              chatResetTrigger={chatResetTrigger}
+            />
           ) : (
             <div className="flex flex-1 items-center justify-center">
               <div className="relative w-10 h-10">

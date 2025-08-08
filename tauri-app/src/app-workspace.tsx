@@ -10,6 +10,7 @@ import { ImperativePanelHandle } from "react-resizable-panels"
 import { FileList } from "./file-list"
 import { RagLocal } from "./rag-local"
 import { AiSdkChat } from "./ai-sdk-chat"
+import { ChatSession } from "./lib/chat-session-api"
 
 interface Message {
   id: string
@@ -18,28 +19,37 @@ interface Message {
   timestamp: Date
 }
 
-export function AppWorkspace() {
-  // 简易会话标识：用于后端落库绑定（持久化到 localStorage）
-  const [sessionId, setSessionId] = useState<number | null>(null)
+interface AppWorkspaceProps {
+  currentSession?: ChatSession | null
+  currentSessionId?: number | null
+  isCreatingSession?: boolean
+  tempPinnedFiles?: Array<{
+    file_path: string
+    file_name: string
+    metadata?: Record<string, any>
+  }>
+  onCreateSessionFromMessage?: (firstMessageContent: string) => Promise<ChatSession>
+  onAddTempPinnedFile?: (filePath: string, fileName: string, metadata?: Record<string, any>) => void
+  onRemoveTempPinnedFile?: (filePath: string) => void
+  chatResetTrigger?: number // 新增重置触发器
+}
+
+export function AppWorkspace({ 
+  currentSession, 
+  currentSessionId, 
+  // tempPinnedFiles, // 暂时未使用
+  onCreateSessionFromMessage,
+  // onAddTempPinnedFile, // 暂时未使用
+  // onRemoveTempPinnedFile // 暂时未使用
+  chatResetTrigger
+}: AppWorkspaceProps) {
+  // 使用传入的sessionId，不生成临时ID
+  const [sessionId, setSessionId] = useState<number | null>(currentSessionId || null)
+  
   useEffect(() => {
-    try {
-      const key = "kf.sessionId"
-      const existing = localStorage.getItem(key)
-      if (existing) {
-        const parsed = Number(existing)
-        if (!Number.isNaN(parsed)) {
-          setSessionId(parsed)
-          return
-        }
-      }
-      const newId = Date.now() // 简单的基于时间戳的ID
-      localStorage.setItem(key, String(newId))
-      setSessionId(newId)
-    } catch (e) {
-      // 读取/写入localStorage失败时，退化为内存ID
-      setSessionId(Date.now())
-    }
-  }, [])
+    // 直接使用传入的currentSessionId，可能为null
+    setSessionId(currentSessionId || null)
+  }, [currentSessionId])
   const [messages] = useState<Message[]>([
     {
       id: "1",
@@ -58,19 +68,6 @@ export function AppWorkspace() {
       type: "incoming",
       timestamp: new Date(Date.now() - 1000 * 60 * 5),
     },
-    // {
-    //   id: "2",
-    //   content: "如何开始一个新的数据任务？",
-    //   type: "outgoing",
-    //   timestamp: new Date(Date.now() - 1000 * 60 * 3),
-    // },
-    // {
-    //   id: "3",
-    //   content:
-    //     '您可以点击左侧的"新对话"按钮开始，或者直接在这里告诉我您想要处理什么样的数据。我可以帮您分析文档、提取关键信息、生成摘要等。',
-    //   type: "incoming",
-    //   timestamp: new Date(Date.now() - 1000 * 60 * 2),
-    // },
   ])
 
   // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
@@ -126,7 +123,7 @@ export function AppWorkspace() {
           <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
             <div className="border-b p-2 flex flex-row h-[50px] relative">
               <div className="text-md font-semibold text-muted-foreground">
-                Project Planning Assistant (AI SDK v5)
+                {currentSession ? currentSession.name : "新对话"}
               </div>
               <div className="absolute bottom-0 right-1 z-10">
                 <PanelRightIcon 
@@ -134,7 +131,12 @@ export function AppWorkspace() {
                   onClick={handleCanvasToggle} />
               </div>
             </div>
-            <AiSdkChat initialMessages={messages} sessionId={sessionId ? String(sessionId) : undefined} />
+            <AiSdkChat 
+              initialMessages={messages} 
+              sessionId={sessionId ? String(sessionId) : undefined}
+              onCreateSessionFromMessage={onCreateSessionFromMessage}
+              resetTrigger={chatResetTrigger}
+            />
           </div>
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-primary" />
