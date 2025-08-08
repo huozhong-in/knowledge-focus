@@ -1,0 +1,349 @@
+"""
+聊天会话管理模块
+处理会话创建、消息存储、Pin文件管理等功能
+"""
+
+import json
+import uuid
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
+from sqlmodel import Session, select, desc, and_, or_
+from db_mgr import ChatSession, ChatMessage, ChatSessionPinFile
+
+
+class ChatSessionMgr:
+    """聊天会话管理器"""
+    
+    def __init__(self, session: Session):
+        self.session = session
+
+    # ==================== 会话管理 ====================
+    
+    def create_session(self, name: str = None, metadata: Dict[str, Any] = None) -> ChatSession:
+        """
+        创建新的聊天会话
+        
+        Args:
+            name: 会话名称，如果为空则自动生成
+            metadata: 会话元数据
+            
+        Returns:
+            创建的会话对象
+        """
+        if not name:
+            name = f"新对话 {datetime.now().strftime('%m-%d %H:%M')}"
+            
+        session_obj = ChatSession(
+            name=name,
+            metadata_json=json.dumps(metadata or {}),
+            is_active=True
+        )
+        
+        self.session.add(session_obj)
+        self.session.commit()
+        self.session.refresh(session_obj)
+        
+        return session_obj
+    
+    def get_sessions(self, page: int = 1, page_size: int = 20, search: str = None) -> Tuple[List[ChatSession], int]:
+        """
+        获取会话列表
+        
+        Args:
+            page: 页码（从1开始）
+            page_size: 每页大小
+            search: 搜索关键词（在name中搜索）
+            
+        Returns:
+            (会话列表, 总数量)
+        """
+        query = select(ChatSession).where(ChatSession.is_active == True)
+        
+        # 添加搜索条件
+        if search:
+            query = query.where(ChatSession.name.contains(search))
+            
+        # 获取总数
+        count_query = select(ChatSession.id).where(ChatSession.is_active == True)
+        if search:
+            count_query = count_query.where(ChatSession.name.contains(search))
+        total = len(self.session.exec(count_query).all())
+        
+        # 分页查询，按更新时间倒序
+        sessions = self.session.exec(
+            query.order_by(desc(ChatSession.updated_at))
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        ).all()
+        
+        return list(sessions), total
+    
+    def get_session(self, session_id: int) -> Optional[ChatSession]:
+        """获取指定会话"""
+        return self.session.get(ChatSession, session_id)
+    
+    def update_session(self, session_id: int, name: str = None, metadata: Dict[str, Any] = None) -> Optional[ChatSession]:
+        """
+        更新会话信息
+        
+        Args:
+            session_id: 会话ID
+            name: 新的会话名称
+            metadata: 新的元数据
+            
+        Returns:
+            更新后的会话对象
+        """
+        session_obj = self.session.get(ChatSession, session_id)
+        if not session_obj or not session_obj.is_active:
+            return None
+            
+        if name is not None:
+            session_obj.name = name
+        if metadata is not None:
+            session_obj.metadata_json = json.dumps(metadata)
+            
+        session_obj.updated_at = datetime.now()
+        
+        self.session.add(session_obj)
+        self.session.commit()
+        self.session.refresh(session_obj)
+        
+        return session_obj
+    
+    def delete_session(self, session_id: int) -> bool:
+        """
+        软删除会话（将is_active设为False）
+        
+        Args:
+            session_id: 会话ID
+            
+        Returns:
+            是否删除成功
+        """
+        session_obj = self.session.get(ChatSession, session_id)
+        if not session_obj:
+            return False
+            
+        session_obj.is_active = False
+        session_obj.updated_at = datetime.now()
+        
+        self.session.add(session_obj)
+        self.session.commit()
+        
+        return True
+
+    # ==================== 消息管理 ====================
+    
+    def save_message(
+        self, 
+        session_id: int, 
+        message_id: str, 
+        role: str, 
+        content: str = None,
+        parts: List[Dict[str, Any]] = None,
+        metadata: Dict[str, Any] = None,
+        sources: List[Dict[str, Any]] = None
+    ) -> ChatMessage:
+        """
+        保存聊天消息
+        
+        Args:
+            session_id: 会话ID
+            message_id: 消息唯一ID
+            role: 消息角色（user/assistant）
+            content: 消息文本内容
+            parts: UIMessage.parts数组
+            metadata: 消息元数据
+            sources: RAG来源信息
+            
+        Returns:
+            保存的消息对象
+        """
+        message = ChatMessage(
+            session_id=session_id,
+            message_id=message_id,
+            role=role,
+            content=content,
+            parts=json.dumps(parts or []),
+            metadata_json=json.dumps(metadata or {}),
+            sources=json.dumps(sources or [])
+        )
+        
+        self.session.add(message)
+        self.session.commit()
+        self.session.refresh(message)
+        
+        # 更新会话的updated_at
+        self._update_session_timestamp(session_id)
+        
+        return message
+    
+    def get_messages(
+        self, 
+        session_id: int, 
+        page: int = 1, 
+        page_size: int = 30,
+        latest_first: bool = True
+    ) -> Tuple[List[ChatMessage], int]:
+        """
+        获取会话的消息列表
+        
+        Args:
+            session_id: 会话ID
+            page: 页码
+            page_size: 每页大小
+            latest_first: 是否最新消息在前
+            
+        Returns:
+            (消息列表, 总数量)
+        """
+        # 获取总数
+        total = len(self.session.exec(
+            select(ChatMessage.id).where(ChatMessage.session_id == session_id)
+        ).all())
+        
+        # 分页查询
+        query = select(ChatMessage).where(ChatMessage.session_id == session_id)
+        
+        if latest_first:
+            query = query.order_by(desc(ChatMessage.created_at))
+        else:
+            query = query.order_by(ChatMessage.created_at)
+            
+        messages = self.session.exec(
+            query.offset((page - 1) * page_size).limit(page_size)
+        ).all()
+        
+        return list(messages), total
+    
+    def get_recent_messages(self, session_id: int, limit: int = 10) -> List[ChatMessage]:
+        """获取会话的最近N条消息"""
+        messages = self.session.exec(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == session_id)
+            .order_by(desc(ChatMessage.created_at))
+            .limit(limit)
+        ).all()
+        
+        # 返回时间正序的消息
+        return list(reversed(messages))
+
+    # ==================== Pin文件管理 ====================
+    
+    def pin_file(
+        self, 
+        session_id: int, 
+        file_path: str, 
+        file_name: str, 
+        metadata: Dict[str, Any] = None
+    ) -> ChatSessionPinFile:
+        """
+        为会话Pin一个文件
+        
+        Args:
+            session_id: 会话ID
+            file_path: 文件路径
+            file_name: 文件名
+            metadata: 文件元数据
+            
+        Returns:
+            创建的Pin文件对象
+        """
+        # 检查是否已经Pin过
+        existing = self.session.exec(
+            select(ChatSessionPinFile)
+            .where(and_(
+                ChatSessionPinFile.session_id == session_id,
+                ChatSessionPinFile.file_path == file_path
+            ))
+        ).first()
+        
+        if existing:
+            return existing
+            
+        pin_file = ChatSessionPinFile(
+            session_id=session_id,
+            file_path=file_path,
+            file_name=file_name,
+            metadata_json=json.dumps(metadata or {})
+        )
+        
+        self.session.add(pin_file)
+        self.session.commit()
+        self.session.refresh(pin_file)
+        
+        # 更新会话时间戳
+        self._update_session_timestamp(session_id)
+        
+        return pin_file
+    
+    def unpin_file(self, session_id: int, file_path: str) -> bool:
+        """
+        取消Pin文件
+        
+        Args:
+            session_id: 会话ID
+            file_path: 文件路径
+            
+        Returns:
+            是否成功取消
+        """
+        pin_file = self.session.exec(
+            select(ChatSessionPinFile)
+            .where(and_(
+                ChatSessionPinFile.session_id == session_id,
+                ChatSessionPinFile.file_path == file_path
+            ))
+        ).first()
+        
+        if not pin_file:
+            return False
+            
+        self.session.delete(pin_file)
+        self.session.commit()
+        
+        # 更新会话时间戳
+        self._update_session_timestamp(session_id)
+        
+        return True
+    
+    def get_pinned_files(self, session_id: int) -> List[ChatSessionPinFile]:
+        """获取会话的Pin文件列表"""
+        return list(self.session.exec(
+            select(ChatSessionPinFile)
+            .where(ChatSessionPinFile.session_id == session_id)
+            .order_by(ChatSessionPinFile.pinned_at)
+        ).all())
+
+    # ==================== 辅助方法 ====================
+    
+    def _update_session_timestamp(self, session_id: int):
+        """更新会话的updated_at时间戳"""
+        session_obj = self.session.get(ChatSession, session_id)
+        if session_obj:
+            session_obj.updated_at = datetime.now()
+            self.session.add(session_obj)
+            self.session.commit()
+    
+    def get_session_stats(self, session_id: int) -> Dict[str, Any]:
+        """
+        获取会话统计信息
+        
+        Returns:
+            统计信息字典：消息数量、Pin文件数量等
+        """
+        # 消息数量
+        message_count = len(self.session.exec(
+            select(ChatMessage.id).where(ChatMessage.session_id == session_id)
+        ).all())
+        
+        # Pin文件数量
+        pinned_file_count = len(self.session.exec(
+            select(ChatSessionPinFile.id).where(ChatSessionPinFile.session_id == session_id)
+        ).all())
+        
+        return {
+            "message_count": message_count,
+            "pinned_file_count": pinned_file_count
+        }

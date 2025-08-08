@@ -1,4 +1,4 @@
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { PanelRightIcon} from "lucide-react"
 import { InfiniteCanvas } from "./infinite-canvas"
 import {
@@ -19,6 +19,27 @@ interface Message {
 }
 
 export function AppWorkspace() {
+  // 简易会话标识：用于后端落库绑定（持久化到 localStorage）
+  const [sessionId, setSessionId] = useState<number | null>(null)
+  useEffect(() => {
+    try {
+      const key = "kf.sessionId"
+      const existing = localStorage.getItem(key)
+      if (existing) {
+        const parsed = Number(existing)
+        if (!Number.isNaN(parsed)) {
+          setSessionId(parsed)
+          return
+        }
+      }
+      const newId = Date.now() // 简单的基于时间戳的ID
+      localStorage.setItem(key, String(newId))
+      setSessionId(newId)
+    } catch (e) {
+      // 读取/写入localStorage失败时，退化为内存ID
+      setSessionId(Date.now())
+    }
+  }, [])
   const [messages] = useState<Message[]>([
     {
       id: "1",
@@ -113,7 +134,7 @@ export function AppWorkspace() {
                   onClick={handleCanvasToggle} />
               </div>
             </div>
-            <AiSdkChat initialMessages={messages} />
+            <AiSdkChat initialMessages={messages} sessionId={sessionId ? String(sessionId) : undefined} />
           </div>
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-primary" />

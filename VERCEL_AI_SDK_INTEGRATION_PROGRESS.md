@@ -19,12 +19,14 @@ UIMessage状态管理                                               UIMessage生
 ## 🎯 核心设计原则
 
 ### 数据流和状态管理
+
 - **UIMessage格式**：前端状态管理和持久化的唯一数据源
 - **会话隔离**：每个会话独立的pin文件列表和聊天记录
 - **动态上下文**：根据token限制智能截断历史消息
 - **智能降级**：在线模型 → 本地模型的无缝降级策略
 
 ### 用户体验原则
+
 - **流式加载**：聊天记录分页加载，最近30条优先显示
 - **状态感知**：用户能清楚感知当前使用的模型类型（在线/本地）
 - **无缝切换**：会话切换时完整恢复pin文件列表和聊天上下文
@@ -114,67 +116,29 @@ UIMessage状态管理                                               UIMessage生
 
 ### 2.1 数据库架构设计
 
-- [ ] **2.1.1 会话管理表设计**
-  ```sql
-  -- 聊天会话表
-  CREATE TABLE chat_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,                    -- 会话名称
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      metadata JSON,                         -- 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
-      is_active BOOLEAN DEFAULT TRUE         -- 软删除标记
-  );
-  ```
+- [x] **2.1.1 会话管理表设计**
+- [x] **2.1.2 消息存储表设计**
+- [x] **2.1.3 会话文件关联表设计**
 
-- [ ] **2.1.2 消息存储表设计**
-  ```sql
-  -- 聊天消息表（UIMessage格式）
-  CREATE TABLE chat_messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER REFERENCES chat_sessions(id),
-      message_id TEXT UNIQUE NOT NULL,      -- UI层的消息ID
-      role TEXT NOT NULL,                   -- 'user' | 'assistant' | 'system'
-      content TEXT,                         -- 主要文本内容
-      parts JSON,                          -- UIMessage.parts数组
-      metadata JSON,                       -- 消息元数据（model_id、timestamp、token_usage等）
-      sources JSON,                        -- 预留：RAG来源信息
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX(session_id, created_at)        -- 查询优化
-  );
-  ```
-
-- [ ] **2.1.3 会话文件关联表设计**
-  ```sql
-  -- 会话Pin文件表（会话级隔离）
-  CREATE TABLE session_pinned_files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      session_id INTEGER REFERENCES chat_sessions(id),
-      file_path TEXT NOT NULL,             -- 文件绝对路径
-      file_name TEXT NOT NULL,             -- 显示用文件名
-      pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      metadata JSON,                       -- 文件元数据：大小、类型、向量化状态等
-      UNIQUE(session_id, file_path)        -- 同一会话中文件唯一
-  );
-  ```
+见db_mgr.py
 
 ### 2.2 会话管理API开发
 
-- [ ] **2.2.1 会话CRUD端点**
-  - [ ] `POST /chat/sessions` - 创建新会话（自动生成智能名称）
-  - [ ] `GET /chat/sessions` - 获取会话列表（支持分页和搜索）
-  - [ ] `PUT /chat/sessions/{id}` - 更新会话信息（重命名等）
-  - [ ] `DELETE /chat/sessions/{id}` - 软删除会话
+- [x] **2.2.1 会话CRUD端点**
+  - [x] `POST /chat/sessions` - 创建新会话（自动生成智能名称）
+  - [x] `GET /chat/sessions` - 获取会话列表（支持分页和搜索）
+  - [x] `PUT /chat/sessions/{id}` - 更新会话信息（重命名等）
+  - [x] `DELETE /chat/sessions/{id}` - 软删除会话
 
-- [ ] **2.2.2 消息持久化端点**
-  - [ ] `GET /chat/sessions/{id}/messages` - 获取会话消息（支持分页、最近30条优先）
-  - [ ] `POST /chat/sessions/{id}/messages` - 批量保存消息
-  - [ ] 在`/chat/ui-stream`端点中集成自动消息保存逻辑
+- [x] **2.2.2 消息持久化端点**
+  - [x] `GET /chat/sessions/{id}/messages` - 获取会话消息（支持分页、最近30条优先）
+  - [x] `POST /chat/sessions/{id}/messages` - 批量保存消息
+  - [x] 在`/chat/ui-stream`端点中集成自动消息保存逻辑
 
-- [ ] **2.2.3 会话文件管理端点**
-  - [ ] `GET /chat/sessions/{id}/pinned-files` - 获取会话Pin文件列表
-  - [ ] `POST /chat/sessions/{id}/pin-file` - 为会话Pin文件
-  - [ ] `DELETE /chat/sessions/{id}/pinned-files/{file_id}` - 取消Pin文件
+- [x] **2.2.3 会话文件管理端点**
+  - [x] `GET /chat/sessions/{id}/pinned-files` - 获取会话Pin文件列表
+  - [x] `POST /chat/sessions/{id}/pin-file` - 为会话Pin文件
+  - [x] `DELETE /chat/sessions/{id}/pinned-files/{file_id}` - 取消Pin文件
   - [ ] 文件状态变更的实时同步机制
 
 ### 2.3 智能上下文管理实现
@@ -257,6 +221,7 @@ UIMessage状态管理                                               UIMessage生
 ## 🔧 技术实现要点
 
 ### 关键技术选择
+
 - **前端框架**：React + TypeScript + Vercel AI SDK v5
 - **状态管理**：AI SDK内置状态 + 自定义Transport
 - **网络层**：Tauri HTTP API + SSE协议
@@ -265,12 +230,14 @@ UIMessage状态管理                                               UIMessage生
 - **消息格式**：UIMessage（AI SDK v5标准）
 
 ### 性能优化策略
+
 - **消息分页**：虚拟滚动 + 增量加载
 - **上下文管理**：智能截断 + 优先级排序
 - **缓存策略**：会话列表 + 消息历史本地缓存
 - **网络优化**：请求去重 + 连接复用
 
 ### 扩展性考虑
+
 - **RAG集成预留**：消息表sources字段，支持未来检索来源记录
 - **多模态支持**：UIMessage parts结构支持文本、图像、工具调用等
 - **插件机制**：Transport层可扩展，支持不同协议和提供商
@@ -309,5 +276,4 @@ UIMessage状态管理                                               UIMessage生
 4. **定期Review**：建立迭代节奏，保持高质量交付
 
 > **关键成就**：我们不仅解决了最初担心的技术风险，还建立了一个高质量、用户体验优秀的聊天系统基础。第一阶段的**超额完成**为整个项目奠定了坚实基础！
-
 > **注意**：本文档将随着开发进展持续更新，记录实际实现中的发现和调整。所有设计决策都基于当前需求，支持未来的渐进式增强。

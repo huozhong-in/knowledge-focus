@@ -28,6 +28,7 @@ from task_mgr import TaskManager
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from search_mgr import SearchManager
+from multivector_mgr import MultiVectorMgr
 
 # --- Centralized Logging Setup ---
 def setup_logging(logging_dir: str = None):
@@ -239,20 +240,74 @@ def get_session():
         yield session
 
 
-# # 本地大模型API端点添加
+# 本地大模型API端点添加
 from models_api import get_router as get_models_router
 models_router = get_models_router(external_get_session=get_session)
 app.include_router(models_router, prefix="", tags=["local-models"])
 
-# Add the new tagging API router
+# 添加新的标签API路由
 from tagging_api import get_router as get_tagging_router
 tagging_router = get_tagging_router(get_session=get_session)
 app.include_router(tagging_router, prefix="", tags=["tagging"])
+
+# 添加聊天会话API路由
+from chatsession_api import get_router as get_chatsession_router
+chatsession_router = get_chatsession_router(external_get_session=get_session)
+app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
 
 # 获取 MyFilesManager 的依赖函数
 def get_myfiles_manager(session: Session = Depends(get_session)):
     """获取文件/文件夹管理器实例"""
     return MyFilesManager(session)
+
+# 获取 ScreeningManager 的依赖函数
+def get_screening_manager(session: Session = Depends(get_session)):
+    """获取文件粗筛结果管理类实例"""
+    return ScreeningManager(session)
+
+# 获取 FileTaggingMgr 的依赖函数
+def get_file_tagging_manager(session: Session = Depends(get_session)):
+    """获取文件解析管理类实例"""
+    return FileTaggingMgr(session)
+
+# 获取 TaskManager 的依赖函数
+def get_task_manager(session: Session = Depends(get_session)):
+    """获取任务管理器实例"""
+    return TaskManager(session)
+
+def get_lancedb_manager():
+    """获取LanceDB管理器实例"""
+    if not hasattr(app.state, "engine") or app.state.engine is None:
+        raise RuntimeError("数据库引擎未初始化")
+    
+    # 从SQLite数据库路径推导出base_dir
+    sqlite_url = str(app.state.engine.url)
+    if sqlite_url.startswith('sqlite:///'):
+        db_path = sqlite_url.replace('sqlite:///', '')
+        db_directory = os.path.dirname(db_path)
+        return LanceDBMgr(base_dir=db_directory)
+    else:
+        raise RuntimeError("无法从数据库URL推导出LanceDB路径")
+
+def get_models_manager(session: Session = Depends(get_session)):
+    """获取模型管理器实例"""
+    return ModelsMgr(session)
+
+def get_search_manager(
+    session: Session = Depends(get_session),
+    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
+    models_mgr: ModelsMgr = Depends(get_models_manager)
+):
+    """获取搜索管理器实例"""
+    return SearchManager(session, lancedb_mgr, models_mgr)
+
+def get_multivector_manager(
+    session: Session = Depends(get_session),
+    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
+    models_mgr: ModelsMgr = Depends(get_models_manager)
+):
+    """获取多模态向量管理器实例"""
+    return MultiVectorMgr(session, lancedb_mgr, models_mgr)
 
 # 获取所有配置信息的API端点
 @app.get("/config/all")
@@ -362,6 +417,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
 
                 models_mgr = ModelsMgr(session)
                 file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
+                multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
 
                 if task.task_type == TaskType.TAGGING.value:
                     # 检查基础模型可用性
@@ -376,7 +432,8 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
                             
                             # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
-                            _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
+                            if multivector_mgr.check_vision_embedding_model_availability():
+                                _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
                         else:
                             task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
                     # 低优先级任务: 批量处理
@@ -393,9 +450,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         )
                 
                 elif task.task_type == TaskType.MULTIVECTOR.value:
-                    from multivector_mgr import MultiVectorMgr
-                    mv_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
-                    if not mv_mgr.check_vision_embedding_model_availability():
+                    if not multivector_mgr.check_vision_embedding_model_availability():
                         logger.error("视觉模型或向量模型不可用，无法处理多模态向量化任务")
                         return
                     # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
@@ -405,7 +460,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         
                         try:
                             # 传递task_id以便事件追踪
-                            success = mv_mgr.process_document(file_path, str(task.id))
+                            success = multivector_mgr.process_document(file_path, str(task.id))
                             if success:
                                 task_mgr.update_task_status(
                                     task.id, 
@@ -433,12 +488,12 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             logger.error(error_msg, exc_info=True)
                     else:
                         # 中低优先级任务: 批量处理（未来支持）
-                        logger.info(f"批量多模态向量化任务暂未实现 (Task ID: {task.id})")
+                        logger.info(f"其他任务类型暂未实现 (Task ID: {task.id})")
                         task_mgr.update_task_status(
                             task.id, 
                             TaskStatus.COMPLETED, 
                             result=TaskResult.SUCCESS,
-                            message="批量多模态向量化任务已跳过"
+                            message="批量处理任务已跳过"
                         )
                 
                 else:
@@ -510,55 +565,7 @@ def _check_file_pin_status(file_path: str, session: Session) -> bool:
         return False
     return file_ext in important_extensions
 
-# 获取 ScreeningManager 的依赖函数
-def get_screening_manager(session: Session = Depends(get_session)):
-    """获取文件粗筛结果管理类实例"""
-    return ScreeningManager(session)
 
-# 获取 FileTaggingMgr 的依赖函数
-def get_file_tagging_manager(session: Session = Depends(get_session)):
-    """获取文件解析管理类实例"""
-    return FileTaggingMgr(session)
-
-# 获取 TaskManager 的依赖函数
-def get_task_manager(session: Session = Depends(get_session)):
-    """获取任务管理器实例"""
-    return TaskManager(session)
-
-def get_lancedb_manager():
-    """获取LanceDB管理器实例"""
-    if not hasattr(app.state, "engine") or app.state.engine is None:
-        raise RuntimeError("数据库引擎未初始化")
-    
-    # 从SQLite数据库路径推导出base_dir
-    sqlite_url = str(app.state.engine.url)
-    if sqlite_url.startswith('sqlite:///'):
-        db_path = sqlite_url.replace('sqlite:///', '')
-        db_directory = os.path.dirname(db_path)
-        return LanceDBMgr(base_dir=db_directory)
-    else:
-        raise RuntimeError("无法从数据库URL推导出LanceDB路径")
-
-def get_models_manager(session: Session = Depends(get_session)):
-    """获取模型管理器实例"""
-    return ModelsMgr(session)
-
-def get_search_manager(
-    session: Session = Depends(get_session),
-    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
-    models_mgr: ModelsMgr = Depends(get_models_manager)
-):
-    """获取搜索管理器实例"""
-    return SearchManager(session, lancedb_mgr, models_mgr)
-
-def get_multivector_manager(
-    session: Session = Depends(get_session),
-    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
-    models_mgr: ModelsMgr = Depends(get_models_manager)
-):
-    """获取多模态向量管理器实例"""
-    from multivector_mgr import MultiVectorMgr
-    return MultiVectorMgr(session, lancedb_mgr, models_mgr)
 
 @app.post("/pin-file")
 def pin_file(

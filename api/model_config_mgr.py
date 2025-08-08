@@ -4,7 +4,7 @@ import httpx
 from sqlmodel import Session, select
 from typing import List, Dict, Any, Tuple, Optional
 
-from db_mgr import LocalModelProviderConfig, SystemConfig, ModelProviderType
+from db_mgr import LocalModelProviderConfig, SystemConfig
 
 class ModelConfigMgr:
     def __init__(self, session: Session):

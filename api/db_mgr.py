@@ -302,18 +302,37 @@ class FileScreeningResult(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 新增一个模型服务商类型的枚举
+# 模型服务商类型的枚举
 class ModelProviderType(str, PyEnum):
     OLLAMA = "ollama"
     LM_STUDIO = "lm_studio"
-    OPENAI_COMPATIBLE = "openai_compatible"
+    OPENAI_COMPATIBLE = "openai_compatible" # 也分本机/本地和远程
+#     BUSINESS_API = "business_api"
+#     VIP = "vip"
 
-# # 模型角色类型的枚举
+# 模型角色类型的枚举
 # class ModelRoleType(str, PyEnum):
-#     BASE = "base"
-#     VISION = "vision"
-#     EMBEDDING = "embedding"
-#     RERANKING = "reranking"
+#     LLM = "llm" # 大语言模型，适合纯文字的通用任务
+#     VISION = "vision" # 带有视觉能力的LLM
+#     EMBEDDING = "embedding" # 用于向量化的模型
+#     RERANKING = "reranking" # 用于重排序的模型
+#     TTS = "tts" # 文本转语音模型
+#     ASR = "asr" # 语音识别模型
+#     IMAGE_GENERATION = "image_generation" # 图像生成模型
+#     CODE_GENERATION = "code_generation" # 代码生成模型
+
+# 模型能力的枚举
+class ModelCapability(str, PyEnum):
+    TEXT = "text"  # 文本处理能力
+    THINK = "think"  # 思考能力
+    VISION = "vision"  # 视觉能力
+    EMBEDDING = "embedding"  # 向量化能力
+    RERANKING = "reranking"  # 重排序能力
+    TOOL_USE = "tool_use"  # 工具使用能力
+    CODE_GENERATION = "code_generation"  # 代码生成能力
+    TTS = "tts"  # 文本转语音能力
+    ASR = "asr"  # 自动语音识别能力
+    IMAGE_GENERATION = "image_generation"  # 图像生成能力
 
 # 本地模型供应商配置表
 class LocalModelProviderConfig(SQLModel, table=True):
@@ -348,7 +367,7 @@ class LocalModelProviderConfig(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 文档表 (t_documents)
+# 文档表
 # 用于记录被处理的原始文件信息。
 # 设计意图: 管理最原始的入口文件，file_hash能避免重复处理未变更的文件，status字段则可以支持异步处理和失败重试机制。
 class Document(SQLModel, table=True):
@@ -360,34 +379,106 @@ class Document(SQLModel, table=True):
     status: str = Field(default="pending") # 处理状态: pending, processing, done, error
     processed_at: datetime = Field(default_factory=datetime.now)
 
-# 父块表 (t_parent_chunks)
+# 父块表
 # 这是系统的核心实体，代表了我们最终要提供给LLM进行答案合成的“原始内容块”。
 # 设计意图: 这是“父文档”策略的直接体现。无论原始形态是文字、图片还是我们后来创造的知识卡片，都在这里有一个统一的表示。通过document_id与源文档关联。
 class ParentChunk(SQLModel, table=True):
     __tablename__ = "t_parent_chunks"
     id: int = Field(default=None, primary_key=True)
     document_id: int = Field(foreign_key="t_documents.id", index=True) # 关联的原始文档
-    
     chunk_type: str = Field(index=True) # 类型: 'text', 'image', 'table', 'knowledge_card'
-    
     # 原始内容或其引用
     content: str # 如果是text/knowledge_card, 直接存内容; 如果是image/table, 存储其图片文件的路径
-    
     metadata_json: str # 存储额外元数据, 如页码、位置坐标等
     created_at: datetime = Field(default_factory=datetime.now)
 
-# 子块表 (t_child_chunks)
+# 子块表
 # 代表了用于向量化和检索的“代理”单元。
 # 设计意图: 这是连接关系世界和向量世界的“桥梁”。parent_chunk_id建立了清晰的从属关系，而vector_id则指向了它在LanceDB中的“向量化身”。
 class ChildChunk(SQLModel, table=True):
     __tablename__ = "t_child_chunks"
     id: int = Field(default=None, primary_key=True)
     parent_chunk_id: int = Field(foreign_key="t_parent_chunks.id", index=True) # 明确的父子关系
-    
     # 用于向量化的文本内容
     retrieval_content: str # 可能是文本摘要、图片描述、或者“图片描述+周围文本”的组合
-    
     vector_id: str = Field(unique=True, index=True) # 与LanceDB中向量记录对应的唯一ID, 如UUID
+
+# 模型提供者表
+# 这张表用来定义模型的来源。它可以是Ollama，可以是OpenAI，也可以是您自己的VIP服务。
+# 设计意图: 将“模型从哪里来”这个问题抽象成一个独立的实体，极大地提高了扩展性。未来出现新的托管平台，只需增加一个新的provider_type即可。
+class ModelProvider(SQLModel, table=True):
+    __tablename__ = "t_model_providers"
+    id: int = Field(default=None, primary_key=True)
+    display_name: str # 用户自定义的名称，如“我的Ollama服务”、“公司内部API”
+    # provider_type: str = Field(
+    # API的基地址
+    base_url: str  # 如 http://localhost:11434
+    api_key_encrypted: str | None = None # 使用加密方式存储，而非明文！
+    # 存放一些特别的provider-specific数据，比如Azure OpenAI的api_version、VertexAI的project_id/location等
+    extra_data: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    is_active: bool = Field(default=True) # 是否启用
+
+# 模型配置表
+# 这张表代表一个具体可用的模型。
+# 设计意图: 将一个具体的模型实例（如本地的llama3:8b）与其能力和属性绑定。这些属性可以来自您的云端目录，也可以由用户手动配置。
+class ModelConfiguration(SQLModel, table=True):
+    __tablename__ = "t_model_configurations"
+    id: int = Field(default=None, primary_key=True)
+    provider_id: int = Field(foreign_key="t_model_providers.id", index=True) # 关联到提供者
+    # 模型在对应平台上的标识符，如 'gemma:2b', 'gpt-4o'
+    model_identifier: str 
+    # 用户可自定义的别名
+    display_name: str # e.g., “我的本地小钢炮”
+    # 模型的“能力”清单，以JSON格式存储
+    capabilities_json: str # e.g., '["think", "vision", "embedding", "tool_use"]'
+    # 运行时信息，同样是JSON，用于显示和推荐
+    runtime_info_json: str | None = None # e.g., '{"runtime": "gguf", "size_gb": 3.8, "min_ram_gb": 8}'
+    is_enabled: bool = Field(default=True)
+
+# 能力指派表
+# 它将App内的具体“任务”指派给一个配置好的“模型”。
+# 设计意图: 彻底解耦“功能”和“实现”。当App需要进行“视觉分析”时，它不关心具体是哪个模型，而是去查这张表，找到被指派给vision_analysis这个“岗位”的模型，然后去调用它。用户可以在设置界面中，像拖拽指派任务一样，决定哪个模型负责哪个功能。
+class CapabilityAssignment(SQLModel, table=True):
+    __tablename__ = "t_capability_assignments"    
+    # App中的能力名称，作为主键
+    capability_name: str = Field(primary_key=True) # e.g., 'default_chat', 'vision_analysis', 'default_embedding', 'code_generation'
+    # 指派给哪个模型配置来完成这个任务
+    model_configuration_id: int = Field(foreign_key="t_model_configurations.id")
+
+# 聊天会话表
+class ChatSession(SQLModel, table=True):
+    __tablename__ = "t_chat_sessions"
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    metadata_json: str | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
+    is_active: bool = Field(default=True)
+
+# 聊天消息表
+class ChatMessage(SQLModel, table=True):
+    __tablename__ = "t_chat_messages"
+    id: int = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="t_chat_sessions.id", index=True)
+    message_id: str = Field(max_length=100)
+    role: str = Field(max_length=50)
+    content: str | None = Field(default=None)
+    # 按AI SDK v5建议，持久化UIMessage作为事实来源：将parts/metadata/sources存为结构化JSON
+    parts: str | None = Field(default=None, sa_column=Column(JSON))
+    metadata_json: str | None = Field(default=None, sa_column=Column(JSON))
+    sources: str | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+
+# 会话Pin文件表（会话级隔离）
+class ChatSessionPinFile(SQLModel, table=True):
+    __tablename__ = "t_chat_session_pin_files"
+    id: int = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="t_chat_sessions.id", index=True)
+    file_path: str = Field(max_length=500)
+    file_name: str = Field(max_length=100)
+    pinned_at: datetime = Field(default_factory=datetime.now)
+    metadata_json: str | None = Field(default=None, sa_column=Column(JSON))
+
 
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
@@ -462,18 +553,18 @@ class DBManager:
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Tags.__table__])
-                # 初始化一些常用标签，预设标签：项目、重要、旅行、汇报、论文等
-                tags_data = [
-                    {"name": "项目", "type": TagsType.SYSTEM.value},
-                    {"name": "重要", "type": TagsType.SYSTEM.value},
-                    {"name": "旅行", "type": TagsType.SYSTEM.value},
-                    {"name": "汇报", "type": TagsType.SYSTEM.value},
-                    {"name": "论文", "type": TagsType.SYSTEM.value},
-                ]
-                for tag in tags_data:
-                    tag_obj = Tags(**tag)
-                    self.session.add(tag_obj)
-                self.session.commit()  # 提交标签数据
+                # # 初始化一些常用标签，预设标签：项目、重要、旅行、汇报、论文等
+                # tags_data = [
+                #     {"name": "项目", "type": TagsType.SYSTEM.value},
+                #     {"name": "重要", "type": TagsType.SYSTEM.value},
+                #     {"name": "旅行", "type": TagsType.SYSTEM.value},
+                #     {"name": "汇报", "type": TagsType.SYSTEM.value},
+                #     {"name": "论文", "type": TagsType.SYSTEM.value},
+                # ]
+                # for tag in tags_data:
+                #     tag_obj = Tags(**tag)
+                #     self.session.add(tag_obj)
+                # self.session.commit()
             
             # 创建文件粗筛结果表
             if not inspector.has_table(FileScreeningResult.__tablename__):
@@ -566,6 +657,26 @@ class DBManager:
             if not inspector.has_table(ChildChunk.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[ChildChunk.__table__])
         
+            # 创建聊天会话表
+            if not inspector.has_table(ChatSession.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ChatSession.__table__])
+            # 创建聊天消息表
+            if not inspector.has_table(ChatMessage.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ChatMessage.__table__])
+                # INDEX(session_id, created_at)   -- 查询优化
+                conn.execute(text(f"""
+                    CREATE INDEX IF NOT EXISTS idx_chat_message_session ON {ChatMessage.__tablename__} (session_id, created_at);
+                """))
+                conn.commit()
+            # 创建会话Pin文件表
+            if not inspector.has_table(ChatSessionPinFile.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ChatSessionPinFile.__table__])
+                # UNIQUE(session_id, file_path)   -- 同一会话中文件唯一
+                conn.execute(text(f"""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_session_pin_file ON {ChatSessionPinFile.__tablename__} (session_id, file_path);
+                """))
+                conn.commit()
+
         return True
 
     def _init_bundle_extensions(self) -> None:

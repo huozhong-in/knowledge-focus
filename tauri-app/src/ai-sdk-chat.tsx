@@ -17,13 +17,14 @@ interface Message {
 
 interface AiSdkChatProps {
   initialMessages?: Message[]
+  sessionId?: string
 }
 
 /**
  * 真正的AI SDK v5集成聊天组件
  * 使用textStream实现打字机效果，无mock代码
  */
-export function AiSdkChat({ initialMessages = [] }: AiSdkChatProps) {
+export function AiSdkChat({ initialMessages = [], sessionId }: AiSdkChatProps) {
   const [messages, setMessages] = useState<Message[]>(initialMessages.length > 0 ? initialMessages : [
     {
       id: "1",
@@ -74,6 +75,21 @@ export function AiSdkChat({ initialMessages = [] }: AiSdkChatProps) {
       console.log('[AiSdkChat] Starting stream request with input:', currentInput)
 
       // 调用后端API
+      // 组装请求体（按AI SDK v5 UIMessage格式 + 可选 session_id）
+      const payload: any = {
+        messages: [
+          {
+            role: 'user',
+            parts: [{ type: 'text', text: currentInput }]
+          }
+        ],
+        trigger: 'submit-message',
+        chatId: `chat-${Date.now()}`,
+      }
+      if (sessionId) {
+        payload.session_id = Number(sessionId)
+      }
+
       const response = await fetch('http://localhost:60315/chat/ui-stream', {
         method: 'POST',
         headers: {
@@ -81,16 +97,7 @@ export function AiSdkChat({ initialMessages = [] }: AiSdkChatProps) {
           'Accept': 'text/event-stream',
           'Cache-Control': 'no-cache',
         },
-        body: JSON.stringify({
-          messages: [
-            {
-              role: 'user',
-              parts: [{ type: 'text', text: currentInput }]
-            }
-          ],
-          trigger: 'submit-message',
-          chatId: `chat-${Date.now()}`,
-        }),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
