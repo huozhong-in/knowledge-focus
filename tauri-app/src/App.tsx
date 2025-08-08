@@ -15,7 +15,7 @@ import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
-import { ChatSession, createSession, pinFile } from "./lib/chat-session-api"
+import { ChatSession, createSmartSession, pinFile } from "./lib/chat-session-api"
 
 
 // 创建一个store来管理页面内容
@@ -54,16 +54,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 }))
 
 // ==================== 工具函数 ====================
-
-// 从消息内容生成智能会话名称
-function generateSessionName(firstMessageContent: string): string {
-  // 简化版本：取前20个字符作为会话名称
-  let name = firstMessageContent.trim().substring(0, 20)
-  if (firstMessageContent.length > 20) {
-    name += "..."
-  }
-  return name || "新会话"
-}
 
 // 保存最近使用的会话ID到Tauri Store
 async function saveLastUsedSession(sessionId: number): Promise<void> {
@@ -113,6 +103,9 @@ export default function Page() {
   // 会话状态管理
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null)
+  
+  // 新生成会话状态（用于控制标题动画）
+  const [newlyGeneratedSessionId, setNewlyGeneratedSessionId] = useState<number | null>(null)
   
   // 临时Pin文件状态（在会话创建前临时保存）
   const [tempPinnedFiles, setTempPinnedFiles] = useState<Array<{
@@ -200,15 +193,15 @@ export default function Page() {
   // 实际创建会话（在用户发送第一条消息时调用）
   const createSessionFromMessage = async (firstMessageContent: string): Promise<ChatSession> => {
     try {
-      // 从消息内容生成智能会话名称
-      const sessionName = generateSessionName(firstMessageContent)
-      
-      // 创建会话
-      const newSession = await createSession(sessionName)
+      // 使用LLM生成智能会话名称
+      const newSession = await createSmartSession(firstMessageContent)
       
       // 设置为当前会话
       setCurrentSession(newSession)
       setCurrentSessionId(newSession.id)
+      
+      // 标记为新生成的会话，用于sidebar的打字机效果
+      setNewlyGeneratedSessionId(newSession.id)
       
       // 将临时Pin文件绑定到新会话
       if (tempPinnedFiles.length > 0) {
@@ -245,6 +238,13 @@ export default function Page() {
   // 移除临时Pin文件
   const removeTempPinnedFile = (filePath: string) => {
     setTempPinnedFiles(prev => prev.filter(file => file.file_path !== filePath))
+  }
+
+  // 处理会话标题动画完成
+  const handleTitleAnimationComplete = (sessionId: number) => {
+    if (newlyGeneratedSessionId === sessionId) {
+      setNewlyGeneratedSessionId(null)
+    }
   }
 
   // 添加键盘快捷键监听
@@ -463,6 +463,8 @@ export default function Page() {
           onSessionSwitch={handleSessionSwitch}
           onCreateSession={handleCreateSession}
           refreshTrigger={sidebarRefreshTrigger}
+          newlyGeneratedSessionId={newlyGeneratedSessionId}
+          onTitleAnimationComplete={handleTitleAnimationComplete}
         />
           {isApiReady ? (
             <AppWorkspace 

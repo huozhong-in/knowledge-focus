@@ -13,6 +13,9 @@ from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
 
+class SessionTitleResponse(BaseModel):
+    title: str = Field(description="Generated session title (max 20 characters)")
+
 class TagResponse(BaseModel):
     tags: List[str] = Field(default_factory=list, description="List of generated tags")
 
@@ -216,6 +219,7 @@ class ModelsMgr:
                 base_url=api_base,
                 api_key=api_key or "dummy-key",
                 messages=messages,
+                max_tokens=150,  # 限制标签生成的最大token数
                 response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -236,6 +240,79 @@ class ModelsMgr:
         except Exception as e:
             logger.error(f"Failed to get tags from LLM: {e}")
             return []
+
+    def generate_session_title(self, first_message_content: str) -> str:
+        """
+        Generate an intelligent session title based on the first user message.
+        
+        This method is typically called by backend processes (session creation),
+        and uses a non-streaming approach for title generation.
+        
+        Args:
+            first_message_content: The first user message content
+            
+        Returns:
+            Generated session title (max 20 characters)
+        """
+        try:
+            model_string, api_base, api_key = self._get_model_config("base", silent_validation=False)
+            messages = [
+                {"role": "system", "content": "You are an expert at creating concise, meaningful titles. Generate a short title (max 20 characters) that captures the essence of the user's request or question."},
+                {"role": "user", "content": self._build_title_prompt(first_message_content)}
+            ]
+            
+            response = litellm_completion(
+                model=model_string,
+                base_url=api_base,
+                api_key=api_key or "dummy-key",
+                messages=messages,
+                max_tokens=50,  # 限制生成的最大token数，确保简洁
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "type": "object",
+                        "name": "SessionTitleResponse",
+                        "schema": SessionTitleResponse.model_json_schema()
+                    }
+                }
+            )
+            
+            title_response = json.loads(response.choices[0].message.content)
+            title = title_response.get("title", "").strip()
+            
+            # 确保标题长度不超过20个字符
+            if len(title) > 20:
+                title = title[:17] + "..."
+                
+            return title if title else "新会话"
+
+        except Exception as e:
+            logger.error(f"Failed to generate session title: {e}")
+            # 降级处理：使用简单截取方式
+            fallback_title = first_message_content.strip()[:17]
+            if len(first_message_content) > 17:
+                fallback_title += "..."
+            return fallback_title or "新会话"
+
+    def _build_title_prompt(self, first_message: str) -> str:
+        """Build prompt for session title generation"""
+        return f'''
+Please create a concise and meaningful title for a chat session based on the user's first message.
+
+**Requirements:**
+1. **Length:** Maximum 20 characters (including Chinese characters, English letters, numbers, and symbols)
+2. **Language:** Use the same language as the user's message (Chinese for Chinese input, English for English input)
+3. **Content:** Capture the main topic or intent of the user's question/request
+4. **Style:** Clear, descriptive, and professional
+5. **Special Cases:** For simple greetings like "你好", "hello", use generic titles like "新对话", "Chat Session"
+
+**User's First Message:**
+---
+{first_message}
+---
+
+Generate a title that best represents what this conversation will be about. Avoid overly specific titles for vague or greeting-only messages.
+        '''
 
     def _build_tagging_prompt(self, summary: str, candidates: List[str]) -> str:
         candidate_str = ", ".join(f'"{t}"' for t in candidates) if candidates else "None"
@@ -419,4 +496,5 @@ if __name__ == "__main__":
     #     print("Chat Response:", chat_response)
     # except Exception as e:
     #     print("Chat Error:", e)
-    
+    title = mgr.generate_session_title('你好，我想了解一下人工智能的发展历史')
+    print('Generated title:', title)

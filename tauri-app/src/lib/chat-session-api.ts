@@ -98,6 +98,30 @@ export async function createSession(name?: string, metadata?: Record<string, any
   return result.data
 }
 
+export async function createSmartSession(firstMessageContent: string, metadata?: Record<string, any>): Promise<ChatSession> {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/smart`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      first_message_content: firstMessageContent,
+      metadata: metadata || {}
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to create smart session: ${response.statusText}`)
+  }
+
+  const result: ApiResponse<ChatSession> = await response.json()
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to create smart session')
+  }
+
+  return result.data
+}
+
 export async function getSessions(
   page = 1,
   pageSize = 20,

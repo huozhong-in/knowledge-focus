@@ -33,15 +33,18 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { NavTagCloud } from "./nav-tagcloud"
 import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
 import { useAppStore } from "./main" // 新增：引入AppStore以获取API就绪状态
+import { AnimatedSessionTitle } from "./components/animated-session-title"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
   onSessionSwitch?: (session: ChatSession) => void
   onCreateSession?: () => void // 修改为不接收参数的函数
   refreshTrigger?: number // 新增：刷新触发器，每次数值改变都会刷新列表
+  newlyGeneratedSessionId?: number | null // 新增：新生成的会话ID，用于显示动画
+  onTitleAnimationComplete?: (sessionId: number) => void // 新增：动画完成回调
 }
 
-export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession, refreshTrigger, ...props }: AppSidebarProps) {
+export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession, refreshTrigger, newlyGeneratedSessionId, onTitleAnimationComplete, ...props }: AppSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const { state, toggleSidebar } = useSidebar()
@@ -218,9 +221,12 @@ export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession,
                           >
                             <div className="flex items-center gap-2 w-full">
                               <chat_session.icon className="h-4 w-4 shrink-0" />
-                              <span className="font-medium text-sm truncate">
-                                {chat_session.title}
-                              </span>
+                              <AnimatedSessionTitle
+                                title={chat_session.title}
+                                isNewlyGenerated={newlyGeneratedSessionId === parseInt(chat_session.id)}
+                                className="font-medium text-sm truncate"
+                                onAnimationComplete={() => onTitleAnimationComplete?.(parseInt(chat_session.id))}
+                              />
                             </div>
                           </button>
                         </SidebarMenuButton>

@@ -7,8 +7,11 @@ from fastapi import APIRouter, Depends, Body, HTTPException, Query
 from sqlmodel import Session
 from typing import List, Dict, Any, Optional
 import json
+import logging
 
 from chatsession_mgr import ChatSessionMgr
+
+logger = logging.getLogger(__name__)
 
 
 def get_router(external_get_session: callable) -> APIRouter:
@@ -43,6 +46,44 @@ def get_router(external_get_session: callable) -> APIRouter:
                 }
             }
         except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @router.post("/chat/sessions/smart", tags=["chat-sessions"])
+    def create_smart_session(
+        data: Dict[str, Any] = Body(...),
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+    ):
+        """创建智能命名的聊天会话"""
+        try:
+            first_message_content = data.get("first_message_content", "")
+            metadata = data.get("metadata", {})
+            
+            if not first_message_content.strip():
+                raise HTTPException(status_code=400, detail="first_message_content is required for smart session creation")
+            
+            # 使用LLM生成智能会话名称
+            from models_mgr import ModelsMgr
+            models_mgr = ModelsMgr(chat_mgr.session)
+            smart_title = models_mgr.generate_session_title(first_message_content)
+            
+            # 创建会话
+            session = chat_mgr.create_session(name=smart_title, metadata=metadata)
+            
+            return {
+                "success": True,
+                "data": {
+                    "id": session.id,
+                    "name": session.name,
+                    "created_at": session.created_at.isoformat(),
+                    "updated_at": session.updated_at.isoformat(),
+                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "is_active": session.is_active
+                }
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating smart session: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @router.get("/chat/sessions", tags=["chat-sessions"])
