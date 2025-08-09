@@ -293,65 +293,53 @@ export function AppSidebar({
                   <SidebarGroupLabel>{timeGroup.period}</SidebarGroupLabel>
                   <SidebarMenu>
                     {timeGroup.chat_sessions.map((chat_session) => (
-                      <SidebarMenuItem key={chat_session.id} className={`group ${currentSessionId === parseInt(chat_session.id) ? 'bg-secondary' : ''}`}>
-                          <SidebarMenuButton 
-                            asChild
-                            isActive={chat_session.isActive}
-                              onClick={() => handleSessionClick(chat_session.session)}
-                              className="flex items-start h-auto p-1 w-[220px] text-left"
-                            >
-                              <div className="flex flex-row items-center gap-2 w-[220px]">
-                                <chat_session.icon className="h-4 w-4 shrink-0" />
-                                <AnimatedSessionTitle
-                                  title={chat_session.title}
-                                  isNewlyGenerated={newlyGeneratedSessionId === parseInt(chat_session.id)}
-                                  className="font-medium text-sm truncate cursor-default"
-                                  onAnimationComplete={() => onTitleAnimationComplete?.(parseInt(chat_session.id))}
-                                />
-                              </div>
-                          </SidebarMenuButton>
-                          
-                          {/* 浮动工具条 - hover时显示 */}
-                          <div key={chat_session.id} className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-0.5">
-                            <Button
-                              key={chat_session.id}
-                              variant="ghost"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                              }}
-                              className="h-5 w-5 p-0"
-                              title="更多操作"
-                            >
-                              <DropdownMenu key={chat_session.id}>
-                                <DropdownMenuTrigger>
-                                  <EllipsisVertical className="h-2.5 w-2.5" />
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent>
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRenameSession(parseInt(chat_session.id), chat_session.title);
-                                    }}
-                                    className="flex items-center"
-                                  >
-                                    <Edit3 className="mr-1 h-4 w-4" />
-                                    <span className="text-xs">重命名会话</span>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteSession(parseInt(chat_session.id), chat_session.title);
-                                    }}
-                                    className="flex items-center"
-                                  >
-                                    <Trash2 className="mr-1 h-4 w-4" />
-                                    <span className="text-xs">删除会话</span>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </Button>
-                          </div>
+                      <SidebarMenuItem key={chat_session.id} className={`group`}>
+                        <SidebarMenuButton 
+                          asChild
+                          isActive={chat_session.isActive}
+                          onClick={() => handleSessionClick(chat_session.session)}
+                          className={`flex items-start h-auto p-1 w-[220px] text-left ${currentSessionId === parseInt(chat_session.id) ? 'bg-sidebar-accent' : ''}`}
+                          >
+                            <div className="flex flex-row items-center gap-2 w-[220px]">
+                              <chat_session.icon className="h-4 w-4 shrink-0" />
+                              <AnimatedSessionTitle
+                                title={chat_session.title}
+                                isNewlyGenerated={newlyGeneratedSessionId === parseInt(chat_session.id)}
+                                className="font-medium text-sm truncate cursor-default"
+                                onAnimationComplete={() => onTitleAnimationComplete?.(parseInt(chat_session.id))}
+                              />
+                            </div>
+                        </SidebarMenuButton>
+                        {/* 浮动工具条 - hover时显示 */}
+                        <div key={chat_session.id} className={`absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-0.5`}>
+                          <DropdownMenu key={chat_session.id}>
+                            <DropdownMenuTrigger>
+                              <EllipsisVertical className="h-4 w-4 hover:bg-accent" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRenameSession(parseInt(chat_session.id), chat_session.title);
+                                }}
+                                className="flex items-center"
+                              >
+                                <Edit3 className="mr-1 h-4 w-4" />
+                                <span className="text-xs">重命名会话</span>
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteSession(parseInt(chat_session.id), chat_session.title);
+                                }}
+                                className="flex items-center"
+                              >
+                                <Trash2 className="mr-1 h-4 w-4" />
+                                <span className="text-xs">删除会话</span>
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </SidebarMenuItem>
                     ))}
                   </SidebarMenu>

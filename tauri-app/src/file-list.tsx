@@ -67,7 +67,7 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
         <div className="mt-0.5 shrink-0">
           {getFileIcon(file.extension)}
         </div>
-        <div className="flex-1 min-w-0 w-0 pr-12"> {/* w-0 强制宽度为0，flex-1让它填充，pr-12为按钮留空间 */}
+        <div className="flex-1 min-w-0 w-0 pr-2"> {/* w-0 强制宽度为0，flex-1让它填充，pr-2为按钮留空间 */}
           <div className="font-medium text-xs truncate leading-tight" title={file.file_name}>
             {file.file_name}
           </div>
@@ -142,7 +142,13 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
   );
 }
 
-export function FileList() {
+interface FileListProps {
+  currentSessionId?: number | null;
+  onAddTempPinnedFile?: (filePath: string, fileName: string, metadata?: Record<string, any>) => void;
+  onRemoveTempPinnedFile?: (filePath: string) => void;
+}
+
+export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPinnedFile }: FileListProps) {
   const { getFilteredFiles, togglePinnedFile, isLoading, error, setFiles, setLoading, setError } = useFileListStore();
   const { setFileStatus, setFileStarted, setFileFailed } = useVectorizationStore();
   const files = getFilteredFiles();
@@ -153,22 +159,110 @@ export function FileList() {
   // Pin文件API调用
   const pinFileAPI = async (filePath: string): Promise<{ success: boolean; taskId?: number; error?: string }> => {
     try {
-      const response = await fetch('http://127.0.0.1:60315/pin-file', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ file_path: filePath }),
-      });
+      let result: any;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      if (currentSessionId) {
+        // 有会话时，首先使用会话相关的pin-file API将文件关联到会话
+        const sessionUrl = `http://127.0.0.1:60315/chat/sessions/${currentSessionId}/pin-file`;
+        const sessionBody = {
+          file_path: filePath,
+          file_name: filePath.split('/').pop() || filePath,
+          metadata: {}
+        };
+
+        const sessionResponse = await fetch(sessionUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(sessionBody),
+        });
+
+        if (!sessionResponse.ok) {
+          throw new Error(`Session pin failed: HTTP ${sessionResponse.status}: ${sessionResponse.statusText}`);
+        }
+
+        const sessionResult = await sessionResponse.json();
+        
+        if (!sessionResult.success) {
+          throw new Error(`Session pin failed: ${sessionResult.error || 'Unknown error'}`);
+        }
+
+        // 成功关联到会话后，再调用向量化任务创建API
+        const vectorizeUrl = 'http://127.0.0.1:60315/pin-file';
+        const vectorizeBody = { file_path: filePath };
+
+        const vectorizeResponse = await fetch(vectorizeUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(vectorizeBody),
+        });
+
+        if (!vectorizeResponse.ok) {
+          throw new Error(`Vectorization failed: HTTP ${vectorizeResponse.status}: ${vectorizeResponse.statusText}`);
+        }
+
+        result = await vectorizeResponse.json();
+    } else {
+        // 没有会话时，使用临时pin机制
+        // 1. 添加到临时pin文件列表
+        const fileName = filePath.split('/').pop() || filePath;
+        onAddTempPinnedFile?.(filePath, fileName, {});
+        
+        // 2. 调用向量化API进行处理
+        const url = 'http://127.0.0.1:60315/pin-file';
+        const body = { file_path: filePath };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        result = await response.json();
       }
 
-      const result = await response.json();
       return result;
     } catch (error) {
       console.error('Pin file API error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '未知错误'
+      };
+    }
+  };
+
+  // 取消Pin文件API调用
+  const unpinFileAPI = async (filePath: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      if (currentSessionId) {
+        // 有会话时，使用会话相关的unpin-file API
+        const url = `http://127.0.0.1:60315/chat/sessions/${currentSessionId}/pinned-files`;
+        const response = await fetch(`${url}?file_path=${encodeURIComponent(filePath)}`, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const result = await response.json();
+        return result;
+      } else {
+        // 没有会话时，从临时pin文件列表中移除
+        onRemoveTempPinnedFile?.(filePath);
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('Unpin file API error:', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : '未知错误'
@@ -180,9 +274,21 @@ export function FileList() {
     const file = files.find(f => f.id === fileId);
     if (!file) return;
 
-    // 如果要取消pin，直接调用本地toggle
+    // 如果要取消pin，调用unpin API
     if (file.pinned) {
-      togglePinnedFile(fileId);
+      try {
+        const result = await unpinFileAPI(filePath);
+        
+        if (result.success) {
+          togglePinnedFile(fileId);
+          toast.success(`文件 ${file.file_name} 已取消固定`);
+        } else {
+          toast.error(`取消固定失败: ${result.error}`);
+        }
+      } catch (error) {
+        console.error('Unpin file error:', error);
+        toast.error(`取消固定失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      }
       return;
     }
 
@@ -303,13 +409,31 @@ export function FileList() {
 
   return (
     <div className="flex flex-col w-full h-full overflow-auto">
-      <div className="border-b p-3 shrink-0 h-[50px]">
-        <p className="text-sm">文件搜索结果</p>
-        <p className="text-xs text-muted-foreground">
-          固定文件以便在对话中参考
-        </p>
+      <div className="p-3 h-[50px]">
+        <div className="text-sm">固定文件以绑定对话</div>
+        <div className="text-xs text-muted-foreground">
+          点击标签或搜索文件名
+        </div>
       </div>
-
+      <div className="h-[40px] flex flex-row w-full items-center justify-end p-2 gap-2 border-b border-border/50">
+        <Input 
+          type="text" 
+          value={searchKeyword}
+          onChange={(e) => setSearchKeyword(e.target.value)}
+          onKeyDown={handleKeyPress}
+          className="h-6 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200" 
+        />
+        <Button 
+          type="submit" 
+          variant="secondary" 
+          size="sm"
+          onClick={handlePathSearch}
+          disabled={isLoading || !searchKeyword.trim()}
+          className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50"
+        >
+          搜索
+        </Button>
+      </div>
       <ScrollArea className="flex-1 p-3 h-[calc(100%-90px)] @container">
         {files.length === 0 ? (
           <div className="text-center py-6">
@@ -330,29 +454,7 @@ export function FileList() {
             ))}
           </div>
         )}
-        
       </ScrollArea>
-      <div className="h-[40px] flex flex-row w-full items-center justify-end p-2 gap-2 bg-background/60 backdrop-blur-sm border-t border-border/50">
-        <Input 
-          type="text" 
-          placeholder="路径关键字搜索..." 
-          value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
-          onKeyDown={handleKeyPress}
-          className="h-6 text-[9px] shrink max-w-36 border border-muted-foreground/30 bg-background/90 px-2 py-1 focus:border-primary/50 focus:bg-background transition-all duration-200" 
-        />
-        <Button 
-          type="submit" 
-          variant="secondary" 
-          size="sm"
-          onClick={handlePathSearch}
-          disabled={isLoading || !searchKeyword.trim()}
-          className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 rounded disabled:opacity-50"
-        >
-          搜索
-        </Button>
-      </div>
-      
     </div>
   );
 }

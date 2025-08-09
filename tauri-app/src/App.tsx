@@ -15,7 +15,7 @@ import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
-import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession } from "./lib/chat-session-api"
+import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
 
 
 // 创建一个store来管理页面内容
@@ -138,7 +138,23 @@ export default function Page() {
         if (session) {
           setCurrentSession(session)
           setCurrentSessionId(session.id)
-          console.log('Restored last used session:', session.name, session.id)
+          
+          // 加载会话的Pin文件
+          try {
+            const pinnedFiles = await getPinnedFiles(session.id)
+            
+            // 重建文件列表，只显示Pin文件
+            const { useFileListStore } = await import('./lib/fileListStore')
+            useFileListStore.getState().rebuildFromPinnedFiles(pinnedFiles)
+            
+            console.log('Restored last used session:', session.name, session.id, `with ${pinnedFiles.length} pinned files`)
+          } catch (error) {
+            console.error('Failed to load pinned files for restored session:', error)
+            // 如果加载失败，清空文件列表
+            const { useFileListStore } = await import('./lib/fileListStore')
+            useFileListStore.getState().rebuildFromPinnedFiles([])
+            console.log('Restored last used session:', session.name, session.id)
+          }
         } else {
           console.log('Last used session not found:', lastSessionId)
         }
@@ -162,6 +178,10 @@ export default function Page() {
         // 如果session为null，清空当前会话
         setCurrentSession(null)
         setCurrentSessionId(null)
+        
+        // 清空文件列表（没有选择会话）
+        const { useFileListStore } = await import('./lib/fileListStore')
+        useFileListStore.getState().rebuildFromPinnedFiles([])
         return
       }
       
@@ -170,6 +190,22 @@ export default function Page() {
       
       // 清空临时Pin文件（切换到已存在的会话）
       setTempPinnedFiles([])
+      
+      // 加载会话的Pin文件并重建文件列表
+      try {
+        const pinnedFiles = await getPinnedFiles(session.id)
+        
+        // 重建文件列表，只显示Pin文件
+        const { useFileListStore } = await import('./lib/fileListStore')
+        useFileListStore.getState().rebuildFromPinnedFiles(pinnedFiles)
+        
+        console.log(`Loaded ${pinnedFiles.length} pinned files for session:`, session.name)
+      } catch (error) {
+        console.error('Failed to load pinned files for session:', error)
+        // 如果加载Pin文件失败，清空文件列表
+        const { useFileListStore } = await import('./lib/fileListStore')
+        useFileListStore.getState().rebuildFromPinnedFiles([])
+      }
       
       // 保存到Tauri Store
       await saveLastUsedSession(session.id)

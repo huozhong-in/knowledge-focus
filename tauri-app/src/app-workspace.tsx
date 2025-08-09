@@ -37,10 +37,10 @@ interface AppWorkspaceProps {
 export function AppWorkspace({ 
   currentSession, 
   currentSessionId, 
-  // tempPinnedFiles, // 暂时未使用
+  tempPinnedFiles,
   onCreateSessionFromMessage,
-  // onAddTempPinnedFile, // 暂时未使用
-  // onRemoveTempPinnedFile // 暂时未使用
+  onAddTempPinnedFile,
+  onRemoveTempPinnedFile,
   chatResetTrigger
 }: AppWorkspaceProps) {
   // 使用传入的sessionId，不生成临时ID
@@ -61,10 +61,7 @@ export function AppWorkspace({
 - 🏷️ 提取关键信息和标签  
 - 📊 生成数据摘要
 - 💡 回答各种问题
-
-请随时向我提问，我会以**实时打字机效果**回答您！
-
-> 💡 **提示**: 我支持完整的Markdown格式，包括代码块、表格等。`,
+`,
       type: "incoming",
       timestamp: new Date(Date.now() - 1000 * 60 * 5),
     },
@@ -73,9 +70,6 @@ export function AppWorkspace({
   // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
   // const { state, setOpen } = useSidebar()
   // const isCollapsed = state === "collapsed"
-  const [isInfiniteCanvasCollapsed, setIsInfiniteCanvasCollapsed] = useState(false)
-  const infiniteCanvasPanelRef = useRef<ImperativePanelHandle>(null)
-
   // 监听窗口大小变化
   // useEffect(() => {
   //   const handleResize = () => {
@@ -85,7 +79,15 @@ export function AppWorkspace({
   //   window.addEventListener("resize", handleResize)
   //   return () => window.removeEventListener("resize", handleResize)
   // }, [])
-
+  
+  const [isInfiniteCanvasCollapsed, setIsInfiniteCanvasCollapsed] = useState(false)
+  const infiniteCanvasPanelRef = useRef<ImperativePanelHandle>(null)
+  useEffect(() => {
+    if (infiniteCanvasPanelRef.current) {
+      infiniteCanvasPanelRef.current.collapse() // 初始状态为收起
+      setIsInfiniteCanvasCollapsed(true) // 设置初始状态为收起
+    }
+  }, [])
   // 处理无限画布面板的收起/展开
   const handleCanvasToggle = () => {
     if (infiniteCanvasPanelRef.current) {
@@ -107,7 +109,11 @@ export function AppWorkspace({
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={70} minSize={20}>
               {/* 文件列表区 */}
-              <FileList />
+              <FileList 
+                currentSessionId={currentSessionId} 
+                onAddTempPinnedFile={onAddTempPinnedFile}
+                onRemoveTempPinnedFile={onRemoveTempPinnedFile}
+              />
             </ResizablePanel>
             <ResizableHandle withHandle className="bg-primary" />
             <ResizablePanel defaultSize={30} minSize={20}>
