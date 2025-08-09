@@ -15,7 +15,7 @@ import IntroDialog from "./intro-dialog"
 import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
-import { ChatSession, createSmartSession, pinFile } from "./lib/chat-session-api"
+import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession } from "./lib/chat-session-api"
 
 
 // 创建一个store来管理页面内容
@@ -156,8 +156,15 @@ export default function Page() {
   }, [isApiReady])
 
   // 会话处理函数
-  const handleSessionSwitch = async (session: ChatSession) => {
+  const handleSessionSwitch = async (session: ChatSession | null) => {
     try {
+      if (!session) {
+        // 如果session为null，清空当前会话
+        setCurrentSession(null)
+        setCurrentSessionId(null)
+        return
+      }
+      
       setCurrentSession(session)
       setCurrentSessionId(session.id)
       
@@ -187,6 +194,47 @@ export default function Page() {
       console.log('Prepared for new session creation (delayed until first message)')
     } catch (error) {
       console.error('Failed to prepare new session:', error)
+    }
+  }
+
+  // 重命名会话处理函数
+  const handleRenameSession = async (sessionId: number, newName: string): Promise<void> => {
+    try {
+      await updateSession(sessionId, newName)
+      
+      // 如果重命名的是当前会话，更新当前会话状态
+      if (currentSession && currentSession.id === sessionId) {
+        setCurrentSession({ ...currentSession, name: newName })
+      }
+      
+      // 触发侧边栏刷新
+      setSidebarRefreshTrigger(prev => prev + 1)
+      
+      console.log('Session renamed successfully:', newName)
+    } catch (error) {
+      console.error('Failed to rename session:', error)
+      throw error
+    }
+  }
+
+  // 删除会话处理函数
+  const handleDeleteSession = async (sessionId: number): Promise<void> => {
+    try {
+      await deleteSession(sessionId)
+      
+      // 如果删除的是当前会话，清空当前会话状态
+      if (currentSession && currentSession.id === sessionId) {
+        setCurrentSession(null)
+        setCurrentSessionId(null)
+      }
+      
+      // 触发侧边栏刷新
+      setSidebarRefreshTrigger(prev => prev + 1)
+      
+      console.log('Session deleted successfully')
+    } catch (error) {
+      console.error('Failed to delete session:', error)
+      throw error
     }
   }
   
@@ -465,6 +513,8 @@ export default function Page() {
           refreshTrigger={sidebarRefreshTrigger}
           newlyGeneratedSessionId={newlyGeneratedSessionId}
           onTitleAnimationComplete={handleTitleAnimationComplete}
+          onRenameSession={handleRenameSession}
+          onDeleteSession={handleDeleteSession}
         />
           {isApiReady ? (
             <AppWorkspace 

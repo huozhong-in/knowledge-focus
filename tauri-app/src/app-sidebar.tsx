@@ -5,8 +5,18 @@ import {
   Search,
   PanelLeftOpenIcon,
   MoreHorizontal,
+  Edit3,
+  Trash2,
+  EllipsisVertical,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Sidebar,
   SidebarContent,
@@ -28,27 +38,54 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { UserProfileMenu } from "./UserProfileMenu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { NavTagCloud } from "./nav-tagcloud"
 import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
-import { useAppStore } from "./main" // 新增：引入AppStore以获取API就绪状态
+import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
-  onSessionSwitch?: (session: ChatSession) => void
+  onSessionSwitch?: (session: ChatSession | null) => void
   onCreateSession?: () => void // 修改为不接收参数的函数
-  refreshTrigger?: number // 新增：刷新触发器，每次数值改变都会刷新列表
-  newlyGeneratedSessionId?: number | null // 新增：新生成的会话ID，用于显示动画
-  onTitleAnimationComplete?: (sessionId: number) => void // 新增：动画完成回调
+  refreshTrigger?: number // 刷新触发器，每次数值改变都会刷新列表
+  newlyGeneratedSessionId?: number | null // 新生成的会话ID，用于显示动画
+  onTitleAnimationComplete?: (sessionId: number) => void // 动画完成回调
+  onRenameSession?: (sessionId: number, newName: string) => void // 重命名会话回调
+  onDeleteSession?: (sessionId: number) => void // 删除会话回调
 }
 
-export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession, refreshTrigger, newlyGeneratedSessionId, onTitleAnimationComplete, ...props }: AppSidebarProps) {
+export function AppSidebar({ 
+  currentSessionId, 
+  onSessionSwitch, 
+  onCreateSession, 
+  refreshTrigger, 
+  newlyGeneratedSessionId, 
+  onTitleAnimationComplete, 
+  onRenameSession, 
+  onDeleteSession, 
+  ...props 
+}: AppSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
+  
+  // Dialog 状态管理
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [selectedSession, setSelectedSession] = useState<{id: number, name: string} | null>(null)
+  const [newSessionName, setNewSessionName] = useState("")
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null)
+  const [openDropdownSessionId, setOpenDropdownSessionId] = useState<string | null>(null)
   
   // 获取全局AppStore实例
   const appStore = useAppStore()
@@ -103,6 +140,54 @@ export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession,
   // 会话点击处理
   const handleSessionClick = (session: ChatSession) => {
     onSessionSwitch?.(session)
+  }
+
+  // 重命名会话处理
+  const handleRenameSession = async (sessionId: number, currentName: string) => {
+    setSelectedSession({id: sessionId, name: currentName})
+    setNewSessionName(currentName)
+    setRenameDialogOpen(true)
+  }
+
+  // 确认重命名
+  const confirmRename = async () => {
+    if (selectedSession && newSessionName.trim() && newSessionName !== selectedSession.name) {
+      try {
+        onRenameSession?.(selectedSession.id, newSessionName.trim())
+        // 刷新会话列表
+        await loadSessions()
+      } catch (error) {
+        console.error('Failed to rename session:', error)
+      }
+    }
+    setRenameDialogOpen(false)
+    setSelectedSession(null)
+    setNewSessionName("")
+  }
+
+  // 删除会话处理
+  const handleDeleteSession = async (sessionId: number, sessionTitle: string) => {
+    setSelectedSession({id: sessionId, name: sessionTitle})
+    setDeleteDialogOpen(true)
+  }
+
+  // 确认删除
+  const confirmDelete = async () => {
+    if (selectedSession) {
+      try {
+        onDeleteSession?.(selectedSession.id)
+        // 如果是当前会话，切换到默认会话
+        if (selectedSession.id === currentSessionId) {
+          onSessionSwitch?.(null)
+        }
+        // 刷新会话列表
+        await loadSessions()
+      } catch (error) {
+        console.error('Failed to delete session:', error)
+      }
+    }
+    setDeleteDialogOpen(false)
+    setSelectedSession(null)
   }
 
     // 将会话按时间分组
@@ -210,34 +295,103 @@ export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession,
                   <SidebarGroupLabel>{timeGroup.period}</SidebarGroupLabel>
                   <SidebarMenu>
                     {timeGroup.chat_sessions.map((chat_session) => (
-                      <SidebarMenuItem key={chat_session.id}>
-                        <SidebarMenuButton 
-                          asChild
-                          isActive={chat_session.isActive}
-                        >
-                          <button
-                            onClick={() => handleSessionClick(chat_session.session)}
-                            className="flex flex-col items-start h-auto p-1 w-full text-left"
-                          >
-                            <div className="flex items-center gap-2 w-full">
-                              <chat_session.icon className="h-4 w-4 shrink-0" />
-                              <AnimatedSessionTitle
-                                title={chat_session.title}
-                                isNewlyGenerated={newlyGeneratedSessionId === parseInt(chat_session.id)}
-                                className="font-medium text-sm truncate"
-                                onAnimationComplete={() => onTitleAnimationComplete?.(parseInt(chat_session.id))}
-                              />
+                      <SidebarMenuItem 
+                        key={chat_session.id} 
+                        className={`relative ${currentSessionId === parseInt(chat_session.id) ? 'bg-secondary' : ''}`}
+                        onMouseEnter={() => setHoveredSessionId(chat_session.id)}
+                        onMouseLeave={(e) => {
+                          // 检查鼠标是否移动到了 dropdown menu 上
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          if (e.clientY < rect.bottom + 50) { // 给下拉菜单一些缓冲区域
+                            return;
+                          }
+                          // 只有在dropdown关闭时才隐藏
+                          if (openDropdownSessionId !== chat_session.id) {
+                            setHoveredSessionId(null);
+                          }
+                        }}
+                      >
+                          <SidebarMenuButton 
+                            asChild
+                            isActive={chat_session.isActive}
+                              onClick={() => handleSessionClick(chat_session.session)}
+                              className="flex items-start h-auto p-1 w-[220px] text-left hover:bg-accent/50"
+                            >
+                              <div className="flex flex-row items-center gap-2 w-[220px]">
+                                <chat_session.icon className="h-4 w-4 shrink-0" />
+                                <AnimatedSessionTitle
+                                  title={chat_session.title}
+                                  isNewlyGenerated={newlyGeneratedSessionId === parseInt(chat_session.id)}
+                                  className="font-medium text-sm truncate cursor-default"
+                                  onAnimationComplete={() => onTitleAnimationComplete?.(parseInt(chat_session.id))}
+                                />
+                              </div>
+                          </SidebarMenuButton>
+                          
+                          {/* 浮动工具条 - hover时显示或dropdown打开时显示 */}
+                          {(hoveredSessionId === chat_session.id || openDropdownSessionId === chat_session.id) && (
+                            <div className="absolute top-1 right-1 flex gap-0.5">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                }}
+                                className="h-5 w-5 p-0"
+                                title="更多操作"
+                              >
+                                <DropdownMenu
+                                  onOpenChange={(open) => {
+                                    if (open) {
+                                      setOpenDropdownSessionId(chat_session.id);
+                                    } else {
+                                      setOpenDropdownSessionId(null);
+                                      // 如果鼠标不在元素上且dropdown关闭了，隐藏工具条
+                                      if (hoveredSessionId !== chat_session.id) {
+                                        setHoveredSessionId(null);
+                                      }
+                                    }
+                                  }}
+                                >
+                                  <DropdownMenuTrigger asChild>
+                                    <div>
+                                      <EllipsisVertical className="h-2.5 w-2.5" />
+                                    </div>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent>
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRenameSession(parseInt(chat_session.id), chat_session.title);
+                                      }}
+                                      className="flex items-center"
+                                    >
+                                      <Edit3 className="mr-1 h-4 w-4" />
+                                      <span className="text-xs">重命名会话</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteSession(parseInt(chat_session.id), chat_session.title);
+                                      }}
+                                      className="flex items-center"
+                                    >
+                                      <Trash2 className="mr-1 h-4 w-4" />
+                                      <span className="text-xs">删除会话</span>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </Button>
                             </div>
-                          </button>
-                        </SidebarMenuButton>
+                          )}
                       </SidebarMenuItem>
                     ))}
                   </SidebarMenu>
                 </SidebarGroup>
               ))}
-              <Button variant="ghost" className="w-full justify-center mb-2" size="sm">
+              <Button variant="ghost" className="w-full justify-center" size="sm">
                 <MoreHorizontal className="h-4 w-4" />
-                <span>More</span>
+                <span className="text-xs">More</span>
               </Button>
             </div>
           </ScrollArea>
@@ -270,6 +424,58 @@ export function AppSidebar({ currentSessionId, onSessionSwitch, onCreateSession,
           </CommandGroup>
         </CommandList>
       </CommandDialog>
+      
+      {/* 重命名会话Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>重命名会话</DialogTitle>
+            <DialogDescription>
+              请输入新的会话名称
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <Input
+              value={newSessionName}
+              onChange={(e) => setNewSessionName(e.target.value)}
+              placeholder="请输入会话名称"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  confirmRename()
+                }
+              }}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={confirmRename} disabled={!newSessionName.trim()}>
+              确认
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 删除会话确认Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除会话</DialogTitle>
+            <DialogDescription>
+              确定要删除会话 "{selectedSession?.name}" 吗？此操作无法撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-4">
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              取消
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              删除
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Sidebar>
   )
 }

@@ -1082,7 +1082,7 @@ function SettingsAuthorization() {
                   添加扩展名
                 </Button>
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent className="max-w-md">
                 <DialogHeader>
                   <DialogTitle>添加 Bundle 扩展名</DialogTitle>
                   <DialogDescription>
