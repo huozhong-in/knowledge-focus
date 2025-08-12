@@ -356,7 +356,7 @@ class ModelProvider(SQLModel, table=True):
     base_url: str | None = Field(default=None)  # 如果source_type为vip则此项无效，具体值在每个模型配置上
     api_key: str | None = Field(default=None)  # 如果source_type为vip则为加密后的值(密钥暂时写死，实现用户登录后从云端获取)
     # 存放一些特别的provider-specific数据，比如Azure OpenAI的api_version、VertexAI的project_id/location等
-    extra_data_json: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    extra_data_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     is_active: bool = Field(default=False)  # 是否启用
     is_user_added: bool = Field(default=True)  # 用户新增的，用户可以删除
     get_key_url: str | None = Field(default=None)
@@ -388,7 +388,7 @@ class ModelConfiguration(SQLModel, table=True):
     # 模型的“能力”清单
     capabilities_json: List[str] = Field(default=[], sa_column=Column(JSON)) # e.g., ['text', 'embedding', 'vision']
     # vip服务的每个模型来自不同的服务商，一定有不同的base_url. 以及model-specific的数据。
-    extra_data_json: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    extra_data_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     max_context_length: int = Field(default=0) # This max tokens number includes input, output, and reasoning tokens. 
     max_output_tokens: int = Field(default=0) # This max tokens number includes output tokens only.
     is_enabled: bool = Field(default=True)
@@ -635,7 +635,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://platform.openai.com/api-keys",
                         "support_discovery": True,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     # {
                     #     "display_name": "Azure OpenAI", 
@@ -658,7 +658,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://console.anthropic.com/settings/keys",
                         "support_discovery": True,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     {
                         "display_name": "Google AI Studio", 
@@ -668,7 +668,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://aistudio.google.com/apikey",
                         "support_discovery": False,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     # {
                     #     "display_name": "Google Vertex AI", 
@@ -690,7 +690,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://console.x.ai/",
                         "support_discovery": True,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     {
                         "display_name": "OpenRouter", 
@@ -700,7 +700,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://openrouter.ai/keys",
                         "support_discovery": True,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     {
                         "display_name": "Groq", 
@@ -710,7 +710,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "https://console.groq.com/keys",
                         "support_discovery": False,
-                        "use_proxy": True,
+                        "use_proxy": False,
                     },
                     {
                         "display_name": "Ollama", 
@@ -726,7 +726,7 @@ class DBManager:
                         "display_name": "LM Studio", 
                         "provider_type": "openai", 
                         "source_type": ModelSourceType.CONFIGURABLE.value, 
-                        "base_url": "http://127.0.0.1:1234/v0",
+                        "base_url": "http://127.0.0.1:1234/api/v0",
                         "is_user_added": False,
                         "get_key_url": "",
                         "support_discovery": True,

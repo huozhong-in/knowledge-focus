@@ -2,7 +2,7 @@
 import json
 import httpx
 from sqlmodel import Session, select
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from db_mgr import (
     # ModelSourceType, 
     ModelProvider, 
@@ -21,7 +21,7 @@ class ModelConfigMgr:
         """Retrieves all model provider configurations from the database."""
         return self.session.exec(select(ModelProvider)).all()
 
-    def update_provider_config(self, id: int, display_name: str, base_url: str, api_key: str, extra_data_json: json, is_active: bool) -> ModelProvider | None:
+    def update_provider_config(self, id: int, display_name: str, base_url: str, api_key: str, extra_data_json: Dict, is_active: bool) -> ModelProvider | None:
         """Updates a specific provider's configuration."""
         provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == id)).first()
         if provider is not None:
@@ -116,8 +116,8 @@ class ModelConfigMgr:
                         model_identifier=model.get("id", ""),
                         display_name=model.get("id", ""),
                         max_context_length=model.get("max_context_length", 0),
+                        extra_data_json={"type": model.get("type", "")}
                     )) if not _already_exists(id, model.get("id", "")) else None
-                    print("type:", model.get("type", ""))
             else:
                 return []
         
@@ -169,10 +169,13 @@ class ModelConfigMgr:
             self.session.commit()
         return result
 
-    def assign_global_capability_to_model(self, model_id: str, capability: ModelCapability) -> bool:
+    def assign_global_capability_to_model(self, model_config_id: int, capability: ModelCapability) -> bool:
         """指定某个模型为全局的ModelCapability某项能力"""
         with self.session as session:
-            assignment = CapabilityAssignment(model_configuration_id=model_id, capability_value=capability.value)
+            assignment = CapabilityAssignment(
+                capability_value=capability.value,
+                model_configuration_id=model_config_id
+            )
             session.add(assignment)
             session.commit()
             return True
@@ -229,4 +232,15 @@ if __name__ == "__main__":
     engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
     with Session(engine) as session:
         mgr = ModelConfigMgr(session)
-        asyncio.run(mgr.discover_models_from_provider(1))
+
+        list_model_provider: List[ModelProvider] = mgr.get_all_provider_configs()
+        print({model_provider.id: model_provider.display_name for model_provider in list_model_provider})
+
+        # # test pull models info from specific provider
+        # asyncio.run(mgr.discover_models_from_provider(8))
+
+        # # test set global embedding model
+        # mgr.assign_global_capability_to_model(4, ModelCapability.EMBEDDING)
+        
+        # # test set global text model
+        # mgr.assign_global_capability_to_model(1, ModelCapability.TEXT)

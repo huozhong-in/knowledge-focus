@@ -15,6 +15,8 @@ from pydantic_ai.models.openai import OpenAIModel
 # from pydantic_ai.profiles import InlineDefsJsonSchemaTransformer
 # from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.usage import UsageLimits
 from pydantic import BaseModel, ValidationError
 from model_config_mgr import ModelConfigMgr
 from bridge_events import BridgeEventSender
@@ -43,7 +45,7 @@ class ModelsMgr:
         #         error_message=f"模型 '{model_id}' 在提供商 '{provider_type}' 中不可用"
         #     )
 
-    async def get_embedding(self, text: str) -> List[float]:
+    async def get_embedding(self, text_str: str) -> List[float]:
         """
         Generates an embedding for the given text using litellm.
         
@@ -59,16 +61,16 @@ class ModelsMgr:
         proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
         http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
         openai_client = AsyncOpenAI(
-            api_key=api_key,
+            api_key=api_key if api_key else "sk-xxx",
             base_url=base_url,
             max_retries=3,
             http_client=http_client,
         )
         response = await openai_client.embeddings.create(
             model=model_identifier,
-            input=[text],
+            input=text_str,
         )
-        return response.data[0]["embedding"]
+        return response.data[0].embedding
 
     def get_tags_from_llm(self, file_summary: str, candidate_tags: List[str]) -> List[str]:
         """
@@ -82,46 +84,47 @@ class ModelsMgr:
         except Exception as e:
             logger.error(f"Failed to get text model config: {e}")
             return []
+        messages = [
+            {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
+            {"role": "user", "content": self._build_tagging_prompt(file_summary, candidate_tags)}
+        ]
+        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
+        openai_client = AsyncOpenAI(
+            api_key=api_key if api_key else "sk-xxx",
+            base_url=base_url,
+            max_retries=3,
+            http_client=http_client,
+        )
+        model = OpenAIModel(
+            model_name=model_identifier,
+            provider=OpenAIProvider(
+                openai_client=openai_client,
+            ),
+        )
+        agent = Agent(
+            model=model,
+            system_prompt=messages[0]['content'],
+            output_type=TagResponse,
+        )
         try:
-            messages = [
-                {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
-                {"role": "user", "content": self._build_tagging_prompt(file_summary, candidate_tags)}
-            ]
-            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-            http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-            openai_client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=base_url,
-                max_retries=3,
-                http_client=http_client,
-            )
-            model = OpenAIModel(
-                model_name=model_identifier,
-                provider=OpenAIProvider(
-                    openai_client=openai_client,
-                ),
-            )
-            agent = Agent(
-                model=model,
-                output_type=TagResponse,
-            )
             response = agent.run_sync(
-                user_prompt=messages,
-                usage_limits=150, # 限制标签生成的最大token数
+                user_prompt=messages[1]['content'],
+                usage_limits=UsageLimits(response_tokens_limit=150), # 限制标签生成的最大token数
             )
-            print(response.output)
-            
-            tags = json.loads(response.choices[0].message.content).get("tags", [])
-
-            # # 把每个tag中间可能的空格替换为下划线，因为要避开英语中用连字符作为合成词的情况
-            tags = [tag.replace(" ", "_") for tag in tags]
-            # # 把每个tag前后的非字母数字字符去掉
-            tags = [re.sub(r"^[^\w]+|[^\w]+$", "", tag) for tag in tags]
-            return tags
-
-        except Exception as e:
-            logger.error(f"Failed to get tags from LLM: {e}")
+            # print(response.output)
+        except UsageLimitExceeded as e:
+            print(e)
             return []
+        except ValidationError as e:
+            print(e)
+            return []
+
+        # # 把每个tag中间可能的空格替换为下划线，因为要避开英语中用连字符作为合成词的情况
+        tags = [tag.replace(" ", "_") for tag in response.output.tags]
+        # # 把每个tag前后的非字母数字字符去掉
+        tags = [re.sub(r"^[^\w]+|[^\w]+$", "", tag) for tag in tags]
+        return tags
 
     def generate_session_title(self, first_message_content: str) -> str:
         """
@@ -149,7 +152,7 @@ class ModelsMgr:
             proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
             http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
             openai_client = AsyncOpenAI(
-                api_key=api_key,
+                api_key=api_key if api_key else "sk-xxx",
                 base_url=base_url,
                 max_retries=3,
                 http_client=http_client,
@@ -162,16 +165,14 @@ class ModelsMgr:
             )
             agent = Agent(
                 model=model,
+                system_prompt=messages[0]['content'],
                 output_type=SessionTitleResponse,
             )
             response = agent.run_sync(
-                user_prompt=messages,
-                usage_limits=50,  # 限制生成的最大token数，确保简洁
+                user_prompt=messages[1]['content'],
+                usage_limits=UsageLimits(response_tokens_limit=50),  # 限制生成的最大token数，确保简洁
             )
-            print(response.output)
-            
-            title_response = json.loads(response.choices[0].message.content)
-            title = title_response.get("title", "").strip()
+            title = response.output.title.strip()
             
             # 确保标题长度不超过20个字符
             if len(title) > 20:
@@ -245,7 +246,7 @@ Based on all information, provide the best tags for this file.
         proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
         http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
         openai_client = AsyncOpenAI(
-            api_key=api_key,
+            api_key=api_key if api_key else "sk-xxx",
             base_url=base_url,
             max_retries=3,
             http_client=http_client,
@@ -256,46 +257,20 @@ Based on all information, provide the best tags for this file.
                 openai_client=openai_client,
             ),
         )
+        system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
         agent = Agent(
             model=model,
-            output_type=SessionTitleResponse,
+            system_prompt=system_prompt[0] if system_prompt else "",
         )
+        user_prompt = [msg['content'] for msg in messages if msg['role'] == 'user']
+        if user_prompt == []:
+            raise ValueError("User prompt is empty")
         async with agent.run_stream(
-                user_prompt=messages,
-                # usage_limits=500,
+                user_prompt=user_prompt[0],
+                # usage_limits=UsageLimits(response_tokens_limit=500),
             ) as response:
-            print(await response.get_output())
             async for message in response.stream_text(delta=True):
                 yield message
-
-        # # 对于流式响应，litellm使用同步调用
-        # response = litellm_completion(
-        #     model=model_string,
-        #     messages=messages,
-        #     api_base=api_base,
-        #     api_key=api_key or "sk-xxx",
-        #     stream=True
-        # )
-
-        # # litellm的流式响应是同步迭代器，不是异步的
-        # for chunk in response:
-        #     if hasattr(chunk, 'choices') and len(chunk.choices) > 0:
-        #         delta = chunk.choices[0].delta
-        #         if hasattr(delta, 'content') and delta.content:
-        #             # 为了更好的打字机效果，按字符分割内容
-        #             content = delta.content
-                    
-        #             # 如果内容很短（1-2个字符），直接发送
-        #             if len(content) <= 2:
-        #                 yield content
-        #             else:
-        #                 # 对于较长的内容，按字符逐个发送以获得更好的打字机效果
-        #                 for char in content:
-        #                     yield char
-        # try:
-        # except Exception as e:
-        #     logger.error(f"Error during chat streaming: {e}")
-        #     yield f"Error: {str(e)}"
 
     def get_chat_completion(self, messages: List[Dict[str, Any]]) -> str:
         """
@@ -321,7 +296,7 @@ Based on all information, provide the best tags for this file.
             proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
             http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
             openai_client = AsyncOpenAI(
-                api_key=api_key,
+                api_key=api_key if api_key else "sk-xxx",
                 base_url=base_url,
                 max_retries=3,
                 http_client=http_client,
@@ -332,18 +307,22 @@ Based on all information, provide the best tags for this file.
                     openai_client=openai_client,
                 ),
             )
+            system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
             agent = Agent(
                 model=model,
+                system_prompt=system_prompt[0] if system_prompt else "",
             )
+            user_prompt = [msg['content'] for msg in messages if msg['role'] == 'user']
+            if user_prompt == []:
+                raise ValueError("User prompt is empty")
             response = agent.run_sync(
-                user_prompt=messages,
-                # usage_limits=50,
+                user_prompt=user_prompt[0]
+                # usage_limits=UsageLimits(response_tokens_limit=50),
             )
-            print(response.output)
-            return response.choices[0].message.content
+            return response.output
         except Exception as e:
             logger.error(f"Failed to get chat completion: {e}")
-            raise  # Let the caller handle the error
+            raise ValueError("Failed to get chat completion")
 
 # for testing
 if __name__ == "__main__":
@@ -352,14 +331,18 @@ if __name__ == "__main__":
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     mgr = ModelsMgr(session)
     
-    # Test tag generation
-    tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
-    print("Generated Tags:", tags)
-    
     # # Test embedding generation
-    # len_embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
-    # print("Embedding Length:", len(len_embedding))
+    # embedding = asyncio.run(mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。"))
+    # print("Embedding Length:", len(embedding))
+    
+    # # Test tag generation
+    # tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
+    # print("Generated Tags:", tags)
         
+    # # test generate title
+    # title = mgr.generate_session_title('你好，我想了解一下人工智能的发展历史')
+    # print('Generated title:', title)
+    
     # # Test chat completion
     # try:
     #     chat_response = mgr.get_chat_completion([
@@ -368,7 +351,13 @@ if __name__ == "__main__":
     #     print("Chat Response:", chat_response)
     # except Exception as e:
     #     print("Chat Error:", e)
+
+    # test stream text
+    async def test_stream():
+        async for chunk in mgr.stream_chat([
+            {"role": "user", "content": "尽量列举一些首都城市的名字"}
+        ]):
+            print(chunk, end='', flush=True)
+        print()  # 添加换行
     
-    # # test 
-    # title = mgr.generate_session_title('你好，我想了解一下人工智能的发展历史')
-    # print('Generated title:', title)
+    asyncio.run(test_stream())
