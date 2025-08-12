@@ -28,14 +28,15 @@ interface AiSdkChatProps {
  * 使用textStream实现打字机效果，无mock代码
  */
 export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFromMessage, resetTrigger }: AiSdkChatProps) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages.length > 0 ? initialMessages : [
-    {
+  const welcomeMessages = function(): Message[] {
+    return [{
       id: "1",
       content: "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
-      type: "incoming",
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    }
-  ])
+      type: "incoming" as const,
+      timestamp: new Date(Date.now() - 1000 * 60 * 5)
+    }]
+  }
+  const [messages, setMessages] = useState<Message[]>(initialMessages.length > 0 ? initialMessages : welcomeMessages())
   const [inputValue, setInputValue] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
@@ -43,12 +44,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
   // 当resetTrigger改变时，重置消息和输入框
   useEffect(() => {
     if (resetTrigger !== undefined) {
-      setMessages([{
-        id: "1",
-        content: "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
-        type: "incoming",
-        timestamp: new Date(Date.now() - 1000 * 60 * 5),
-      }])
+      setMessages(welcomeMessages())
       setInputValue("")
     }
   }, [resetTrigger])
@@ -64,12 +60,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
       
       if (!sessionId) {
         // 没有sessionId时显示欢迎消息
-        setMessages([{
-          id: "1",
-          content: "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
-          type: "incoming",
-          timestamp: new Date(Date.now() - 1000 * 60 * 5),
-        }])
+        setMessages(welcomeMessages())
         return
       }
 
@@ -93,12 +84,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
 
         if (convertedMessages.length === 0) {
           // 如果没有消息，显示欢迎消息
-          setMessages([{
-            id: "1",
-            content: "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
-            type: "incoming",
-            timestamp: new Date(Date.now() - 1000 * 60 * 5),
-          }])
+          setMessages(welcomeMessages())
         } else {
           setMessages(convertedMessages)
         }
@@ -107,12 +93,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
       } catch (error) {
         console.error('Failed to load session messages:', error)
         // 加载失败时显示欢迎消息
-        setMessages([{
-          id: "1", 
-          content: "欢迎使用AI数据助手！您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。",
-          type: "incoming",
-          timestamp: new Date(Date.now() - 1000 * 60 * 5),
-        }])
+        setMessages(welcomeMessages())
       }
     }
 

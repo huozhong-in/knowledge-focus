@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/main';
-import { usePageStore } from '@/App';
 import { Button } from "./components/ui/button";
 import { toast } from "sonner";
 import {
@@ -28,7 +27,6 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
   const isApiReady = useAppStore(state => state.isApiReady);
   const isFirstLaunch = useAppStore(state => state.isFirstLaunch);
   const setShowWelcomeDialog = useAppStore(state => state.setShowWelcomeDialog);
-  const setPage = usePageStore(state => state.setPage);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState("正在检查系统权限...");
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState(false);
@@ -220,8 +218,6 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       onOpenChange(false);
       // 更新状态以便将来不再显示首次启动对话框
       await setShowWelcomeDialog(false);
-      // 导航到文件夹授权页面（仅在首次启动时需要）
-      setPage("home-authorization", "Home", "Authorization");
       console.log('首次启动流程：欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
     } catch (error) {
       console.error('更新首次启动状态时出错:', error);

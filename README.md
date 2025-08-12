@@ -56,3 +56,14 @@ KnowledgeFocus包含一个强大的文件监控系统，可以自动监控指定
 ### 4. 打包应用
 
 `bun tauri build --bundles app`
+
+### 5. 升级Tauri
+
+更新 Tauri 依赖：
+`cd tauri-app && bun update @tauri-apps/api@latest @tauri-apps/cli@latest`
+
+更新 Rust 端的 Tauri 依赖：
+`cd src-tauri && cargo update`
+
+验证更新是否成功：
+`cd ../../tauri-app && bun tauri info`

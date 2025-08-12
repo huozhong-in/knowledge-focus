@@ -1,6 +1,6 @@
 from sqlmodel import Session, create_engine
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, List
 import os
 import logging
 import warnings
@@ -9,7 +9,7 @@ from db_mgr import FileScreeningResult #, Tags
 from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
-from db_mgr import FileScreenResult
+from db_mgr import FileScreenResult, ModelCapability
 from sqlmodel import select, and_
 import time
 from bridge_events import BridgeEventSender
@@ -37,6 +37,8 @@ def configure_parsing_warnings():
 MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 # 所有可解析的文件扩展名
 PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json'] + MARKITDOWN_EXTENSIONS
+# 本业务场景所需模型能力的组合
+SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING]
 
 class FileTaggingMgr:
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:

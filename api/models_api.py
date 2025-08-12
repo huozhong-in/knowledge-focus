@@ -1,20 +1,28 @@
 from fastapi import APIRouter, Depends, Body, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
-from typing import List, Dict, Any
+from typing import Dict, Any
 import json
 import uuid
-from datetime import datetime
-from db_mgr import SystemConfig, ChatMessage
+from chatsession_mgr import ChatSessionMgr
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
-from chatsession_mgr import ChatSessionMgr
+from model_capability_confirm import ModelCapabilityConfirm
 
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
 
     def get_model_config_manager(session: Session = Depends(external_get_session)) -> ModelConfigMgr:
         return ModelConfigMgr(session)
+    
+    def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
+        return ModelsMgr(session)
+
+    def get_model_capability_confirm(session: Session = Depends(external_get_session)) -> ModelCapabilityConfirm:
+        return ModelCapabilityConfirm(session)
+
+    def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
+        return ChatSessionMgr(session)
 
     @router.get("/local-models/configs", tags=["local-models"])
     def get_all_model_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
@@ -45,7 +53,7 @@ def get_router(external_get_session: callable) -> APIRouter:
     async def discover_provider_models(provider_type: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """检测并更新服务商的可用模型"""
         try:
-            config = await config_mgr.discover_and_update_models_for_provider(provider_type)
+            config = await config_mgr.discover_models_from_provider(provider_type)
             if config:
                 return {"success": True, "data": config.model_dump()}
             return {"success": False, "message": "Failed to discover models. Check API endpoint and key."}
@@ -83,12 +91,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
-        return ModelsMgr(session)
-    
-    def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
-        return ChatSessionMgr(session)
-
     @router.post("/chat/stream", tags=["local-models"])
     async def chat_stream(
         request_data: Dict[str, Any] = Body(...),
@@ -112,8 +114,6 @@ def get_router(external_get_session: callable) -> APIRouter:
 
             return StreamingResponse(
                 models_mgr.stream_chat(
-                    provider_type=provider_type,
-                    model_name=model_name,
                     messages=messages
                 ),
                 media_type="text/event-stream"
@@ -236,8 +236,6 @@ def get_router(external_get_session: callable) -> APIRouter:
                     print(f"[DEBUG] Starting stream_chat with provider: {provider_type}, model: {model_name}")
                     chunk_count = 0
                     async for content_chunk in models_mgr.stream_chat(
-                        provider_type=provider_type,
-                        model_name=model_name,
                         messages=converted_messages
                     ):
                         chunk_count += 1

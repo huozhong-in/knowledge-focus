@@ -1,8 +1,6 @@
-
 from config import EMBEDDING_DIMENSIONS
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
-# from lancedb.embeddings import get_registry
 from typing import List
 import os
 import logging

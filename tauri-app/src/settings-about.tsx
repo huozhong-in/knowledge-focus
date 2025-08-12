@@ -20,7 +20,7 @@ export default function SettingsAbout() {
             <h4 className="text-sm font-medium">关于应用</h4>
             <p className="text-sm text-muted-foreground">
               知识焦点是一个帮助用户发现和利用电脑中各类文档知识的智能工具。
-              通过动态标签系统和 AI 技术，让您的文档管理更加智能和高效。
+              通过动态标签系统和多模态检索技术，让您的文档管理更加智能和高效。
             </p>
           </div>
           

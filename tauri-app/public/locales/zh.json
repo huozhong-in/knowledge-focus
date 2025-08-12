@@ -33,5 +33,16 @@
     "queued": "等待处理",
     "processing": "正在处理",
     "completed": "向量化完成",
-    "failed": "异常失败"
+    "failed": "异常失败",
+    "ModelCapability.TEXT": "文本处理能力",
+    "ModelCapability.REASONING": "推理能力",
+    "ModelCapability.VISION": "视觉能力",
+    "ModelCapability.EMBEDDING": "向量化能力",
+    "ModelCapability.RERANKER": "重排序能力",
+    "ModelCapability.TOOL_USE": "工具使用能力",
+    "ModelCapability.CODE_GENERATION": "代码生成能力",
+    "ModelCapability.TTS": "文本转语音能力",
+    "ModelCapability.ASR": "自动语音识别能力",
+    "ModelCapability.IMAGE_GENERATION": "图像生成能力",
+    "ModelCapability.WEB_SEARCH": "联网搜索能力"
 }

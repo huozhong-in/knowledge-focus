@@ -33,5 +33,16 @@
     "queued": "Queued",
     "processing": "Processing",
     "completed": "Completed",
-    "failed": "Failed"
+    "failed": "Failed",
+    "ModelCapability.TEXT": "Text Processing Capability",
+    "ModelCapability.REASONING": "Reasoning Capability",
+    "ModelCapability.VISION": "Vision Capability",
+    "ModelCapability.EMBEDDING": "Embedding Capability",
+    "ModelCapability.RERANKER": "Re-ranker Capability",
+    "ModelCapability.TOOL_USE": "Tool Use Capability",
+    "ModelCapability.CODE_GENERATION": "Code Generation Capability",
+    "ModelCapability.TTS": "Text-to-Speech Capability",
+    "ModelCapability.ASR": "Automatic Speech Recognition Capability",
+    "ModelCapability.IMAGE_GENERATION": "Image Generation Capability",
+    "ModelCapability.WEB_SEARCH": "Web Search Capability"
 }

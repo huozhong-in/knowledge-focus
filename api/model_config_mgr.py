@@ -2,126 +2,225 @@
 import json
 import httpx
 from sqlmodel import Session, select
-from typing import List, Dict, Any, Tuple, Optional
-
-from db_mgr import LocalModelProviderConfig, SystemConfig
+from typing import List, Tuple
+from db_mgr import (
+    # ModelSourceType, 
+    ModelProvider, 
+    ModelCapability, 
+    ModelConfiguration, 
+    CapabilityAssignment,
+    SystemConfig,
+)
+import asyncio
 
 class ModelConfigMgr:
     def __init__(self, session: Session):
         self.session = session
 
-    def get_all_provider_configs(self) -> List[LocalModelProviderConfig]:
+    def get_all_provider_configs(self) -> List[ModelProvider]:
         """Retrieves all model provider configurations from the database."""
-        return self.session.exec(select(LocalModelProviderConfig)).all()
+        return self.session.exec(select(ModelProvider)).all()
 
-    def update_provider_config(self, provider_type: str, api_endpoint: str, api_key: str, enabled: bool) -> Optional[LocalModelProviderConfig]:
+    def update_provider_config(self, id: int, display_name: str, base_url: str, api_key: str, extra_data_json: json, is_active: bool) -> ModelProvider | None:
         """Updates a specific provider's configuration."""
-        config = self.session.exec(select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)).first()
-        if config:
-            config.api_endpoint = api_endpoint
-            config.api_key = api_key
-            config.enabled = enabled
-            self.session.add(config)
+        provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == id)).first()
+        if provider is not None:
+            provider.display_name = display_name if provider.is_user_added else None
+            provider.base_url = base_url if provider.base_url != base_url else None
+            provider.api_key = api_key if provider.api_key != api_key else None
+            provider.extra_data = extra_data_json if provider.extra_data != extra_data_json else None
+            provider.is_active = is_active if provider.is_active != is_active else None
+            self.session.add(provider)
             self.session.commit()
-            self.session.refresh(config)
-        return config
+            self.session.refresh(provider)
+        return provider
 
-    async def discover_and_update_models_for_provider(self, provider_type: str) -> Optional[LocalModelProviderConfig]:
-        """Discovers available models from a provider and updates the database."""
-        config = self.session.exec(select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)).first()
-        if not config or not config.enabled or not config.api_endpoint:
-            return None
+    async def discover_models_from_provider(self, id: int) -> List[ModelConfiguration]:
+        """Discovers available models from a provider."""
 
-        headers = {"Authorization": f"Bearer {config.api_key}"} if config.api_key else {}
+        def _already_exists(provider_id: int, model_identifier: str) -> bool:
+            if model_identifier == "":
+                print("Model identifier is empty.")
+                return False
+            return self.session.exec(select(ModelConfiguration).where(
+                ModelConfiguration.provider_id == provider_id,
+                ModelConfiguration.model_identifier == model_identifier
+            )).first() is not None
+
+        provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == id)).first()
+        if provider is None:
+            return []
+        
+        result: List[ModelConfiguration] = []
+        headers = {}
+        if provider.provider_type == "openai" or provider.provider_type == "grok":
+            headers["Authorization"] = f"Bearer {provider.api_key}" if provider.api_key else ""
+        elif provider.provider_type == "anthropic":
+            headers["x-api-key"] = provider.api_key if provider.api_key else ""
+            headers["anthropic-version"] = "2023-06-01"
+        elif provider.provider_type == "google":
+            headers["Content-Type"] = "application/json"
+            headers["X-goog-api-key"] = provider.api_key if provider.api_key else ""
+        elif provider.provider_type == "groq":
+            headers["Content-Type"] = "application/json"
+            headers["Authorization"] = f"Bearer {provider.api_key}" if provider.api_key else ""
+
+        discover_url = f"{provider.base_url.rstrip('/')}/models"
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(f"{config.api_endpoint.rstrip('/')}/models", headers=headers, timeout=10)
+            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+            async with httpx.AsyncClient(proxy=proxy.value if proxy is not None and provider.use_proxy else None) as client:
+                response = await client.get(discover_url, headers=headers, timeout=10)
                 response.raise_for_status()
                 models_data = response.json()
-            
-            # The data is often in a 'data' key
-            models_list = models_data.get("data", models_data)
-            
-            available_models = [{"id": m["id"], "name": m.get("name", m["id"])} for m in models_list]
-            
-            config.available_models = available_models
-            self.session.add(config)
-            self.session.commit()
-            self.session.refresh(config)
-            return config
         except (httpx.RequestError, json.JSONDecodeError) as e:
-            # Log the error properly in a real app
-            print(f"Error discovering models for {provider_type}: {e}")
-            return None
-
-    def get_role_configs(self) -> Dict[str, Any]:
-        """Gets the model assignments for all roles."""
-        roles = ["base", "vision", "embedding", "reranking"]
-        role_configs = {}
-        for role in roles:
-            key = f"selected_model_for_{role}"
-            config_entry = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
-            if config_entry and config_entry.value and config_entry.value != 'null':
-                try:
-                    role_configs[role] = json.loads(config_entry.value)
-                except json.JSONDecodeError:
-                    role_configs[role] = {}
+            print(f"Error discovering models for {id}: {e}")
+            return []
+        
+        if provider.provider_type == "openai":
+            if provider.display_name == "OpenAI":
+                # https://platform.openai.com/docs/api-reference/models/list
+                models_list = models_data.get("data", [])
+                for model in models_list:
+                    result.append(ModelConfiguration(
+                        provider_id=id,
+                        model_identifier=model.get("id", ""),
+                        display_name=model.get("id", ""),
+                    )) if not _already_exists(id, model.get("id", "")) else None
+            elif provider.display_name == "OpenRouter":
+                # https://openrouter.ai/docs/api-reference/list-available-models
+                models_list = models_data.get("data", [])
+                for model in models_list:
+                    result.append(ModelConfiguration(
+                        provider_id=id,
+                        model_identifier=model.get("id", ""),
+                        display_name=model.get("name", ""),
+                        max_context_length=model.get("top_provider", {}).get("context_length", 0),
+                        max_output_tokens=model.get("top_provider", {}).get("max_completion_tokens", 0),
+                    )) if not _already_exists(id, model.get("id", "")) else None
+            elif provider.display_name == "Ollama":
+                # https://github.com/ollama/ollama/blob/main/docs/api.md#list-local-models
+                models_list = models_data.get("models", [])
+                for model in models_list:
+                    result.append(ModelConfiguration(
+                        provider_id=id,
+                        model_identifier=model.get("model", ""),
+                        display_name=model.get("name", ""),
+                        # TODO POST /api/show to get context_length
+                    )) if not _already_exists(id, model.get("model", "")) else None
+            elif provider.display_name == "LM Studio":
+                # https://lmstudio.ai/docs/app/api/endpoints/rest
+                models_list = models_data.get("data", [])
+                for model in models_list:
+                    result.append(ModelConfiguration(
+                        provider_id=id,
+                        model_identifier=model.get("id", ""),
+                        display_name=model.get("id", ""),
+                        max_context_length=model.get("max_context_length", 0),
+                    )) if not _already_exists(id, model.get("id", "")) else None
+                    print("type:", model.get("type", ""))
             else:
-                role_configs[role] = {} # Default to empty object if no value or value is 'null'
-        return role_configs
-
-    def update_role_config(self, role_type: str, provider_type: str, model_id: str, model_name: str) -> Optional[SystemConfig]:
-        """Updates the model assignment for a specific role."""
-        key = f"selected_model_for_{role_type}"
-        config_entry = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
+                return []
         
-        value_to_store = json.dumps({
-            "provider_type": provider_type,
-            "model_id": model_id,
-            "model_name": model_name
-        })
-
-        if config_entry:
-            config_entry.value = value_to_store
+        elif provider.provider_type == "anthropic":
+            # https://docs.anthropic.com/en/api/models-list
+            models_list = models_data.get("data", [])
+            for model in models_list:
+                result.append(ModelConfiguration(
+                    provider_id=id,
+                    model_identifier=model.get("id", ""),
+                    display_name=model.get("display_name", ""),
+                )) if not _already_exists(id, model.get("id", "")) else None
+        elif provider.provider_type == "google":
+            # https://ai.google.dev/api/models
+            models_list = models_data.get("models", [])
+            for model in models_list:
+                result.append(ModelConfiguration(
+                    provider_id=id,
+                    model_identifier=model.get("name", ""),
+                    display_name=model.get("display_name", ""),
+                    max_context_length=model.get("inputTokenLimit", 0) + model.get("outputTokenLimit", 0),
+                    max_output_tokens=model.get("outputTokenLimit", 0),
+                )) if not _already_exists(id, model.get("name", "")) else None
+        elif provider.provider_type == "grok":
+            # https://docs.x.ai/docs/api-reference#list-models
+            models_list = models_data.get("data", [])
+            for model in models_list:
+                result.append(ModelConfiguration(
+                    provider_id=id,
+                    model_identifier=model.get("id", ""),
+                    display_name=model.get("id", ""),
+                )) if not _already_exists(id, model.get("id", "")) else None
+        elif provider.provider_type == "groq":
+            # https://console.groq.com/docs/models
+            models_list = models_data.get("data", [])
+            for model in models_list:
+                result.append(ModelConfiguration(
+                    provider_id=id,
+                    model_identifier=model.get("id", ""),
+                    display_name=model.get("id", ""),
+                    max_context_length=model.get("context_window", 0),
+                    max_output_tokens=model.get("max_completion_tokens", 0),
+                )) if not _already_exists(id, model.get("id", "")) else None
         else:
-            config_entry = SystemConfig(key=key, value=value_to_store)
+            return []
         
-        self.session.add(config_entry)
-        self.session.commit()
-        self.session.refresh(config_entry)
-        return config_entry
+        if result != []:
+            self.session.add_all(result)
+            self.session.commit()
+        return result
+
+    def assign_global_capability_to_model(self, model_id: str, capability: ModelCapability) -> bool:
+        """指定某个模型为全局的ModelCapability某项能力"""
+        with self.session as session:
+            assignment = CapabilityAssignment(model_configuration_id=model_id, capability_value=capability.value)
+            session.add(assignment)
+            session.commit()
+            return True
+
+    def get_model_for_global_capability(self, capability: ModelCapability) -> ModelConfiguration | None:
+        """获取全局指定ModelCapability能力的模型配置"""
+        with self.session as session:
+            assignment = session.exec(
+                select(CapabilityAssignment).where(CapabilityAssignment.capability_value == capability.value)
+            ).first()
+            if assignment:
+                return session.exec(
+                    select(ModelConfiguration).where(ModelConfiguration.id == assignment.model_configuration_id)
+                ).first()
+        return None
     
-    # 取得视觉模型的api_endpoint和model_id
-    def get_vision_model_config(self) -> Tuple[str, str]:
-        """Gets the configuration for the vision model."""
-        # 获取视觉模型的角色配置
-        key = "selected_model_for_vision"
-        config_entry = self.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
-        
-        if not config_entry or not config_entry.value or config_entry.value == 'null':
-            raise ValueError("No configuration found for vision model")
+    def _get_spec_model_config(self, capability: ModelCapability) -> Tuple[str, str, str]:
+        """取得全局指定能力的模型的model_identifier base_url api_key use_proxy"""
+        model_config: ModelConfiguration = self.get_model_for_global_capability(capability)
+        if model_config is None:
+            raise ValueError(f"No configuration found for {capability} model")
 
-        try:
-            role_config = json.loads(config_entry.value)
-            provider_type = role_config.get("provider_type")
-            model_id = role_config.get("model_id")
-        except (json.JSONDecodeError, AttributeError):
-            raise ValueError("Invalid configuration format for vision model")
+        model_identifier = model_config.model_identifier
+        model_provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == model_config.provider_id)).first()
 
-        if not provider_type or not model_id:
-            raise ValueError("Incomplete configuration for vision model")
+        if model_provider is None:
+            raise ValueError(f"No provider found for {capability} model")
+        base_url = model_provider.base_url
+        if base_url is None or base_url == "":
+            raise ValueError(f"No base URL found for {capability} model")
+        api_key = model_provider.api_key
+        use_proxy = model_provider.use_proxy
 
-        # 获取提供商配置
-        provider_config = self.session.exec(
-            select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider_type)
-        ).first()
+        return model_identifier, base_url, api_key, use_proxy
 
-        if not provider_config or not provider_config.enabled:
-            raise ValueError(f"Provider {provider_type} is not configured or not enabled.")
+    def get_vision_model_config(self) -> Tuple[str, str, str, bool]:
+        """取得全局视觉模型的model_identifier base_url api_key use_proxy"""
+        return self._get_spec_model_config(ModelCapability.VISION)
 
-        return provider_config.api_endpoint, model_id
-        
-    
+    def get_embedding_model_config(self) -> Tuple[str, str, str, bool]:
+        """取得全局嵌入模型的model_identifier base_url api_key use_proxy"""
+        return self._get_spec_model_config(ModelCapability.EMBEDDING)
+
+    def get_text_model_config(self) -> Tuple[str, str, str, bool]:
+        """取得全局文本模型的model_identifier base_url api_key use_proxy"""
+        return self._get_spec_model_config(ModelCapability.TEXT)
+
+
 if __name__ == "__main__":
     from sqlmodel import create_engine
     from config import TEST_DB_PATH
@@ -130,4 +229,4 @@ if __name__ == "__main__":
     engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
     with Session(engine) as session:
         mgr = ModelConfigMgr(session)
-        print(mgr.get_vision_model_config())
+        asyncio.run(mgr.discover_models_from_provider(1))

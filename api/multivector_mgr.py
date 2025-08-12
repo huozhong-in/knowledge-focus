@@ -12,6 +12,7 @@
 5. 存储到SQLite(元数据)和LanceDB(向量)
 """
 
+from config import singleton, generate_vector_id
 import os
 import json
 import hashlib
@@ -25,14 +26,8 @@ from typing import (
     Optional, 
     Tuple,
 )
-from uuid import uuid4
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# 生成短ID的工具函数
-def generate_vector_id() -> str:
-    """生成用于vector_id的短ID"""
-    return str(uuid4()).replace('-', '')[:16]
 
 from sqlmodel import Session, select
 from docling.datamodel.base_models import InputFormat
@@ -45,16 +40,16 @@ from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import (
     DoclingDocument,
     ImageRefMode,
-    PictureItem,
-    TableItem,
-    TextItem,
+    # PictureItem,
+    # TableItem,
+    # TextItem,
 )
 from docling.datamodel.document import ConversionResult
 from docling.chunking import HybridChunker
 from docling_core.transforms.chunker.tokenizer.huggingface import HuggingFaceTokenizer
 from transformers import AutoTokenizer
 
-from db_mgr import Document, ParentChunk, ChildChunk
+from db_mgr import Document, ParentChunk, ChildChunk, ModelCapability
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from model_config_mgr import ModelConfigMgr
@@ -62,6 +57,10 @@ from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
 
+# 不同业务场景所需模型能力的组合
+SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING, ModelCapability.VISION]
+
+@singleton
 class MultiVectorMgr:
     """多模态分块管理器"""
     
@@ -86,8 +85,8 @@ class MultiVectorMgr:
         self.bridge_events = BridgeEventSender(source="chunking-manager")
         
         # 获取当前视觉模型配置
-        self.vision_api_endpoint, self.vision_model_id = self.model_config_mgr.get_vision_model_config()
-        
+        self.vision_model_id, self.vision_base_url, self.vision_api_key = self.model_config_mgr.get_vision_model_config()
+
         # 获取embedding维度配置
         from config import EMBEDDING_DIMENSIONS
         self.embedding_dimensions = EMBEDDING_DIMENSIONS
@@ -161,12 +160,13 @@ class MultiVectorMgr:
             
             # 配置图片描述API选项 - 使用本地vision模型
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
-                url=f"{self.vision_api_endpoint}/chat/completions",
+                url=f"{self.vision_base_url}/chat/completions",
                 params=dict(
                     model=self.vision_model_id,
                     seed=42,
                     temperature=0.2,
                     max_completion_tokens=250,
+                    api_key=self.vision_api_key,
                 ),
                 prompt="""
 You are an assistant tasked with summarizing images for retrieval. 
@@ -904,7 +904,7 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             ]
             
             # 调用LLM生成摘要
-            summary = self.models_mgr.get_chat_completion(messages, role_type="base")
+            summary = self.models_mgr.get_chat_completion(messages)
             
             if summary and summary.strip():
                 # 后处理：清理常见的格式化前缀
@@ -1120,7 +1120,7 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             ]
             
             # 调用LLM生成摘要
-            summary = self.models_mgr.get_chat_completion(messages, role_type="base")
+            summary = self.models_mgr.get_chat_completion(messages)
             
             if summary and summary.strip():
                 # 清理格式化前缀

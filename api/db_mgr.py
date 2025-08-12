@@ -123,7 +123,7 @@ class SystemConfig(SQLModel, table=True):
     __tablename__ = "t_system_config"
     id: int = Field(default=None, primary_key=True)
     key: str = Field(index=True, unique=True)  # 配置键名
-    value: str  # 配置值（JSON字符串）
+    value: str  # 配置值（有可能是JSON字符串）
     description: str | None = Field(default=None)  # 配置描述
     updated_at: datetime = Field(default=datetime.now())
     
@@ -302,71 +302,6 @@ class FileScreeningResult(SQLModel, table=True):
             datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-# 模型服务商类型的枚举
-class ModelProviderType(str, PyEnum):
-    OLLAMA = "ollama"
-    LM_STUDIO = "lm_studio"
-    OPENAI_COMPATIBLE = "openai_compatible" # 也分本机/本地和远程
-#     BUSINESS_API = "business_api"
-#     VIP = "vip"
-
-# 模型角色类型的枚举
-# class ModelRoleType(str, PyEnum):
-#     LLM = "llm" # 大语言模型，适合纯文字的通用任务
-#     VISION = "vision" # 带有视觉能力的LLM
-#     EMBEDDING = "embedding" # 用于向量化的模型
-#     RERANKING = "reranking" # 用于重排序的模型
-#     TTS = "tts" # 文本转语音模型
-#     ASR = "asr" # 语音识别模型
-#     IMAGE_GENERATION = "image_generation" # 图像生成模型
-#     CODE_GENERATION = "code_generation" # 代码生成模型
-
-# 模型能力的枚举
-class ModelCapability(str, PyEnum):
-    TEXT = "text"  # 文本处理能力
-    THINK = "think"  # 思考能力
-    VISION = "vision"  # 视觉能力
-    EMBEDDING = "embedding"  # 向量化能力
-    RERANKING = "reranking"  # 重排序能力
-    TOOL_USE = "tool_use"  # 工具使用能力
-    CODE_GENERATION = "code_generation"  # 代码生成能力
-    TTS = "tts"  # 文本转语音能力
-    ASR = "asr"  # 自动语音识别能力
-    IMAGE_GENERATION = "image_generation"  # 图像生成能力
-
-# 本地模型供应商配置表
-class LocalModelProviderConfig(SQLModel, table=True):
-    __tablename__ = "t_local_model_provider_configs"
-    id: int = Field(default=None, primary_key=True)
-    
-    # 服务商类型，如 "ollama", "lm_studio"。这将作为唯一标识符。
-    provider_type: str = Field(
-        sa_column=Column(Enum(ModelProviderType, values_callable=lambda obj: [e.value for e in obj]), unique=True, index=True)
-    )
-    
-    # 服务商的显示名称，如 "Ollama"
-    provider_name: str
-    
-    # API 连接信息
-    api_endpoint: str
-    api_key: str | None = Field(default=None)
-    
-    # 是否启用此配置
-    enabled: bool = Field(default=True)
-    
-    # 用于存储此服务商下可用模型的JSON字段
-    # 结构: [{"id": "model_id", "name": "显示名称", "attributes": {"vision": true, ...}}]
-    available_models: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
-    
-    # 时间戳
-    created_at: datetime = Field(default=datetime.now())
-    updated_at: datetime = Field(default=datetime.now())
-    
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
 # 文档表
 # 用于记录被处理的原始文件信息。
 # 设计意图: 管理最原始的入口文件，file_hash能避免重复处理未变更的文件，status字段则可以支持异步处理和失败重试机制。
@@ -403,21 +338,44 @@ class ChildChunk(SQLModel, table=True):
     retrieval_content: str # 可能是文本摘要、图片描述、或者“图片描述+周围文本”的组合
     vector_id: str = Field(unique=True, index=True) # 与LanceDB中向量记录对应的唯一ID, 如UUID
 
+# 模型来源
+class ModelSourceType(str, PyEnum):
+    BUILDIN = "buildin" # App内置框架(MLX/llama-cpp-python)直接运行的模型，直接管理下载过程
+    CONFIGURABLE = "configurable" # 可配置的模型服务商，本地如Ollama、LM Studio，远程如OpenAI、Anthropic
+    VIP = "vip" # 由本App服务端提供的模型组合
 # 模型提供者表
 # 这张表用来定义模型的来源。它可以是Ollama，可以是OpenAI，也可以是您自己的VIP服务。
 # 设计意图: 将“模型从哪里来”这个问题抽象成一个独立的实体，极大地提高了扩展性。未来出现新的托管平台，只需增加一个新的provider_type即可。
 class ModelProvider(SQLModel, table=True):
     __tablename__ = "t_model_providers"
     id: int = Field(default=None, primary_key=True)
-    display_name: str # 用户自定义的名称，如“我的Ollama服务”、“公司内部API”
-    # provider_type: str = Field(
-    # API的基地址
-    base_url: str  # 如 http://localhost:11434
-    api_key_encrypted: str | None = None # 使用加密方式存储，而非明文！
+    # 显示名称，用户可读的名称
+    display_name: str = Field(index=True, unique=True)  # - 预填充名字。- VIP服务从云端拉取。- 用户新增openai-compatible类名称
+    source_type: str = Field(default=ModelSourceType.CONFIGURABLE.value)
+    provider_type: str = Field(default="")  # 提供者类型，来自pydantic_ai.providers
+    base_url: str | None = Field(default=None)  # 如果source_type为vip则此项无效，具体值在每个模型配置上
+    api_key: str | None = Field(default=None)  # 如果source_type为vip则为加密后的值(密钥暂时写死，实现用户登录后从云端获取)
     # 存放一些特别的provider-specific数据，比如Azure OpenAI的api_version、VertexAI的project_id/location等
-    extra_data: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
-    is_active: bool = Field(default=True) # 是否启用
+    extra_data_json: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    is_active: bool = Field(default=False)  # 是否启用
+    is_user_added: bool = Field(default=True)  # 用户新增的，用户可以删除
+    get_key_url: str | None = Field(default=None)
+    support_discovery: bool = Field(default=True)
+    use_proxy: bool = Field(default=False)
 
+# 模型能力，前端当作i18n的key
+class ModelCapability(str, PyEnum):
+    TEXT = "text"
+    REASONING = "reasoning"
+    VISION = "vision"
+    TOOL_USE = "tool_use"
+    WEB_SEARCH = "web_search"
+    EMBEDDING = "embedding"
+    RERANKER = "reranker"
+    # CODE_GENERATION = "code_generation"
+    # TTS = "tts"
+    # ASR = "asr"
+    # IMAGE_GENERATION = "image_generation"
 # 模型配置表
 # 这张表代表一个具体可用的模型。
 # 设计意图: 将一个具体的模型实例（如本地的llama3:8b）与其能力和属性绑定。这些属性可以来自您的云端目录，也可以由用户手动配置。
@@ -425,14 +383,14 @@ class ModelConfiguration(SQLModel, table=True):
     __tablename__ = "t_model_configurations"
     id: int = Field(default=None, primary_key=True)
     provider_id: int = Field(foreign_key="t_model_providers.id", index=True) # 关联到提供者
-    # 模型在对应平台上的标识符，如 'gemma:2b', 'gpt-4o'
-    model_identifier: str 
-    # 用户可自定义的别名
-    display_name: str # e.g., “我的本地小钢炮”
-    # 模型的“能力”清单，以JSON格式存储
-    capabilities_json: str # e.g., '["think", "vision", "embedding", "tool_use"]'
-    # 运行时信息，同样是JSON，用于显示和推荐
-    runtime_info_json: str | None = None # e.g., '{"runtime": "gguf", "size_gb": 3.8, "min_ram_gb": 8}'
+    model_identifier: str # 模型在对应平台官方标识符，如 'gemma:2b', 'gpt-4o'
+    display_name: str # 用户可自定义的别名
+    # 模型的“能力”清单
+    capabilities_json: List[str] = Field(default=[], sa_column=Column(JSON)) # e.g., ['text', 'embedding', 'vision']
+    # vip服务的每个模型来自不同的服务商，一定有不同的base_url. 以及model-specific的数据。
+    extra_data_json: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    max_context_length: int = Field(default=0) # This max tokens number includes input, output, and reasoning tokens. 
+    max_output_tokens: int = Field(default=0) # This max tokens number includes output tokens only.
     is_enabled: bool = Field(default=True)
 
 # 能力指派表
@@ -440,8 +398,8 @@ class ModelConfiguration(SQLModel, table=True):
 # 设计意图: 彻底解耦“功能”和“实现”。当App需要进行“视觉分析”时，它不关心具体是哪个模型，而是去查这张表，找到被指派给vision_analysis这个“岗位”的模型，然后去调用它。用户可以在设置界面中，像拖拽指派任务一样，决定哪个模型负责哪个功能。
 class CapabilityAssignment(SQLModel, table=True):
     __tablename__ = "t_capability_assignments"    
-    # App中的能力名称，作为主键
-    capability_name: str = Field(primary_key=True) # e.g., 'default_chat', 'vision_analysis', 'default_embedding', 'code_generation'
+    # ModelCapability value作主键
+    capability_value: str = Field(primary_key=True)
     # 指派给哪个模型配置来完成这个任务
     model_configuration_id: int = Field(foreign_key="t_model_configurations.id")
 
@@ -528,7 +486,21 @@ class DBManager:
             # 创建系统配置表
             if not inspector.has_table(SystemConfig.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[SystemConfig.__table__])
-            self._init_system_config()  # 初始化系统配置数据
+                system_configs = [
+                    {
+                        "key": "proxy",
+                        "value": "http://127.0.0.1:7890",
+                        "description": "代理服务器地址"
+                    },
+                ]
+                for config_data in system_configs:
+                    new_config = SystemConfig(
+                        key=config_data["key"],
+                        value=config_data["value"],
+                        description=config_data["description"]
+                    )
+                    self.session.add(new_config)
+                self.session.commit()
             
             # 创建文件分类表
             if not inspector.has_table(FileCategory.__tablename__):
@@ -618,33 +590,6 @@ class DBManager:
             """))
             
             conn.commit()  # 提交所有更改
-            
-            # 创建本地模型供应商配置表
-            if not inspector.has_table(LocalModelProviderConfig.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[LocalModelProviderConfig.__table__])
-                # 初始化默认的本地模型服务商
-                default_providers = [
-                    {
-                        "provider_type": ModelProviderType.OLLAMA.value,
-                        "provider_name": "Ollama",
-                        "api_endpoint": "http://localhost:11434/v1",
-                        "api_key": None
-                    },
-                    {
-                        "provider_type": ModelProviderType.LM_STUDIO.value,
-                        "provider_name": "LM Studio",
-                        "api_endpoint": "http://localhost:1234/v1",
-                        "api_key": None
-                    }
-                ]
-                for provider in default_providers:
-                    provider_exists = self.session.exec(
-                        select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == provider["provider_type"])
-                    ).first()
-                    if not provider_exists:
-                        new_provider = LocalModelProviderConfig(**provider)
-                        self.session.add(new_provider)
-                        self.session.commit()
 
             # 创建文档表
             # TODO 根据后续代码里的要求创建索引
@@ -676,7 +621,134 @@ class DBManager:
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_session_pin_file ON {ChatSessionPinFile.__tablename__} (session_id, file_path);
                 """))
                 conn.commit()
-
+            
+            # 模型提供者表
+            if not inspector.has_table(ModelProvider.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ModelProvider.__table__])
+                # 初始化默认模型提供者
+                data = [
+                    {
+                        "display_name": "OpenAI", 
+                        "provider_type": "openai",
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "https://api.openai.com/v1", 
+                        "is_user_added": False,
+                        "get_key_url": "https://platform.openai.com/api-keys",
+                        "support_discovery": True,
+                        "use_proxy": True,
+                    },
+                    # {
+                    #     "display_name": "Azure OpenAI", 
+                    #     "provider_type": "azure", 
+                    #     "source_type": ModelSourceType.CONFIGURABLE.value, 
+                    #     "extra_data_json":{
+                    #         "azure_endpoint": "",
+                    #         "api_version": "",
+                    #         "api_key": "",
+                    #     }, 
+                    #     "is_user_added": False,
+                    #     "get_key_url": "https://azure.microsoft.com/",
+                    #     "support_discovery": False
+                    # },
+                    {
+                        "display_name": "Anthropic", 
+                        "provider_type": "anthropic", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value,
+                        "base_url": "https://api.anthropic.com/v1",
+                        "is_user_added": False,
+                        "get_key_url": "https://console.anthropic.com/settings/keys",
+                        "support_discovery": True,
+                        "use_proxy": True,
+                    },
+                    {
+                        "display_name": "Google AI Studio", 
+                        "provider_type": "google", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "https://generativelanguage.googleapis.com/v1beta",
+                        "is_user_added": False,
+                        "get_key_url": "https://aistudio.google.com/apikey",
+                        "support_discovery": False,
+                        "use_proxy": True,
+                    },
+                    # {
+                    #     "display_name": "Google Vertex AI", 
+                    #     "provider_type": "google", 
+                    #     "source_type": ModelSourceType.CONFIGURABLE.value, 
+                    #     "extra_data_json":{
+                    #         "project": "",
+                    #         "location": "",
+                    #     }, 
+                    #     "is_user_added": False,
+                    #     "get_key_url": "https://console.cloud.google.com/vertex-ai/",
+                    #     "support_discovery": False
+                    # },
+                    {
+                        "display_name": "Grok (xAI)", 
+                        "provider_type": "grok", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "https://api.x.ai/v1",
+                        "is_user_added": False,
+                        "get_key_url": "https://console.x.ai/",
+                        "support_discovery": True,
+                        "use_proxy": True,
+                    },
+                    {
+                        "display_name": "OpenRouter", 
+                        "provider_type": "openai", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "https://openrouter.ai/api/v1",
+                        "is_user_added": False,
+                        "get_key_url": "https://openrouter.ai/keys",
+                        "support_discovery": True,
+                        "use_proxy": True,
+                    },
+                    {
+                        "display_name": "Groq", 
+                        "provider_type": "groq", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "https://api.groq.com/openai/v1",
+                        "is_user_added": False,
+                        "get_key_url": "https://console.groq.com/keys",
+                        "support_discovery": False,
+                        "use_proxy": True,
+                    },
+                    {
+                        "display_name": "Ollama", 
+                        "provider_type": "openai", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "http://127.0.0.1:11434/v1",
+                        "is_user_added": False,
+                        "get_key_url": "",
+                        "support_discovery": True,
+                        "use_proxy": False,
+                    },
+                    {
+                        "display_name": "LM Studio", 
+                        "provider_type": "openai", 
+                        "source_type": ModelSourceType.CONFIGURABLE.value, 
+                        "base_url": "http://127.0.0.1:1234/v0",
+                        "is_user_added": False,
+                        "get_key_url": "",
+                        "support_discovery": True,
+                        "use_proxy": False,
+                    },
+                ]
+                self.session.add_all([ModelProvider(**provider) for provider in data])
+                self.session.commit()
+            
+            # 模型配置表
+            if not inspector.has_table(ModelConfiguration.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[ModelConfiguration.__table__])
+                # provider_id和model_identifier的组合唯一
+                conn.execute(text(f"""
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_id_model_identifier ON {ModelConfiguration.__tablename__} (provider_id, model_identifier);
+                """))
+                conn.commit()
+            
+            # 能力指派表
+            if not inspector.has_table(CapabilityAssignment.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[CapabilityAssignment.__table__])
+        
         return True
 
     def _init_bundle_extensions(self) -> None:
@@ -748,99 +820,11 @@ class DBManager:
         self.session.add_all(bundle_objs)
         self.session.commit()
     
-    def _init_system_config(self) -> None:
-        """初始化系统配置数据，确保所有默认配置项都存在"""
-        system_configs = [
-            {
-                "key": "full_disk_access_status",
-                "value": "false",
-                "description": "macOS完全磁盘访问权限状态"
-            },
-            {
-                "key": "last_permission_check",
-                "value": "0",
-                "description": "最后一次权限检查时间戳"
-            },
-            {
-                "key": "default_folders_initialized",
-                "value": "false", 
-                "description": "默认文件夹是否已初始化"
-            },
-            {
-                "key": "bundle_extensions_version",
-                "value": "1.0",
-                "description": "Bundle扩展名规则版本"
-            },
-            {
-                "key": "selected_model_for_base",
-                "value": "",
-                "description": "用于基础任务的全局模型配置"
-            },
-            {
-                "key": "selected_model_for_vision",
-                "value": "",
-                "description": "用于视觉任务的全局模型配置"
-            },
-            {
-                "key": "selected_model_for_embedding",
-                "value": "",
-                "description": "用于嵌入任务的全局模型配置"
-            },
-            {
-                "key": "selected_model_for_reranking",
-                "value": "",
-                "description": "用于重排序任务的全局模型配置"
-            }
-        ]
-        
-        for config_data in system_configs:
-            # 检查配置项是否已存在
-            stmt = select(SystemConfig).where(SystemConfig.key == config_data["key"])
-            existing_config = self.session.exec(stmt).first()
-            
-            # 如果不存在，则添加
-            if not existing_config:
-                new_config = SystemConfig(
-                    key=config_data["key"],
-                    value=config_data["value"],
-                    description=config_data["description"]
-                )
-                self.session.add(new_config)
-        
-        self.session.commit()
+    # def _init_system_config(self) -> None:
+    #     """初始化系统配置数据，确保所有默认配置项都存在"""
 
-    def _init_local_model_configs(self) -> None:
-        """初始化本地模型配置数据"""
-        default_configs = [
-            {
-                "provider_type": ModelProviderType.OLLAMA.value,
-                "provider_name": "Ollama",
-                "api_endpoint": "http://localhost:11434/v1/",
-                "enabled": True,
-            },
-            {
-                "provider_type": ModelProviderType.LM_STUDIO.value,
-                "provider_name": "LM Studio",
-                "api_endpoint": "http://localhost:1234/v1/",
-                "enabled": True,
-            },
-            {
-                "provider_type": ModelProviderType.OPENAI_COMPATIBLE.value,
-                "provider_name": "OpenAI 兼容 API",
-                "api_endpoint": "",
-                "enabled": True,
-            },
-        ]
-
-        for config_data in default_configs:
-            # 检查是否已存在
-            stmt = select(LocalModelProviderConfig).where(LocalModelProviderConfig.provider_type == config_data["provider_type"])
-            existing = self.session.exec(stmt).first()
-            if not existing:
-                config_obj = LocalModelProviderConfig(**config_data)
-                self.session.add(config_obj)
-        
-        self.session.commit()
+    # def _init_local_model_configs(self) -> None:
+    #     """初始化本地模型配置数据"""
 
     def _init_file_categories(self) -> None:
         """初始化文件分类数据"""

@@ -1840,18 +1840,17 @@ if __name__ == "__main__":
         
         # # 开发模式启用热重载
         # if args.mode is not None and args.mode == "dev":
-        #     logger.info("开发模式：启用热重载功能")
         #     uvicorn.run(
         #         "main:app", 
         #         host=args.host, 
         #         port=args.port, 
         #         log_level="info",
         #         reload=True,
-        #         reload_dirs=["./"]
+        #         reload_dirs=[Path(__file__).parent.as_posix()]
         #     )
         # else:
-        #     logger.info("生产模式：禁用热重载功能")
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    
     except Exception as e:
         logger.critical(f"API服务启动失败: {str(e)}", exc_info=True)
 
