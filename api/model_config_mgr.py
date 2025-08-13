@@ -169,14 +169,47 @@ class ModelConfigMgr:
             self.session.commit()
         return result
 
+    def get_model_capabilities(self, model_id: int) -> List[ModelCapability]:
+        """获取指定模型的能力列表"""
+        with self.session as session:
+            model_config: ModelConfiguration = session.exec(
+                select(ModelConfiguration).where(ModelConfiguration.id == model_id)
+            ).first()
+            if model_config is None:
+                return []
+            return [ModelCapability(value=cap) for cap in model_config.capabilities_json]
+
+    def update_model_capabilities(self, model_id: int, capabilities: List[ModelCapability]) -> bool:
+        """更新指定模型的能力列表"""
+        with self.session as session:
+            model_config: ModelConfiguration = session.exec(
+                select(ModelConfiguration).where(ModelConfiguration.id == model_id)
+            ).first()
+            if model_config is None:
+                return False
+            
+            capabilities_json = [capability.value for capability in capabilities]
+            model_config.capabilities_json = capabilities_json
+            session.commit()
+            return True
+
     def assign_global_capability_to_model(self, model_config_id: int, capability: ModelCapability) -> bool:
         """指定某个模型为全局的ModelCapability某项能力"""
         with self.session as session:
-            assignment = CapabilityAssignment(
-                capability_value=capability.value,
-                model_configuration_id=model_config_id
-            )
-            session.add(assignment)
+            # 如果不存在就新增，否则更新
+            assignment = session.exec(
+                select(CapabilityAssignment).where(
+                    CapabilityAssignment.capability_value == capability.value,
+                )
+            ).first()
+            if assignment is None:
+                assignment = CapabilityAssignment(
+                    capability_value=capability.value,
+                    model_configuration_id=model_config_id
+                )
+                session.add(assignment)
+            else:
+                assignment.model_configuration_id=model_config_id
             session.commit()
             return True
 
@@ -192,7 +225,7 @@ class ModelConfigMgr:
                 ).first()
         return None
     
-    def _get_spec_model_config(self, capability: ModelCapability) -> Tuple[str, str, str]:
+    def get_spec_model_config(self, capability: ModelCapability) -> Tuple[str, str, str]:
         """取得全局指定能力的模型的model_identifier base_url api_key use_proxy"""
         model_config: ModelConfiguration = self.get_model_for_global_capability(capability)
         if model_config is None:
@@ -213,15 +246,15 @@ class ModelConfigMgr:
 
     def get_vision_model_config(self) -> Tuple[str, str, str, bool]:
         """取得全局视觉模型的model_identifier base_url api_key use_proxy"""
-        return self._get_spec_model_config(ModelCapability.VISION)
+        return self.get_spec_model_config(ModelCapability.VISION)
 
     def get_embedding_model_config(self) -> Tuple[str, str, str, bool]:
         """取得全局嵌入模型的model_identifier base_url api_key use_proxy"""
-        return self._get_spec_model_config(ModelCapability.EMBEDDING)
+        return self.get_spec_model_config(ModelCapability.EMBEDDING)
 
     def get_text_model_config(self) -> Tuple[str, str, str, bool]:
         """取得全局文本模型的model_identifier base_url api_key use_proxy"""
-        return self._get_spec_model_config(ModelCapability.TEXT)
+        return self.get_spec_model_config(ModelCapability.TEXT)
 
 
 if __name__ == "__main__":
@@ -239,8 +272,17 @@ if __name__ == "__main__":
         # # test pull models info from specific provider
         # asyncio.run(mgr.discover_models_from_provider(8))
 
-        # # test set global embedding model
-        # mgr.assign_global_capability_to_model(4, ModelCapability.EMBEDDING)
+        # test set global text model
+        mgr.assign_global_capability_to_model(1, ModelCapability.TEXT)
+
+        # test set global vision model
+        mgr.assign_global_capability_to_model(2, ModelCapability.VISION)
         
-        # # test set global text model
-        # mgr.assign_global_capability_to_model(1, ModelCapability.TEXT)
+        # test set global embedding model
+        mgr.assign_global_capability_to_model(7, ModelCapability.EMBEDDING)
+
+        # # test update_model_capabilities and get_model_capabilities
+        # mgr.update_model_capabilities(1, [ModelCapability.TEXT, ModelCapability.TOOL_USE])
+        # capabilities = mgr.get_model_capabilities(1)
+        # print(capabilities)
+        

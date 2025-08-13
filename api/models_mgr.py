@@ -2,7 +2,6 @@
 from config import singleton
 from typing import List, Dict, Any
 import re
-import json
 import httpx
 import asyncio
 import logging
@@ -269,6 +268,7 @@ Based on all information, provide the best tags for this file.
                 user_prompt=user_prompt[0],
                 # usage_limits=UsageLimits(response_tokens_limit=500),
             ) as response:
+            # print(await response.get_output()) # 此行会破坏流式输出的效果
             async for message in response.stream_text(delta=True):
                 yield message
 

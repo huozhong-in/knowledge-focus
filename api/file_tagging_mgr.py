@@ -8,6 +8,7 @@ from tagging_mgr import TaggingMgr
 from db_mgr import FileScreeningResult #, Tags
 from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
+from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from db_mgr import FileScreenResult, ModelCapability
 from sqlmodel import select, and_
@@ -45,6 +46,7 @@ class FileTaggingMgr:
         self.session = session
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
+        self.model_config_mgr = ModelConfigMgr(session)
         self.tagging_mgr = TaggingMgr(session, self.lancedb_mgr, self.models_mgr)
         
         # 初始化markitdown解析器
@@ -52,14 +54,15 @@ class FileTaggingMgr:
         # ! markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
         self.bridge_event_sender = BridgeEventSender()
 
-    def check_base_model_availability(self) -> bool:
+    def check_file_tagging_model_availability(self) -> bool:
         """
         检查是否有可用的基础模型。
         如果没有可用模型，返回False并记录警告。
         """
-        if not self.models_mgr.is_model_available("base"):
-            logger.warning("Base model for file tagging is not available")
-            return False
+        for capa in SCENE_FILE_TAGGING:
+            if not self.model_config_mgr.get_spec_model_config(capa):
+                logger.warning(f"Model for file tagging is not available: {capa}")
+                return False
         return True
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
@@ -281,7 +284,7 @@ if __name__ == "__main__":
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     models_mgr = ModelsMgr(session)
     file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
-    print(file_tagging_mgr.check_base_model_availability())
+    print(file_tagging_mgr.check_file_tagging_model_availability())
     
     # 测试示例：
     # 1. 测试内容提取

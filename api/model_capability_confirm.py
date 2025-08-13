@@ -40,7 +40,7 @@ class ModelCapabilityConfirm:
     
     def add_capability(self, config_id: int, capa: ModelCapability) -> bool:
         """
-        给指定模型增加能力
+        给指定模型增加一项能力
         """
         with Session() as session:
             config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
@@ -60,7 +60,7 @@ class ModelCapabilityConfirm:
 
     def del_capability(self, config_id: int, capa: ModelCapability) -> bool:
         """
-        删除指定模型的能力
+        删除指定模型的一项能力
         """
         with Session() as session:
             config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()

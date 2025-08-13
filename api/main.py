@@ -420,9 +420,9 @@ def task_processor(db_path: str, stop_event: threading.Event):
                 multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
 
                 if task.task_type == TaskType.TAGGING.value:
-                    # 检查基础模型可用性
-                    if not file_tagging_mgr.check_base_model_availability():
-                        logger.error("基础模型不可用，无法处理文件打标签任务")
+                    # 检查模型可用性
+                    if not file_tagging_mgr.check_file_tagging_model_availability():
+                        logger.error("相关模型不可用，无法处理文件打标签任务")
                         return
                     # 高优先级任务: 通常是单个文件处理
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:

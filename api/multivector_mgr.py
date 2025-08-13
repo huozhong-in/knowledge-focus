@@ -12,7 +12,7 @@
 5. 存储到SQLite(元数据)和LanceDB(向量)
 """
 
-from config import singleton, generate_vector_id
+from config import singleton, generate_vector_id, EMBEDDING_DIMENSIONS
 import os
 import json
 import hashlib
@@ -77,44 +77,19 @@ class MultiVectorMgr:
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
         self.model_config_mgr = ModelConfigMgr(session)
-        
+        # 获取embedding维度配置
+        self.embedding_dimensions = EMBEDDING_DIMENSIONS
+        # 在用户指定vision模型之前，需要初始化才能使用
+        self.converter = None
         # 获取数据库目录作为基础路径
         self._init_base_paths()
-        
         # 初始化桥接事件发送器
         self.bridge_events = BridgeEventSender(source="chunking-manager")
-        
-        # 获取当前视觉模型配置
-        self.vision_model_id, self.vision_base_url, self.vision_api_key = self.model_config_mgr.get_vision_model_config()
-
-        # 获取embedding维度配置
-        from config import EMBEDDING_DIMENSIONS
-        self.embedding_dimensions = EMBEDDING_DIMENSIONS
-
-        # 初始化docling转换器
-        self._init_docling_converter()
         
         # 初始化chunker
         self._init_chunker()
         
         logger.info("MultivectorMgr initialized successfully")
-    
-    def check_vision_embedding_model_availability(self) -> bool:
-        """
-        检查视觉模型和向量模型的可用性
-        
-        Returns:
-            bool: 是否可用
-        """
-        try:
-            vision_model_available = self.models_mgr.is_model_available("vision")
-            embedding_model_available = self.models_mgr.is_model_available("embedding")
-
-            return vision_model_available and embedding_model_available
-
-        except Exception as e:
-            logger.error(f"Error checking 'vision and embedding' model availability: {e}")
-            return False
     
     def _init_base_paths(self):
         """初始化基础路径，使用数据库目录的父目录"""
@@ -149,7 +124,11 @@ class MultiVectorMgr:
     
     def _init_docling_converter(self):
         """初始化docling文档转换器，参考test_docling_01.py的配置"""
+
         try:
+            # 获取当前视觉模型配置
+            vision_model_id, vision_base_url, vision_api_key = self.model_config_mgr.get_vision_model_config()
+            
             # 配置PDF处理选项
             pipeline_options = PdfPipelineOptions()
             pipeline_options.generate_picture_images = True
@@ -160,13 +139,13 @@ class MultiVectorMgr:
             
             # 配置图片描述API选项 - 使用本地vision模型
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
-                url=f"{self.vision_base_url}/chat/completions",
+                url=f"{vision_base_url}/chat/completions",
                 params=dict(
-                    model=self.vision_model_id,
+                    model=vision_model_id,
                     seed=42,
                     temperature=0.2,
                     max_completion_tokens=250,
-                    api_key=self.vision_api_key,
+                    api_key=vision_api_key,
                 ),
                 prompt="""
 You are an assistant tasked with summarizing images for retrieval. 
@@ -407,6 +386,15 @@ Give a concise summary of the image that is well optimized for retrieval.
     
     def _parse_with_docling(self, file_path: str) -> ConversionResult:
         """使用docling解析文档"""
+        
+        # 初始化docling转换器
+        try:
+            self._init_docling_converter()
+        except Exception as e:
+            logger.error(f"Failed to initialize docling converter: {e}")
+            self.converter = None
+            raise
+
         try:
             logger.info(f"[MULTIVECTOR] Parsing document with docling: {file_path}")
             result = self.converter.convert(source=file_path)

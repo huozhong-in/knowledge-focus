@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, Body, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
-from typing import Dict, Any
+from typing import Dict, List, Any
 import json
 import uuid
 from chatsession_mgr import ChatSessionMgr
+from db_mgr import ModelCapability
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
@@ -24,8 +25,8 @@ def get_router(external_get_session: callable) -> APIRouter:
     def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
         return ChatSessionMgr(session)
 
-    @router.get("/local-models/configs", tags=["local-models"])
-    def get_all_model_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    @router.get("/models/providers", tags=["models"])
+    def get_all_provider_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取所有本地模型服务商的配置"""
         try:
             configs = config_mgr.get_all_provider_configs()
@@ -34,64 +35,75 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    @router.put("/local-models/configs/{provider_type}", tags=["local-models"])
-    def update_model_config(provider_type: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    @router.put("/models/provider/{id}", tags=["models"])
+    def update_provider_config(id: int, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """更新指定服务商的配置"""
         try:
-            api_endpoint = data.get("api_endpoint", "")
+            id = data.get("id")
+            display_name = data.get("display_name", "")
+            base_url = data.get("base_url", "")
             api_key = data.get("api_key", "")
-            enabled = data.get("enabled", True)
-            
-            config = config_mgr.update_provider_config(provider_type, api_endpoint, api_key, enabled)
+            extra_data_json = data.get("extra_data_json", {})
+            is_active = data.get("is_active", True)
+
+            config = config_mgr.update_provider_config(id=id, display_name=display_name, base_url=base_url, api_key=api_key, extra_data_json=extra_data_json, is_active=is_active)
             if config:
                 return {"success": True, "data": config.model_dump()}
             return {"success": False, "message": "Provider not found"}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    @router.post("/local-models/configs/{provider_type}/discover", tags=["local-models"])
-    async def discover_provider_models(provider_type: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    @router.post("/models/provider/{id}/discover", tags=["models"])
+    async def discover_models_from_provider(id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """检测并更新服务商的可用模型"""
         try:
-            config = await config_mgr.discover_models_from_provider(provider_type)
+            config = await config_mgr.discover_models_from_provider(id=id)
             if config:
-                return {"success": True, "data": config.model_dump()}
+                return {"success": True, "data": [model.model_dump() for model in config]}
             return {"success": False, "message": "Failed to discover models. Check API endpoint and key."}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    @router.get("/local-models/roles", tags=["local-models"])
-    def get_role_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-        """获取所有角色的模型分配"""
-        try:
-            roles = config_mgr.get_role_configs()
-            return {"success": True, "data": roles}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+    @router.get("/models/capabilities", tags=["models"])
+    def get_sorted_capability_names(mc_mgr: ModelCapabilityConfirm = Depends(get_model_capability_confirm)):
+        """获取所有模型能力名称"""
+        capabilities = mc_mgr.get_sorted_capability_names()
+        return {"success": True, "data": capabilities}
+    
+    @router.get("/models/capability/{model_id}", tags=["models"])
+    def get_model_capabilities(model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """获取指定模型的能力列表"""
+        capabilities = config_mgr.get_model_capabilities(model_id)
+        return {"success": True, "data": [cap.value for cap in capabilities]}
 
-    @router.put("/local-models/roles/{role_type}", tags=["local-models"])
-    def update_role_config(
-        role_type: str, 
-        data: Dict[str, Any] = Body(...), 
-        config_mgr: ModelConfigMgr = Depends(get_model_config_manager)
-    ):
-        """更新指定角色的模型配置"""
-        try:
-            provider_type = data.get("provider_type")
-            model_id = data.get("model_id")
-            model_name = data.get("model_name") # Frontend sends this now
-            
-            if not provider_type or not model_id or not model_name:
-                return {"success": False, "message": "Missing required fields"}
-            
-            config = config_mgr.update_role_config(role_type, provider_type, model_id, model_name)
-            if config:
-                return {"success": True, "data": config.model_dump()}
-            return {"success": False, "message": "Failed to update role config"}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+    @router.put("/models/capability/{model_id}", tags=["models"])
+    def update_model_capabilities(model_id: int, capabilities: List[str], config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """更新指定模型的能力列表"""
+        list_capa = [ModelCapability(value=capa) for capa in capabilities]
+        success = config_mgr.update_model_capabilities(model_id=model_id, capabilities=list_capa)
+        if success:
+            return {"success": True}
+        return {"success": False, "message": "Failed to update model capabilities"}
 
-    @router.post("/chat/stream", tags=["local-models"])
+    @router.get("/models/capability/{model_capability}", tags=["models"])
+    def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """获取全局指定能力的模型分配"""
+        config = config_mgr.get_model_for_global_capability(model_capability)
+        if config is not None:
+            return {"success": True, "data": config}
+        else:
+            return {"success": False, "message": "Model not found"}
+    
+    @router.post("/models/capability/{model_capability}", tags=["models"])
+    def assign_global_capability_to_model(model_capability: str, model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """指定某个模型为全局的ModelCapability某项能力"""
+        success = config_mgr.assign_global_capability_to_model(model_config_id=model_id, model_capability=model_capability)
+        if success:
+            return {"success": True}
+        else:
+            return {"success": False, "message": "Failed to set model for global capability"}
+
+    @router.post("/chat/stream", tags=["models"])
     async def chat_stream(
         request_data: Dict[str, Any] = Body(...),
         models_mgr: ModelsMgr = Depends(get_models_manager)
@@ -123,7 +135,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             print(f"Error in chat_stream: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    @router.post("/chat/ui-stream", tags=["local-models"])
+    @router.post("/chat/ui-stream", tags=["models"])
     async def chat_ui_stream(
         request_data: Dict[str, Any] = Body(...),
         models_mgr: ModelsMgr = Depends(get_models_manager),
@@ -205,35 +217,8 @@ def get_router(external_get_session: callable) -> APIRouter:
                     # 发送文本开始事件
                     yield f"data: {json.dumps({'type': 'text-start', 'id': response_id})}\n\n"
 
-                    # 获取系统配置的基础模型
-                    try:
-                        key = "selected_model_for_base"
-                        config_entry = models_mgr.session.exec(select(SystemConfig).where(SystemConfig.key == key)).first()
-
-                        if not config_entry or not config_entry.value or config_entry.value == 'null':
-                            raise ValueError("No base model configuration found")
-
-                        role_config = json.loads(config_entry.value)
-                        provider_type = role_config.get("provider_type")
-                        model_name = role_config.get("model_id")  # 注意：数据库中存储的是model_id
-
-                        if not provider_type or not model_name:
-                            raise ValueError("Incomplete base model configuration")
-
-                    except Exception as config_error:
-                        # 如果配置获取失败，返回错误
-                        error_chunk = {
-                            "type": "error",
-                            "errorText": f"Model configuration error: {str(config_error)}"
-                        }
-                        yield f"data: {json.dumps(error_chunk)}\n\n"
-                        yield f"data: {json.dumps({'type': 'text-end', 'id': response_id})}\n\n"
-                        yield f"data: {json.dumps({'type': 'finish'})}\n\n"
-                        yield "data: [DONE]\n\n"
-                        return
-
                     # 调用现有的stream_chat方法
-                    print(f"[DEBUG] Starting stream_chat with provider: {provider_type}, model: {model_name}")
+                    print(f"[DEBUG] Starting stream_chat")
                     chunk_count = 0
                     async for content_chunk in models_mgr.stream_chat(
                         messages=converted_messages
@@ -276,7 +261,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                                 message_id=response_id,
                                 role="assistant",
                                 content=accumulated_text,
-                                parts=assistant_parts
+                                parts=assistant_parts,
                             )
                             print(f"[DEBUG] Persisted assistant message for session {session_id}, message_id={response_id}")
                         except Exception as persist_err:
@@ -295,6 +280,9 @@ def get_router(external_get_session: callable) -> APIRouter:
                         "errorText": f"Stream generation error: {str(e)}"
                     }
                     yield f"data: {json.dumps(error_chunk)}\n\n"
+                    # yield f"data: {json.dumps({'type': 'text-end', 'id': response_id})}\n\n"
+                    # yield f"data: {json.dumps({'type': 'finish'})}\n\n"
+                    # yield "data: [DONE]\n\n"
 
             return StreamingResponse(
                 generate_ui_stream(),
