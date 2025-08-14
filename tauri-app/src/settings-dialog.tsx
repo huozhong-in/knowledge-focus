@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react"
 import { useSettingsStore } from "./App"
-import { openPath, openUrl } from "@tauri-apps/plugin-opener"
+import { 
+  // openPath, 
+  openUrl,
+} from "@tauri-apps/plugin-opener"
 import {
   Settings,
   Cpu,
@@ -8,7 +11,6 @@ import {
   Info,
   Palette,
   Shield,
-  Network,
 } from "lucide-react"
 import {
   Dialog,

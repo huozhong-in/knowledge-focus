@@ -45,7 +45,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { UserProfileMenu } from "./UserProfileMenu"
+import { UserProfileMenu } from "./user-profile-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { NavTagCloud } from "./nav-tagcloud"
 import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
