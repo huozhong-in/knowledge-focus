@@ -17,7 +17,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 from pydantic import BaseModel, ValidationError
-from model_config_mgr import ModelConfigMgr
+from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,11 @@ class ModelsMgr:
         so model validation failures will trigger IPC events to notify the frontend.
         """
         try:
-            model_identifier, base_url, api_key, use_proxy = self.model_config_mgr.get_embedding_model_config()
+            model_interface = self.model_config_mgr.get_embedding_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get embedding model config: {e}")
             return []
@@ -79,7 +83,11 @@ class ModelsMgr:
         so model validation failures will trigger IPC events to notify the frontend.
         """
         try:
-            model_identifier, base_url, api_key, use_proxy = self.model_config_mgr.get_text_model_config()
+            model_interface = self.model_config_mgr.get_text_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get text model config: {e}")
             return []
@@ -139,7 +147,11 @@ class ModelsMgr:
             Generated session title (max 20 characters)
         """
         try:
-            model_identifier, base_url, api_key, use_proxy = self.model_config_mgr.get_text_model_config()
+            model_interface = self.model_config_mgr.get_text_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get model config: {e}")
             return "新会话"
@@ -237,7 +249,11 @@ Based on all information, provide the best tags for this file.
         errors will be returned as HTTP responses rather than IPC events.
         """
         try:
-            model_identifier, base_url, api_key, use_proxy = self.model_config_mgr.get_text_model_config()
+            model_interface = self.model_config_mgr.get_text_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get text model config: {e}")
             return
@@ -288,7 +304,11 @@ Based on all information, provide the best tags for this file.
             The completion response as a string
         """
         try:
-            model_identifier, base_url, api_key, use_proxy = self.model_config_mgr.get_text_model_config()
+            model_interface = self.model_config_mgr.get_text_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get model config: {e}")
             return "新会话"

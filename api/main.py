@@ -423,7 +423,8 @@ def task_processor(db_path: str, stop_event: threading.Event):
                     # 检查模型可用性
                     if not file_tagging_mgr.check_file_tagging_model_availability():
                         logger.error("相关模型不可用，无法处理文件打标签任务")
-                        return
+                        time.sleep(5)
+                        continue
                     # 高优先级任务: 通常是单个文件处理
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
                         logger.info(f"开始处理高优先级文件打标签任务 (Task ID: {task.id})")
@@ -450,9 +451,10 @@ def task_processor(db_path: str, stop_event: threading.Event):
                         )
                 
                 elif task.task_type == TaskType.MULTIVECTOR.value:
-                    if not multivector_mgr.check_vision_embedding_model_availability():
-                        logger.error("视觉模型或向量模型不可用，无法处理多模态向量化任务")
-                        return
+                    if not multivector_mgr.check_multivector_model_availability():
+                        logger.error("相关模型不可用，无法处理多模态向量化任务")
+                        time.sleep(5)
+                        continue
                     # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
                     if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
                         file_path = task.extra_data['file_path']

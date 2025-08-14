@@ -11,7 +11,13 @@ from db_mgr import (
     CapabilityAssignment,
     SystemConfig,
 )
-import asyncio
+from pydantic import BaseModel
+
+class ModelUseInterface(BaseModel):
+    model_identifier: str
+    base_url: str
+    api_key: str
+    use_proxy: bool
 
 class ModelConfigMgr:
     def __init__(self, session: Session):
@@ -225,7 +231,7 @@ class ModelConfigMgr:
                 ).first()
         return None
     
-    def get_spec_model_config(self, capability: ModelCapability) -> Tuple[str, str, str]:
+    def get_spec_model_config(self, capability: ModelCapability) -> ModelUseInterface:
         """取得全局指定能力的模型的model_identifier base_url api_key use_proxy"""
         model_config: ModelConfiguration = self.get_model_for_global_capability(capability)
         if model_config is None:
@@ -242,17 +248,22 @@ class ModelConfigMgr:
         api_key = model_provider.api_key
         use_proxy = model_provider.use_proxy
 
-        return model_identifier, base_url, api_key, use_proxy
+        return ModelUseInterface(
+            model_identifier=model_identifier,
+            base_url=base_url,
+            api_key=api_key,
+            use_proxy=use_proxy
+        )
 
-    def get_vision_model_config(self) -> Tuple[str, str, str, bool]:
+    def get_vision_model_config(self) -> ModelUseInterface:
         """取得全局视觉模型的model_identifier base_url api_key use_proxy"""
         return self.get_spec_model_config(ModelCapability.VISION)
 
-    def get_embedding_model_config(self) -> Tuple[str, str, str, bool]:
+    def get_embedding_model_config(self) -> ModelUseInterface:
         """取得全局嵌入模型的model_identifier base_url api_key use_proxy"""
         return self.get_spec_model_config(ModelCapability.EMBEDDING)
 
-    def get_text_model_config(self) -> Tuple[str, str, str, bool]:
+    def get_text_model_config(self) -> ModelUseInterface:
         """取得全局文本模型的model_identifier base_url api_key use_proxy"""
         return self.get_spec_model_config(ModelCapability.TEXT)
 

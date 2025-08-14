@@ -26,9 +26,7 @@ from typing import (
     Optional, 
     Tuple,
 )
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+from model_config_mgr import ModelUseInterface
 from sqlmodel import Session, select
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -57,6 +55,7 @@ from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 不同业务场景所需模型能力的组合
 SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING, ModelCapability.VISION]
 
@@ -90,6 +89,17 @@ class MultiVectorMgr:
         self._init_chunker()
         
         logger.info("MultivectorMgr initialized successfully")
+    
+    def check_multivector_model_availability(self) -> bool:
+        """
+        检查是否有可用的模型。
+        如果没有可用模型，返回False并记录警告。
+        """
+        for capa in SCENE_MULTIVECTOR:
+            if not self.model_config_mgr.get_spec_model_config(capa):
+                logger.warning(f"Model for multivector is not available: {capa}")
+                return False
+        return True
     
     def _init_base_paths(self):
         """初始化基础路径，使用数据库目录的父目录"""
@@ -127,8 +137,12 @@ class MultiVectorMgr:
 
         try:
             # 获取当前视觉模型配置
-            vision_model_id, vision_base_url, vision_api_key = self.model_config_mgr.get_vision_model_config()
-            
+            model_interface = self.model_config_mgr.get_vision_model_config()
+            vision_model_id = model_interface.model_identifier
+            vision_base_url = model_interface.base_url
+            vision_api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
+
             # 配置PDF处理选项
             pipeline_options = PdfPipelineOptions()
             pipeline_options.generate_picture_images = True

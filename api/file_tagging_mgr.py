@@ -56,7 +56,7 @@ class FileTaggingMgr:
 
     def check_file_tagging_model_availability(self) -> bool:
         """
-        检查是否有可用的基础模型。
+        检查是否有可用的模型。
         如果没有可用模型，返回False并记录警告。
         """
         for capa in SCENE_FILE_TAGGING:
