@@ -250,8 +250,8 @@ class ModelConfigMgr:
 
         return ModelUseInterface(
             model_identifier=model_identifier,
-            base_url=base_url,
-            api_key=api_key,
+            base_url=base_url if base_url is not None else "",
+            api_key=api_key if api_key is not None else "",
             use_proxy=use_proxy
         )
 
