@@ -82,8 +82,8 @@ class FileTaggingMgr:
                 self._update_tagged_time(screening_result)
                 return True # Mark as processed even if no content
             
-            # Use a summary for efficiency
-            summary = content[:4000] # Use the first 4000 characters as a summary
+            # ! Use a summary for efficiency
+            summary = content[:3000] # Use the first 3000 characters as a summary
 
         except Exception as e:
             logger.error(f"Error extracting content from {screening_result.file_path}: {e}")

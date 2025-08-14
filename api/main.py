@@ -243,7 +243,7 @@ def get_session():
 # 本地大模型API端点添加
 from models_api import get_router as get_models_router
 models_router = get_models_router(external_get_session=get_session)
-app.include_router(models_router, prefix="", tags=["local-models"])
+app.include_router(models_router, prefix="", tags=["models"])
 
 # 添加新的标签API路由
 from tagging_api import get_router as get_tagging_router

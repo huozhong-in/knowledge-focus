@@ -237,6 +237,17 @@
           "path": "$APPLOG/**/*"
         }
       ]
+    },
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://*.huozhong.in"
+        },
+        {
+          "url": "https://github.com/huozhong-in/*"
+        }
+      ]
     }
   ]
 }

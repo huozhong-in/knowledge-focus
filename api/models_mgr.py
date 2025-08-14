@@ -17,7 +17,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 from pydantic import BaseModel, ValidationError
-from model_config_mgr import ModelConfigMgr, ModelUseInterface
+from model_config_mgr import ModelConfigMgr
 from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)

@@ -57,7 +57,7 @@ const roleLabels: Record<ModelRole, string> = {
 
 // --- Main Component ---
 
-function SettingsLocalModels() {
+function SettingsAIModels() {
   const [providers, setProviders] = useState<ProviderConfig[]>([])
   const [roleAssignments, setRoleAssignments] = useState<
     Record<ModelRole, RoleAssignment>
@@ -459,4 +459,4 @@ function ProviderConfigCard({
   )
 }
 
-export default SettingsLocalModels
+export default SettingsAIModels

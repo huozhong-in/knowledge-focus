@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react"
-import { openPath } from "@tauri-apps/plugin-opener"
+import { useSettingsStore } from "./App"
+import { openPath, openUrl } from "@tauri-apps/plugin-opener"
 import {
   Settings,
   Cpu,
@@ -9,7 +10,6 @@ import {
   Shield,
   Network,
 } from "lucide-react"
-
 import {
   Dialog,
   DialogContent,
@@ -31,20 +31,17 @@ import {
   // SidebarHeader,
 } from "@/components/ui/sidebar"
 import { ScrollArea } from "./components/ui/scroll-area"
-import SettingsAuthorization from "./settings-authorization"
-import SettingsLocalModels from "./settings-local-models"
 import SettingsGeneral from "./settings-general"
-import SettingsBusinessApis from "./settings-business-apis"
-import SettingsAbout from "./settings-about"
+import SettingsAuthorization from "./settings-authorization"
+import SettingsAIModels from "./settings-ai-models"
 import SettingsTheme from "./settings-theme-content"
-import { useSettingsStore } from "./App"
+import SettingsAbout from "./settings-about"
 
 type SettingsPage =
   | "general"
   | "theme"
   | "authorization"
-  | "local-models"
-  | "business-apis"
+  | "aimodels"
   | "about"
 
 interface SettingsDialogProps {
@@ -71,7 +68,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
 
   const handleExternalLink = async (url: string) => {
     try {
-      await openPath(url)
+      await openUrl(url)
     } catch (error) {
       console.error("Failed to open external link:", error)
       // 可以添加toast通知用户
@@ -94,28 +91,22 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
       group: "应用设置",
     },
     {
-      id: "theme" as const,
-      label: "主题设置",
-      icon: Palette,
-      group: "应用设置",
-    },
-    {
       id: "authorization" as const,
       label: "授权管理",
       icon: Shield,
       group: "应用设置",
     },
     {
-      id: "local-models" as const,
-      label: "本地模型",
+      id: "aimodels" as const,
+      label: "AI模型和角色配置",
       icon: Cpu,
-      group: "AI 模型",
+      group: "应用设置",
     },
     {
-      id: "business-apis" as const,
-      label: "在线模型",
-      icon: Network,
-      group: "AI 模型",
+      id: "theme" as const,
+      label: "主题设置",
+      icon: Palette,
+      group: "应用设置",
     },
     {
       id: "about" as const,
@@ -184,31 +175,17 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
             </div>
           </div>
         )
-      case "local-models":
+      case "aimodels":
         return (
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">本地模型</h3>
+                <h3 className="text-lg font-medium">AI模型和角色配置</h3>
                 <p className="text-sm text-muted-foreground">
-                  配置本地 AI 模型设置
+                  配置AI 模型
                 </p>
               </div>
-              <SettingsLocalModels />
-            </div>
-          </div>
-        )
-      case "business-apis":
-        return (
-          <div className="p-6">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium">在线模型</h3>
-                <p className="text-sm text-muted-foreground">
-                  配置在线 AI 模型 API
-                </p>
-              </div>
-              <SettingsBusinessApis />
+              <SettingsAIModels />
             </div>
           </div>
         )

@@ -70,6 +70,12 @@ def get_router(external_get_session: callable) -> APIRouter:
         capabilities = mc_mgr.get_sorted_capability_names()
         return {"success": True, "data": capabilities}
     
+    @router.get("/models/capability/{model_id}/{capability}", tags=["models"])
+    def test_model_capability(model_id: int, capability: str, mc_mgr: ModelCapabilityConfirm = Depends(get_model_capability_confirm)):
+        """测试指定模型是否具有某项能力"""
+        has_capability = mc_mgr.confirm(model_id, capability)
+        return {"success": True, "data": has_capability}
+
     @router.get("/models/capability/{model_id}", tags=["models"])
     def get_model_capabilities(model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取指定模型的能力列表"""
