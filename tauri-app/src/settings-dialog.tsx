@@ -100,7 +100,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
     },
     {
       id: "aimodels" as const,
-      label: "AI模型和角色配置",
+      label: "AI模型和场景配置",
       icon: Cpu,
       group: "应用设置",
     },

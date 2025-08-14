@@ -35,18 +35,64 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    @router.put("/models/provider/{id}", tags=["models"])
-    def update_provider_config(id: int, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-        """更新指定服务商的配置"""
+    @router.post("/models/providers", tags=["models"])
+    def create_provider(data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """创建新的模型提供商"""
         try:
-            id = data.get("id")
+            provider_type = data.get("provider_type", "")
             display_name = data.get("display_name", "")
             base_url = data.get("base_url", "")
             api_key = data.get("api_key", "")
             extra_data_json = data.get("extra_data_json", {})
             is_active = data.get("is_active", True)
+            use_proxy = data.get("use_proxy", False)
+            
+            provider = config_mgr.create_provider(
+                provider_type=provider_type,
+                display_name=display_name,
+                base_url=base_url,
+                api_key=api_key,
+                extra_data_json=extra_data_json,
+                is_active=is_active,
+                use_proxy=use_proxy
+            )
+            return {"success": True, "data": provider.model_dump()}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
 
-            config = config_mgr.update_provider_config(id=id, display_name=display_name, base_url=base_url, api_key=api_key, extra_data_json=extra_data_json, is_active=is_active)
+    @router.delete("/models/provider/{id}", tags=["models"])
+    def delete_provider(id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """删除模型提供商（仅限用户添加的提供商）"""
+        try:
+            success = config_mgr.delete_provider(provider_id=id)
+            if success:
+                return {"success": True, "message": "Provider deleted successfully"}
+            else:
+                return {"success": False, "message": "Cannot delete system provider or provider not found"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @router.put("/models/provider/{id}", tags=["models"])
+    async def update_provider_config(id: int, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """更新指定服务商的配置"""
+        try:
+            provider_id = data.get("id", id)  # 使用路径参数作为默认值
+            display_name = data.get("display_name", "")
+            base_url = data.get("base_url", "")
+            api_key = data.get("api_key", "")
+            extra_data_json = data.get("extra_data_json", {})
+            is_active = data.get("is_active", True)
+            use_proxy = data.get("use_proxy", False)
+
+            config = config_mgr.update_provider_config(
+                id=provider_id, 
+                display_name=display_name, 
+                base_url=base_url, 
+                api_key=api_key, 
+                extra_data_json=extra_data_json, 
+                is_active=is_active,
+                use_proxy=use_proxy
+            )
             if config:
                 return {"success": True, "data": config.model_dump()}
             return {"success": False, "message": "Provider not found"}
@@ -58,9 +104,17 @@ def get_router(external_get_session: callable) -> APIRouter:
         """检测并更新服务商的可用模型"""
         try:
             config = await config_mgr.discover_models_from_provider(id=id)
-            if config:
-                return {"success": True, "data": [model.model_dump() for model in config]}
-            return {"success": False, "message": "Failed to discover models. Check API endpoint and key."}
+            # config 是 List[ModelConfiguration]，空列表也是有效结果
+            return {"success": True, "data": [model.model_dump() for model in config]}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @router.get("/models/provider/{id}", tags=["models"])
+    def get_provider_models(id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """获取指定服务商的所有模型配置"""
+        try:
+            models = config_mgr.get_models_by_provider(provider_id=id)
+            return {"success": True, "data": [model.model_dump() for model in models]}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -101,13 +155,21 @@ def get_router(external_get_session: callable) -> APIRouter:
             return {"success": False, "message": "Model not found"}
     
     @router.post("/models/capability/{model_capability}", tags=["models"])
-    def assign_global_capability_to_model(model_capability: str, model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    def assign_global_capability_to_model(model_capability: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """指定某个模型为全局的ModelCapability某项能力"""
-        success = config_mgr.assign_global_capability_to_model(model_config_id=model_id, model_capability=model_capability)
-        if success:
-            return {"success": True}
-        else:
-            return {"success": False, "message": "Failed to set model for global capability"}
+        try:
+            model_id = data.get("model_id")
+            if not model_id:
+                return {"success": False, "message": "Missing model_id"}
+            
+            capability = ModelCapability(value=model_capability)
+            success = config_mgr.assign_global_capability_to_model(model_config_id=model_id, capability=capability)
+            if success:
+                return {"success": True}
+            else:
+                return {"success": False, "message": "Failed to set model for global capability"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
 
     @router.post("/chat/stream", tags=["models"])
     async def chat_stream(

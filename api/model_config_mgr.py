@@ -27,15 +27,63 @@ class ModelConfigMgr:
         """Retrieves all model provider configurations from the database."""
         return self.session.exec(select(ModelProvider)).all()
 
-    def update_provider_config(self, id: int, display_name: str, base_url: str, api_key: str, extra_data_json: Dict, is_active: bool) -> ModelProvider | None:
+    def get_models_by_provider(self, provider_id: int) -> List[ModelConfiguration]:
+        """Retrieves all model configurations for a specific provider."""
+        return self.session.exec(select(ModelConfiguration).where(ModelConfiguration.provider_id == provider_id)).all()
+
+    def create_provider(self, provider_type: str, display_name: str, base_url: str = "", api_key: str = "", extra_data_json: Dict = None, is_active: bool = True, use_proxy: bool = False) -> ModelProvider:
+        """Creates a new model provider configuration."""
+        if extra_data_json is None:
+            extra_data_json = {}
+        
+        provider = ModelProvider(
+            provider_type=provider_type,
+            display_name=display_name,
+            base_url=base_url,
+            api_key=api_key,
+            extra_data=extra_data_json,
+            is_active=is_active,
+            use_proxy=use_proxy,
+            is_user_added=True  # 标记为用户添加的提供商
+        )
+        self.session.add(provider)
+        self.session.commit()
+        self.session.refresh(provider)
+        return provider
+
+    def delete_provider(self, provider_id: int) -> bool:
+        """Deletes a provider and all its associated models."""
+        try:
+            # 先删除关联的模型配置
+            models = self.session.exec(select(ModelConfiguration).where(ModelConfiguration.provider_id == provider_id)).all()
+            for model in models:
+                self.session.delete(model)
+            
+            # 删除提供商
+            provider = self.session.exec(select(ModelProvider).where(ModelProvider.id == provider_id)).first()
+            if provider and provider.is_user_added:  # 只允许删除用户添加的提供商
+                self.session.delete(provider)
+                self.session.commit()
+                return True
+            return False
+        except Exception as e:
+            self.session.rollback()
+            print(f"Error deleting provider {provider_id}: {e}")
+            return False
+
+    def update_provider_config(self, id: int, display_name: str, base_url: str, api_key: str, extra_data_json: Dict, is_active: bool, use_proxy: bool = False) -> ModelProvider | None:
         """Updates a specific provider's configuration."""
         provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == id)).first()
         if provider is not None:
-            provider.display_name = display_name if provider.is_user_added else None
-            provider.base_url = base_url if provider.base_url != base_url else None
-            provider.api_key = api_key if provider.api_key != api_key else None
-            provider.extra_data = extra_data_json if provider.extra_data != extra_data_json else None
-            provider.is_active = is_active if provider.is_active != is_active else None
+            # 只有用户添加的提供商才能修改display_name
+            if provider.is_user_added:
+                provider.display_name = display_name
+            # 所有提供商都可以修改这些字段
+            provider.base_url = base_url
+            provider.api_key = api_key
+            provider.extra_data_json = extra_data_json
+            provider.is_active = is_active
+            provider.use_proxy = use_proxy
             self.session.add(provider)
             self.session.commit()
             self.session.refresh(provider)
@@ -72,6 +120,14 @@ class ModelConfigMgr:
             headers["Authorization"] = f"Bearer {provider.api_key}" if provider.api_key else ""
 
         discover_url = f"{provider.base_url.rstrip('/')}/models"
+        # 如果provider的extra_data_json中包含discovery_api字段，则使用该字段作为发现模型的API地址
+        try:
+            extra_data = json.loads(provider.extra_data_json) if isinstance(provider.extra_data_json, str) else provider.extra_data_json
+            if extra_data and "discovery_api" in extra_data:
+                discover_url = extra_data["discovery_api"]
+        except Exception as e:
+            print(f"Error reading discovery_api from extra_data_json: {e}")
+
         try:
             proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
             async with httpx.AsyncClient(proxy=proxy.value if proxy is not None and provider.use_proxy else None) as client:
@@ -107,11 +163,25 @@ class ModelConfigMgr:
                 # https://github.com/ollama/ollama/blob/main/docs/api.md#list-local-models
                 models_list = models_data.get("models", [])
                 for model in models_list:
+                    # https://github.com/ollama/ollama/blob/main/docs/api.md#show-model-information
+                    # POST /api/show to get context_length:`curl http://localhost:11434/api/show -d '{"model": "llava"}'`
+                    max_content_length = 0
+                    extra_data_json = {}
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            response = await client.post("http://127.0.0.1:11434/api/show", json={"model": model.get("model", "")})
+                            response.raise_for_status()
+                            model_data = response.json()
+                            max_content_length = model_data.get("model_info", {}).get("llama.context_length", 0)
+                            extra_data_json = {"capabilities": model_data.get("capabilities", [])}
+                    except Exception as e:
+                        print(f"Error fetching model info for Ollama: {e}")
                     result.append(ModelConfiguration(
                         provider_id=id,
                         model_identifier=model.get("model", ""),
                         display_name=model.get("name", ""),
-                        # TODO POST /api/show to get context_length
+                        max_context_length=max_content_length,
+                        extra_data_json=extra_data_json
                     )) if not _already_exists(id, model.get("model", "")) else None
             elif provider.display_name == "LM Studio":
                 # https://lmstudio.ai/docs/app/api/endpoints/rest
@@ -173,6 +243,9 @@ class ModelConfigMgr:
         if result != []:
             self.session.add_all(result)
             self.session.commit()
+            # 刷新对象以获取数据库分配的 ID
+            for model in result:
+                self.session.refresh(model)
         return result
 
     def get_model_capabilities(self, model_id: int) -> List[ModelCapability]:
@@ -280,17 +353,18 @@ if __name__ == "__main__":
         list_model_provider: List[ModelProvider] = mgr.get_all_provider_configs()
         print({model_provider.id: model_provider.display_name for model_provider in list_model_provider})
 
-        # # test pull models info from specific provider
-        # asyncio.run(mgr.discover_models_from_provider(8))
+        # test pull models info from specific provider
+        import asyncio
+        asyncio.run(mgr.discover_models_from_provider(8))
 
-        # test set global text model
-        mgr.assign_global_capability_to_model(1, ModelCapability.TEXT)
+        # # test set global text model
+        # mgr.assign_global_capability_to_model(1, ModelCapability.TEXT)
 
-        # test set global vision model
-        mgr.assign_global_capability_to_model(2, ModelCapability.VISION)
+        # # test set global vision model
+        # mgr.assign_global_capability_to_model(2, ModelCapability.VISION)
         
-        # test set global embedding model
-        mgr.assign_global_capability_to_model(7, ModelCapability.EMBEDDING)
+        # # test set global embedding model
+        # mgr.assign_global_capability_to_model(7, ModelCapability.EMBEDDING)
 
         # # test update_model_capabilities and get_model_capabilities
         # mgr.update_model_capabilities(1, [ModelCapability.TEXT, ModelCapability.TOOL_USE])

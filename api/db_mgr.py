@@ -720,6 +720,7 @@ class DBManager:
                         "is_user_added": False,
                         "get_key_url": "",
                         "support_discovery": True,
+                        "extra_data_json": {"discovery_api": "http://127.0.0.1:11434/api/tags"},
                         "use_proxy": False,
                     },
                     {
