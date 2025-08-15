@@ -964,7 +964,20 @@ function SettingsAIModels() {
         }
         
         setModels(allModels)
-        setGlobalCapabilities([]) // 能力分配将按需加载
+        
+        // 加载全局能力分配
+        const globalCapabilitiesData: GlobalCapability[] = []
+        for (const capability of capabilitiesData) {
+          try {
+            const assignment = await ModelSettingsAPI.getGlobalCapability(capability)
+            if (assignment) {
+              globalCapabilitiesData.push(assignment)
+            }
+          } catch (error) {
+            console.warn(`Failed to load global capability assignment for ${capability}:`, error)
+          }
+        }
+        setGlobalCapabilities(globalCapabilitiesData)
         
         setInitialized(true)
       } catch (error) {

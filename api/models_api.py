@@ -141,7 +141,25 @@ def get_router(external_get_session: callable) -> APIRouter:
             capability = ModelCapability(model_capability)
             config = config_mgr.get_model_for_global_capability(capability)
             if config is not None:
-                return {"success": True, "data": config.model_dump()}
+                # 获取提供商信息以构建provider_key
+                from sqlmodel import select
+                from db_mgr import ModelProvider
+                provider = config_mgr.session.exec(
+                    select(ModelProvider).where(ModelProvider.id == config.provider_id)
+                ).first()
+                
+                if provider:
+                    provider_key = f"{provider.provider_type}-{provider.id}"
+                    return {
+                        "success": True, 
+                        "data": {
+                            "capability": model_capability,
+                            "provider_key": provider_key,
+                            "model_id": str(config.id)
+                        }
+                    }
+                else:
+                    return {"success": False, "message": "Provider not found"}
             else:
                 return {"success": False, "message": "Model not found"}
         except ValueError:
