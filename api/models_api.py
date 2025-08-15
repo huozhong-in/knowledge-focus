@@ -136,11 +136,18 @@ def get_router(external_get_session: callable) -> APIRouter:
     @router.get("/models/global_capability/{model_capability}", tags=["models"])
     def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取全局指定能力的模型分配"""
-        config = config_mgr.get_model_for_global_capability(model_capability)
-        if config is not None:
-            return {"success": True, "data": config}
-        else:
-            return {"success": False, "message": "Model not found"}
+        try:
+            # 验证能力值是否有效
+            capability = ModelCapability(model_capability)
+            config = config_mgr.get_model_for_global_capability(capability)
+            if config is not None:
+                return {"success": True, "data": config.model_dump()}
+            else:
+                return {"success": False, "message": "Model not found"}
+        except ValueError:
+            return {"success": False, "message": f"'{model_capability}' is not a valid ModelCapability"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
     
     @router.post("/models/global_capability/{model_capability}", tags=["models"])
     def assign_global_capability_to_model(model_capability: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
@@ -150,7 +157,12 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not model_id:
                 return {"success": False, "message": "Missing model_id"}
             
-            capability = ModelCapability(value=model_capability)
+            # 验证能力值是否有效
+            try:
+                capability = ModelCapability(model_capability)  # 直接传递字符串值
+            except ValueError:
+                return {"success": False, "message": f"'{model_capability}' is not a valid ModelCapability"}
+            
             success = config_mgr.assign_global_capability_to_model(model_config_id=model_id, capability=capability)
             if success:
                 return {"success": True}

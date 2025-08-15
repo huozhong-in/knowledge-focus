@@ -48,8 +48,8 @@ import {
 import {
   openUrl,
 } from "@tauri-apps/plugin-opener"
-const API_BASE_URL = "http://127.0.0.1:60315"
 
+const API_BASE_URL = "http://127.0.0.1:60315"
 
 // 类型定义
 interface Provider {
@@ -103,14 +103,14 @@ const BUSINESS_SCENES: BusinessScene[] = [
     key: "SCENE_FILE_TAGGING",
     name: "文件自动打标签",
     description: "基于文件内容自动生成相关标签，帮助快速分类和检索文件",
-    required_capabilities: ["TEXT", "EMBEDDING"],
+    required_capabilities: ["text", "embedding"],
     icon: <Settings className="w-4 h-4" />
   },
   {
     key: "SCENE_MULTIVECTOR", 
     name: "多模态检索",
     description: "支持文本、图像等多种模态内容的智能检索和对话关联",
-    required_capabilities: ["TEXT", "EMBEDDING", "VISION"],
+    required_capabilities: ["text", "embedding", "vision"],
     icon: <Zap className="w-4 h-4" />
   }
 ]
@@ -379,6 +379,12 @@ function GlobalCapabilitySection({
     )
   }, [models, hasCapability])
 
+  // 获取提供商显示名称
+  const getProviderDisplayName = useCallback((providerKey: string): string => {
+    const provider = providers.find(p => p.key === providerKey)
+    return provider ? provider.name : providerKey
+  }, [providers])
+
   // 检查是否有可用的提供商
   const hasConfiguredProviders = providers.length > 0
   
@@ -393,6 +399,8 @@ function GlobalCapabilitySection({
       percentage: Math.round((assignedCount / scene.required_capabilities.length) * 100)
     }
   }, [getCapabilityAssignment])
+
+  const { t } = useTranslation();
   
   return (
     <Card className="mb-6">
@@ -482,7 +490,7 @@ function GlobalCapabilitySection({
                     return (
                       <div key={capability} className="flex items-center justify-between p-3 bg-muted/50 rounded">
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline">{capability}</Badge>
+                          <Badge variant="outline">{t(`ModelCapability.${capability.toUpperCase()}`)}</Badge>
                           {isAssigned && (
                             <CheckCircle className="w-4 h-4 text-green-500" />
                           )}
@@ -510,7 +518,7 @@ function GlobalCapabilitySection({
                                   <div className="flex items-center gap-2">
                                     {model.name} 
                                     <Badge variant="secondary" className="text-xs">
-                                      {model.provider}
+                                      {getProviderDisplayName(model.provider)}
                                     </Badge>
                                   </div>
                                 </SelectItem>
@@ -519,7 +527,7 @@ function GlobalCapabilitySection({
                           </Select>
                         ) : (
                           <div className="text-sm text-muted-foreground">
-                            需要先配置支持 {capability} 能力的模型
+                            需要先配置支持 {t(`ModelCapability.${capability.toUpperCase()}`)} 能力的模型
                           </div>
                         )}
                       </div>
@@ -1237,24 +1245,22 @@ function SettingsAIModels() {
           }
           <AddProviderEmptyState onAddProvider={handleAddProvider} />
         </TabsList>
-        {/* <div className="flex-1"> */}
-          {providers.map(provider => (
-              <TabsContent key={provider.key} value={provider.key} className="m-0 mt-0">
-                <ProviderDetailSection
-                  provider={provider}
-                  models={models.filter(m => m.provider === provider.key)}
-                  availableCapabilities={availableCapabilities}
-                  onToggleProvider={handleToggleProvider}
-                  onDiscoverModels={handleDiscoverModels}
-                  onConfirmModelCapability={handleConfirmModelCapability}
-                  onToggleModel={handleToggleModel}
-                  onDeleteProvider={handleDeleteProvider}
-                  isLoading={isLoading}
-                />
-              </TabsContent>
-            ))
-          }
-        {/* </div> */}
+        {providers.map(provider => (
+            <TabsContent key={provider.key} value={provider.key} className="m-0 mt-0">
+              <ProviderDetailSection
+                provider={provider}
+                models={models.filter(m => m.provider === provider.key)}
+                availableCapabilities={availableCapabilities}
+                onToggleProvider={handleToggleProvider}
+                onDiscoverModels={handleDiscoverModels}
+                onConfirmModelCapability={handleConfirmModelCapability}
+                onToggleModel={handleToggleModel}
+                onDeleteProvider={handleDeleteProvider}
+                isLoading={isLoading}
+              />
+            </TabsContent>
+          ))
+        }
       </Tabs>
     </div>
   )
