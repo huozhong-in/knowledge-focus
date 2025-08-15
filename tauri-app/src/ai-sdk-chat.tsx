@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { ChatMessageAvatar } from '@/components/ui/chat-message'
+import { ChatMessage, ChatMessageAvatar } from '@/components/ui/chat-message'
 import {
   ChatInput,
   ChatInputTextArea,
   ChatInputSubmit,
 } from '@/components/ui/chat-input'
 import { MarkdownContent } from '@/components/ui/markdown-content'
-import { ChatSession, ChatMessage, getSessionMessages } from './lib/chat-session-api'
+import { ChatSession, ChatMessage as ApiChatMessage, getSessionMessages } from './lib/chat-session-api'
+import { cn } from '@/lib/utils'
 
 interface Message {
   id: string
@@ -75,7 +76,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
         const result = await getSessionMessages(sessionIdNum, 1, 50, false) // 获取前50条消息，时间升序
         
         // 将ChatMessage转换为Message格式
-        const convertedMessages: Message[] = result.messages.map((msg: ChatMessage) => ({
+        const convertedMessages: Message[] = result.messages.map((msg: ApiChatMessage) => ({
           id: msg.message_id || msg.id.toString(),
           content: msg.content,
           type: msg.role === 'user' ? 'outgoing' : 'incoming',
@@ -308,16 +309,19 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
       <ScrollArea ref={scrollAreaRef} className="flex-1 p-4 rounded-md h-[calc(100vh-180px)]">
         <div className="space-y-4 mx-auto">
           {messages.map((message) => (
-            <div
+            <ChatMessage
               key={message.id}
-              className={`flex gap-4 w-full justify-start ${
+              id={message.id}
+              type={message.type}
+              variant="default"
+              className={`flex gap-4 justify-start ${
                 message.type === "outgoing" ? "ml-auto flex-row-reverse" : "mr-auto"
               }`}
             >
               <ChatMessageAvatar />
               <div className="flex flex-col gap-2">
                 <div
-                  className={`rounded-xl max-w-4/5 sm:w-auto px-3 py-2 ${
+                  className={`rounded-xl max-w-4/5 sm:w-auto px-3 py-2 text-sm ${
                     message.type === "incoming"
                       ? "bg-secondary text-secondary-foreground"
                       : "bg-primary text-primary-foreground ml-auto"
@@ -330,7 +334,6 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
                         <MarkdownContent 
                           content={message.content} 
                           id={message.id}
-                          className="text-sm"
                         />
                       ) : isLoading ? (
                         <span className="text-muted-foreground">正在思考...</span>
@@ -345,11 +348,11 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
                     message.content
                   )}
                 </div>
-                <span className="text-xs text-muted-foreground">
+                <span className={`text-xs text-muted-foreground ${cn({ 'ml-auto': message.type === 'outgoing' })}`}>
                   {message.timestamp.toLocaleTimeString()}
                 </span>
               </div>
-            </div>
+            </ChatMessage>
           ))}
         </div>
       </ScrollArea>

@@ -142,7 +142,7 @@ export function NavTagCloud() {
         {t('file-tags')}
       </SidebarGroupLabel>
       
-      <ScrollArea className="h-[250px] p-0 m-0">
+      <ScrollArea className="h-[calc(22vh)] p-0 m-0">
         <div className="flex flex-wrap gap-1 p-1 justify-start">
           {loading || tags.length === 0 ? (
             <>
