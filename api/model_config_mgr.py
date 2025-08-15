@@ -167,13 +167,21 @@ class ModelConfigMgr:
                     # POST /api/show to get context_length:`curl http://localhost:11434/api/show -d '{"model": "llava"}'`
                     max_content_length = 0
                     extra_data_json = {}
+                    capabilities = []
                     try:
                         async with httpx.AsyncClient() as client:
                             response = await client.post("http://127.0.0.1:11434/api/show", json={"model": model.get("model", "")})
                             response.raise_for_status()
                             model_data = response.json()
-                            max_content_length = model_data.get("model_info", {}).get("llama.context_length", 0)
+                            architecture = model_data.get("model_info", {}).get("general.architecture", "")
+                            max_content_length = model_data.get("model_info", {}).get(f"{architecture}.context_length", 0)
                             extra_data_json = {"capabilities": model_data.get("capabilities", [])}
+                            # 将"capabilities": ["completion","vision"] 转换为 ModelCapability.value 的列表
+                            for cap in model_data.get("capabilities", []):
+                                if cap == "completion":
+                                    capabilities.append(ModelCapability.TEXT.value)
+                                elif cap == "vision":
+                                    capabilities.append(ModelCapability.VISION.value)
                     except Exception as e:
                         print(f"Error fetching model info for Ollama: {e}")
                     result.append(ModelConfiguration(
@@ -181,18 +189,33 @@ class ModelConfigMgr:
                         model_identifier=model.get("model", ""),
                         display_name=model.get("name", ""),
                         max_context_length=max_content_length,
-                        extra_data_json=extra_data_json
+                        extra_data_json=extra_data_json,
+                        capabilities_json=capabilities,
                     )) if not _already_exists(id, model.get("model", "")) else None
             elif provider.display_name == "LM Studio":
                 # https://lmstudio.ai/docs/app/api/endpoints/rest
                 models_list = models_data.get("data", [])
                 for model in models_list:
+                    # 将type的值对应转换为ModelCapability.value的list
+                    capabilities = []
+                    type_name = model.get("type", "") # 已经发现的值有llm/vlm/embeddings
+                    if type_name != '':
+                        if type_name == "llm":
+                            capabilities.append(ModelCapability.TEXT.value)
+                        elif type_name == "vlm":
+                            capabilities.append(ModelCapability.TEXT.value)
+                            capabilities.append(ModelCapability.VISION.value)
+                        elif type_name == "embeddings":
+                            capabilities.append(ModelCapability.EMBEDDING.value)
+                        else:
+                            pass
                     result.append(ModelConfiguration(
                         provider_id=id,
                         model_identifier=model.get("id", ""),
                         display_name=model.get("id", ""),
                         max_context_length=model.get("max_context_length", 0),
-                        extra_data_json={"type": model.get("type", "")}
+                        extra_data_json={"type": model.get("type", "")},
+                        capabilities_json=capabilities,
                     )) if not _already_exists(id, model.get("id", "")) else None
             else:
                 return []

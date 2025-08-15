@@ -391,7 +391,7 @@ class ModelConfiguration(SQLModel, table=True):
     extra_data_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     max_context_length: int = Field(default=0) # This max tokens number includes input, output, and reasoning tokens. 
     max_output_tokens: int = Field(default=0) # This max tokens number includes output tokens only.
-    is_enabled: bool = Field(default=True)
+    is_enabled: bool = Field(default=False) # 默认不启用
 
 # 能力指派表
 # 它将App内的具体“任务”指派给一个配置好的“模型”。

@@ -42,6 +42,8 @@ import {
   AlertCircle,
   Zap,
   BadgeCheckIcon,
+  DatabaseBackup,
+  SearchCheck,
 } from "lucide-react"
 import {
   openUrl,
@@ -821,17 +823,25 @@ function ProviderDetailSection({
                     <Button
                       variant="ghost"
                       size="sm"
+                      onClick={() => {}}
+                      title="恢复为默认"
+                    >
+                      <DatabaseBackup className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => onTestModelCapability(provider.provider_type, model.id)}
                       disabled={isLoading}
-                      title="重新测试模型能力"
+                      title="测试模型能力"
                     >
                       {isLoading ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
-                        <RefreshCw className="w-3 h-3" />
+                        <SearchCheck className="w-3 h-3" />
                       )}
                     </Button>
-                    {model.is_available ? (
+                    {/* {model.is_available ? (
                       <Badge variant="default" className="text-xs">
                         <CheckCircle className="w-3 h-3 mr-1" />
                         已启用
@@ -841,7 +851,13 @@ function ProviderDetailSection({
                         <XCircle className="w-3 h-3 mr-1" />
                         未启用
                       </Badge>
-                    )}
+                    )} */}
+                    <Switch
+                      id={model.id}
+                      checked={model.is_available}
+                      onCheckedChange={() => {}}
+                    />
+                    <Label htmlFor={model.id}>{model.is_available ? "已启用" : "未启用"}</Label>
                   </div>
                 </div>
               ))}
