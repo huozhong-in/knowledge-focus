@@ -316,7 +316,7 @@ const ThemePresetSelect: React.FC<ThemePresetSelectProps> = ({
             <ChevronDown className="size-4 shrink-0" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-[300px] p-0" align="center">
+        <PopoverContent className="w-[400px] p-0" align="center">
           <Command className="h-100 w-full rounded-lg border shadow-md">
             <div className="flex w-full items-center">
               <div className="flex w-full items-center border-b px-3 py-1">
@@ -336,10 +336,11 @@ const ThemePresetSelect: React.FC<ThemePresetSelectProps> = ({
               </div>
               <ThemeControls />
             </div>
+            
             <Separator />
-            <ScrollArea className="h-[500px] max-h-[70vh]">
-              <CommandEmpty>No themes found.</CommandEmpty>
 
+            <ScrollArea className="h-[calc(100vh-20px)] overflow-y-auto pr-2">
+              <CommandEmpty>No themes found.</CommandEmpty>
               {/* Saved Themes Group */}
               {filteredSavedThemes.length > 0 && (
                 <>
