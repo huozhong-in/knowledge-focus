@@ -42,7 +42,7 @@ import {
   AlertCircle,
   Zap,
   BadgeCheckIcon,
-  DatabaseBackup,
+  // DatabaseBackup,
   SearchCheck,
 } from "lucide-react"
 import {
@@ -50,8 +50,100 @@ import {
 } from "@tauri-apps/plugin-opener"
 const API_BASE_URL = "http://127.0.0.1:60315"
 
+
+// 类型定义
+interface Provider {
+  id: number | string
+  key: string
+  provider_type: string
+  name: string
+  description?: string
+  config: Record<string, any>
+  is_enabled: boolean
+  is_user_added?: boolean  // 是否为用户添加的提供商
+  // 添加预置提供商的字段
+  base_url?: string
+  api_key?: string
+  get_key_url?: string
+  use_proxy?: boolean
+}
+
+// Python code for ModelCapability enum
+// class ModelCapability(str, Enum):
+//     TEXT = "text"
+//     VISION = "vision"
+//     TOOL_USE = "tool_use"
+//     EMBEDDING = "embedding"
+
+interface ModelCapabilities {
+  text: boolean
+  vision: boolean
+  tool_use: boolean
+  embedding: boolean
+}
+
+interface Model {
+  id: string
+  name: string
+  provider: string
+  capabilities: ModelCapabilities
+  is_available: boolean
+}
+
+interface GlobalCapability {
+  capability: string
+  provider_key: string
+  model_id: string
+}
+
+interface BusinessScene {
+  key: string
+  name: string
+  description: string
+  required_capabilities: string[]
+  icon?: React.ReactNode
+}
+
+// 业务场景定义
+const BUSINESS_SCENES: BusinessScene[] = [
+  {
+    key: "SCENE_FILE_TAGGING",
+    name: "文件自动打标签",
+    description: "基于文件内容自动生成相关标签，帮助快速分类和检索文件",
+    required_capabilities: ["TEXT", "EMBEDDING"],
+    icon: <Settings className="w-4 h-4" />
+  },
+  {
+    key: "SCENE_MULTIVECTOR", 
+    name: "多模态检索",
+    description: "支持文本、图像等多种模态内容的智能检索和对话关联",
+    required_capabilities: ["TEXT", "EMBEDDING", "VISION"],
+    icon: <Zap className="w-4 h-4" />
+  }
+]
+
 // API 服务函数
 class ModelSettingsAPI {
+  // 将后端返回的能力数据转换为标准格式
+  private static normalizeCapabilities(capabilitiesData: any): ModelCapabilities {
+    // 如果是数组格式（旧格式），转换为键值对
+    if (Array.isArray(capabilitiesData)) {
+      return {
+        text: capabilitiesData.includes('text') || capabilitiesData.includes('TEXT'),
+        vision: capabilitiesData.includes('vision') || capabilitiesData.includes('VISION'),
+        tool_use: capabilitiesData.includes('tool_use') || capabilitiesData.includes('TOOL_USE'),
+        embedding: capabilitiesData.includes('embedding') || capabilitiesData.includes('EMBEDDING')
+      }
+    }
+    
+    // 如果是键值对格式（新格式），直接使用并提供默认值
+    return {
+      text: capabilitiesData?.text ?? false,
+      vision: capabilitiesData?.vision ?? false,
+      tool_use: capabilitiesData?.tool_use ?? false,
+      embedding: capabilitiesData?.embedding ?? false
+    }
+  }
   // 获取所有提供商配置
   static async getProviders(): Promise<Provider[]> {
     const response = await fetch(`${API_BASE_URL}/models/providers`)
@@ -179,7 +271,7 @@ class ModelSettingsAPI {
         id: model.id.toString(),
         name: model.display_name || model.model_identifier,
         provider: providerKey, // 使用传入的 providerKey
-        capabilities: model.capabilities_json || [],
+        capabilities: this.normalizeCapabilities(model.capabilities_json),
         is_available: model.is_enabled !== undefined ? model.is_enabled : true
       }))
     }
@@ -197,46 +289,46 @@ class ModelSettingsAPI {
         id: model.id.toString(),
         name: model.display_name || model.model_identifier,
         provider: providerKey,
-        capabilities: model.capabilities_json || [],
+        capabilities: this.normalizeCapabilities(model.capabilities_json),
         is_available: model.is_enabled !== undefined ? model.is_enabled : true
       }))
     }
     throw new Error(result.message || 'Failed to get provider models')
   }
 
-  // 获取指定模型能力列表
-  static async getModelCapabilities(modelId: number): Promise<string[]> {
-    const response = await fetch(`${API_BASE_URL}/models/capability/${modelId}`)
-    const result = await response.json()
-    if (result.success) {
-      return result.data
-    }
-    throw new Error(result.message || 'Failed to get model capabilities')
-  }
+  // // 获取指定模型能力列表
+  // static async getModelCapabilities(modelId: number): Promise<string[]> {
+  //   const response = await fetch(`${API_BASE_URL}/models/capability/${modelId}`)
+  //   const result = await response.json()
+  //   if (result.success) {
+  //     return result.data
+  //   }
+  //   throw new Error(result.message || 'Failed to get model capabilities')
+  // }
 
-  // 测试指定模型指定能力
-  static async testModelCapability(modelId: number, capability: string): Promise<boolean> {
-    const response = await fetch(`${API_BASE_URL}/models/capability/${modelId}/${capability}`)
+  // 确认指定模型所有能力
+  static async confirmModelCapability(modelId: number): Promise<ModelCapabilities> {
+    const response = await fetch(`${API_BASE_URL}/models/confirm_capability/${modelId}`)
     const result = await response.json()
     if (result.success) {
-      return result.data
+      return result.data as ModelCapabilities
     }
     throw new Error(result.message || 'Failed to test model capability')
   }
 
   // 获取全局能力分配
   static async getGlobalCapability(capability: string): Promise<GlobalCapability | null> {
-    const response = await fetch(`${API_BASE_URL}/models/capability/${capability}`)
+    const response = await fetch(`${API_BASE_URL}/models/global_capability/${capability}`)
     const result = await response.json()
     if (result.success) {
-      return result.data
+      return result.data as GlobalCapability
     }
     return null
   }
 
   // 分配全局能力
   static async assignGlobalCapability(capability: string, modelId: number): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/models/capability/${capability}`, {
+    const response = await fetch(`${API_BASE_URL}/models/global_capability/${capability}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model_id: modelId })
@@ -258,62 +350,6 @@ class ModelSettingsAPI {
   }
 }
 
-// 类型定义
-interface Provider {
-  id: number | string
-  key: string
-  provider_type: string
-  name: string
-  description?: string
-  config: Record<string, any>
-  is_enabled: boolean
-  is_user_added?: boolean  // 是否为用户添加的提供商
-  // 添加预置提供商的字段
-  base_url?: string
-  api_key?: string
-  get_key_url?: string
-  use_proxy?: boolean
-}
-
-interface Model {
-  id: string
-  name: string
-  provider: string
-  capabilities: string[]
-  is_available: boolean
-}
-
-interface GlobalCapability {
-  capability: string
-  provider_key: string
-  model_id: string
-}
-
-interface BusinessScene {
-  key: string
-  name: string
-  description: string
-  required_capabilities: string[]
-  icon?: React.ReactNode
-}
-
-// 业务场景定义
-const BUSINESS_SCENES: BusinessScene[] = [
-  {
-    key: "SCENE_FILE_TAGGING",
-    name: "文件自动打标签",
-    description: "基于文件内容自动生成相关标签，帮助快速分类和检索文件",
-    required_capabilities: ["TEXT", "EMBEDDING"],
-    icon: <Settings className="w-4 h-4" />
-  },
-  {
-    key: "SCENE_MULTIVECTOR", 
-    name: "多模态检索",
-    description: "支持文本、图像等多种模态内容的智能检索和对话关联",
-    required_capabilities: ["TEXT", "EMBEDDING", "VISION"],
-    icon: <Zap className="w-4 h-4" />
-  }
-]
 
 // 全局能力分配组件
 function GlobalCapabilitySection({ 
@@ -327,6 +363,12 @@ function GlobalCapabilitySection({
   globalCapabilities: GlobalCapability[]
   onUpdateGlobalCapability: (capability: string, provider_key: string, model_id: string) => void
 }) {
+  // 检查模型是否具有特定能力
+  const hasCapability = useCallback((model: Model, capability: string): boolean => {
+    const capKey = capability.toLowerCase() as keyof ModelCapabilities
+    return model.capabilities[capKey] || false
+  }, [])
+
   // 获取某个能力的当前分配
   const getCapabilityAssignment = useCallback((capability: string) => {
     return globalCapabilities.find(gc => gc.capability === capability)
@@ -335,9 +377,9 @@ function GlobalCapabilitySection({
   // 获取某个能力的可用模型
   const getAvailableModelsForCapability = useCallback((capability: string) => {
     return models.filter(model => 
-      model.capabilities.includes(capability) && model.is_available
+      hasCapability(model, capability) && model.is_available
     )
-  }, [models])
+  }, [models, hasCapability])
 
   // 检查是否有可用的提供商
   const hasConfiguredProviders = providers.length > 0
@@ -700,7 +742,7 @@ function ProviderDetailSection({
   availableCapabilities,
   onToggleProvider,
   onDiscoverModels,
-  onTestModelCapability,
+  onConfirmModelCapability,
   onDeleteProvider,
   isLoading
 }: {
@@ -709,7 +751,7 @@ function ProviderDetailSection({
   availableCapabilities: string[]
   onToggleProvider: (providerKey: string, enabled: boolean) => void
   onDiscoverModels: (providerKey: string) => void
-  onTestModelCapability: (providerKey: string, modelId: string) => void
+  onConfirmModelCapability: (modelId: string) => void
   onDeleteProvider: (key: string) => void
   isLoading: boolean
 }) {
@@ -804,7 +846,8 @@ function ProviderDetailSection({
                       <div className="font-medium">{model.name}</div>
                       <div className="flex gap-1 mt-1 flex-wrap">
                         {availableCapabilities.map(cap => {
-                          const hasCapability = model.capabilities.includes(cap)
+                          const capKey = cap.toLowerCase() as keyof ModelCapabilities
+                          const hasCapability = model.capabilities[capKey] || false
                           return (
                             <Badge 
                               key={cap}
@@ -820,18 +863,18 @@ function ProviderDetailSection({
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    <Button
+                    {/* <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => {}}
                       title="恢复为默认"
                     >
                       <DatabaseBackup className="w-3 h-3" />
-                    </Button>
+                    </Button> */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onTestModelCapability(provider.provider_type, model.id)}
+                      onClick={() => onConfirmModelCapability(model.id)}
                       disabled={isLoading}
                       title="测试模型能力"
                     >
@@ -922,7 +965,7 @@ function SettingsAIModels() {
           ModelSettingsAPI.getAvailableCapabilities().catch(() => [])
         ])
         
-        console.log(`API endpoint: ${API_BASE_URL}`)
+        // console.log(`API endpoint: ${API_BASE_URL}`)
         
         setProviders(providersData)
         setAvailableCapabilities(capabilitiesData)
@@ -1044,10 +1087,10 @@ function SettingsAIModels() {
   }
 
   // 测试模型能力
-  const handleTestModelCapability = async (providerKey: string, modelId: string) => {
+  const handleConfirmModelCapability = async (modelId: string) => {
     setIsLoading(true)
     try {
-      console.log(`Testing model capability: ${providerKey}/${modelId}`)
+      console.log(`Testing model capability: ${modelId}`)
       
       // 获取模型的当前能力
       const numericModelId = parseInt(modelId, 10)
@@ -1055,7 +1098,7 @@ function SettingsAIModels() {
         throw new Error('Invalid model ID')
       }
       
-      const capabilities = await ModelSettingsAPI.getModelCapabilities(numericModelId)
+      const capabilities = await ModelSettingsAPI.confirmModelCapability(numericModelId)
       console.log('Model capabilities:', capabilities)
       
       // 更新模型状态为可用（如果成功获取到能力信息）
@@ -1063,7 +1106,9 @@ function SettingsAIModels() {
         model.id === modelId ? { ...model, is_available: true, capabilities } : model
       ))
       
-      toast.success(`模型能力测试完成，发现 ${capabilities.length} 项能力`)
+      // 计算能力数量
+      const capabilityCount = Object.values(capabilities).filter(Boolean).length
+      toast.success(`模型能力测试完成，发现 ${capabilityCount} 项能力`)
     } catch (error) {
       console.error("Failed to test model capability:", error)
       
@@ -1198,7 +1243,7 @@ function SettingsAIModels() {
                   availableCapabilities={availableCapabilities}
                   onToggleProvider={handleToggleProvider}
                   onDiscoverModels={handleDiscoverModels}
-                  onTestModelCapability={handleTestModelCapability}
+                  onConfirmModelCapability={handleConfirmModelCapability}
                   onDeleteProvider={handleDeleteProvider}
                   isLoading={isLoading}
                 />

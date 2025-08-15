@@ -4,19 +4,14 @@ from db_mgr import (
     ModelConfiguration,
     SystemConfig,
 )
+from pathlib import Path
 from sqlmodel import Session, select
 import json
-from typing import List
+from typing import List, Dict
 from openai import AsyncOpenAI
 import httpx
-from pydantic import BaseModel
 import base64
-
-class ModelUseInterface(BaseModel):
-    model_identifier: str
-    base_url: str
-    api_key: str
-    use_proxy: bool
+from model_config_mgr import ModelUseInterface
 
 # 每种能力都需要一段测试程序来确认模型是否具备
 class ModelCapabilityConfirm:
@@ -24,30 +19,44 @@ class ModelCapabilityConfirm:
         self.session = session
         self.system_proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
 
-    # 返回排序的能力名枚举，供前端使用
     def get_sorted_capability_names(self) -> List[str]:
+        """
+        返回排序的能力名枚举，供前端使用
+        # * 只返回ModelCapability的子集，也就是经过筛选的
+        """
         return [
             ModelCapability.TEXT.value,
-            # ModelCapability.REASONING.value,
             ModelCapability.VISION.value,
             ModelCapability.TOOL_USE.value,
-            # ModelCapability.WEB_SEARCH.value,
             ModelCapability.EMBEDDING.value,
-            # ModelCapability.RERANKER.value,
         ]
 
-    def confirm(self, config_id: int, capa: ModelCapability) -> bool:
+    async def confirm_model_capability_dict(self, config_id: int, save_config: bool = True) -> Dict[str, bool]:
+        """
+        测试并返回一个模型能力的字典
+        """
+        capability_dict = {}
+        for capa in self.get_sorted_capability_names():
+            capability_dict[capa] = await self.confirm(config_id, ModelCapability(capa))
+        if save_config == True:
+            model_config: ModelConfiguration = self.session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
+            model_config.capabilities_json = [capa for capa in capability_dict if capability_dict[capa] == True]
+            self.session.add(model_config)
+            self.session.commit()
+        return capability_dict
+
+    async def confirm(self, config_id: int, capa: ModelCapability) -> bool:
         """
         确认模型是否具备指定能力
         """
         if capa == ModelCapability.TEXT:
-            return self.confirm_text_capability(config_id)
+            return await self.confirm_text_capability(config_id)
         elif capa == ModelCapability.VISION:
-            return self.confirm_vision_capability(config_id)
+            return await self.confirm_vision_capability(config_id)
         elif capa == ModelCapability.TOOL_USE:
-            return self.confirm_tooluse_capability(config_id)
+            return await self.confirm_tooluse_capability(config_id)
         elif capa == ModelCapability.EMBEDDING:
-            return self.confirm_embedding_capability(config_id)
+            return await self.confirm_embedding_capability(config_id)
         else:
             return False
 
@@ -85,7 +94,7 @@ class ModelCapabilityConfirm:
         client = AsyncOpenAI(
             api_key=model_interface.api_key if model_interface.api_key else "",
             base_url=model_interface.base_url,
-            max_retries=3,
+            max_retries=2,
             http_client=http_client,
         )
         try:
@@ -110,8 +119,18 @@ class ModelCapabilityConfirm:
             with open(image_path, "rb") as image_file:
                 return base64.b64encode(image_file.read()).decode("utf-8")
 
-        base64_image = encode_image("dog.png")
+        # 确保使用绝对路径
+        script_dir = Path(__file__).resolve().parent
+        image_path = script_dir / "dog.png"
         
+        if not image_path.exists():
+            print(f"Warning: Test image not found at {image_path}")
+            print(f"Script directory: {script_dir}")
+            print(f"Current working directory: {Path.cwd()}")
+            return False
+        
+        base64_image = encode_image(str(image_path))
+
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
@@ -122,7 +141,7 @@ class ModelCapabilityConfirm:
         client = AsyncOpenAI(
             api_key=model_interface.api_key if model_interface.api_key else "",
             base_url=model_interface.base_url,
-            max_retries=3,
+            max_retries=2,
             http_client=http_client,
         )
         try:
@@ -167,7 +186,7 @@ class ModelCapabilityConfirm:
         client = AsyncOpenAI(
             api_key=model_interface.api_key if model_interface.api_key else "",
             base_url=model_interface.base_url,
-            max_retries=3,
+            max_retries=2,
             http_client=http_client,
         )
         try:
@@ -195,7 +214,7 @@ class ModelCapabilityConfirm:
         client = AsyncOpenAI(
             api_key=model_interface.api_key if model_interface.api_key else "",
             base_url=model_interface.base_url,
-            max_retries=3,
+            max_retries=2,
             http_client=http_client,
         )
         tools = [
@@ -291,9 +310,11 @@ if __name__ == "__main__":
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
-            print(await mgr.confirm_text_capability(40))
-            print(await mgr.confirm_tooluse_capability(40))
-            print(await mgr.confirm_vision_capability(40))
-            print(await mgr.confirm_embedding_capability(39))
+            # print(await mgr.confirm_text_capability(40))
+            # print(await mgr.confirm_tooluse_capability(40))
+            # print(await mgr.confirm_vision_capability(40))
+            # print(await mgr.confirm_embedding_capability(39))
+
+            print(await mgr.confirm_model_capability_dict(52, save_config=False))
 
     asyncio.run(main())

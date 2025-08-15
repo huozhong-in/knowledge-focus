@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Body, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlmodel import Session, select
 from typing import Dict, List, Any
 import json
@@ -124,28 +124,22 @@ def get_router(external_get_session: callable) -> APIRouter:
         capabilities = mc_mgr.get_sorted_capability_names()
         return {"success": True, "data": capabilities}
     
-    @router.get("/models/capability/{model_id}/{capability}", tags=["models"])
-    def test_model_capability(model_id: int, capability: str, mc_mgr: ModelCapabilityConfirm = Depends(get_model_capability_confirm)):
-        """测试指定模型是否具有某项能力"""
-        has_capability = mc_mgr.confirm(model_id, capability)
-        return {"success": True, "data": has_capability}
+    @router.get("/models/confirm_capability/{model_id}", tags=["models"])
+    async def confirm_model_capability(model_id: int, mc_mgr: ModelCapabilityConfirm = Depends(get_model_capability_confirm)):
+        """确认指定模型所有能力"""
+        try:
+            capability_dict = await mc_mgr.confirm_model_capability_dict(model_id, save_config=True)
+            return {"success": True, "data": capability_dict}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
 
-    @router.get("/models/capability/{model_id}", tags=["models"])
-    def get_model_capabilities(model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-        """获取指定模型的能力列表"""
-        capabilities = config_mgr.get_model_capabilities(model_id)
-        return {"success": True, "data": [cap.value for cap in capabilities]}
+    # @router.get("/models/capability/{model_id}", tags=["models"])
+    # def get_model_capabilities(model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    #     """获取指定模型的能力列表"""
+    #     capabilities = config_mgr.get_model_capabilities(model_id)
+    #     return {"success": True, "data": [cap.value for cap in capabilities]}
 
-    @router.put("/models/capability/{model_id}", tags=["models"])
-    def update_model_capabilities(model_id: int, capabilities: List[str], config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-        """更新指定模型的能力列表"""
-        list_capa = [ModelCapability(value=capa) for capa in capabilities]
-        success = config_mgr.update_model_capabilities(model_id=model_id, capabilities=list_capa)
-        if success:
-            return {"success": True}
-        return {"success": False, "message": "Failed to update model capabilities"}
-
-    @router.get("/models/capability/{model_capability}", tags=["models"])
+    @router.get("/models/global_capability/{model_capability}", tags=["models"])
     def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取全局指定能力的模型分配"""
         config = config_mgr.get_model_for_global_capability(model_capability)
@@ -154,7 +148,7 @@ def get_router(external_get_session: callable) -> APIRouter:
         else:
             return {"success": False, "message": "Model not found"}
     
-    @router.post("/models/capability/{model_capability}", tags=["models"])
+    @router.post("/models/global_capability/{model_capability}", tags=["models"])
     def assign_global_capability_to_model(model_capability: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """指定某个模型为全局的ModelCapability某项能力"""
         try:

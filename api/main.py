@@ -247,7 +247,7 @@ app.include_router(models_router, prefix="", tags=["models"])
 
 # 添加新的标签API路由
 from tagging_api import get_router as get_tagging_router
-tagging_router = get_tagging_router(get_session=get_session)
+tagging_router = get_tagging_router(external_get_session=get_session)
 app.include_router(tagging_router, prefix="", tags=["tagging"])
 
 # 添加聊天会话API路由

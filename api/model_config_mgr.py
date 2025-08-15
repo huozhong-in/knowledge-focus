@@ -2,7 +2,7 @@
 import json
 import httpx
 from sqlmodel import Session, select
-from typing import List, Tuple, Dict
+from typing import List, Dict
 from db_mgr import (
     # ModelSourceType, 
     ModelProvider, 
@@ -41,7 +41,7 @@ class ModelConfigMgr:
             display_name=display_name,
             base_url=base_url,
             api_key=api_key,
-            extra_data=extra_data_json,
+            extra_data_json=extra_data_json,
             is_active=is_active,
             use_proxy=use_proxy,
             is_user_added=True  # 标记为用户添加的提供商

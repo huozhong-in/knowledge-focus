@@ -372,10 +372,10 @@ class ModelCapability(str, PyEnum):
     WEB_SEARCH = "web_search"
     EMBEDDING = "embedding"
     RERANKER = "reranker"
-    # CODE_GENERATION = "code_generation"
-    # TTS = "tts"
-    # ASR = "asr"
-    # IMAGE_GENERATION = "image_generation"
+    CODE_GENERATION = "code_generation"
+    TTS = "tts"
+    ASR = "asr"
+    IMAGE_GENERATION = "image_generation"
 # 模型配置表
 # 这张表代表一个具体可用的模型。
 # 设计意图: 将一个具体的模型实例（如本地的llama3:8b）与其能力和属性绑定。这些属性可以来自您的云端目录，也可以由用户手动配置。

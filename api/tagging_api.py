@@ -9,10 +9,10 @@ from models_mgr import ModelsMgr
 
 logger = logging.getLogger(__name__)
 
-def get_router(get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
 
-    def get_tagging_manager(session: Session = Depends(get_session)) -> TaggingMgr:
+    def get_tagging_manager(session: Session = Depends(external_get_session)) -> TaggingMgr:
         """FastAPI dependency to get a TaggingMgr instance."""
         # These dependencies will be resolved by FastAPI for each request.
         db_path = session.get_bind().url.database
