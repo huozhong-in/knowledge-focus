@@ -142,6 +142,7 @@ class MultiVectorMgr:
             vision_base_url = model_interface.base_url
             vision_api_key = model_interface.api_key
             use_proxy = model_interface.use_proxy
+            
 
             # 配置PDF处理选项
             pipeline_options = PdfPipelineOptions()
@@ -151,16 +152,25 @@ class MultiVectorMgr:
             pipeline_options.do_picture_description = True
             pipeline_options.enable_remote_services = True  # 启用远程服务用于图片描述
             
-            # 配置图片描述API选项 - 使用本地vision模型
+            # 配置图片描述API选项 - 使用vision模型时通过proxy
+            PROXIES = {
+                "http": "http://127.0.0.1:7890",
+                "https": "http://127.0.0.1:7890",
+                "socks5": "socks5://127.0.0.1:7890",
+            }
+            params=dict(
+                model=vision_model_id,
+                seed=42,
+                temperature=0.2,
+                max_completion_tokens=250,
+                api_key=vision_api_key,
+            )
+            if use_proxy == True:
+                params["proxies"] = PROXIES
+
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=f"{vision_base_url}/chat/completions",
-                params=dict(
-                    model=vision_model_id,
-                    seed=42,
-                    temperature=0.2,
-                    max_completion_tokens=250,
-                    api_key=vision_api_key,
-                ),
+                params=params,
                 prompt="""
 You are an assistant tasked with summarizing images for retrieval. 
 These summaries will be embedded and used to retrieve the raw image. 

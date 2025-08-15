@@ -363,6 +363,26 @@ class ModelConfigMgr:
         """取得全局文本模型的model_identifier base_url api_key use_proxy"""
         return self.get_spec_model_config(ModelCapability.TEXT)
 
+    def toggle_model_enabled(self, model_id: int, is_enabled: bool) -> bool:
+        """切换模型的启用/禁用状态"""
+        try:
+            model_config: ModelConfiguration = self.session.exec(
+                select(ModelConfiguration).where(ModelConfiguration.id == model_id)
+            ).first()
+            
+            if model_config is None:
+                return False
+            
+            model_config.is_enabled = is_enabled
+            self.session.add(model_config)
+            self.session.commit()
+            self.session.refresh(model_config)
+            return True
+        except Exception as e:
+            self.session.rollback()
+            print(f"Error toggling model enabled state for model {model_id}: {e}")
+            return False
+
 
 if __name__ == "__main__":
     from sqlmodel import create_engine

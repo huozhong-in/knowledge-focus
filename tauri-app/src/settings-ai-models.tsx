@@ -68,13 +68,6 @@ interface Provider {
   use_proxy?: boolean
 }
 
-// Python code for ModelCapability enum
-// class ModelCapability(str, Enum):
-//     TEXT = "text"
-//     VISION = "vision"
-//     TOOL_USE = "tool_use"
-//     EMBEDDING = "embedding"
-
 interface ModelCapabilities {
   text: boolean
   vision: boolean
@@ -296,16 +289,6 @@ class ModelSettingsAPI {
     throw new Error(result.message || 'Failed to get provider models')
   }
 
-  // // 获取指定模型能力列表
-  // static async getModelCapabilities(modelId: number): Promise<string[]> {
-  //   const response = await fetch(`${API_BASE_URL}/models/capability/${modelId}`)
-  //   const result = await response.json()
-  //   if (result.success) {
-  //     return result.data
-  //   }
-  //   throw new Error(result.message || 'Failed to get model capabilities')
-  // }
-
   // 确认指定模型所有能力
   static async confirmModelCapability(modelId: number): Promise<ModelCapabilities> {
     const response = await fetch(`${API_BASE_URL}/models/confirm_capability/${modelId}`)
@@ -347,6 +330,21 @@ class ModelSettingsAPI {
       return result.data
     }
     throw new Error(result.message || 'Failed to get capabilities')
+  }
+
+  // 切换模型启用/禁用状态
+  static async toggleModelEnabled(modelId: number, isEnabled: boolean): Promise<void> {
+    const response = await fetch(`${API_BASE_URL}/models/model/${modelId}/toggle`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ is_enabled: isEnabled })
+    })
+    const result = await response.json()
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to toggle model status')
+    }
   }
 }
 
@@ -673,65 +671,57 @@ function AddProviderEmptyState({
   }
 
   return (
-    // <Card>
-    //   <CardContent className="pt-6">
-        <div className="text-center p-2 text-muted-foreground ml-auto">
-          {/* <Settings className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg font-medium mb-2">还没有配置任何模型提供商</p>
-          <p className="text-sm mb-4">请先配置模型提供商来开始使用AI功能</p> */}
+    <div className="text-center p-2 text-muted-foreground ml-auto">
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogTrigger asChild>
+          <Button>
+            <Plus className="w-4 h-4 mr-2" />
+            添加提供商
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>添加模型提供商</DialogTitle>
+            <DialogDescription>
+              配置新的AI模型提供商信息
+            </DialogDescription>
+          </DialogHeader>
           
-          <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="w-4 h-4 mr-2" />
-                添加提供商
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>添加模型提供商</DialogTitle>
-                <DialogDescription>
-                  配置新的AI模型提供商信息
-                </DialogDescription>
-              </DialogHeader>
-              
-              <div className="space-y-4">
-                <div>
-                  <Label htmlFor="provider-name">提供商名称 *</Label>
-                  <Input
-                    id="provider-name"
-                    value={newProvider.name}
-                    onChange={(e) => setNewProvider(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="例如：OpenAI、Claude等"
-                    className="mt-1"
-                  />
-                </div>
-                
-                <div>
-                  <Label htmlFor="provider-desc">描述（可选）</Label>
-                  <Input
-                    id="provider-desc"
-                    value={newProvider.description}
-                    onChange={(e) => setNewProvider(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="简单描述该提供商"
-                    className="mt-1"
-                  />
-                </div>
-              </div>
-              
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-                  取消
-                </Button>
-                <Button onClick={handleAddProvider} disabled={!newProvider.name.trim()}>
-                  添加
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-    //   </CardContent>
-    // </Card>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="provider-name">提供商名称 *</Label>
+              <Input
+                id="provider-name"
+                value={newProvider.name}
+                onChange={(e) => setNewProvider(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="例如：OpenAI、Claude等"
+                className="mt-1"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="provider-desc">描述（可选）</Label>
+              <Input
+                id="provider-desc"
+                value={newProvider.description}
+                onChange={(e) => setNewProvider(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="简单描述该提供商"
+                className="mt-1"
+              />
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>
+              取消
+            </Button>
+            <Button onClick={handleAddProvider} disabled={!newProvider.name.trim()}>
+              添加
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   )
 }
 
@@ -743,6 +733,7 @@ function ProviderDetailSection({
   onToggleProvider,
   onDiscoverModels,
   onConfirmModelCapability,
+  onToggleModel,
   onDeleteProvider,
   isLoading
 }: {
@@ -752,6 +743,7 @@ function ProviderDetailSection({
   onToggleProvider: (providerKey: string, enabled: boolean) => void
   onDiscoverModels: (providerKey: string) => void
   onConfirmModelCapability: (modelId: string) => void
+  onToggleModel: (modelId: string, enabled: boolean) => void
   onDeleteProvider: (key: string) => void
   isLoading: boolean
 }) {
@@ -863,14 +855,6 @@ function ProviderDetailSection({
                   </div>
                   
                   <div className="flex items-center gap-2">
-                    {/* <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {}}
-                      title="恢复为默认"
-                    >
-                      <DatabaseBackup className="w-3 h-3" />
-                    </Button> */}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -884,21 +868,10 @@ function ProviderDetailSection({
                         <SearchCheck className="w-3 h-3" />
                       )}
                     </Button>
-                    {/* {model.is_available ? (
-                      <Badge variant="default" className="text-xs">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        已启用
-                      </Badge>
-                    ) : (
-                      <Badge variant="destructive" className="text-xs">
-                        <XCircle className="w-3 h-3 mr-1" />
-                        未启用
-                      </Badge>
-                    )} */}
                     <Switch
                       id={model.id}
                       checked={model.is_available}
-                      onCheckedChange={() => {}}
+                      onCheckedChange={(checked) => onToggleModel(model.id, checked)}
                     />
                     <Label htmlFor={model.id}>{model.is_available ? "已启用" : "未启用"}</Label>
                   </div>
@@ -1158,6 +1131,36 @@ function SettingsAIModels() {
     }
   };
 
+  // 切换模型启用状态
+  const handleToggleModel = async (modelId: string, enabled: boolean) => {
+    try {
+      // 解析modelId为数字
+      const numericModelId = parseInt(modelId, 10);
+      if (isNaN(numericModelId)) {
+        throw new Error(`Model ID ${modelId} is not numeric`);
+      }
+
+      // 调用API切换模型状态
+      await ModelSettingsAPI.toggleModelEnabled(numericModelId, enabled);
+      
+      // 更新本地状态
+      setModels(prev => prev.map(model => 
+        model.id === modelId 
+          ? { ...model, is_available: enabled }
+          : model
+      ));
+      
+      // 查找模型名称用于提示
+      const model = models.find(m => m.id === modelId);
+      const modelName = model ? model.name : `模型 ${modelId}`;
+      
+      toast.success(`${modelName} ${enabled ? '已启用' : '已禁用'}`);
+    } catch (error) {
+      console.error('Failed to toggle model:', error);
+      toast.error(`切换模型状态失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  };
+
   // 更新全局能力分配
   const handleUpdateGlobalCapability = async (capability: string, provider_key: string, model_id: string) => {
     setIsLoading(true)
@@ -1244,6 +1247,7 @@ function SettingsAIModels() {
                   onToggleProvider={handleToggleProvider}
                   onDiscoverModels={handleDiscoverModels}
                   onConfirmModelCapability={handleConfirmModelCapability}
+                  onToggleModel={handleToggleModel}
                   onDeleteProvider={handleDeleteProvider}
                   isLoading={isLoading}
                 />

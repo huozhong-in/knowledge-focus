@@ -133,12 +133,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    # @router.get("/models/capability/{model_id}", tags=["models"])
-    # def get_model_capabilities(model_id: int, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-    #     """获取指定模型的能力列表"""
-    #     capabilities = config_mgr.get_model_capabilities(model_id)
-    #     return {"success": True, "data": [cap.value for cap in capabilities]}
-
     @router.get("/models/global_capability/{model_capability}", tags=["models"])
     def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取全局指定能力的模型分配"""
@@ -162,6 +156,22 @@ def get_router(external_get_session: callable) -> APIRouter:
                 return {"success": True}
             else:
                 return {"success": False, "message": "Failed to set model for global capability"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @router.put("/models/model/{model_id}/toggle", tags=["models"])
+    def toggle_model_enabled(model_id: int, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+        """切换模型的启用/禁用状态"""
+        try:
+            is_enabled = data.get("is_enabled")
+            if is_enabled is None:
+                return {"success": False, "message": "Missing is_enabled"}
+            
+            success = config_mgr.toggle_model_enabled(model_id=model_id, is_enabled=is_enabled)
+            if success:
+                return {"success": True, "message": "Model status updated successfully"}
+            else:
+                return {"success": False, "message": "Failed to update model status"}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
