@@ -165,8 +165,8 @@ class MultiVectorMgr:
                 max_completion_tokens=250,
                 api_key=vision_api_key,
             )
-            if use_proxy == True:
-                params["proxies"] = PROXIES
+            # if use_proxy == True:
+            #     params["proxies"] = PROXIES
 
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=f"{vision_base_url}/chat/completions",

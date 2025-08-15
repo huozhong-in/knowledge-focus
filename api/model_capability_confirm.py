@@ -17,7 +17,11 @@ from model_config_mgr import ModelUseInterface
 class ModelCapabilityConfirm:
     def __init__(self, session: Session):
         self.session = session
-        self.system_proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+        if proxy is not None and proxy.value is not None and proxy.value != "":
+            self.system_proxy = proxy.value
+        else:
+            self.system_proxy = None
 
     def get_sorted_capability_names(self) -> List[str]:
         """

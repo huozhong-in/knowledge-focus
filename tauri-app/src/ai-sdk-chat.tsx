@@ -317,7 +317,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
               <ChatMessageAvatar />
               <div className="flex flex-col gap-2">
                 <div
-                  className={`rounded-xl max-w-3/4 px-3 py-2 ${
+                  className={`rounded-xl max-w-4/5 sm:w-auto px-3 py-2 ${
                     message.type === "incoming"
                       ? "bg-secondary text-secondary-foreground"
                       : "bg-primary text-primary-foreground ml-auto"
@@ -330,6 +330,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
                         <MarkdownContent 
                           content={message.content} 
                           id={message.id}
+                          className="text-sm"
                         />
                       ) : isLoading ? (
                         <span className="text-muted-foreground">正在思考...</span>

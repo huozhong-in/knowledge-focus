@@ -509,7 +509,7 @@ function GlobalCapabilitySection({
                               }
                             }}
                           >
-                            <SelectTrigger className="w-48">
+                            <SelectTrigger className="w-md">
                               <SelectValue placeholder="选择模型" />
                             </SelectTrigger>
                             <SelectContent>
