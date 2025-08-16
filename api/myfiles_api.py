@@ -520,3 +520,5 @@ def get_router(external_get_session: callable) -> APIRouter:
             "count": len(hierarchy),
             "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
         }
+
+    return router

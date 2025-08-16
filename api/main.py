@@ -3,7 +3,6 @@ import sys
 import argparse
 import logging
 import time
-import pathlib
 import threading
 import json
 from datetime import datetime
@@ -11,24 +10,32 @@ from typing import Dict, Any
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Body, Depends
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
-from sqlmodel import create_engine, Session
+from sqlmodel import create_engine, Session, select
 from db_mgr import (
-    DBManager, TaskStatus, TaskResult, TaskType, TaskPriority, Task,
+    DBManager, 
+    TaskStatus, 
+    TaskResult, 
+    TaskType, 
+    TaskPriority, 
+    Task, 
+    ParentChunk,
 )
-from screening_mgr import ScreeningManager
-from file_tagging_mgr import FileTaggingMgr
-from task_mgr import TaskManager
-from lancedb_mgr import LanceDBMgr
+from screening_mgr import FileScreeningResult
 from models_mgr import ModelsMgr
-from search_mgr import SearchManager
+from lancedb_mgr import LanceDBMgr
+from file_tagging_mgr import FileTaggingMgr, configure_parsing_warnings
 from multivector_mgr import MultiVectorMgr
+from task_mgr import TaskManager
 from models_api import get_router as get_models_router
 from tagging_api import get_router as get_tagging_router
 from chatsession_api import get_router as get_chatsession_router
 from myfiles_api import get_router as get_myfiles_router
+from screening_api import get_router as get_screening_router
+from search_api import get_router as get_search_router
 
 # --- Centralized Logging Setup ---
 def setup_logging(logging_dir: str = None):
@@ -42,10 +49,10 @@ def setup_logging(logging_dir: str = None):
     try:
         # Determine log directory
         if logging_dir is not None:
-            log_dir = pathlib.Path(logging_dir)
+            log_dir = Path(logging_dir)
         else:
             script_path = os.path.abspath(__file__)
-            log_dir = pathlib.Path(script_path).parent / 'logs'
+            log_dir = Path(script_path).parent / 'logs'
         if not log_dir.exists():
             log_dir.mkdir(exist_ok=True, parents=True)
 
@@ -162,7 +169,6 @@ async def lifespan(app: FastAPI):
 
         # 配置解析库的警告和日志级别
         try:
-            from file_tagging_mgr import configure_parsing_warnings
             configure_parsing_warnings()
             logger.info("解析库日志配置已应用")
         except Exception as parsing_config_err:
@@ -249,56 +255,16 @@ app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
 myfiles_router = get_myfiles_router(external_get_session=get_session)
 app.include_router(myfiles_router, prefix="", tags=["myfiles"])
 
-# 获取 ScreeningManager 的依赖函数
-def get_screening_manager(session: Session = Depends(get_session)):
-    """获取文件粗筛结果管理类实例"""
-    return ScreeningManager(session)
+screening_router = get_screening_router(external_get_session=get_session)
+app.include_router(screening_router, prefix="", tags=["screening"])
 
-# 获取 FileTaggingMgr 的依赖函数
-def get_file_tagging_manager(session: Session = Depends(get_session)):
-    """获取文件解析管理类实例"""
-    return FileTaggingMgr(session)
+search_router = get_search_router(external_get_session=get_session)
+app.include_router(search_router, prefix="", tags=["search"])
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
     """获取任务管理器实例"""
     return TaskManager(session)
-
-def get_lancedb_manager():
-    """获取LanceDB管理器实例"""
-    if not hasattr(app.state, "engine") or app.state.engine is None:
-        raise RuntimeError("数据库引擎未初始化")
-    
-    # 从SQLite数据库路径推导出base_dir
-    sqlite_url = str(app.state.engine.url)
-    if sqlite_url.startswith('sqlite:///'):
-        db_path = sqlite_url.replace('sqlite:///', '')
-        db_directory = os.path.dirname(db_path)
-        return LanceDBMgr(base_dir=db_directory)
-    else:
-        raise RuntimeError("无法从数据库URL推导出LanceDB路径")
-
-def get_models_manager(session: Session = Depends(get_session)):
-    """获取模型管理器实例"""
-    return ModelsMgr(session)
-
-def get_search_manager(
-    session: Session = Depends(get_session),
-    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
-    models_mgr: ModelsMgr = Depends(get_models_manager)
-):
-    """获取搜索管理器实例"""
-    return SearchManager(session, lancedb_mgr, models_mgr)
-
-def get_multivector_manager(
-    session: Session = Depends(get_session),
-    lancedb_mgr: LanceDBMgr = Depends(get_lancedb_manager),
-    models_mgr: ModelsMgr = Depends(get_models_manager)
-):
-    """获取多模态向量管理器实例"""
-    return MultiVectorMgr(session, lancedb_mgr, models_mgr)
-
-
 
 # 任务处理者
 def task_processor(db_path: str, stop_event: threading.Event):
@@ -344,7 +310,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                             task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
                             
                             # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
-                            if multivector_mgr.check_vision_embedding_model_availability():
+                            if multivector_mgr.check_multivector_model_availability():
                                 _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
                         else:
                             task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
@@ -432,9 +398,8 @@ def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, 
         return
     
     try:
-        from screening_mgr import ScreeningResult
         # 获取粗筛结果，包含文件路径信息
-        screening_result = session.get(ScreeningResult, screening_result_id)
+        screening_result = session.get(FileScreeningResult, screening_result_id)
         if not screening_result:
             logger.warning(f"未找到screening_result_id: {screening_result_id}")
             return
@@ -476,60 +441,6 @@ def _check_file_pin_status(file_path: str, session: Session) -> bool:
     except Exception as e:
         logger.error(f"检查文件pin状态时发生错误: {e}", exc_info=True)
         return False
-
-# @app.post("/pin-file")
-# def pin_file(
-#     request: Dict[str, Any] = Body(...),
-#     task_mgr: TaskManager = Depends(get_task_manager)
-# ):
-#     """
-#     Pin一个文件，创建高优先级的多模态向量化任务
-    
-#     参数:
-#     - file_path: 文件的绝对路径
-    
-#     返回:
-#     - task_id: 创建的任务ID
-#     - message: 状态信息
-#     """
-#     try:
-#         file_path = request.get("file_path")
-#         if not file_path:
-#             return {"success": False, "error": "缺少file_path参数"}
-        
-#         # 验证文件路径
-#         if not os.path.exists(file_path):
-#             return {"success": False, "error": f"文件不存在: {file_path}"}
-        
-#         if not os.path.isfile(file_path):
-#             return {"success": False, "error": f"路径不是文件: {file_path}"}
-        
-#         # 检查文件权限
-#         if not os.access(file_path, os.R_OK):
-#             return {"success": False, "error": f"文件无读取权限: {file_path}"}
-        
-#         # 创建高优先级MULTIVECTOR任务
-#         file_name = os.path.basename(file_path)
-#         task = task_mgr.add_task(
-#             task_name=f"Pin文件向量化: {file_name}",
-#             task_type=TaskType.MULTIVECTOR,
-#             priority=TaskPriority.HIGH,
-#             extra_data={"file_path": file_path, "source": "user_pin"},
-#             target_file_path=file_path
-#         )
-        
-#         logger.info(f"用户Pin文件成功，创建任务ID: {task.id}, 文件: {file_path}")
-        
-#         return {
-#             "success": True,
-#             "task_id": task.id,
-#             "message": f"文件Pin成功，正在处理: {file_name}",
-#             "file_path": file_path
-#         }
-        
-#     except Exception as e:
-#         logger.error(f"Pin文件时发生错误: {e}", exc_info=True)
-#         return {"success": False, "error": f"Pin文件失败: {str(e)}"}
 
 @app.get("/task/{task_id}")
 def get_task_status(task_id: int, task_mgr: TaskManager = Depends(get_task_manager)):
@@ -581,8 +492,6 @@ def get_image(image_filename: str, session: Session = Depends(get_session)):
     - 图片文件的二进制内容
     """
     try:
-        from fastapi.responses import FileResponse
-        from pathlib import Path
         
         # 验证文件名格式（安全检查）
         if not image_filename.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
@@ -613,10 +522,7 @@ def get_image(image_filename: str, session: Session = Depends(get_session)):
             logger.warning(f"图片文件不存在: {image_path}")
             return {"success": False, "error": f"图片文件不存在: {image_filename}"}
         
-        # 验证这个图片是否属于某个已处理的文档（安全检查）
-        from sqlmodel import select
-        from db_mgr import ParentChunk
-        
+        # 验证这个图片是否属于某个已处理的文档（安全检查）        
         # 查找包含此图片文件名的ParentChunk（在metadata的image_file_path中查找）
         stmt = select(ParentChunk).where(
             ParentChunk.chunk_type == "image",
@@ -663,11 +569,6 @@ def get_image_by_chunk(parent_chunk_id: int, session: Session = Depends(get_sess
     - 图片文件的二进制内容，或重定向到图片端点
     """
     try:
-        from fastapi.responses import RedirectResponse
-        from pathlib import Path
-        from sqlmodel import select
-        from db_mgr import ParentChunk
-        
         # 查找指定的ParentChunk
         stmt = select(ParentChunk).where(
             ParentChunk.id == parent_chunk_id,
@@ -719,11 +620,6 @@ def get_document_images(document_id: int, session: Session = Depends(get_session
     - 图片列表，包含chunk_id、文件名、描述等信息
     """
     try:
-        from sqlmodel import select
-        from db_mgr import ParentChunk
-        from pathlib import Path
-        import json
-        
         # 查找文档中所有的图片块
         stmt = select(ParentChunk).where(
             ParentChunk.document_id == document_id,
@@ -783,320 +679,6 @@ def get_document_images(document_id: int, session: Session = Depends(get_session
         logger.error(f"获取文档图片列表时发生错误: {e}", exc_info=True)
         return {"success": False, "error": f"获取图片列表失败: {str(e)}"}
 
-# =============================================================================
-# 📊 向量内容搜索API端点
-# =============================================================================
-
-@app.post("/search/content")
-def search_document_content(
-    request: Dict[str, Any] = Body(...),
-    search_mgr: SearchManager = Depends(get_search_manager)
-):
-    """
-    文档内容的自然语言检索
-    
-    参数:
-    - query: 自然语言查询文本
-    - top_k: 返回的最大结果数 (可选，默认10)
-    - document_ids: 文档ID过滤列表 (可选)
-    - distance_threshold: 相似度阈值 (可选)
-    
-    返回:
-    - success: 是否成功
-    - results: 格式化的检索结果
-    - query_info: 查询元信息
-    """
-    try:
-        # 提取参数
-        query = request.get("query", "").strip()
-        top_k = request.get("top_k", 10)
-        document_ids = request.get("document_ids")
-        distance_threshold = request.get("distance_threshold")
-        
-        logger.info(f"[SEARCH API] Content search request: '{query[:50]}...'")
-        
-        # 基础验证
-        if not query:
-            return {
-                "success": False,
-                "error": "查询内容不能为空",
-                "results": None
-            }
-        
-        # 执行搜索
-        search_result = search_mgr.search_documents(
-            query=query,
-            top_k=top_k,
-            document_ids=document_ids,
-            distance_threshold=distance_threshold
-        )
-        
-        # 返回结果
-        logger.info(f"[SEARCH API] Search completed with {search_result.get('success', False)} status")
-        return search_result
-        
-    except Exception as e:
-        logger.error(f"[SEARCH API] Content search failed: {e}")
-        return {
-            "success": False,
-            "error": f"搜索失败: {str(e)}",
-            "results": None
-        }
-
-@app.post("/documents/{document_id}/search/content")  
-def search_document_content_by_id(
-    document_id: int,
-    request: Dict[str, Any] = Body(...),
-    search_mgr: SearchManager = Depends(get_search_manager)
-):
-    """
-    在指定文档内进行向量内容检索
-    
-    参数:
-    - document_id: 文档ID
-    - query: 自然语言查询文本
-    - top_k: 返回的最大结果数 (可选，默认10)
-    - distance_threshold: 相似度阈值 (可选)
-    
-    返回:
-    - success: 是否成功
-    - results: 格式化的检索结果
-    - query_info: 查询元信息
-    """
-    try:
-        # 提取参数
-        query = request.get("query", "").strip()
-        top_k = request.get("top_k", 10)
-        distance_threshold = request.get("distance_threshold")
-        
-        logger.info(f"[SEARCH API] Document {document_id} content search: '{query[:50]}...'")
-        
-        # 基础验证
-        if not query:
-            return {
-                "success": False,
-                "error": "查询内容不能为空",
-                "results": None
-            }
-        
-        # 执行搜索（限制在指定文档）
-        search_result = search_mgr.search_documents(
-            query=query,
-            top_k=top_k,
-            document_ids=[document_id],  # 限制在指定文档
-            distance_threshold=distance_threshold
-        )
-        
-        # 添加文档ID信息到结果中
-        if search_result.get("success", False):
-            if "query_info" not in search_result:
-                search_result["query_info"] = {}
-            search_result["query_info"]["target_document_id"] = document_id
-        
-        logger.info(f"[SEARCH API] Document {document_id} search completed")
-        return search_result
-        
-    except Exception as e:
-        logger.error(f"[SEARCH API] Document {document_id} content search failed: {e}")
-        return {
-            "success": False,
-            "error": f"文档内搜索失败: {str(e)}",
-            "results": None
-        }
-
-@app.post("/file-screening/batch")
-def add_batch_file_screening_results(
-    request: Dict[str, Any] = Body(...), 
-    screening_mgr: ScreeningManager = Depends(get_screening_manager),
-    task_mgr: TaskManager = Depends(get_task_manager)
-):
-    """批量添加文件粗筛结果
-    
-    参数:
-    - data_list: 文件粗筛结果列表
-    """
-    try:
-        # 从请求体中提取数据和参数
-        logger.info(f"接收到批量文件粗筛结果，请求体键名: {list(request.keys())}")
-        
-        # 适配Rust客户端发送的格式: {data_list: [...], auto_create_tasks: true}
-        if "data_list" in request:
-            data_list = request.get("data_list", [])
-        elif isinstance(request, dict):
-            data_list = request.get("files", [])
-        else:
-            # 假设请求体本身就是列表
-            data_list = request
-            
-        if not data_list:
-            return {"success": True, "processed_count": 0, "failed_count": 0, "message": "没有需要处理的文件"}
-
-        # 预处理每个文件记录中的时间戳，转换为Python datetime对象
-        for data in data_list:
-            # 处理Unix时间戳的转换 (从Rust发送的秒数转换为Python datetime)
-            if "created_time" in data and isinstance(data["created_time"], (int, float)):
-                data["created_time"] = datetime.fromtimestamp(data["created_time"])
-                
-            if "modified_time" in data and isinstance(data["modified_time"], (int, float)):
-                data["modified_time"] = datetime.fromtimestamp(data["modified_time"])
-                
-            if "accessed_time" in data and isinstance(data["accessed_time"], (int, float)):
-                data["accessed_time"] = datetime.fromtimestamp(data["accessed_time"])
-        
-        # 处理字符串格式的时间字段（处理之前已经先处理了整数时间戳）
-        for data in data_list:
-            for time_field in ["created_time", "modified_time", "accessed_time"]:
-                # 只处理仍然是字符串格式的时间字段（整数时间戳已在前一步转换）
-                if time_field in data and isinstance(data[time_field], str):
-                    try:
-                        data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
-                    except Exception as e:
-                        logger.warning(f"转换字符串时间字段 {time_field} 失败: {str(e)}")
-                        # 如果是修改时间字段转换失败，设置为当前时间
-                        if time_field == "modified_time":
-                            data[time_field] = datetime.now()
-                
-                # 确保每个时间字段都有值，对于必填字段
-                if time_field == "modified_time" and (time_field not in data or data[time_field] is None):
-                    logger.warning(f"缺少必填时间字段 {time_field}，使用当前时间")
-                    data[time_field] = datetime.now()
-                            
-            # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
-            if "metadata" in data and "extra_metadata" not in data:
-                data["extra_metadata"] = data.pop("metadata")
-
-        # 1. 先创建任务，获取 task_id
-        task_name = f"批量处理文件: {len(data_list)} 个文件"
-        task: Task = task_mgr.add_task(
-            task_name=task_name,
-            task_type=TaskType.TAGGING,
-            priority=TaskPriority.MEDIUM,
-            extra_data={"file_count": len(data_list)}
-        )
-        logger.info(f"已创建标记任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
-
-        # 2. 批量添加粗筛结果，并关联 task_id
-        result = screening_mgr.add_batch_screening_results(data_list, task_id=task.id)
-        
-        # 3. 返回结果
-        if result["success"] > 0:
-            message = f"已为 {result['success']} 个文件创建处理任务，失败 {result['failed']} 个"
-        else:
-            message = f"未能处理任何文件，失败 {result['failed']} 个"
-
-        return {
-            "success": result["success"] > 0,
-            "processed_count": result["success"],
-            "failed_count": result["failed"],
-            "errors": result.get("errors"),
-            "task_id": task.id,
-            "message": message
-        }
-        
-    except Exception as e:
-        logger.error(f"批量处理文件粗筛结果失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"批量处理失败: {str(e)}"
-        }
-
-@app.get("/file-screening/results")
-def get_file_screening_results(
-    limit: int = 1000,
-    category_id: int = None,
-    time_range: str = None,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """获取文件粗筛结果列表，支持按分类和时间范围筛选
-    
-    参数:
-    - limit: 最大返回结果数
-    - category_id: 可选，按文件分类ID过滤
-    - time_range: 可选，按时间范围过滤 ("today", "last7days", "last30days")
-    """
-    try:
-        from datetime import datetime, timedelta
-        
-        # 基础查询
-        results = screening_mgr.get_all_results(limit)
-        
-        # 如果结果为空，直接返回空列表，防止后续处理出错
-        if not results:
-            return {
-                "success": True,
-                "count": 0,
-                "data": []
-            }
-        
-        # 转换为可序列化字典列表
-        results_dict = [result.model_dump() for result in results]
-        
-        # 过滤逻辑
-        filtered_results = results_dict
-        
-        # 按分类过滤
-        if (category_id is not None):
-            filtered_results = [r for r in filtered_results if r.get('category_id') == category_id]
-        
-        # 按时间范围过滤
-        if time_range:
-            now = datetime.now()
-            # Ensure modified_time is a string before parsing
-            date_format = "%Y-%m-%d %H:%M:%S" # Define the correct format
-
-            if time_range == "today":
-                today = datetime(now.year, now.month, now.day)
-                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= today]
-            elif time_range == "last7days":
-                week_ago = now - timedelta(days=7)
-                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= week_ago]
-            elif time_range == "last30days":
-                month_ago = now - timedelta(days=30)
-                filtered_results = [r for r in filtered_results if r.get('modified_time') and datetime.strptime(r.get('modified_time'), date_format) >= month_ago]
-        
-        return {
-            "success": True,
-            "count": len(filtered_results),
-            "data": filtered_results
-        }
-        
-    except Exception as e:
-        logger.error(f"获取文件粗筛结果列表失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "message": f"获取失败: {str(e)}"
-        }
-@app.get("/file-screening/results/search")
-def search_files_by_path_substring(
-    substring: str,
-    limit: int = 100,
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """根据路径子字符串搜索文件粗筛结果
-    
-    参数:
-    - substring: 要搜索的路径子字符串
-    - limit: 最大返回结果数
-    """
-    try:
-        # 使用 ScreeningManager 的搜索方法，现在返回字典列表
-        results_dict = screening_mgr.search_files_by_path_substring(substring, limit)
-        
-        return {
-            "success": True,
-            "count": len(results_dict),
-            "data": results_dict
-        }
-        
-    except Exception as e:
-        logger.error(f"根据路径子字符串搜索文件粗筛结果失败: {str(e)}")
-        return {
-            "success": False,
-            "message": f"搜索失败: {str(e)}"
-        }
-
 @app.get("/")
 def read_root():
     # 现在可以在任何路由中使用 app.state.db_path
@@ -1114,94 +696,6 @@ def health_check():
         #     "folders": folder_hierarchy_cache.get_stats()
         # }
     }
-
-@app.post("/screening/clean-by-path")
-def clean_screening_results_by_path(
-    data: Dict[str, Any] = Body(...),
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """手动清理指定路径下的粗筛结果（用于添加黑名单子文件夹时）
-    
-    前端可以使用此端点在用户在白名单下添加黑名单子文件夹后清理数据，
-    相当于在集合中扣出一个子集来删掉。
-    """
-    try:
-        folder_path = data.get("path", "").strip()
-        
-        if not folder_path:
-            return {"status": "error", "message": "文件夹路径不能为空"}
-        
-        # 使用 delete_screening_results_by_path_prefix 方法，用于在白名单下添加黑名单子文件夹
-        deleted_count = screening_mgr.delete_screening_results_by_path_prefix(folder_path)
-        return {
-            "status": "success", 
-            "deleted": deleted_count,
-            "message": f"已清理 {deleted_count} 条与路径前缀 '{folder_path}' 相关的粗筛结果"
-        }
-            
-    except Exception as e:
-        logger.error(f"手动清理粗筛结果失败: {str(e)}")
-        return {"status": "error", "message": f"清理失败: {str(e)}"}
-
-@app.post("/screening/delete-by-path")
-def delete_screening_by_path(
-    data: Dict[str, Any] = Body(...),
-    screening_mgr: ScreeningManager = Depends(get_screening_manager)
-):
-    """删除指定路径的文件粗筛记录
-    
-    当客户端检测到文件删除事件时，调用此API端点删除对应的粗筛记录。
-    
-    请求体:
-    - file_path: 要删除的文件路径
-    
-    返回:
-    - success: 操作是否成功
-    - deleted_count: 删除的记录数量
-    - message: 操作结果消息
-    """
-    try:
-        file_path = data.get("file_path")
-        
-        if not file_path:
-            logger.warning("删除粗筛记录请求中未提供文件路径")
-            return {
-                "success": False,
-                "deleted_count": 0,
-                "message": "文件路径不能为空"
-            }
-        
-        # 对于单个文件删除，我们需要确保路径是精确匹配的
-        # 我们可以使用delete_screening_results_by_path_prefix方法，但需要确保只删除这个确切路径
-        # 通常情况下，这个路径应该是一个文件路径，不会匹配到其他文件
-        
-        # 标准化路径
-        normalized_path = os.path.normpath(file_path).replace("\\", "/")
-        
-        # 执行删除操作
-        deleted_count = screening_mgr.delete_screening_results_by_path_prefix(normalized_path)
-        
-        # 记录操作结果
-        if deleted_count > 0:
-            logger.info(f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条")
-        else:
-            logger.info(f"未找到文件 '{normalized_path}' 的粗筛记录，无需删除")
-        
-        return {
-            "success": True,
-            "deleted_count": deleted_count,
-            "message": f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条"
-        }
-        
-    except Exception as e:
-        logger.error(f"删除文件粗筛记录失败: {str(e)}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return {
-            "success": False,
-            "deleted_count": 0,
-            "message": f"删除失败: {str(e)}"
-        }
 
 @app.post("/pin-file")
 async def pin_file(
