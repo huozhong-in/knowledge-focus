@@ -217,11 +217,15 @@ export default function Page() {
   }
 
   // 创建新会话的处理（仅设置为准备状态，实际创建延迟到第一条消息）
-  const handleCreateSession = () => {
+  const handleCreateSession = async () => {
     try {
       // 清空当前会话状态，准备新会话
       setCurrentSession(null)
       setCurrentSessionId(null)
+      
+      // 清空文件列表（新会话没有Pin文件）
+      const { useFileListStore } = await import('./lib/fileListStore')
+      useFileListStore.getState().rebuildFromPinnedFiles([])
       
       // 触发聊天组件重置
       setChatResetTrigger(prev => prev + 1)

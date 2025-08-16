@@ -525,18 +525,6 @@ class DBManager:
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Tags.__table__])
-                # # 初始化一些常用标签，预设标签：项目、重要、旅行、汇报、论文等
-                # tags_data = [
-                #     {"name": "项目", "type": TagsType.SYSTEM.value},
-                #     {"name": "重要", "type": TagsType.SYSTEM.value},
-                #     {"name": "旅行", "type": TagsType.SYSTEM.value},
-                #     {"name": "汇报", "type": TagsType.SYSTEM.value},
-                #     {"name": "论文", "type": TagsType.SYSTEM.value},
-                # ]
-                # for tag in tags_data:
-                #     tag_obj = Tags(**tag)
-                #     self.session.add(tag_obj)
-                # self.session.commit()
             
             # 创建文件粗筛结果表
             if not inspector.has_table(FileScreeningResult.__tablename__):
@@ -552,7 +540,7 @@ class DBManager:
 
             # 创建 FTS5 虚拟表和触发器
             if not inspector.has_table('t_files_fts'):
-                conn.execute(text(f"""
+                conn.execute(text("""
                     CREATE VIRTUAL TABLE t_files_fts USING fts5(
                         file_id UNINDEXED,
                         tags_search_ids

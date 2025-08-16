@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Body, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
-from sqlmodel import Session, select
-from typing import Dict, List, Any
+from fastapi.responses import StreamingResponse
+from sqlmodel import Session
+from typing import Dict, Any
 import json
 import uuid
 from chatsession_mgr import ChatSessionMgr
@@ -214,7 +214,7 @@ def get_router(external_get_session: callable) -> APIRouter:
         try:
             messages = request_data.get("messages", [])
             # 可选：会话ID（用于持久化）；未提供则仅流式返回不落库
-            session_id: int | None = request_data.get("session_id")
+            _session_id: int | None = request_data.get("session_id")
             model_config = request_data.get("model_config", {})
 
             if not messages or not model_config:
@@ -249,9 +249,9 @@ def get_router(external_get_session: callable) -> APIRouter:
         """
         try:
             # 解析AI SDK v5格式的请求
-            trigger = request_data.get("trigger", "submit-message")
-            chat_id = request_data.get("chatId", str(uuid.uuid4()))
-            message_id = request_data.get("messageId")
+            _trigger = request_data.get("trigger", "submit-message")
+            _chat_id = request_data.get("chatId", str(uuid.uuid4()))
+            _message_id = request_data.get("messageId")
             messages = request_data.get("messages", [])
             session_id: int | None = request_data.get("session_id")
 
@@ -320,7 +320,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     yield f"data: {json.dumps({'type': 'text-start', 'id': response_id})}\n\n"
 
                     # 调用现有的stream_chat方法
-                    print(f"[DEBUG] Starting stream_chat")
+                    print("[DEBUG] Starting stream_chat")
                     chunk_count = 0
                     async for content_chunk in models_mgr.stream_chat(
                         messages=converted_messages

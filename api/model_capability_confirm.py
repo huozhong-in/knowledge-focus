@@ -42,9 +42,9 @@ class ModelCapabilityConfirm:
         capability_dict = {}
         for capa in self.get_sorted_capability_names():
             capability_dict[capa] = await self.confirm(config_id, ModelCapability(capa))
-        if save_config == True:
+        if save_config:
             model_config: ModelConfiguration = self.session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
-            model_config.capabilities_json = [capa for capa in capability_dict if capability_dict[capa] == True]
+            model_config.capabilities_json = [capa for capa in capability_dict if capability_dict[capa]]
             self.session.add(model_config)
             self.session.commit()
         return capability_dict
@@ -91,7 +91,7 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy == True:
+        if model_interface.use_proxy:
             http_client = httpx.AsyncClient(proxy=self.system_proxy)
         else:
             http_client = httpx.AsyncClient()
@@ -138,7 +138,7 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy == True:
+        if model_interface.use_proxy:
             http_client = httpx.AsyncClient(proxy=self.system_proxy)
         else:
             http_client = httpx.AsyncClient()
@@ -149,7 +149,7 @@ class ModelCapabilityConfirm:
             http_client=http_client,
         )
         try:
-            response = await client.chat.completions.create(
+            _ = await client.chat.completions.create(
                 model=model_interface.model_identifier,
                 messages=[
                     {
@@ -183,7 +183,7 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy == True:
+        if model_interface.use_proxy:
             http_client = httpx.AsyncClient(proxy=self.system_proxy)
         else:
             http_client = httpx.AsyncClient()
@@ -194,7 +194,7 @@ class ModelCapabilityConfirm:
             http_client=http_client,
         )
         try:
-            response = await client.embeddings.create(
+            _ = await client.embeddings.create(
                 model=model_interface.model_identifier,
                 input="Hello, world!",
             )
@@ -211,7 +211,7 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy == True:
+        if model_interface.use_proxy:
             http_client = httpx.AsyncClient(proxy=self.system_proxy)
         else:
             http_client = httpx.AsyncClient()
@@ -242,7 +242,7 @@ class ModelCapabilityConfirm:
             }
         ]
         try:
-            response_message = await client.chat.completions.create(
+            _ = await client.chat.completions.create(
                 model=model_interface.model_identifier,
                 messages=[
                     {

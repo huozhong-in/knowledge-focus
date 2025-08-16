@@ -29,6 +29,9 @@ from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from search_mgr import SearchManager
 from multivector_mgr import MultiVectorMgr
+from models_api import get_router as get_models_router
+from tagging_api import get_router as get_tagging_router
+from chatsession_api import get_router as get_chatsession_router
 
 # --- Centralized Logging Setup ---
 def setup_logging(logging_dir: str = None):
@@ -222,7 +225,6 @@ app.add_middleware(
     allow_headers=["*"],    # Allows all headers
 )
 
-
 # 周期性检查新通知并广播
 # async def check_notifications():
 #     while True:
@@ -239,19 +241,15 @@ def get_session():
     with Session(app.state.engine) as session:
         yield session
 
-
 # 本地大模型API端点添加
-from models_api import get_router as get_models_router
 models_router = get_models_router(external_get_session=get_session)
 app.include_router(models_router, prefix="", tags=["models"])
 
 # 添加新的标签API路由
-from tagging_api import get_router as get_tagging_router
 tagging_router = get_tagging_router(external_get_session=get_session)
 app.include_router(tagging_router, prefix="", tags=["tagging"])
 
 # 添加聊天会话API路由
-from chatsession_api import get_router as get_chatsession_router
 chatsession_router = get_chatsession_router(external_get_session=get_session)
 app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
 
@@ -392,7 +390,7 @@ def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager)
 # 任务处理者
 def task_processor(db_path: str, stop_event: threading.Event):
     """处理任务的后台工作线程"""
-    logger.info(f"任务处理线程已启动")
+    logger.info("任务处理线程已启动")
     sqlite_url = f"sqlite:///{db_path}"
     engine = create_engine(
         sqlite_url, 
@@ -565,63 +563,60 @@ def _check_file_pin_status(file_path: str, session: Session) -> bool:
     except Exception as e:
         logger.error(f"检查文件pin状态时发生错误: {e}", exc_info=True)
         return False
-    return file_ext in important_extensions
 
-
-
-@app.post("/pin-file")
-def pin_file(
-    request: Dict[str, Any] = Body(...),
-    task_mgr: TaskManager = Depends(get_task_manager)
-):
-    """
-    Pin一个文件，创建高优先级的多模态向量化任务
+# @app.post("/pin-file")
+# def pin_file(
+#     request: Dict[str, Any] = Body(...),
+#     task_mgr: TaskManager = Depends(get_task_manager)
+# ):
+#     """
+#     Pin一个文件，创建高优先级的多模态向量化任务
     
-    参数:
-    - file_path: 文件的绝对路径
+#     参数:
+#     - file_path: 文件的绝对路径
     
-    返回:
-    - task_id: 创建的任务ID
-    - message: 状态信息
-    """
-    try:
-        file_path = request.get("file_path")
-        if not file_path:
-            return {"success": False, "error": "缺少file_path参数"}
+#     返回:
+#     - task_id: 创建的任务ID
+#     - message: 状态信息
+#     """
+#     try:
+#         file_path = request.get("file_path")
+#         if not file_path:
+#             return {"success": False, "error": "缺少file_path参数"}
         
-        # 验证文件路径
-        if not os.path.exists(file_path):
-            return {"success": False, "error": f"文件不存在: {file_path}"}
+#         # 验证文件路径
+#         if not os.path.exists(file_path):
+#             return {"success": False, "error": f"文件不存在: {file_path}"}
         
-        if not os.path.isfile(file_path):
-            return {"success": False, "error": f"路径不是文件: {file_path}"}
+#         if not os.path.isfile(file_path):
+#             return {"success": False, "error": f"路径不是文件: {file_path}"}
         
-        # 检查文件权限
-        if not os.access(file_path, os.R_OK):
-            return {"success": False, "error": f"文件无读取权限: {file_path}"}
+#         # 检查文件权限
+#         if not os.access(file_path, os.R_OK):
+#             return {"success": False, "error": f"文件无读取权限: {file_path}"}
         
-        # 创建高优先级MULTIVECTOR任务
-        file_name = os.path.basename(file_path)
-        task = task_mgr.add_task(
-            task_name=f"Pin文件向量化: {file_name}",
-            task_type=TaskType.MULTIVECTOR,
-            priority=TaskPriority.HIGH,
-            extra_data={"file_path": file_path, "source": "user_pin"},
-            target_file_path=file_path
-        )
+#         # 创建高优先级MULTIVECTOR任务
+#         file_name = os.path.basename(file_path)
+#         task = task_mgr.add_task(
+#             task_name=f"Pin文件向量化: {file_name}",
+#             task_type=TaskType.MULTIVECTOR,
+#             priority=TaskPriority.HIGH,
+#             extra_data={"file_path": file_path, "source": "user_pin"},
+#             target_file_path=file_path
+#         )
         
-        logger.info(f"用户Pin文件成功，创建任务ID: {task.id}, 文件: {file_path}")
+#         logger.info(f"用户Pin文件成功，创建任务ID: {task.id}, 文件: {file_path}")
         
-        return {
-            "success": True,
-            "task_id": task.id,
-            "message": f"文件Pin成功，正在处理: {file_name}",
-            "file_path": file_path
-        }
+#         return {
+#             "success": True,
+#             "task_id": task.id,
+#             "message": f"文件Pin成功，正在处理: {file_name}",
+#             "file_path": file_path
+#         }
         
-    except Exception as e:
-        logger.error(f"Pin文件时发生错误: {e}", exc_info=True)
-        return {"success": False, "error": f"Pin文件失败: {str(e)}"}
+#     except Exception as e:
+#         logger.error(f"Pin文件时发生错误: {e}", exc_info=True)
+#         return {"success": False, "error": f"Pin文件失败: {str(e)}"}
 
 @app.get("/task/{task_id}")
 def get_task_status(task_id: int, task_mgr: TaskManager = Depends(get_task_manager)):
@@ -675,7 +670,6 @@ def get_image(image_filename: str, session: Session = Depends(get_session)):
     try:
         from fastapi.responses import FileResponse
         from pathlib import Path
-        import os
         
         # 验证文件名格式（安全检查）
         if not image_filename.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp')):
@@ -877,7 +871,7 @@ def get_document_images(document_id: int, session: Session = Depends(get_session
         return {"success": False, "error": f"获取图片列表失败: {str(e)}"}
 
 # =============================================================================
-# 📊 向量内容搜索API端点 - P0核心功能
+# 📊 向量内容搜索API端点
 # =============================================================================
 
 @app.post("/search/content")
@@ -886,7 +880,7 @@ def search_document_content(
     search_mgr: SearchManager = Depends(get_search_manager)
 ):
     """
-    文档内容的自然语言检索 - P0核心API
+    文档内容的自然语言检索
     
     参数:
     - query: 自然语言查询文本
@@ -1838,19 +1832,7 @@ if __name__ == "__main__":
         logger.info(f"设置数据库路径: {args.db_path}")
         
         # 启动服务器
-        logger.info(f"API服务启动在: http://{args.host}:{args.port}")
-        
-        # # 开发模式启用热重载
-        # if args.mode is not None and args.mode == "dev":
-        #     uvicorn.run(
-        #         "main:app", 
-        #         host=args.host, 
-        #         port=args.port, 
-        #         log_level="info",
-        #         reload=True,
-        #         reload_dirs=[Path(__file__).parent.as_posix()]
-        #     )
-        # else:
+        logger.info(f"API服务启动在: http://{args.host}:{args.port}")        
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     
     except Exception as e:
