@@ -3,9 +3,9 @@ from sqlmodel import Session, select
 from typing import Dict, List, Any
 import time
 import sys
-from db_mgr import MyFiles, FileCategory, FileFilterRule, FileExtensionMap, ProjectRecognitionRule
+from db_mgr import MyFolders, FileCategory, FileFilterRule, FileExtensionMap
 from api_cache_optimization import TimedCache, cached
-from myfiles_mgr import MyFilesManager
+from myfolders_mgr import MyFoldersManager
 from screening_mgr import ScreeningManager
 import asyncio
 import logging
@@ -19,9 +19,9 @@ bundle_ext_cache = TimedCache[List[str]](expiry_seconds=600)   # 10分钟过期
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
 
-    def get_myfiles_manager(session: Session = Depends(external_get_session)) -> MyFilesManager:
-        """获取文件/文件夹管理器实例"""
-        return MyFilesManager(session)
+    def get_myfolders_manager(session: Session = Depends(external_get_session)) -> MyFoldersManager:
+        """获取文件夹管理器实例"""
+        return MyFoldersManager(session)
 
     def get_screening_manager(session: Session = Depends(external_get_session)) -> ScreeningManager:
         return ScreeningManager(session)
@@ -33,10 +33,10 @@ def get_router(external_get_session: callable) -> APIRouter:
         logger.info("[CACHE] 所有配置缓存已清除")
     
     # 获取所有配置信息的API端点
-    @router.get("/config/all", tags=["myfiles"], summary="获取所有配置")
+    @router.get("/config/all", tags=["myfolders"], summary="获取所有配置")
     async def get_all_configuration(
         session: Session = Depends(external_get_session),
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """
         获取所有Rust端进行文件处理所需的配置信息。
@@ -47,7 +47,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             # 使用异步超时控制
             try:
                 return await asyncio.wait_for(
-                    _get_all_configuration_async(session, myfiles_mgr), 
+                    _get_all_configuration_async(session, myfolders_mgr), 
                     timeout=5.0  # 设置5秒超时
                 )
             except asyncio.TimeoutError:
@@ -67,30 +67,28 @@ def get_router(external_get_session: callable) -> APIRouter:
                 "file_categories": [],
                 "file_filter_rules": [],
                 "file_extension_maps": [],
-                "project_recognition_rules": [],
                 "monitored_folders": [],
                 "full_disk_access": False,  # Default to false on error
                 "error_message": f"Failed to fetch configuration: {str(e)}"
             }
 
-    async def _get_all_configuration_async(session: Session, myfiles_mgr: MyFilesManager):
+    async def _get_all_configuration_async(session: Session, myfolders_mgr: MyFoldersManager):
         """异步包装缓存函数，用于超时控制"""
-        return _get_all_configuration_cached(session, myfiles_mgr)
+        return _get_all_configuration_cached(session, myfolders_mgr)
 
     @cached(config_cache, "config_all")
-    def _get_all_configuration_cached(session: Session, myfiles_mgr: MyFilesManager):
+    def _get_all_configuration_cached(session: Session, myfolders_mgr: MyFoldersManager):
         """缓存版本的配置获取函数"""
         start_time = time.time()
         file_categories = session.exec(select(FileCategory)).all()
         file_filter_rules = session.exec(select(FileFilterRule)).all()
         file_extension_maps = session.exec(select(FileExtensionMap)).all()
-        project_recognition_rules = session.exec(select(ProjectRecognitionRule)).all()
-        monitored_folders = session.exec(select(MyFiles)).all()
+        monitored_folders = session.exec(select(MyFolders)).all()
         
         # 检查完全磁盘访问权限状态 
         full_disk_access = False
         if sys.platform == "darwin":  # macOS
-            access_status = myfiles_mgr.check_full_disk_access_status()
+            access_status = myfolders_mgr.check_full_disk_access_status()
             full_disk_access = access_status.get("has_full_disk_access", False)
             logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
         
@@ -98,14 +96,13 @@ def get_router(external_get_session: callable) -> APIRouter:
         logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
         
         # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
-        bundle_extensions = myfiles_mgr.get_bundle_extensions_for_rust()
+        bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
         logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
         from file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
         return {
             "file_categories": file_categories,
             "file_filter_rules": file_filter_rules,
             "file_extension_maps": file_extension_maps,
-            "project_recognition_rules": project_recognition_rules,
             "monitored_folders": monitored_folders,
             "parsable_extensions": PARSEABLE_EXTENSIONS,
             "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
@@ -113,9 +110,9 @@ def get_router(external_get_session: callable) -> APIRouter:
         }
     
     # 添加文件夹管理相关API
-    @router.get("/directories", tags=["myfiles"])
+    @router.get("/directories", tags=["myfolders"])
     def get_directories(
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         try:
             # 根据系统平台设置 full_disk_access 状态
@@ -123,13 +120,13 @@ def get_router(external_get_session: callable) -> APIRouter:
             fda_status = False
             if sys.platform == "darwin":  # macOS
                 # 在 macOS 上，检查应用是否有完全磁盘访问权限
-                access_status = myfiles_mgr.check_full_disk_access_status()
+                access_status = myfolders_mgr.check_full_disk_access_status()
                 fda_status = access_status.get("has_full_disk_access", False)
                 logger.info(f"[API DEBUG] Full disk access status: {fda_status}, details: {access_status}")
 
             # 使用 select 语句从数据库获取所有监控的目录
-            stmt = select(MyFiles)
-            directories_from_db = myfiles_mgr.session.exec(stmt).all()
+            stmt = select(MyFolders)
+            directories_from_db = myfolders_mgr.session.exec(stmt).all()
             
             processed_dirs = []
             for d in directories_from_db:
@@ -149,10 +146,10 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"Error in get_directories: {e}", exc_info=True)
             return {"status": "error", "full_disk_access": False, "data": [], "message": str(e)}
 
-    @router.post("/directories", tags=["myfiles"])
+    @router.post("/directories", tags=["myfolders"])
     def add_directory(
         data: Dict[str, Any] = Body(...),
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """添加新文件夹"""
         try:
@@ -163,14 +160,14 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not path: # 修正：之前是 if name或not path:
                 return {"status": "error", "message": "路径不能为空"}
             
-            success, message_or_dir = myfiles_mgr.add_directory(path, alias, is_blacklist)
+            success, message_or_dir = myfolders_mgr.add_directory(path, alias, is_blacklist)
             
             if success:
                 # 清除相关缓存
                 invalidate_config_caches()
                 logger.info(f"[CACHE] 已清除缓存，因为添加了新文件夹: {path}")
-                
-                # 检查返回值是否是字符串或MyFiles对象
+
+                # 检查返回值是否是字符串或MyFolders对象
                 if isinstance(message_or_dir, str):
                     return {"status": "success", "message": message_or_dir}
                 else:                
@@ -187,11 +184,11 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"添加文件夹失败: {str(e)}")
             return {"status": "error", "message": f"添加文件夹失败: {str(e)}"}
 
-    @router.put("/directories/{directory_id}", tags=["myfiles"])
+    @router.put("/directories/{directory_id}", tags=["myfolders"])
     def update_directory(
         directory_id: int,
         data: Dict[str, Any] = Body(...),
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """更新文件夹的信息"""
         try:
@@ -201,11 +198,11 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"更新文件夹信息失败: {directory_id}, {str(e)}")
             return {"status": "error", "message": f"更新文件夹信息失败: {str(e)}"}
 
-    @router.put("/directories/{directory_id}/blacklist", tags=["myfiles"])
+    @router.put("/directories/{directory_id}/blacklist", tags=["myfolders"])
     def toggle_directory_blacklist(
         directory_id: int,
         data: Dict[str, Any] = Body(...), # 包含 is_blacklist: bool
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """切换文件夹的黑名单状态"""
         try:
@@ -213,7 +210,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not isinstance(is_blacklist, bool):
                 return {"status": "error", "message": "无效的黑名单状态参数"}
 
-            success, message_or_dir = myfiles_mgr.toggle_blacklist(directory_id, is_blacklist)
+            success, message_or_dir = myfolders_mgr.toggle_blacklist(directory_id, is_blacklist)
             if success:
                 # 清除相关缓存
                 invalidate_config_caches()
@@ -225,14 +222,14 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"切换文件夹黑名单状态失败: {directory_id}, {str(e)}")
             return {"status": "error", "message": f"切换文件夹黑名单状态失败: {str(e)}"}
 
-    @router.delete("/directories/{directory_id}", tags=["myfiles"])
+    @router.delete("/directories/{directory_id}", tags=["myfolders"])
     def delete_directory(
         directory_id: int,
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """删除文件夹"""
         try:
-            success, message = myfiles_mgr.remove_directory(directory_id)
+            success, message = myfolders_mgr.remove_directory(directory_id)
             if success:
                 # 清除相关缓存
                 invalidate_config_caches()
@@ -244,11 +241,11 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"删除文件夹失败: {directory_id}, {str(e)}")
             return {"status": "error", "message": f"删除文件夹失败: {str(e)}"}
 
-    @router.put("/directories/{directory_id}/alias", tags=["myfiles"])
+    @router.put("/directories/{directory_id}/alias", tags=["myfolders"])
     def update_directory_alias(
         directory_id: int,
         data: Dict[str, Any] = Body(...), # 包含 alias: str
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """更新文件夹的别名"""
         try:
@@ -256,7 +253,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             if alias is None: # 允许空字符串作为别名，但不允许None
                 return {"status": "error", "message": "别名不能为空"}
 
-            success, message_or_dir = myfiles_mgr.update_alias(directory_id, alias)
+            success, message_or_dir = myfolders_mgr.update_alias(directory_id, alias)
             if success:
                 return {"status": "success", "data": message_or_dir.model_dump(), "message": "别名更新成功"}
             else:
@@ -267,43 +264,43 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     # 在文件末尾添加以下端点，用于初始化默认文件夹和获取权限提示
     @router.get("/directories/default")
-    def initialize_default_directories_endpoint(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    def initialize_default_directories_endpoint(myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)):
         """初始化默认系统文件夹"""
         try:
-            count = myfiles_mgr.initialize_default_directories()
+            count = myfolders_mgr.initialize_default_directories()
             return {"status": "success", "message": f"成功初始化/检查了 {count} 个默认文件夹。"}
         except Exception as e:
             logger.error(f"初始化默认文件夹失败: {str(e)}")
             return {"status": "error", "message": f"初始化默认文件夹失败: {str(e)}"}
 
-    @router.get("/directories/default-list", tags=["myfiles"])
-    def get_default_directories_list(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    @router.get("/directories/default-list", tags=["myfolders"])
+    def get_default_directories_list(myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)):
         """获取默认系统文件夹列表（不进行数据库操作）"""
         try:
-            directories = myfiles_mgr.get_default_directories()
+            directories = myfolders_mgr.get_default_directories()
             return {"status": "success", "data": directories}
         except Exception as e:
             logger.error(f"获取默认文件夹列表失败: {str(e)}")
             return {"status": "error", "message": f"获取默认文件夹列表失败: {str(e)}"}
 
-    @router.get("/macos-permissions-hint", tags=["myfiles"])
-    def get_macos_permissions_hint_endpoint(myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)):
+    @router.get("/macos-permissions-hint", tags=["myfolders"])
+    def get_macos_permissions_hint_endpoint(myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)):
         """获取 macOS 权限提示"""
         try:
-            hint = myfiles_mgr.get_macOS_permissions_hint()
+            hint = myfolders_mgr.get_macOS_permissions_hint()
             return {"status": "success", "data": hint}
         except Exception as e:
             logger.error(f"获取 macOS 权限提示失败: {str(e)}")
             return {"status": "error", "message": f"获取 macOS 权限提示失败: {str(e)}"}
 
-    @router.post("/directories/{directory_id}/request-access", tags=["myfiles"])
+    @router.post("/directories/{directory_id}/request-access", tags=["myfolders"])
     def request_directory_access(
         directory_id: int,
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """尝试读取目录以触发系统授权对话框"""
         try:
-            success, message = myfiles_mgr.test_directory_access(directory_id)
+            success, message = myfolders_mgr.test_directory_access(directory_id)
             if success:
                 return {"status": "success", "message": message}
             else:
@@ -312,14 +309,14 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"请求目录访问失败: {directory_id}, {str(e)}")
             return {"status": "error", "message": f"请求目录访问失败: {str(e)}"}
 
-    @router.get("/directories/{directory_id}/access-status", tags=["myfiles"])
+    @router.get("/directories/{directory_id}/access-status", tags=["myfolders"])
     def check_directory_access_status(
         directory_id: int,
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """检查目录的访问权限状态"""
         try:
-            success, result = myfiles_mgr.check_directory_access_status(directory_id)
+            success, result = myfolders_mgr.check_directory_access_status(directory_id)
             if success:
                 return {"status": "success", "data": result}
             else:
@@ -329,14 +326,14 @@ def get_router(external_get_session: callable) -> APIRouter:
             return {"status": "error", "message": f"检查目录访问状态失败: {str(e)}"}
 
     # ========== Bundle扩展名管理端点 ==========
-    @router.get("/bundle-extensions", tags=["myfiles"])
+    @router.get("/bundle-extensions", tags=["myfolders"])
     def get_bundle_extensions(
         active_only: bool = True,
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """获取Bundle扩展名列表"""
         try:
-            extensions = myfiles_mgr.get_bundle_extensions(active_only=active_only)
+            extensions = myfolders_mgr.get_bundle_extensions(active_only=active_only)
             extensions_data = []
             for ext in extensions:
                 extensions_data.append({
@@ -358,10 +355,10 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"获取Bundle扩展名失败: {str(e)}")
             return {"status": "error", "message": f"获取Bundle扩展名失败: {str(e)}"}
 
-    @router.post("/bundle-extensions", tags=["myfiles"])
+    @router.post("/bundle-extensions", tags=["myfolders"])
     def add_bundle_extension(
         data: Dict[str, Any] = Body(...),
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """添加新的Bundle扩展名"""
         try:
@@ -371,7 +368,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not extension:
                 return {"status": "error", "message": "扩展名不能为空"}
             
-            success, result = myfiles_mgr.add_bundle_extension(extension, description)
+            success, result = myfolders_mgr.add_bundle_extension(extension, description)
             
             if success:
                 return {
@@ -393,14 +390,14 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"添加Bundle扩展名失败: {str(e)}")
             return {"status": "error", "message": f"添加Bundle扩展名失败: {str(e)}"}
 
-    @router.delete("/bundle-extensions/{ext_id}", tags=["myfiles"])
+    @router.delete("/bundle-extensions/{ext_id}", tags=["myfolders"])
     def remove_bundle_extension(
         ext_id: int,
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """删除Bundle扩展名（设为不活跃）"""
         try:
-            success, message = myfiles_mgr.remove_bundle_extension(ext_id)
+            success, message = myfolders_mgr.remove_bundle_extension(ext_id)
             
             if success:
                 return {"status": "success", "message": message}
@@ -411,32 +408,12 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"删除Bundle扩展名失败: {str(e)}")
             return {"status": "error", "message": f"删除Bundle扩展名失败: {str(e)}"}
 
-    @router.get("/bundle-extensions/for-rust", tags=["myfiles"])
-    def get_bundle_extensions_for_rust(
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
-    ):
-        """获取用于Rust端的Bundle扩展名列表"""
-        try:
-            # 添加日志，提示应该使用新的接口
-            logger.warning("[API_DEPRECATED] /bundle-extensions/for-rust 接口已被弃用，建议使用 /config/all 接口获取 bundle_extensions 字段")
-            
-            extensions = myfiles_mgr.get_bundle_extensions_for_rust()
-            return {
-                "status": "success",
-                "data": extensions,
-                "count": len(extensions),
-                "message": f"成功获取 {len(extensions)} 个Rust端Bundle扩展名"
-            }
-        except Exception as e:
-            logger.error(f"获取Rust端Bundle扩展名失败: {str(e)}")
-            return {"status": "error", "data": [], "message": f"获取失败: {str(e)}"}
-
     # ========== 层级文件夹管理端点 ==========
-    @router.post("/folders/blacklist/{parent_id}", tags=["myfiles"])
+    @router.post("/folders/blacklist/{parent_id}", tags=["myfolders"])
     def add_blacklist_folder_under_parent(
         parent_id: int,
         data: Dict[str, Any] = Body(...),
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager),
         screening_mgr: ScreeningManager = Depends(get_screening_manager)
     ):
         """在指定的白名单父文件夹下添加黑名单子文件夹"""
@@ -447,7 +424,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not folder_path:
                 return {"status": "error", "message": "文件夹路径不能为空"}
             
-            success, result = myfiles_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
+            success, result = myfolders_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
             
             if success:
                 # 清除相关缓存
@@ -477,16 +454,16 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"添加黑名单文件夹失败: {str(e)}")
             return {"status": "error", "message": f"添加黑名单文件夹失败: {str(e)}"}
 
-    @router.get("/folders/hierarchy", tags=["myfiles"])
+    @router.get("/folders/hierarchy", tags=["myfolders"])
     async def get_folder_hierarchy(
-        myfiles_mgr: MyFilesManager = Depends(get_myfiles_manager)
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """获取文件夹层级关系（白名单+其下的黑名单）"""
         try:
             # 使用异步超时控制
             try:
                 return await asyncio.wait_for(
-                    _get_folder_hierarchy_async(myfiles_mgr), 
+                    _get_folder_hierarchy_async(myfolders_mgr), 
                     timeout=3.0  # 设置3秒超时
                 )
             except asyncio.TimeoutError:
@@ -502,15 +479,15 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"获取文件夹层级关系失败: {str(e)}")
             return {"status": "error", "message": f"获取文件夹层级关系失败: {str(e)}"}
             
-    async def _get_folder_hierarchy_async(myfiles_mgr: MyFilesManager):
+    async def _get_folder_hierarchy_async(myfolders_mgr: MyFoldersManager):
         """异步包装缓存函数，用于超时控制"""
-        return _get_folder_hierarchy_cached(myfiles_mgr)
+        return _get_folder_hierarchy_cached(myfolders_mgr)
 
     @cached(folder_hierarchy_cache, "folder_hierarchy")
-    def _get_folder_hierarchy_cached(myfiles_mgr: MyFilesManager):
+    def _get_folder_hierarchy_cached(myfolders_mgr: MyFoldersManager):
         """缓存版本的文件夹层级关系获取函数"""
         start_time = time.time()
-        hierarchy = myfiles_mgr.get_folder_hierarchy()
+        hierarchy = myfolders_mgr.get_folder_hierarchy()
         elapsed = time.time() - start_time
         logger.info(f"[FOLDERS] 获取文件夹层级关系耗时 {elapsed:.3f}s (从数据库)")
         

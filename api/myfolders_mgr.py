@@ -6,7 +6,7 @@ from sqlmodel import (
     or_, 
 )
 from datetime import datetime
-from db_mgr import MyFiles, BundleExtension
+from db_mgr import MyFolders, BundleExtension
 from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform
@@ -15,8 +15,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-class MyFilesManager:
-    """文件/文件夹资源管理、授权状态管理类
+class MyFoldersManager:
+    """文件夹资源管理、授权状态管理类
     
     负责:
     1. 管理用户授权的文件夹列表
@@ -88,12 +88,12 @@ class MyFilesManager:
             int: 初始化的文件夹数量
         """
         default_dirs = self.get_default_directories()
-        existing_paths = {myfile.path for myfile in self.session.exec(select(MyFiles)).all()}
+        existing_paths = {myfolder.path for myfolder in self.session.exec(select(MyFolders)).all()}
         
         new_records = []
         for dir_info in default_dirs:
             if dir_info["path"] not in existing_paths:
-                new_file = MyFiles(
+                new_file = MyFolders(
                     path=dir_info["path"],
                     alias=dir_info["name"],
                     is_blacklist=False
@@ -107,39 +107,39 @@ class MyFilesManager:
         
         return len(new_records)
     
-    def get_all_directories(self) -> List[MyFiles]:
+    def get_all_directories(self) -> List[MyFolders]:
         """获取所有文件夹记录
         
         Returns:
-            List[MyFiles]: 所有文件夹记录列表
+            List[MyFolders]: 所有文件夹记录列表
         """
-        return self.session.exec(select(MyFiles)).all()
+        return self.session.exec(select(MyFolders)).all()
     
-    def get_authorized_directories(self) -> List[MyFiles]:
+    def get_authorized_directories(self) -> List[MyFolders]:
         """获取所有已授权的文件夹（即非黑名单的文件夹）
         
         Returns:
-            List[MyFiles]: 已授权的文件夹记录列表
+            List[MyFolders]: 已授权的文件夹记录列表
         """
         return self.session.exec(
-            select(MyFiles).where(
-                not MyFiles.is_blacklist
+            select(MyFolders).where(
+                not MyFolders.is_blacklist
             )
         ).all()
     
     # 已移除 get_pending_directories 方法，不再需要检查授权状态
     
-    def get_blacklist_directories(self) -> List[MyFiles]:
+    def get_blacklist_directories(self) -> List[MyFolders]:
         """获取所有黑名单文件夹
         
         Returns:
-            List[MyFiles]: 黑名单文件夹记录列表
+            List[MyFolders]: 黑名单文件夹记录列表
         """
         return self.session.exec(
-            select(MyFiles).where(MyFiles.is_blacklist)
+            select(MyFolders).where(MyFolders.is_blacklist)
         ).all()
 
-    def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False) -> Tuple[bool, Union[MyFiles, str]]:
+    def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False) -> Tuple[bool, Union[MyFolders, str]]:
         """添加新文件夹
         
         Args:
@@ -148,7 +148,7 @@ class MyFilesManager:
             is_blacklist (bool, optional): 是否为黑名单文件夹. Defaults to False.
         
         Returns:
-            Tuple[bool, Union[MyFiles, str]]: (成功标志, 文件夹对象或错误消息)
+            Tuple[bool, Union[MyFolders, str]]: (成功标志, 文件夹对象或错误消息)
         """
         # 标准化路径
         path = os.path.normpath(path)
@@ -163,14 +163,14 @@ class MyFilesManager:
             
         # 检查记录是否已存在
         existing = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
+            select(MyFolders).where(MyFolders.path == path)
         ).first()
         
         if existing:
             return False, f"文件夹已存在: {path}"
             
         # 添加新记录
-        new_file = MyFiles(
+        new_file = MyFolders(
             path=path,
             alias=alias,
 
@@ -188,7 +188,7 @@ class MyFilesManager:
         self.session.refresh(directory)
         return True, directory
     
-    def toggle_blacklist(self, directory_id: int, is_blacklist: bool) -> Tuple[bool, MyFiles | str]:
+    def toggle_blacklist(self, directory_id: int, is_blacklist: bool) -> Tuple[bool, MyFolders | str]:
         """切换文件夹的黑名单状态
 
         Args:
@@ -196,9 +196,9 @@ class MyFilesManager:
             is_blacklist (bool): 是否加入黑名单
 
         Returns:
-            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
+            Tuple[bool, MyFolders | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
-        directory = self.session.get(MyFiles, directory_id)
+        directory = self.session.get(MyFolders, directory_id)
         if not directory:
             return False, f"文件夹ID不存在: {directory_id}"
 
@@ -219,7 +219,7 @@ class MyFilesManager:
             Tuple[bool, str]: (成功标志, 消息)
         """
         # 查找记录
-        directory = self.session.get(MyFiles, directory_id)
+        directory = self.session.get(MyFolders, directory_id)
         
         if not directory:
             return False, f"文件夹ID不存在: {directory_id}"
@@ -243,7 +243,7 @@ class MyFilesManager:
         
         return True, f"成功删除文件夹: {deleted_path}"
     
-    def update_alias(self, directory_id: int, alias: str) -> Tuple[bool, MyFiles | str]:
+    def update_alias(self, directory_id: int, alias: str) -> Tuple[bool, MyFolders | str]:
         """更新文件夹别名
         
         Args:
@@ -251,10 +251,10 @@ class MyFilesManager:
             alias (str): 新别名
         
         Returns:
-            Tuple[bool, MyFiles | str]: (成功标志, 更新后的文件夹对象或错误消息)
+            Tuple[bool, MyFolders | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
         # 查找记录
-        directory = self.session.get(MyFiles, directory_id)
+        directory = self.session.get(MyFolders, directory_id)
         
         if not directory:
             return False, f"文件夹ID不存在: {directory_id}"
@@ -286,7 +286,7 @@ class MyFilesManager:
         
         # 检查路径是否存在于数据库
         directory = self.session.exec(
-            select(MyFiles).where(MyFiles.path == path)
+            select(MyFolders).where(MyFolders.path == path)
         ).first()
         
         # 如果路径存在于数据库且不是黑名单，则认为已授权
@@ -327,10 +327,10 @@ class MyFilesManager:
         
         # 检查路径本身是否在黑名单中
         directory = self.session.exec(
-            select(MyFiles).where(
+            select(MyFolders).where(
                 and_(
-                    MyFiles.path == path,
-                    MyFiles.is_blacklist
+                    MyFolders.path == path,
+                    MyFolders.is_blacklist
                 )
             )
         ).first()
@@ -341,7 +341,7 @@ class MyFilesManager:
         # 优化黑名单子目录检查
         # 1. 使用SQL的LIKE操作符更高效地检查路径前缀匹配
         blacklist_paths_query = self.session.exec(
-            select(MyFiles.path).where(MyFiles.is_blacklist)
+            select(MyFolders.path).where(MyFolders.is_blacklist)
         ).all()
         
         # 将当前路径与所有黑名单路径进行比较
@@ -455,7 +455,7 @@ class MyFilesManager:
         """
         try:
             # 获取目录
-            directory = self.session.get(MyFiles, directory_id)
+            directory = self.session.get(MyFolders, directory_id)
             if not directory:
                 return False, f"文件夹ID不存在: {directory_id}"
             
@@ -490,7 +490,7 @@ class MyFilesManager:
         """
         try:
             # 获取目录
-            directory = self.session.get(MyFiles, directory_id)
+            directory = self.session.get(MyFolders, directory_id)
             if not directory:
                 return False, {"message": f"文件夹ID不存在: {directory_id}"}
             
@@ -595,7 +595,7 @@ class MyFilesManager:
 
     # ========== 黑名单层级管理方法 ==========
     
-    def add_blacklist_folder(self, parent_id: int, folder_path: str, folder_alias: str = None) -> Tuple[bool, Union[MyFiles, str]]:
+    def add_blacklist_folder(self, parent_id: int, folder_path: str, folder_alias: str = None) -> Tuple[bool, Union[MyFolders, str]]:
         """在指定的白名单文件夹下添加黑名单子文件夹
         
         Args:
@@ -604,11 +604,11 @@ class MyFilesManager:
             folder_alias (str, optional): 黑名单文件夹别名
             
         Returns:
-            Tuple[bool, Union[MyFiles, str]]: (成功标志, 黑名单文件夹对象或错误消息)
+            Tuple[bool, Union[MyFolders, str]]: (成功标志, 黑名单文件夹对象或错误消息)
         """
         try:
             # 验证父文件夹存在且不是黑名单
-            parent_folder = self.session.get(MyFiles, parent_id)
+            parent_folder = self.session.get(MyFolders, parent_id)
             if not parent_folder:
                 return False, f"父文件夹ID不存在: {parent_id}"
             
@@ -624,7 +624,7 @@ class MyFilesManager:
             
             # 检查是否已存在
             existing = self.session.exec(
-                select(MyFiles).where(MyFiles.path == folder_path)
+                select(MyFolders).where(MyFolders.path == folder_path)
             ).first()
             
             if existing:
@@ -640,7 +640,7 @@ class MyFilesManager:
                 return True, existing
             
             # 创建新的黑名单记录
-            blacklist_folder = MyFiles(
+            blacklist_folder = MyFolders(
                 path=folder_path,
                 alias=folder_alias or os.path.basename(folder_path),
                 is_blacklist=True,
@@ -668,17 +668,17 @@ class MyFilesManager:
         try:
             # 获取所有一级文件夹：白名单文件夹 + 已转为黑名单的常用文件夹
             root_folders = self.session.exec(
-                select(MyFiles).where(
+                select(MyFolders).where(
                     and_(
                         # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
                         or_(
-                            not MyFiles.is_blacklist,
-                            and_(MyFiles.is_blacklist, MyFiles.is_common_folder)
+                            not MyFolders.is_blacklist,
+                            and_(MyFolders.is_blacklist, MyFolders.is_common_folder)
                         ),
                         # 都是一级文件夹
-                        or_(MyFiles.parent_id.is_(None), MyFiles.parent_id == 0)
+                        or_(MyFolders.parent_id.is_(None), MyFolders.parent_id == 0)
                     )
-                ).order_by(MyFiles.created_at)
+                ).order_by(MyFolders.created_at)
             ).all()
             
             hierarchy = []
@@ -687,12 +687,12 @@ class MyFilesManager:
                 black_children = []
                 if not folder.is_blacklist:
                     black_children = self.session.exec(
-                        select(MyFiles).where(
+                        select(MyFolders).where(
                             and_(
-                                MyFiles.is_blacklist,
-                                MyFiles.parent_id == folder.id
+                                MyFolders.is_blacklist,
+                                MyFolders.parent_id == folder.id
                             )
-                        ).order_by(MyFiles.created_at)
+                        ).order_by(MyFolders.created_at)
                     ).all()
                 
                 folder_data = {
@@ -852,7 +852,7 @@ if __name__ == '__main__':
     db_mgr.init_db()
     
     # 测试文件管理器
-    files_mgr = MyFilesManager(session)
+    files_mgr = MyFoldersManager(session)
     
     # 初始化默认文件夹
     files_mgr.initialize_default_directories()

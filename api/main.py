@@ -33,7 +33,7 @@ from task_mgr import TaskManager
 from models_api import get_router as get_models_router
 from tagging_api import get_router as get_tagging_router
 from chatsession_api import get_router as get_chatsession_router
-from myfiles_api import get_router as get_myfiles_router
+from myfolders_api import get_router as get_myfolders_router
 from screening_api import get_router as get_screening_router
 from search_api import get_router as get_search_router
 
@@ -252,8 +252,8 @@ chatsession_router = get_chatsession_router(external_get_session=get_session)
 app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
 
 # 添加文件管理API路由
-myfiles_router = get_myfiles_router(external_get_session=get_session)
-app.include_router(myfiles_router, prefix="", tags=["myfiles"])
+myfolders_router = get_myfolders_router(external_get_session=get_session)
+app.include_router(myfolders_router, prefix="", tags=["myfolders"])
 
 screening_router = get_screening_router(external_get_session=get_session)
 app.include_router(screening_router, prefix="", tags=["screening"])

@@ -88,14 +88,14 @@ class Notification(SQLModel, table=True):
         }
 
 # 监控的文件夹表，用来存储文件夹的路径和状态
-class MyFiles(SQLModel, table=True):
-    __tablename__ = "t_myfiles"
+class MyFolders(SQLModel, table=True):
+    __tablename__ = "t_myfolders"
     id: int = Field(default=None, primary_key=True)
     path: str
     alias: str | None = Field(default=None)  # 别名
     is_blacklist: bool = Field(default=False)  # 是否是用户不想监控的文件夹(黑名单)
     is_common_folder: bool = Field(default=False)  # 是否为常见文件夹（不可删除）
-    parent_id: int | None = Field(default=None, foreign_key="t_myfiles.id")  # 父文件夹ID，支持黑名单层级关系
+    parent_id: int | None = Field(default=None, foreign_key="t_myfolders.id")  # 父文件夹ID，支持黑名单层级关系
     created_at: datetime = Field(default=datetime.now())  # 创建时间
     updated_at: datetime = Field(default=datetime.now())  # 更新时间
     class Config:
@@ -198,26 +198,6 @@ class FileExtensionMap(SQLModel, table=True):
     category_id: int = Field(foreign_key="t_file_categories.id")
     description: str | None = Field(default=None)  # 可选描述
     priority: str = Field(sa_column=Column(Enum(RulePriority, values_callable=lambda obj: [e.value for e in obj]), default=RulePriority.MEDIUM.value))
-    created_at: datetime = Field(default=datetime.now())
-    updated_at: datetime = Field(default=datetime.now())
-    
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-# 项目识别规则表 - 识别项目文件夹的规则
-class ProjectRecognitionRule(SQLModel, table=True):
-    __tablename__ = "t_project_recognition_rules"
-    id: int = Field(default=None, primary_key=True)
-    name: str  # 规则名称
-    description: str | None = Field(default=None)  # 规则描述
-    rule_type: str  # 规则类型：name_pattern(名称模式), structure(结构特征), metadata(元数据特征)
-    pattern: str  # 匹配模式
-    priority: str = Field(sa_column=Column(Enum(RulePriority, values_callable=lambda obj: [e.value for e in obj]), default=RulePriority.MEDIUM.value))
-    indicators: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))  # 指示器，如文件夹结构模式
-    enabled: bool = Field(default=True)  # 规则是否启用
-    is_system: bool = Field(default=True)  # 系统规则还是用户规则
     created_at: datetime = Field(default=datetime.now())
     updated_at: datetime = Field(default=datetime.now())
     
@@ -473,9 +453,9 @@ class DBManager:
                 #     END;
                 # '''))
             
-            # 创建文件表
-            if not inspector.has_table(MyFiles.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[MyFiles.__table__])
+            # 创建文件夹表
+            if not inspector.has_table(MyFolders.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[MyFolders.__table__])
                 self._init_default_directories()  # 初始化默认文件夹
             
             # 创建Bundle扩展名表
@@ -516,12 +496,7 @@ class DBManager:
             if not inspector.has_table(FileFilterRule.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[FileFilterRule.__table__])
                 self._init_file_filter_rules()  # 初始化文件过滤规则
-            
-            # 创建项目识别规则表
-            if not inspector.has_table(ProjectRecognitionRule.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ProjectRecognitionRule.__table__])
-                self._init_project_recognition_rules()  # 初始化项目识别规则
-            
+                        
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Tags.__table__])
@@ -1405,137 +1380,13 @@ class DBManager:
         
         self.session.add_all(rule_objs)
         self.session.commit()
-        
-    def _init_project_recognition_rules(self) -> None:
-        """初始化项目识别规则"""
-        # 项目名称模式规则
-        name_pattern_rules = [
-            {
-                "name": "中文项目文件夹",
-                "description": "识别中文项目文件夹名称",
-                "rule_type": "name_pattern",
-                "pattern": r"(项目|工作文件)",
-                "priority": RulePriority.MEDIUM.value,
-                "indicators": {
-                    "min_files": 3,  # 至少包含3个文件才会被识别为项目
-                    "refine_score": 70  # 精炼权重分
-                }
-            },
-            {
-                "name": "英文项目文件夹",
-                "description": "识别英文项目文件夹名称",
-                "rule_type": "name_pattern",
-                "pattern": r"(Projects?|My Work|Documents|Clients|Cases)",
-                "priority": RulePriority.MEDIUM.value,
-                "indicators": {
-                    "min_files": 5,
-                    "refine_score": 70
-                }
-            },
-            {
-                "name": "年份项目文件夹",
-                "description": "识别包含年份的项目文件夹",
-                "rule_type": "name_pattern",
-                "pattern": r"(20\d{2}|20\d{2}Q[1-4]|20\d{2}-[A-Za-z0-9]+)",
-                "priority": RulePriority.HIGH.value,
-                "indicators": {
-                    "min_files": 2,
-                    "refine_score": 80
-                }
-            }
-        ]
-        
-        # 项目结构特征规则
-        structure_rules = [
-            {
-                "name": "Git项目",
-                "description": "识别Git代码仓库项目",
-                "rule_type": "structure",
-                "pattern": ".git",
-                "priority": RulePriority.HIGH.value,
-                "indicators": {
-                    "is_code_project": True,
-                    "structure_markers": [".git"],
-                    "exclude_indexing": ["node_modules", ".git", "dist", "build", "target"],
-                    "include_markdown": True,  # 仅处理Markdown文档
-                    "refine_score": 90
-                }
-            },
-            {
-                "name": "前端项目",
-                "description": "识别前端开发项目",
-                "rule_type": "structure",
-                "pattern": "package.json",
-                "priority": RulePriority.HIGH.value,
-                "indicators": {
-                    "is_code_project": True,
-                    "structure_markers": ["node_modules", "package.json"],
-                    "exclude_indexing": ["node_modules", "dist", "build"],
-                    "include_markdown": True,
-                    "refine_score": 85
-                }
-            },
-            {
-                "name": "Python项目",
-                "description": "识别Python开发项目",
-                "rule_type": "structure",
-                "pattern": "requirements.txt|setup.py|pyproject.toml",
-                "pattern_type": "regex",
-                "priority": RulePriority.HIGH.value,
-                "indicators": {
-                    "is_code_project": True,
-                    "structure_markers": ["venv", ".venv", "requirements.txt", "setup.py", "pyproject.toml"],
-                    "exclude_indexing": ["venv", ".venv", "__pycache__", ".pytest_cache"],
-                    "include_markdown": True,
-                    "refine_score": 85
-                }
-            },
-            {
-                "name": "通用开发项目",
-                "description": "识别包含常见开发文件夹结构的项目",
-                "rule_type": "structure",
-                "pattern": "src|include|lib|docs|assets",
-                "pattern_type": "regex",
-                "priority": RulePriority.MEDIUM.value,
-                "indicators": {
-                    "is_code_project": True,
-                    "structure_markers": ["src", "lib", "include", "docs"],
-                    "refine_score": 80
-                }
-            }
-        ]
-        
-        # 合并所有规则
-        all_rules = []
-        all_rules.extend(name_pattern_rules)
-        all_rules.extend(structure_rules)
-        
-        # 转换为ProjectRecognitionRule对象并批量插入
-        rule_objs = []
-        for rule_data in all_rules:
-            priority = rule_data.get("priority", RulePriority.MEDIUM.value)
-            rule_objs.append(
-                ProjectRecognitionRule(
-                    name=rule_data["name"],
-                    description=rule_data["description"],
-                    rule_type=rule_data["rule_type"],
-                    pattern=rule_data["pattern"],
-                    priority=priority,
-                    indicators=rule_data.get("indicators"),
-                    is_system=True,
-                    enabled=True
-                )
-            )
-        
-        self.session.add_all(rule_objs)
-        self.session.commit()
 
     def _init_default_directories(self) -> None:
         """初始化默认系统文件夹"""
         import platform
         
         # 检查是否已有文件夹记录，如果有则跳过初始化
-        existing_count = self.session.exec(select(MyFiles)).first()
+        existing_count = self.session.exec(select(MyFolders)).first()
         if existing_count is not None:
             return
         
@@ -1554,7 +1405,6 @@ class DBManager:
                 {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
                 {"name": "音乐", "path": os.path.join(home_dir, "Music")},
                 {"name": "影片", "path": os.path.join(home_dir, "Movies")},
-                {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
             ]
             
         elif system == "Windows":
@@ -1568,7 +1418,6 @@ class DBManager:
                     {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
                     {"name": "音乐", "path": os.path.join(home_dir, "Music")},
                     {"name": "视频", "path": os.path.join(home_dir, "Videos")},
-                    {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
                 ]
                 
             else:
@@ -1582,14 +1431,13 @@ class DBManager:
                 {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
                 {"name": "音乐", "path": os.path.join(home_dir, "Music")},
                 {"name": "视频", "path": os.path.join(home_dir, "Videos")},
-                {"name": "个人项目", "path": os.path.join(home_dir, "Projects")},
             ]
         
         # 处理白名单文件夹（用户数据文件夹）
         for dir_info in whitelist_common_dirs:
             if os.path.exists(dir_info["path"]) and os.path.isdir(dir_info["path"]):
                 default_dirs.append(
-                    MyFiles(
+                    MyFolders(
                         path=dir_info["path"],
                         alias=dir_info["name"],
                         is_blacklist=False,

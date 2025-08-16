@@ -13,7 +13,6 @@ from db_mgr import (
     FileCategory, 
     FileExtensionMap, 
     FileFilterRule, 
-    ProjectRecognitionRule,
 )
 from typing import Dict, List, Any
 import logging
@@ -142,35 +141,6 @@ class RulesManager:
             for rule in rules
         ]
     
-    def get_project_recognition_rules(self, enabled_only: bool = True) -> List[Dict[str, Any]]:
-        """获取项目识别规则
-        
-        Args:
-            enabled_only: 是否只返回启用的规则
-            
-        Returns:
-            项目识别规则列表
-        """
-        query = select(ProjectRecognitionRule)
-        
-        if enabled_only:
-            query = query.where(ProjectRecognitionRule.enabled)
-            
-        rules = self.session.exec(query).all()
-        
-        return [
-            {
-                "id": rule.id,
-                "name": rule.name,
-                "description": rule.description,
-                "rule_type": rule.rule_type,
-                "pattern": rule.pattern,
-                "priority": rule.priority,
-                "indicators": rule.indicators
-            }
-            for rule in rules
-        ]
-    
     def get_all_rules_for_rust(self) -> Dict[str, Any]:
         """获取所有规则数据，供Rust端使用
         
@@ -182,7 +152,6 @@ class RulesManager:
         rules_data = {
             "extension_mapping": self.get_extension_to_category_map(),
             "filename_rules": self.get_filename_filter_rules(enabled_only=True),
-            "project_rules": self.get_project_recognition_rules(enabled_only=True),
             "exclude_rules": self._get_exclude_rules(),
             "version": "1.0"  # 规则版本，用于Rust端检查更新
         }
@@ -519,221 +488,6 @@ class RulesManager:
             self.session.rollback()
             return {"success": False, "error": f"更新规则状态失败: {str(e)}"}
     
-    # 项目识别规则相关函数
-    def match_project_folder(self, folder_name: str, folder_structure: List[str] = None) -> List[Dict[str, Any]]:
-        """匹配项目文件夹
-        
-        Args:
-            folder_name: 文件夹名称
-            folder_structure: 文件夹结构，如果有的话
-            
-        Returns:
-            匹配到的项目规则列表
-        """
-        project_rules = self.get_project_recognition_rules(enabled_only=True)
-        matches = []
-        
-        # 按优先级排序
-        priority_order = {"high": 0, "medium": 1, "low": 2}
-        project_rules.sort(key=lambda x: priority_order.get(x["priority"], 999))
-        
-        # 遍历规则进行匹配
-        for rule in project_rules:
-            if rule["rule_type"] == "name_pattern":
-                # 对文件夹名称进行模式匹配
-                if re.search(rule["pattern"], folder_name, re.IGNORECASE):
-                    matches.append({
-                        "rule_id": rule["id"],
-                        "rule_name": rule["name"],
-                        "rule_type": rule["rule_type"],
-                        "confidence": 0.8,
-                        "indicators": rule["indicators"]
-                    })
-            
-            elif rule["rule_type"] == "structure" and folder_structure:
-                # 对文件夹结构进行匹配
-                structure_markers = rule.get("indicators", {}).get("structure_markers", [])
-                if structure_markers:
-                    # 检查文件夹结构中是否存在指定的标记
-                    marker_matches = [
-                        marker for marker in structure_markers
-                        if any(item.endswith(marker) for item in folder_structure)
-                    ]
-                    if marker_matches:
-                        confidence = len(marker_matches) / len(structure_markers)
-                        matches.append({
-                            "rule_id": rule["id"],
-                            "rule_name": rule["name"],
-                            "rule_type": rule["rule_type"],
-                            "confidence": min(confidence, 1.0),
-                            "matched_markers": marker_matches,
-                            "indicators": rule["indicators"]
-                        })
-        
-        return matches
-
-    # 项目识别规则管理功能
-    def create_project_recognition_rule(self, rule_data: Dict[str, Any]) -> Dict[str, Any]:
-        """创建新的项目识别规则
-        
-        Args:
-            rule_data: 规则数据
-            
-        Returns:
-            创建的规则
-        """
-        # 验证必要的字段
-        required_fields = ["name", "rule_type", "pattern"]
-        for field in required_fields:
-            if field not in rule_data:
-                return {"success": False, "error": f"缺少必要字段: {field}"}
-                
-        # 创建规则
-        rule = ProjectRecognitionRule(
-            name=rule_data["name"],
-            description=rule_data.get("description"),
-            rule_type=rule_data["rule_type"],
-            pattern=rule_data["pattern"],
-            priority=rule_data.get("priority", RulePriority.MEDIUM.value),
-            indicators=rule_data.get("indicators", {}),
-            enabled=rule_data.get("enabled", True),
-            is_system=False  # 用户创建的规则
-        )
-        
-        try:
-            self.session.add(rule)
-            self.session.commit()
-            self.session.refresh(rule)
-            
-            return {
-                "success": True, 
-                "rule": {
-                    "id": rule.id,
-                    "name": rule.name,
-                    "description": rule.description,
-                    "rule_type": rule.rule_type,
-                    "pattern": rule.pattern,
-                    "priority": rule.priority,
-                    "indicators": rule.indicators,
-                    "enabled": rule.enabled,
-                    "is_system": rule.is_system
-                }
-            }
-        except Exception as e:
-            logger.error(f"创建项目规则失败: {e}")
-            self.session.rollback()
-            return {"success": False, "error": f"创建项目规则失败: {str(e)}"}
-    
-    def update_project_recognition_rule(self, rule_id: int, rule_data: Dict[str, Any]) -> Dict[str, Any]:
-        """更新项目识别规则
-        
-        Args:
-            rule_id: 规则ID
-            rule_data: 规则数据
-            
-        Returns:
-            更新结果
-        """
-        # 查询规则
-        rule = self.session.get(ProjectRecognitionRule, rule_id)
-        if not rule:
-            return {"success": False, "error": "项目规则不存在"}
-        
-        # 系统规则不允许修改某些字段
-        if rule.is_system:
-            protected_fields = ["rule_type"]
-            for field in rule_data:
-                if field in protected_fields:
-                    logger.warning(f"尝试修改系统项目规则的保护字段: {field}")
-                    # rule_data.pop(field) # Don't pop, just skip updating
-                    continue
-        
-        # 更新规则
-        try:
-            # 更新规则字段
-            for key, value in rule_data.items():
-                if hasattr(rule, key):
-                    setattr(rule, key, value)
-                    
-            # 更新时间戳
-            rule.updated_at = datetime.now()
-            
-            self.session.commit()
-            self.session.refresh(rule)
-            
-            return {
-                "success": True, 
-                "rule": {
-                    "id": rule.id,
-                    "name": rule.name,
-                    "description": rule.description,
-                    "rule_type": rule.rule_type,
-                    "pattern": rule.pattern,
-                    "priority": rule.priority,
-                    "indicators": rule.indicators,
-                    "enabled": rule.enabled,
-                    "is_system": rule.is_system
-                }
-            }
-        except Exception as e:
-            logger.error(f"更新项目规则失败: {e}")
-            self.session.rollback()
-            return {"success": False, "error": f"更新项目规则失败: {str(e)}"}
-    
-    def delete_project_recognition_rule(self, rule_id: int) -> Dict[str, Any]:
-        """删除项目识别规则
-        
-        Args:
-            rule_id: 规则ID
-            
-        Returns:
-            删除结果
-        """
-        # 查询规则
-        rule = self.session.get(ProjectRecognitionRule, rule_id)
-        if not rule:
-            return {"success": False, "error": "项目规则不存在"}
-        
-        # 系统规则不允许删除
-        if rule.is_system:
-            return {"success": False, "error": "系统项目规则不允许删除，可以禁用"}
-        
-        # 删除规则
-        try:
-            self.session.delete(rule)
-            self.session.commit()
-            return {"success": True}
-        except Exception as e:
-            logger.error(f"删除项目规则失败: {e}")
-            self.session.rollback()
-            return {"success": False, "error": f"删除项目规则失败: {str(e)}"}
-    
-    def toggle_project_rule_status(self, rule_id: int, enabled: bool) -> Dict[str, Any]:
-        """切换项目规则启用状态
-        
-        Args:
-            rule_id: 规则ID
-            enabled: 是否启用
-            
-        Returns:
-            操作结果
-        """
-        # 查询规则
-        rule = self.session.get(ProjectRecognitionRule, rule_id)
-        if not rule:
-            return {"success": False, "error": "项目规则不存在"}
-        
-        # 更新状态
-        try:
-            rule.enabled = enabled
-            rule.updated_at = datetime.now()
-            self.session.commit()
-            return {"success": True, "enabled": rule.enabled}
-        except Exception as e:
-            logger.error(f"更新项目规则状态失败: {e}")
-            self.session.rollback()
-            return {"success": False, "error": f"更新项目规则状态失败: {str(e)}"}
-    
     # 为前端提供的统计和批量操作接口
     def get_rules_statistics(self) -> Dict[str, Any]:
         """获取规则统计信息，用于前端展示
@@ -797,29 +551,6 @@ class RulesManager:
                         FileFilterRule.action == RuleAction.LABEL.value
                     )).all())
                 }
-            },
-            "project_rules": {
-                "total": len(self.session.exec(select(ProjectRecognitionRule)).all()),
-                "enabled": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.enabled
-                )).all()),
-                "disabled": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    not ProjectRecognitionRule.enabled
-                )).all()),
-                "system": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.is_system
-                )).all()),
-                "custom": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    not ProjectRecognitionRule.is_system
-                )).all()),
-                "by_type": {
-                    "name_pattern": len(self.session.exec(select(ProjectRecognitionRule).where(
-                        ProjectRecognitionRule.rule_type == "name_pattern"
-                    )).all()),
-                    "structure": len(self.session.exec(select(ProjectRecognitionRule).where(
-                        ProjectRecognitionRule.rule_type == "structure"
-                    )).all())
-                }
             }
         }
         
@@ -866,19 +597,6 @@ class RulesManager:
                     "extra_data": rule.extra_data
                 }
                 for rule in self.session.exec(select(FileFilterRule)).all()
-            ],
-            "project_rules": [
-                {
-                    "name": rule.name,
-                    "description": rule.description,
-                    "rule_type": rule.rule_type,
-                    "pattern": rule.pattern,
-                    "priority": rule.priority,
-                    "indicators": rule.indicators,
-                    "enabled": rule.enabled,
-                    "is_system": rule.is_system
-                }
-                for rule in self.session.exec(select(ProjectRecognitionRule)).all()
             ]
         }
         
@@ -903,7 +621,6 @@ class RulesManager:
                 "categories": 0,
                 "extensions": 0,
                 "filter_rules": 0,
-                "project_rules": 0
             }
             
             # 导入分类
@@ -978,30 +695,6 @@ class RulesManager:
                         )
                         self.session.add(rule)
                         stats["filter_rules"] += 1
-            
-            # 导入项目规则
-            if "project_rules" in data:
-                for rule_data in data["project_rules"]:
-                    # 检查是否存在
-                    existing = self.session.exec(
-                        select(ProjectRecognitionRule).where(
-                            ProjectRecognitionRule.name == rule_data["name"]
-                        )
-                    ).first()
-                    
-                    if not existing:
-                        rule = ProjectRecognitionRule(
-                            name=rule_data["name"],
-                            description=rule_data.get("description"),
-                            rule_type=rule_data["rule_type"],
-                            pattern=rule_data["pattern"],
-                            priority=rule_data.get("priority", RulePriority.MEDIUM.value),
-                            indicators=rule_data.get("indicators"),
-                            enabled=rule_data.get("enabled", True),
-                            is_system=rule_data.get("is_system", False)
-                        )
-                        self.session.add(rule)
-                        stats["project_rules"] += 1
             
             # 提交所有更改
             self.session.commit()
@@ -1106,21 +799,11 @@ class TestRulesManager(unittest.TestCase):
         self.assertIsInstance(enabled_rules, list)
         # self.assertLessEqual(len(enabled_rules), len(all_rules))
 
-    def test_get_project_recognition_rules(self):
-        all_rules = self.rules_manager.get_project_recognition_rules(enabled_only=False)
-        self.assertIsInstance(all_rules, list)
-        # self.assertGreater(len(all_rules), 0) # May be empty if no project rules in init_db
-
-        enabled_rules = self.rules_manager.get_project_recognition_rules(enabled_only=True)
-        self.assertIsInstance(enabled_rules, list)
-        # self.assertLessEqual(len(enabled_rules), len(all_rules))
-
     def test_get_all_rules_for_rust(self):
         rust_rules = self.rules_manager.get_all_rules_for_rust()
         self.assertIsInstance(rust_rules, dict)
         self.assertIn("extension_mapping", rust_rules)
         self.assertIn("filename_rules", rust_rules)
-        self.assertIn("project_rules", rust_rules)
         self.assertIn("exclude_rules", rust_rules)
         self.assertIn("version", rust_rules)
 
@@ -1334,157 +1017,6 @@ class TestRulesManager(unittest.TestCase):
         toggled_rule = self.session.get(FileFilterRule, rule_id)
         self.assertTrue(toggled_rule.enabled)
 
-    # Test Project Recognition Rule Functions
-    def test_match_project_folder(self):
-        # Add a test project rule (name pattern)
-        name_rule_data = {
-            "name": "Test Project Name Rule",
-            "rule_type": "name_pattern",
-            "pattern": ".*project.*",
-            "priority": RulePriority.HIGH.value
-        }
-        create_name_result = self.rules_manager.create_project_recognition_rule(name_rule_data)
-        self.assertTrue(create_name_result["success"])
-
-        # Add a test project rule (structure)
-        structure_rule_data = {
-            "name": "Test Project Structure Rule",
-            "rule_type": "structure",
-            "pattern": "", # Pattern is not used for structure rules
-            "priority": RulePriority.MEDIUM.value,
-            "indicators": {"structure_markers": ["package.json", "Cargo.toml"]}
-        }
-        create_structure_result = self.rules_manager.create_project_recognition_rule(structure_rule_data)
-        self.assertTrue(create_structure_result["success"])
-
-        # Test name pattern match
-        name_matches = self.rules_manager.match_project_folder("my_awesome_project")
-        self.assertIsInstance(name_matches, list)
-        self.assertGreater(len(name_matches), 0)
-        self.assertEqual(name_matches[0]["rule_name"], "Test Project Name Rule")
-
-        # Test structure match
-        structure_matches = self.rules_manager.match_project_folder("some_folder", ["/path/to/some_folder/package.json", "/path/to/some_folder/src/main.rs"])
-        self.assertIsInstance(structure_matches, list)
-        self.assertGreater(len(structure_matches), 0)
-        # The order of matches depends on priority and insertion order, so check for existence
-        structure_rule_matched = any(match["rule_name"] == "Test Project Structure Rule" for match in structure_matches)
-        self.assertTrue(structure_rule_matched)
-
-        # Test no match
-        no_matches = self.rules_manager.match_project_folder("random_folder")
-        self.assertIsInstance(no_matches, list)
-        # self.assertEqual(len(no_matches), 0) # May match other rules from init_db
-
-    def test_create_project_recognition_rule(self):
-        rule_data = {
-            "name": "New Project Rule",
-            "rule_type": "name_pattern",
-            "pattern": "new_project_.*",
-            "priority": RulePriority.LOW.value,
-            "indicators": {"language": "Python"}
-        }
-        result = self.rules_manager.create_project_recognition_rule(rule_data)
-        self.assertTrue(result["success"])
-        self.assertIn("rule", result)
-        self.assertEqual(result["rule"]["name"], "New Project Rule")
-
-        # Test missing required field
-        invalid_rule_data = {
-            "name": "Invalid Project Rule",
-            "rule_type": "name_pattern"
-            # Missing pattern
-        }
-        result = self.rules_manager.create_project_recognition_rule(invalid_rule_data)
-        self.assertFalse(result["success"])
-        self.assertIn("error", result)
-
-    def test_update_project_recognition_rule(self):
-        # Create a rule first
-        rule_data = {
-            "name": "Project Rule to Update",
-            "rule_type": "name_pattern",
-            "pattern": "old_project_pattern",
-            "priority": RulePriority.MEDIUM.value
-        }
-        create_result = self.rules_manager.create_project_recognition_rule(rule_data)
-        self.assertTrue(create_result["success"])
-        rule_id = create_result["rule"]["id"]
-
-        # Update the rule
-        update_data = {
-            "description": "Updated project description",
-            "pattern": "new_project_pattern",
-            "priority": RulePriority.HIGH.value,
-            "enabled": False,
-            "indicators": {"language": "Rust"}
-        }
-        update_result = self.rules_manager.update_project_recognition_rule(rule_id, update_data)
-        self.assertTrue(update_result["success"])
-        self.assertEqual(update_result["rule"]["description"], "Updated project description")
-        self.assertEqual(update_result["rule"]["pattern"], "new_project_pattern")
-        self.assertEqual(update_result["rule"]["priority"], RulePriority.HIGH.value)
-        self.assertFalse(update_result["rule"]["enabled"])
-        self.assertEqual(update_result["rule"]["indicators"]["language"], "Rust")
-
-        # Test updating system rule protected fields (should be ignored)
-        # Assuming there's a system project rule (depends on init_db)
-        # This test is harder without knowing the ID of a system project rule from init_db
-        # For now, skip testing protected fields update on system project rules
-
-    def test_delete_project_recognition_rule(self):
-        # Create a rule first
-        rule_data = {
-            "name": "Project Rule to Delete",
-            "rule_type": "name_pattern",
-            "pattern": "delete_project_me"
-        }
-        create_result = self.rules_manager.create_project_recognition_rule(rule_data)
-        self.assertTrue(create_result["success"])
-        rule_id = create_result["rule"]["id"]
-
-        # Delete the rule
-        delete_result = self.rules_manager.delete_project_recognition_rule(rule_id)
-        self.assertTrue(delete_result["success"])
-
-        # Verify it's deleted
-        deleted_rule = self.session.get(ProjectRecognitionRule, rule_id)
-        self.assertIsNone(deleted_rule)
-
-        # Test deleting a system rule (should fail)
-        # This test is harder without knowing the ID of a system project rule from init_db
-        # For now, skip testing deletion of system project rules
-
-    def test_toggle_project_rule_status(self):
-        # Create a rule first
-        rule_data = {
-            "name": "Project Rule to Toggle",
-            "rule_type": "name_pattern",
-            "pattern": "toggle_project",
-            "enabled": True
-        }
-        create_result = self.rules_manager.create_project_recognition_rule(rule_data)
-        self.assertTrue(create_result["success"])
-        rule_id = create_result["rule"]["id"]
-
-        # Toggle to disabled
-        toggle_result = self.rules_manager.toggle_project_rule_status(rule_id, False)
-        self.assertTrue(toggle_result["success"])
-        self.assertFalse(toggle_result["enabled"])
-
-        # Verify status in DB
-        toggled_rule = self.session.get(ProjectRecognitionRule, rule_id)
-        self.assertFalse(toggled_rule.enabled)
-
-        # Toggle back to enabled
-        toggle_result = self.rules_manager.toggle_project_rule_status(rule_id, True)
-        self.assertTrue(toggle_result["success"])
-        self.assertTrue(toggle_result["enabled"])
-
-        # Verify status in DB
-        toggled_rule = self.session.get(ProjectRecognitionRule, rule_id)
-        self.assertTrue(toggled_rule.enabled)
-
     # Test Advanced Functions
     def test_get_rules_statistics(self):
         stats = self.rules_manager.get_rules_statistics()
@@ -1492,11 +1024,9 @@ class TestRulesManager(unittest.TestCase):
         self.assertIn("file_categories", stats)
         self.assertIn("file_extensions", stats)
         self.assertIn("filter_rules", stats)
-        self.assertIn("project_rules", stats)
         self.assertGreaterEqual(stats["file_categories"]["total"], 0)
         self.assertGreaterEqual(stats["file_extensions"]["total"], 0)
         self.assertGreaterEqual(stats["filter_rules"]["total"], 0)
-        self.assertGreaterEqual(stats["project_rules"]["total"], 0)
 
     def test_export_rules(self):
         exported_data = self.rules_manager.export_rules()
@@ -1506,7 +1036,6 @@ class TestRulesManager(unittest.TestCase):
         self.assertIn("categories", exported_data)
         self.assertIn("extensions", exported_data)
         self.assertIn("filter_rules", exported_data)
-        self.assertIn("project_rules", exported_data)
 
     def test_import_rules(self):
         # Export existing rules first
@@ -1526,13 +1055,6 @@ class TestRulesManager(unittest.TestCase):
         self.assertGreaterEqual(import_result["stats"]["categories"], 0)
         self.assertGreaterEqual(import_result["stats"]["extensions"], 0)
         self.assertGreaterEqual(import_result["stats"]["filter_rules"], 0)
-        self.assertGreaterEqual(import_result["stats"]["project_rules"], 0)
-
-        # Verify counts match (approximately, as system rules might be handled differently)
-        # self.assertEqual(import_result["stats"]["categories"], len(exported_data["categories"]))
-        # self.assertEqual(import_result["stats"]["extensions"], len(exported_data["extensions"]))
-        # self.assertEqual(import_result["stats"]["filter_rules"], len(exported_data["filter_rules"]))
-        # self.assertEqual(import_result["stats"]["project_rules"], len(exported_data["project_rules"]))
 
         import_session.close()
 

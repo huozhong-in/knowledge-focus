@@ -251,18 +251,6 @@ fn system_time_to_iso_string(system_time: SystemTime) -> String {
     datetime.to_rfc3339()
 }
 
-// 根据类别ID获取文件扩展名列表 (This function might not be needed in file_scanner anymore)
-// fn get_extensions_by_category(
-//     category_id: i32,
-//     extension_maps: &[FileExtensionMapRust],
-// ) -> HashSet<String> {
-//     extension_maps
-//         .iter()
-//         .filter(|map| map.category_id == category_id)
-//         .map(|map| map.extension.clone())
-//         .collect()
-// }
-
 // Tauri命令：扫描指定时间范围内的文件
 #[command]
 pub async fn scan_files_by_time_range(

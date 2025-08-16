@@ -747,24 +747,24 @@ class ScreeningManager:
             logger.error(f"按路径子字符串搜索文件失败: {e}")
             return []
 
-    def is_path_in_blacklist_hierarchy(self, path: str, myfiles_mgr=None) -> bool:
+    def is_path_in_blacklist_hierarchy(self, path: str, myfolders_mgr=None) -> bool:
         """检查路径是否在层级黑名单中
         
         Args:
             path (str): 要检查的路径
-            myfiles_mgr: MyFilesManager实例，用于获取黑名单信息
+            myfolders_mgr: MyFoldersManager实例，用于获取黑名单信息
             
         Returns:
             bool: 如果路径在黑名单中则返回True，否则返回False
         """
         try:
-            if not myfiles_mgr:
-                # 如果没有传入MyFilesManager，则无法检查黑名单
-                logger.warning("未提供MyFilesManager实例，无法检查层级黑名单")
+            if not myfolders_mgr:
+                # 如果没有传入MyFoldersManager，则无法检查黑名单
+                logger.warning("未提供MyFoldersManager实例，无法检查层级黑名单")
                 return False
             
-            # 使用MyFilesManager的黑名单检查方法
-            return myfiles_mgr.is_path_in_blacklist(path)
+            # 使用MyFoldersManager的黑名单检查方法
+            return myfolders_mgr.is_path_in_blacklist(path)
             
         except Exception as e:
             logger.error(f"检查层级黑名单失败: {str(e)}")

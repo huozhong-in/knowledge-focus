@@ -813,7 +813,6 @@ pub fn run() {
             file_scanner::start_backend_scanning, // 后端扫描启动命令
             file_scanner::scan_files_by_time_range, // 按时间范围扫描文件
             file_scanner::scan_files_by_type, // 按类型扫描文件
-            commands::ask_ai_stream_bridge,
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {

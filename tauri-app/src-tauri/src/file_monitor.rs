@@ -184,21 +184,11 @@ pub struct FileExtensionMapRust {
     pub priority: RulePriorityRust,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectRecognitionRuleRust {
-    pub id: i32,
-    pub name: String,
-    pub description: Option<String>,
-    pub rule_type: String, // e.g., "name_pattern", "structure", "metadata"
-    pub pattern: String,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct AllConfigurations {
     pub file_categories: Vec<FileCategoryRust>,
     pub file_filter_rules: Vec<FileFilterRuleRust>,
     pub file_extension_maps: Vec<FileExtensionMapRust>,
-    pub project_recognition_rules: Vec<ProjectRecognitionRuleRust>,
     pub monitored_folders: Vec<MonitoredDirectory>, // Already defined as MonitoredDirectory
     #[serde(default)]
     pub full_disk_access: bool, // 是否有完全磁盘访问权限，特别是macOS
@@ -326,11 +316,10 @@ impl FileMonitor {
                     if response.status().is_success() {
                         match response.json::<AllConfigurations>().await {
                             Ok(config_data) => {
-                                println!("[CONFIG_FETCH] Successfully parsed AllConfigurations. Categories: {}, FilterRules: {}, ExtMaps: {}, ProjRules: {}, MonitoredFolders: {}",
+                                println!("[CONFIG_FETCH] Successfully parsed AllConfigurations. Categories: {}, FilterRules: {}, ExtMaps: {}, MonitoredFolders: {}",
                                     config_data.file_categories.len(),
                                     config_data.file_filter_rules.len(),
                                     config_data.file_extension_maps.len(),
-                                    config_data.project_recognition_rules.len(),
                                     config_data.monitored_folders.len()
                                 );
                                 let mut cache = self.config_cache.lock().unwrap();

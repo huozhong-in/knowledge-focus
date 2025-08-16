@@ -1,78 +1,82 @@
 use std::fs;
 use std::path::Path;
-use tauri::{Emitter, Manager, Window};
+use tauri::{
+    // Emitter,
+    Manager, 
+    // Window,
+};
 use serde::{Serialize, Deserialize};
-use futures_util::StreamExt;
+// use futures_util::StreamExt;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Message {
-    id: String,
-    role: String,
-    content: String,
-}
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// pub struct Message {
+//     id: String,
+//     role: String,
+//     content: String,
+// }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ModelConfig {
-    provider_type: String,
-    model_id: String,
-    model_name: String,
-}
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// pub struct ModelConfig {
+//     provider_type: String,
+//     model_id: String,
+//     model_name: String,
+// }
 
-#[tauri::command]
-pub async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>, model_config: ModelConfig) -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let sidecar_url = "http://127.0.0.1:60315/chat/stream";
+// #[tauri::command]
+// pub async fn ask_ai_stream_bridge(window: Window, messages: Vec<Message>, model_config: ModelConfig) -> Result<(), String> {
+//     let client = reqwest::Client::new();
+//     let sidecar_url = "http://127.0.0.1:60315/chat/stream";
 
-    let request_payload = serde_json::json!({
-        "messages": messages,
-        "model_config": model_config
-    });
+//     let request_payload = serde_json::json!({
+//         "messages": messages,
+//         "model_config": model_config
+//     });
 
-    let mut stream = match client.post(sidecar_url).json(&request_payload).send().await {
-        Ok(res) => res.bytes_stream(),
-        Err(e) => return Err(e.to_string()),
-    };
+//     let mut stream = match client.post(sidecar_url).json(&request_payload).send().await {
+//         Ok(res) => res.bytes_stream(),
+//         Err(e) => return Err(e.to_string()),
+//     };
 
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(bytes) => {
-                if let Ok(chunk) = std::str::from_utf8(&bytes) {
-                    window.emit("ai_chunk", chunk).unwrap_or_else(|e| eprintln!("Failed to emit ai_chunk event: {}", e));
-                }
-            },
-            Err(e) => {
-                eprintln!("Error in stream: {}", e);
-                break;
-            }
-        }
-    }
+//     while let Some(item) = stream.next().await {
+//         match item {
+//             Ok(bytes) => {
+//                 if let Ok(chunk) = std::str::from_utf8(&bytes) {
+//                     window.emit("ai_chunk", chunk).unwrap_or_else(|e| eprintln!("Failed to emit ai_chunk event: {}", e));
+//                 }
+//             },
+//             Err(e) => {
+//                 eprintln!("Error in stream: {}", e);
+//                 break;
+//             }
+//         }
+//     }
 
-    window.emit("ai_stream_end", ()).unwrap_or_else(|e| eprintln!("Failed to emit ai_stream_end event: {}", e));
-    Ok(())
-}
+//     window.emit("ai_stream_end", ()).unwrap_or_else(|e| eprintln!("Failed to emit ai_stream_end event: {}", e));
+//     Ok(())
+// }
 
-#[derive(Clone, serde::Serialize)]
-pub struct ChatStreamEvent {
-  pub choices: Vec<ChatStreamChoice>,
-}
+// #[derive(Clone, serde::Serialize)]
+// pub struct ChatStreamEvent {
+//   pub choices: Vec<ChatStreamChoice>,
+// }
 
-#[derive(Clone, serde::Serialize)]
-pub struct ChatStreamChoice {
-  pub delta: ChatStreamDelta,
-}
+// #[derive(Clone, serde::Serialize)]
+// pub struct ChatStreamChoice {
+//   pub delta: ChatStreamDelta,
+// }
 
-#[derive(Clone, serde::Serialize)]
-pub struct ChatStreamDelta {
-  pub content: String,
-}
+// #[derive(Clone, serde::Serialize)]
+// pub struct ChatStreamDelta {
+//   pub content: String,
+// }
 
-#[derive(Serialize)]
-pub struct MonitorStatsResponse {
-    processed_files: u64,
-    filtered_files: u64,
-    filtered_bundles: u64,
-    error_count: u64,
-}
+// #[derive(Serialize)]
+// pub struct MonitorStatsResponse {
+//     processed_files: u64,
+//     filtered_files: u64,
+//     filtered_bundles: u64,
+//     error_count: u64,
+// }
 
 /// 刷新监控配置（重新获取文件夹配置和Bundle扩展名）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
