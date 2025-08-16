@@ -806,7 +806,7 @@ class ScreeningManager:
                 
                 # 对于大量记录，使用分批删除
                 if count_result > 10000:
-                    logger.warning(f"匹配记录数量大于10000，将使用分批删除")
+                    logger.warning("匹配记录数量大于10000，将使用分批删除")
                     
                     # 获取所有匹配记录的ID
                     id_query = text("SELECT id FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")

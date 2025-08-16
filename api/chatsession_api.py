@@ -5,7 +5,7 @@
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
 from sqlmodel import Session
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 import json
 import logging
 

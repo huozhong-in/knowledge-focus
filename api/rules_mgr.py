@@ -1,19 +1,9 @@
 from sqlmodel import (
-    Field, 
     SQLModel, 
     create_engine, 
     Session, 
     select, 
-    inspect, 
-    text, 
-    asc, 
     and_, 
-    or_, 
-    desc, 
-    not_,
-    Column,
-    Enum,
-    JSON,
 )
 from datetime import datetime
 from db_mgr import (
@@ -25,12 +15,10 @@ from db_mgr import (
     FileFilterRule, 
     ProjectRecognitionRule,
 )
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any
 import logging
 import re
-import json
 import unittest
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +123,7 @@ class RulesManager:
         )
         
         if enabled_only:
-            query = query.where(FileFilterRule.enabled == True)
+            query = query.where(FileFilterRule.enabled)
             
         rules = self.session.exec(query).all()
         
@@ -166,7 +154,7 @@ class RulesManager:
         query = select(ProjectRecognitionRule)
         
         if enabled_only:
-            query = query.where(ProjectRecognitionRule.enabled == True)
+            query = query.where(ProjectRecognitionRule.enabled)
             
         rules = self.session.exec(query).all()
         
@@ -210,7 +198,7 @@ class RulesManager:
         query = select(FileFilterRule).where(
             and_(
                 FileFilterRule.action == RuleAction.EXCLUDE.value,
-                FileFilterRule.enabled == True
+                FileFilterRule.enabled
             )
         )
         
@@ -773,16 +761,16 @@ class RulesManager:
             "filter_rules": {
                 "total": len(self.session.exec(select(FileFilterRule)).all()),
                 "enabled": len(self.session.exec(select(FileFilterRule).where(
-                    FileFilterRule.enabled == True
+                    FileFilterRule.enabled
                 )).all()),
                 "disabled": len(self.session.exec(select(FileFilterRule).where(
-                    FileFilterRule.enabled == False
+                    not FileFilterRule.enabled
                 )).all()),
                 "system": len(self.session.exec(select(FileFilterRule).where(
-                    FileFilterRule.is_system == True
+                    FileFilterRule.is_system
                 )).all()),
                 "custom": len(self.session.exec(select(FileFilterRule).where(
-                    FileFilterRule.is_system == False
+                    not FileFilterRule.is_system
                 )).all()),
                 "by_type": {
                     "filename": len(self.session.exec(select(FileFilterRule).where(
@@ -813,16 +801,16 @@ class RulesManager:
             "project_rules": {
                 "total": len(self.session.exec(select(ProjectRecognitionRule)).all()),
                 "enabled": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.enabled == True
+                    ProjectRecognitionRule.enabled
                 )).all()),
                 "disabled": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.enabled == False
+                    not ProjectRecognitionRule.enabled
                 )).all()),
                 "system": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.is_system == True
+                    ProjectRecognitionRule.is_system
                 )).all()),
                 "custom": len(self.session.exec(select(ProjectRecognitionRule).where(
-                    ProjectRecognitionRule.is_system == False
+                    not ProjectRecognitionRule.is_system
                 )).all()),
                 "by_type": {
                     "name_pattern": len(self.session.exec(select(ProjectRecognitionRule).where(
@@ -1040,8 +1028,8 @@ class RulesManager:
         query = select(FileFilterRule).where(
             and_(
                 FileFilterRule.action == RuleAction.LABEL.value,
-                FileFilterRule.enabled == True,
-                FileFilterRule.extra_data != None
+                FileFilterRule.enabled,
+                FileFilterRule.extra_data is not None,
             )
         )
         
@@ -1280,9 +1268,9 @@ class TestRulesManager(unittest.TestCase):
             "rule_type": RuleType.EXTENSION.value, # Protected field
             "pattern": "should_not_change"
         }
-        system_update_result = self.rules_manager.update_file_filter_rule(system_rule_id, system_update_data)
+        _system_update_result = self.rules_manager.update_file_filter_rule(system_rule_id, system_update_data)
         # Check if the protected field was NOT updated
-        system_rule_after_update = self.session.get(FileFilterRule, system_rule_id)
+        _system_rule_after_update = self.session.get(FileFilterRule, system_rule_id)
         # self.assertNotEqual(system_rule_after_update.rule_type, RuleType.EXTENSION.value) # Depends on original type
         # self.assertNotEqual(system_rule_after_update.pattern, "should_not_change") # Pattern is not protected
 

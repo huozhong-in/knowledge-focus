@@ -1,6 +1,8 @@
 """
 KnowledgeFocus 应用配置模块
 """
+from functools import wraps
+from uuid import uuid4
 
 # 向量化维度数
 EMBEDDING_DIMENSIONS = 1024
@@ -9,9 +11,8 @@ EMBEDDING_DIMENSIONS = 1024
 TEST_DB_PATH = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
 
 # 单例
-from functools import wraps
 def singleton(cls):
-    instances = {}
+    instances = {}    
     
     @wraps(cls)
     def get_instance(*args, **kwargs):
@@ -22,7 +23,6 @@ def singleton(cls):
     return get_instance
 
 # 生成短ID的工具函数
-from uuid import uuid4
 def generate_vector_id() -> str:
     """生成用于vector_id的短ID"""
     return str(uuid4()).replace('-', '')[:16]

@@ -8,7 +8,7 @@ import logging
 from sqlmodel import Session, select
 from db_mgr import SystemConfig
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 # from pydantic_ai.profiles import InlineDefsJsonSchemaTransformer
@@ -16,7 +16,6 @@ from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
-from pydantic import BaseModel, ValidationError
 from model_config_mgr import ModelConfigMgr
 from bridge_events import BridgeEventSender
 

@@ -2,10 +2,12 @@
 Python API 优化方案 - 针对 /config/all 和 /bundle-extensions/for-rust 端点的性能问题
 """
 
-import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional, Tuple, Union, TypeVar, Generic
-from functools import lru_cache, wraps
+from functools import (
+    # lru_cache, 
+    wraps,
+)
 from threading import RLock
 
 # 定义泛型类型

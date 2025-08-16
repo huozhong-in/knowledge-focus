@@ -37,7 +37,7 @@ def kill_process_on_port_windows(port):
                 try:
                     process = psutil.Process(pid)
                     process_name = process.name()
-                except:
+                except psutil.NoSuchProcess:
                     process_name = "未知进程"
                 
                 logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
@@ -86,7 +86,7 @@ def kill_process_on_port_unix(port):
             try:
                 process = psutil.Process(pid)
                 process_name = process.name()
-            except:
+            except psutil.NoSuchProcess:
                 process_name = "未知进程"
             
             logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
@@ -103,7 +103,7 @@ def kill_process_on_port_unix(port):
                 return True
             else:
                 # 如果普通终止失败，可以尝试强制终止
-                logger.info(f"进程没有响应终止信号，尝试强制终止...")
+                logger.info("进程没有响应终止信号，尝试强制终止...")
                 force_kill_cmd = f"kill -9 {pid}"
                 force_kill_result = subprocess.run(force_kill_cmd, shell=True)
                 
@@ -134,12 +134,13 @@ def kill_all_child_processes(parent_pid):
                 logger.info(f"终止子进程: {child.pid} ({child.name()})")
                 # 先尝试正常终止
                 child.terminate()
-            except:
-                try:
-                    # 如果正常终止失败，强制终止
-                    logger.info(f"强制终止子进程: {child.pid}")
-                    child.kill()
-                except:
+            except psutil.NoSuchProcess:
+                pass
+            try:
+                # 如果正常终止失败，强制终止
+                logger.info(f"强制终止子进程: {child.pid}")
+                child.kill()
+            except psutil.NoSuchProcess:
                     logger.error(f"无法终止子进程 {child.pid}")
         
         # 等待短暂时间让子进程有时间终止
@@ -151,7 +152,7 @@ def kill_all_child_processes(parent_pid):
                 logger.warning(f"子进程 {child.pid} 仍然活着，再次尝试强制终止")
                 try:
                     os.kill(child.pid, signal.SIGKILL)
-                except:
+                except psutil.NoSuchProcess:
                     pass
     except Exception as e:
         logger.error(f"终止子进程时出错: {str(e)}")
@@ -182,7 +183,7 @@ def kill_orphaned_processes(process_name, function_name=None):
                         try:
                             proc.terminate()
                             count += 1
-                        except:
+                        except psutil.NoSuchProcess:
                             try:
                                 proc.kill()
                                 count += 1

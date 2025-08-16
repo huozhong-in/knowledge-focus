@@ -5,7 +5,7 @@ import os
 import logging
 import warnings
 from tagging_mgr import TaggingMgr
-from db_mgr import FileScreeningResult #, Tags
+from db_mgr import FileScreeningResult
 from markitdown import MarkItDown
 from lancedb_mgr import LanceDBMgr
 from model_config_mgr import ModelConfigMgr

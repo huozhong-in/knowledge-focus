@@ -26,7 +26,6 @@ from typing import (
     Optional, 
     Tuple,
 )
-from model_config_mgr import ModelUseInterface
 from sqlmodel import Session, select
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -141,7 +140,7 @@ class MultiVectorMgr:
             vision_model_id = model_interface.model_identifier
             vision_base_url = model_interface.base_url
             vision_api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
+            _use_proxy = model_interface.use_proxy
             
 
             # 配置PDF处理选项
@@ -153,7 +152,7 @@ class MultiVectorMgr:
             pipeline_options.enable_remote_services = True  # 启用远程服务用于图片描述
             
             # 配置图片描述API选项 - 使用vision模型时通过proxy
-            PROXIES = {
+            _PROXIES = {
                 "http": "http://127.0.0.1:7890",
                 "https": "http://127.0.0.1:7890",
                 "socks5": "socks5://127.0.0.1:7890",
@@ -375,7 +374,8 @@ Give a concise summary of the image that is well optimized for retrieval.
                 document.status = "error"
                 self.session.add(document)
                 self.session.commit()
-            except:
+            except Exception as e:
+                logger.error(f"Failed to update document status: {e}")
                 pass  # 忽略状态更新错误
             
             return False
@@ -500,7 +500,8 @@ Give a concise summary of the image that is well optimized for retrieval.
         """获取或创建文档记录（辅助方法）"""
         try:
             return self._create_or_update_document(file_path, file_hash, docling_json_path)
-        except:
+        except Exception as e:
+            logger.error(f"Failed to get or create document record: {e}")
             # 如果创建失败，返回一个临时对象
             return Document(
                 file_path=file_path,
@@ -614,16 +615,16 @@ Give a concise summary of the image that is well optimized for retrieval.
                 # 优先级：表格 > 图片 > 文本
                 # 这样可以确保主要内容类型不被忽略
                 if any('TABLE' in item_type.upper() for item_type in item_types):
-                    logger.debug(f"[CHUNK_TYPE] Determined type: table")
+                    logger.debug("[CHUNK_TYPE] Determined type: table")
                     return "table"
                 elif any('PICTURE' in item_type.upper() or 'IMAGE' in item_type.upper() for item_type in item_types):
-                    logger.debug(f"[CHUNK_TYPE] Determined type: image")
+                    logger.debug("[CHUNK_TYPE] Determined type: image")
                     return "image"
                 else:
-                    logger.debug(f"[CHUNK_TYPE] Determined type: text (default)")
+                    logger.debug("[CHUNK_TYPE] Determined type: text (default)")
                     return "text"
             else:
-                logger.debug(f"[CHUNK_TYPE] No doc_items found, defaulting to text")
+                logger.debug("[CHUNK_TYPE] No doc_items found, defaulting to text")
                 # 如果没有元数据，根据内容长度和特征判断
                 return "text"
         except Exception as e:
@@ -827,7 +828,8 @@ Give a concise summary of the image that is well optimized for retrieval.
                         try:
                             picture_index = ref_str.split("/pictures/")[-1]
                             picture_refs.append(picture_index)
-                        except:
+                        except Exception as e:
+                            logger.warning(f"Error extracting picture index from ref: {e}")
                             continue
             
             # 根据图片索引查找对应的文件
@@ -839,7 +841,6 @@ Give a concise summary of the image that is well optimized for retrieval.
                     pattern = f"image_{padded_index}_*.png"
                     
                     # 在docling_cache_dir中查找匹配的文件
-                    from pathlib import Path
                     matching_files = list(self.docling_cache_dir.glob(pattern))
                     
                     if matching_files:
@@ -1345,12 +1346,12 @@ def test_multivector_file():
     # 模型管理器
     models_mgr = ModelsMgr(session)
     # 事件发送器
-    bridge_events = BridgeEventSender()
+    _bridge_events = BridgeEventSender()
     # 分块管理器
     try:
         multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
         logging.info('✅ MultivectorMgr初始化成功')
-        logging.info(f'✅ Tokenizer解耦架构已启用')
+        logging.info('✅ Tokenizer解耦架构已启用')
         logging.info(f'✅ 配置的embedding维度: {multivector_mgr.embedding_dimensions}')
         logging.info(f'✅ Chunker最大tokens: {multivector_mgr.chunker.tokenizer.get_max_tokens()}')
     except Exception as e:

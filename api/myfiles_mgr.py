@@ -1,19 +1,9 @@
 from sqlmodel import (
-    Field, 
-    SQLModel, 
     create_engine, 
     Session, 
     select, 
-    inspect, 
-    text, 
-    asc, 
     and_, 
     or_, 
-    desc, 
-    not_,
-    Column,
-    Enum,
-    JSON,
 )
 from datetime import datetime
 from db_mgr import MyFiles, BundleExtension
@@ -133,7 +123,7 @@ class MyFilesManager:
         """
         return self.session.exec(
             select(MyFiles).where(
-                MyFiles.is_blacklist == False
+                not MyFiles.is_blacklist
             )
         ).all()
     
@@ -146,7 +136,7 @@ class MyFilesManager:
             List[MyFiles]: 黑名单文件夹记录列表
         """
         return self.session.exec(
-            select(MyFiles).where(MyFiles.is_blacklist == True)
+            select(MyFiles).where(MyFiles.is_blacklist)
         ).all()
 
     def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False) -> Tuple[bool, Union[MyFiles, str]]:
@@ -340,7 +330,7 @@ class MyFilesManager:
             select(MyFiles).where(
                 and_(
                     MyFiles.path == path,
-                    MyFiles.is_blacklist == True
+                    MyFiles.is_blacklist
                 )
             )
         ).first()
@@ -351,7 +341,7 @@ class MyFilesManager:
         # 优化黑名单子目录检查
         # 1. 使用SQL的LIKE操作符更高效地检查路径前缀匹配
         blacklist_paths_query = self.session.exec(
-            select(MyFiles.path).where(MyFiles.is_blacklist == True)
+            select(MyFiles.path).where(MyFiles.is_blacklist)
         ).all()
         
         # 将当前路径与所有黑名单路径进行比较
@@ -682,8 +672,8 @@ class MyFilesManager:
                     and_(
                         # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
                         or_(
-                            MyFiles.is_blacklist == False,
-                            and_(MyFiles.is_blacklist == True, MyFiles.is_common_folder == True)
+                            not MyFiles.is_blacklist,
+                            and_(MyFiles.is_blacklist, MyFiles.is_common_folder)
                         ),
                         # 都是一级文件夹
                         or_(MyFiles.parent_id.is_(None), MyFiles.parent_id == 0)
@@ -699,7 +689,7 @@ class MyFilesManager:
                     black_children = self.session.exec(
                         select(MyFiles).where(
                             and_(
-                                MyFiles.is_blacklist == True,
+                                MyFiles.is_blacklist,
                                 MyFiles.parent_id == folder.id
                             )
                         ).order_by(MyFiles.created_at)
@@ -748,7 +738,7 @@ class MyFilesManager:
         try:
             query = select(BundleExtension)
             if active_only:
-                query = query.where(BundleExtension.is_active == True)
+                query = query.where(BundleExtension.is_active)
             
             return self.session.exec(query.order_by(BundleExtension.extension)).all()
         except Exception as e:

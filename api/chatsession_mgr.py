@@ -4,10 +4,9 @@
 """
 
 import json
-import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
-from sqlmodel import Session, select, desc, and_, or_
+from sqlmodel import Session, select, desc, and_
 from db_mgr import ChatSession, ChatMessage, ChatSessionPinFile
 
 
@@ -57,14 +56,14 @@ class ChatSessionMgr:
         Returns:
             (会话列表, 总数量)
         """
-        query = select(ChatSession).where(ChatSession.is_active == True)
+        query = select(ChatSession).where(ChatSession.is_active)
         
         # 添加搜索条件
         if search:
             query = query.where(ChatSession.name.contains(search))
             
         # 获取总数
-        count_query = select(ChatSession.id).where(ChatSession.is_active == True)
+        count_query = select(ChatSession.id).where(ChatSession.is_active)
         if search:
             count_query = count_query.where(ChatSession.name.contains(search))
         total = len(self.session.exec(count_query).all())
