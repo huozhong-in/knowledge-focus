@@ -349,7 +349,7 @@ class ModelCapability(str, PyEnum):
     REASONING = "reasoning"
     VISION = "vision"
     TOOL_USE = "tool_use"
-    WEB_SEARCH = "web_search"
+    WEB_SEARCH = "web_search"  # https://ai.pydantic.dev/api/builtin_tools/#pydantic_ai.builtin_tools.WebSearchTool
     EMBEDDING = "embedding"
     RERANKER = "reranker"
     CODE_GENERATION = "code_generation"

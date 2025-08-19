@@ -166,7 +166,7 @@ class MultiVectorMgr:
             )
             # if use_proxy == True:
             #     params["proxies"] = PROXIES
-
+            # TODO 强制使用本地VLM?
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=f"{vision_base_url}/chat/completions",
                 params=params,
