@@ -111,7 +111,7 @@ impl AppState {
         // 创建临时的FileMonitor实例来获取配置
         let temp_monitor = file_monitor::FileMonitor::new(
             "127.0.0.1".to_string(),
-            8848
+            60315
         );
         
         match temp_monitor.fetch_file_scanning_config().await {

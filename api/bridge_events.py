@@ -54,6 +54,7 @@ class BridgeEventSender:
         SYSTEM_STATUS = "system-status"
         
         # 多模态向量化事件
+        MULTIVECTOR_STARTED = "multivector-started"
         MULTIVECTOR_PROGRESS = "multivector-progress"
         MULTIVECTOR_COMPLETED = "multivector-completed"
         MULTIVECTOR_FAILED = "multivector-failed"

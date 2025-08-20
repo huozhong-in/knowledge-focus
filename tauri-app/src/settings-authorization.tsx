@@ -78,19 +78,19 @@ interface FolderHierarchy {
 }
 
 // Bundle扩展名接口
-interface BundleExtension {
-  id: number;
-  extension: string;
-  description: string | null;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
+// interface BundleExtension {
+//   id: number;
+//   extension: string;
+//   description: string | null;
+//   is_active: boolean;
+//   created_at: string;
+//   updated_at: string;
+// }
 
 // 配置摘要接口
 interface ConfigurationSummary {
   has_config_cache: boolean;
-  config_categories_count: number;
+  // config_categories_count: number;
   config_filter_rules_count: number;
   config_extension_maps_count: number;
   full_disk_access: boolean;
@@ -121,16 +121,16 @@ function SettingsAuthorization() {
   const [newBlacklistAlias, setNewBlacklistAlias] = useState("");
   
   // Bundle扩展名相关状态
-  const [bundleExtensions, setBundleExtensions] = useState<BundleExtension[]>([]);
-  const [newBundleExtension, setNewBundleExtension] = useState("");
-  const [newBundleDescription, setNewBundleDescription] = useState("");
-  const [isBundleDialogOpen, setIsBundleDialogOpen] = useState(false);
+  // const [bundleExtensions, setBundleExtensions] = useState<BundleExtension[]>([]);
+  // const [newBundleExtension, setNewBundleExtension] = useState("");
+  // const [newBundleDescription, setNewBundleDescription] = useState("");
+  // const [isBundleDialogOpen, setIsBundleDialogOpen] = useState(false);
   
   // 配置摘要状态
   const [configSummary, setConfigSummary] = useState<ConfigurationSummary | null>(null);
   
   // 界面控制状态
-  const [showBundleSection, setShowBundleSection] = useState(false);
+  // const [showBundleSection, setShowBundleSection] = useState(false);
   
   // 新文件夹对话框相关状态
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -191,26 +191,26 @@ function SettingsAuthorization() {
   };
 
   // 加载Bundle扩展名
-  const loadBundleExtensions = async () => {
-    try {
-      const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" }
-      });
+  // const loadBundleExtensions = async () => {
+  //   try {
+  //     const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
+  //       method: "GET",
+  //       headers: { "Content-Type": "application/json" }
+  //     });
       
-      if (response.ok) {
-        const apiResponse = await response.json();
-        if (apiResponse.status === "success" && apiResponse.data) {
-          setBundleExtensions(apiResponse.data);
-          info(`已加载Bundle扩展名: ${apiResponse.data.length} 个`);
-        }
-      } else {
-        console.error("加载Bundle扩展名失败: HTTP", response.status);
-      }
-    } catch (error) {
-      console.error("加载Bundle扩展名失败:", error);
-    }
-  };
+  //     if (response.ok) {
+  //       const apiResponse = await response.json();
+  //       if (apiResponse.status === "success" && apiResponse.data) {
+  //         setBundleExtensions(apiResponse.data);
+  //         info(`已加载Bundle扩展名: ${apiResponse.data.length} 个`);
+  //       }
+  //     } else {
+  //       console.error("加载Bundle扩展名失败: HTTP", response.status);
+  //     }
+  //   } catch (error) {
+  //     console.error("加载Bundle扩展名失败:", error);
+  //   }
+  // };
 
   // 加载配置摘要
   const loadConfigSummary = async () => {
@@ -225,7 +225,7 @@ function SettingsAuthorization() {
         // 从配置数据中提取摘要信息
         const summary: ConfigurationSummary = {
           has_config_cache: true,
-          config_categories_count: configData.file_categories?.length || 0,
+          // config_categories_count: configData.file_categories?.length || 0,
           config_filter_rules_count: configData.file_filter_rules?.length || 0,
           config_extension_maps_count: configData.file_extension_maps?.length || 0,
           full_disk_access: configData.full_disk_access || false,
@@ -288,7 +288,7 @@ function SettingsAuthorization() {
         // 不再需要在此检查权限，因为进入该页面的先决条件是已获得权限
         await Promise.all([
           loadFolderHierarchy(),
-          loadBundleExtensions(),
+          // loadBundleExtensions(),
           loadConfigSummary(),
           checkQueueStatus(),
         ]);
@@ -450,61 +450,61 @@ function SettingsAuthorization() {
   };
 
   // 添加Bundle扩展名
-  const handleAddBundleExtension = async () => {
-    if (!newBundleExtension.trim()) {
-      toast.error("请输入扩展名");
-      return;
-    }
+  // const handleAddBundleExtension = async () => {
+  //   if (!newBundleExtension.trim()) {
+  //     toast.error("请输入扩展名");
+  //     return;
+  //   }
 
-    try {
-      const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          extension: newBundleExtension,
-          description: newBundleDescription || null
-        })
-      });
+  //   try {
+  //     const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify({
+  //         extension: newBundleExtension,
+  //         description: newBundleDescription || null
+  //       })
+  //     });
 
-      if (response.ok) {
-        toast.success("Bundle扩展名添加成功");
-        setIsBundleDialogOpen(false);
-        setNewBundleExtension("");
-        setNewBundleDescription("");
-        await loadBundleExtensions();
-        // 注意：Bundle扩展名的更改需要重启应用才能生效
-        toast.info("Bundle扩展名已更新，重启应用后生效");
-      } else {
-        const errorData = await response.json();
-        toast.error(`添加失败: ${errorData.message || "未知错误"}`);
-      }
-    } catch (error) {
-      console.error("添加Bundle扩展名失败:", error);
-      toast.error("添加Bundle扩展名失败");
-    }
-  };
+  //     if (response.ok) {
+  //       toast.success("Bundle扩展名添加成功");
+  //       setIsBundleDialogOpen(false);
+  //       setNewBundleExtension("");
+  //       setNewBundleDescription("");
+  //       await loadBundleExtensions();
+  //       // 注意：Bundle扩展名的更改需要重启应用才能生效
+  //       toast.info("Bundle扩展名已更新，重启应用后生效");
+  //     } else {
+  //       const errorData = await response.json();
+  //       toast.error(`添加失败: ${errorData.message || "未知错误"}`);
+  //     }
+  //   } catch (error) {
+  //     console.error("添加Bundle扩展名失败:", error);
+  //     toast.error("添加Bundle扩展名失败");
+  //   }
+  // };
 
   // 删除Bundle扩展名
-  const handleDeleteBundleExtension = async (id: number) => {
-    try {
-      const response = await fetch(`http://127.0.0.1:60315/bundle-extensions/${id}`, {
-        method: "DELETE"
-      });
+  // const handleDeleteBundleExtension = async (id: number) => {
+  //   try {
+  //     const response = await fetch(`http://127.0.0.1:60315/bundle-extensions/${id}`, {
+  //       method: "DELETE"
+  //     });
 
-      if (response.ok) {
-        toast.success("Bundle扩展名删除成功");
-        await loadBundleExtensions();
-        // 注意：Bundle扩展名的更改需要重启应用才能生效
-        toast.info("Bundle扩展名已更新，重启应用后生效");
-      } else {
-        const errorData = await response.json();
-        toast.error(`删除失败: ${errorData.message || "未知错误"}`);
-      }
-    } catch (error) {
-      console.error("删除Bundle扩展名失败:", error);
-      toast.error("删除Bundle扩展名失败");
-    }
-  };
+  //     if (response.ok) {
+  //       toast.success("Bundle扩展名删除成功");
+  //       await loadBundleExtensions();
+  //       // 注意：Bundle扩展名的更改需要重启应用才能生效
+  //       toast.info("Bundle扩展名已更新，重启应用后生效");
+  //     } else {
+  //       const errorData = await response.json();
+  //       toast.error(`删除失败: ${errorData.message || "未知错误"}`);
+  //     }
+  //   } catch (error) {
+  //     console.error("删除Bundle扩展名失败:", error);
+  //     toast.error("删除Bundle扩展名失败");
+  //   }
+  // };
 
   // 处理文件夹树选择器的路径选择
   const handleTreePathSelect = async (path: string) => {
@@ -960,18 +960,18 @@ function SettingsAuthorization() {
                 </div>
                 <div className="text-gray-500">黑名单文件夹</div>
               </div>
-              <div className="text-center">
+              {/* <div className="text-center">
                 <div className="text-2xl font-bold text-green-600">
                   {configSummary.config_categories_count}
                 </div>
                 <div className="text-gray-500">文件分类</div>
-              </div>
-              <div className="text-center">
+              </div> */}
+              {/* <div className="text-center">
                 <div className="text-2xl font-bold text-purple-600">
                   {bundleExtensions.length}
                 </div>
                 <div className="text-gray-500">Bundle扩展名</div>
-              </div>
+              </div> */}
             </div>
           )}
         </div>
@@ -1053,126 +1053,126 @@ function SettingsAuthorization() {
   };
 
   // 渲染Bundle扩展名管理区域
-  const renderBundleExtensionsSection = () => (
-    <Card className="w-full mb-6">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              macOS Bundle 扩展名管理
-            </CardTitle>
-            <CardDescription>
-              macOS Bundle就是那些看起来是文件的文件夹，我们要跳过它们，提高扫描效率
-            </CardDescription>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowBundleSection(!showBundleSection)}
-            >
-              {showBundleSection ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              {showBundleSection ? "隐藏" : "显示"}
-            </Button>
-            <Dialog open={isBundleDialogOpen} onOpenChange={setIsBundleDialogOpen}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <PlusCircle className="h-4 w-4 mr-2" />
-                  添加扩展名
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-md">
-                <DialogHeader>
-                  <DialogTitle>添加 Bundle 扩展名</DialogTitle>
-                  <DialogDescription>
-                    添加需要跳过扫描的 Bundle 扩展名（如 .app, .bundle）
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="extension">扩展名</Label>
-                    <Input
-                      id="extension"
-                      value={newBundleExtension}
-                      onChange={(e) => setNewBundleExtension(e.target.value)}
-                      placeholder="例如：.app"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="description">描述 (可选)</Label>
-                    <Input
-                      id="description"
-                      value={newBundleDescription}
-                      onChange={(e) => setNewBundleDescription(e.target.value)}
-                      placeholder="扩展名的用途描述..."
-                    />
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setIsBundleDialogOpen(false)}>
-                    取消
-                  </Button>
-                  <Button onClick={handleAddBundleExtension}>添加</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
-      </CardHeader>
-      {showBundleSection && (
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {bundleExtensions.map((ext) => (
-              <Card key={ext.id} className="p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="font-medium">{ext.extension}</div>
-                    <div className="text-sm text-gray-500">
-                      {ext.description || "无描述"}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className={`w-2 h-2 rounded-full ${ext.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="sm" variant="outline">
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>确认删除</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            确定要删除扩展名 "{ext.extension}" 吗？
-                            删除后将重新扫描此类型的文件。
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
-                          <AlertDialogAction 
-                            onClick={() => handleDeleteBundleExtension(ext.id)}
-                          >
-                            确认删除
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
+  // const renderBundleExtensionsSection = () => (
+  //   <Card className="w-full mb-6">
+  //     <CardHeader>
+  //       <div className="flex items-center justify-between">
+  //         <div>
+  //           <CardTitle className="flex items-center gap-2">
+  //             <Settings className="h-5 w-5" />
+  //             macOS Bundle 扩展名管理
+  //           </CardTitle>
+  //           <CardDescription>
+  //             macOS Bundle就是那些看起来是文件的文件夹，我们要跳过它们，提高扫描效率
+  //           </CardDescription>
+  //         </div>
+  //         <div className="flex items-center gap-2">
+  //           <Button
+  //             variant="outline"
+  //             size="sm"
+  //             onClick={() => setShowBundleSection(!showBundleSection)}
+  //           >
+  //             {showBundleSection ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+  //             {showBundleSection ? "隐藏" : "显示"}
+  //           </Button>
+  //           <Dialog open={isBundleDialogOpen} onOpenChange={setIsBundleDialogOpen}>
+  //             <DialogTrigger asChild>
+  //               <Button size="sm">
+  //                 <PlusCircle className="h-4 w-4 mr-2" />
+  //                 添加扩展名
+  //               </Button>
+  //             </DialogTrigger>
+  //             <DialogContent className="max-w-md">
+  //               <DialogHeader>
+  //                 <DialogTitle>添加 Bundle 扩展名</DialogTitle>
+  //                 <DialogDescription>
+  //                   添加需要跳过扫描的 Bundle 扩展名（如 .app, .bundle）
+  //                 </DialogDescription>
+  //               </DialogHeader>
+  //               <div className="space-y-4 py-4">
+  //                 <div className="space-y-2">
+  //                   <Label htmlFor="extension">扩展名</Label>
+  //                   <Input
+  //                     id="extension"
+  //                     value={newBundleExtension}
+  //                     onChange={(e) => setNewBundleExtension(e.target.value)}
+  //                     placeholder="例如：.app"
+  //                   />
+  //                 </div>
+  //                 <div className="space-y-2">
+  //                   <Label htmlFor="description">描述 (可选)</Label>
+  //                   <Input
+  //                     id="description"
+  //                     value={newBundleDescription}
+  //                     onChange={(e) => setNewBundleDescription(e.target.value)}
+  //                     placeholder="扩展名的用途描述..."
+  //                   />
+  //                 </div>
+  //               </div>
+  //               <DialogFooter>
+  //                 <Button variant="outline" onClick={() => setIsBundleDialogOpen(false)}>
+  //                   取消
+  //                 </Button>
+  //                 <Button onClick={handleAddBundleExtension}>添加</Button>
+  //               </DialogFooter>
+  //             </DialogContent>
+  //           </Dialog>
+  //         </div>
+  //       </div>
+  //     </CardHeader>
+  //     {showBundleSection && (
+  //       <CardContent>
+  //         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+  //           {bundleExtensions.map((ext) => (
+  //             <Card key={ext.id} className="p-3">
+  //               <div className="flex items-center justify-between">
+  //                 <div className="flex-1">
+  //                   <div className="font-medium">{ext.extension}</div>
+  //                   <div className="text-sm text-gray-500">
+  //                     {ext.description || "无描述"}
+  //                   </div>
+  //                 </div>
+  //                 <div className="flex items-center gap-2">
+  //                   <div className={`w-2 h-2 rounded-full ${ext.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+  //                   <AlertDialog>
+  //                     <AlertDialogTrigger asChild>
+  //                       <Button size="sm" variant="outline">
+  //                         <X className="h-4 w-4" />
+  //                       </Button>
+  //                     </AlertDialogTrigger>
+  //                     <AlertDialogContent>
+  //                       <AlertDialogHeader>
+  //                         <AlertDialogTitle>确认删除</AlertDialogTitle>
+  //                         <AlertDialogDescription>
+  //                           确定要删除扩展名 "{ext.extension}" 吗？
+  //                           删除后将重新扫描此类型的文件。
+  //                         </AlertDialogDescription>
+  //                       </AlertDialogHeader>
+  //                       <AlertDialogFooter>
+  //                         <AlertDialogCancel>取消</AlertDialogCancel>
+  //                         <AlertDialogAction 
+  //                           onClick={() => handleDeleteBundleExtension(ext.id)}
+  //                         >
+  //                           确认删除
+  //                         </AlertDialogAction>
+  //                       </AlertDialogFooter>
+  //                     </AlertDialogContent>
+  //                   </AlertDialog>
+  //                 </div>
+  //               </div>
+  //             </Card>
+  //           ))}
+  //         </div>
           
-          {bundleExtensions.length === 0 && (
-            <div className="text-center py-8 text-gray-500">
-              还没有配置 Bundle 扩展名
-            </div>
-          )}
-        </CardContent>
-      )}
-    </Card>
-  );
+  //         {bundleExtensions.length === 0 && (
+  //           <div className="text-center py-8 text-gray-500">
+  //             还没有配置 Bundle 扩展名
+  //           </div>
+  //         )}
+  //       </CardContent>
+  //     )}
+  //   </Card>
+  // );
 
   // 主渲染
   if (loading) {
@@ -1203,7 +1203,7 @@ function SettingsAuthorization() {
       <div className="px-6 space-y-6">
         {renderPermissionStatusCard()}
         {renderFolderManagementTable()}
-        {renderBundleExtensionsSection()}
+        {/* {renderBundleExtensionsSection()} */}
       </div>
       
       {/* 黑名单子文件夹对话框 */}

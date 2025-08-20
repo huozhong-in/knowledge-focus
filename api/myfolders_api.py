@@ -479,4 +479,329 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"获取文件夹层级关系失败: {str(e)}")
             return {"status": "error", "message": f"获取文件夹层级关系失败: {str(e)}"}
 
+    # ========== Bundle扩展名状态切换端点 ==========
+    
+    @router.patch("/bundle-extensions/{ext_id}/toggle", tags=["myfolders"])
+    def toggle_bundle_extension_status(
+        ext_id: int,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """切换Bundle扩展名的启用状态"""
+        try:
+            success, result = myfolders_mgr.toggle_bundle_extension_status(ext_id)
+            if success:
+                status_text = "启用" if result.is_active else "禁用"
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"Bundle扩展名 '{result.extension}' 已{status_text}"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"切换Bundle扩展名状态失败: {str(e)}")
+            return {"status": "error", "message": f"切换Bundle扩展名状态失败: {str(e)}"}
+
+    # ========== 文件分类管理端点 ==========
+    
+    @router.get("/file-categories", tags=["myfolders"])
+    def get_file_categories(
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """获取所有文件分类"""
+        try:
+            categories = myfolders_mgr.get_file_categories()
+            return {
+                "status": "success",
+                "data": categories,
+                "count": len(categories),
+                "message": f"成功获取 {len(categories)} 个文件分类"
+            }
+        except Exception as e:
+            logger.error(f"获取文件分类失败: {str(e)}")
+            return {"status": "error", "message": f"获取文件分类失败: {str(e)}"}
+
+    @router.post("/file-categories", tags=["myfolders"])
+    def add_file_category(
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """添加新的文件分类"""
+        try:
+            name = data.get("name", "").strip()
+            description = data.get("description")
+            icon = data.get("icon")
+            
+            if not name:
+                return {"status": "error", "message": "分类名称不能为空"}
+            
+            success, result = myfolders_mgr.add_file_category(name, description, icon)
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"文件分类 '{result.name}' 添加成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"添加文件分类失败: {str(e)}")
+            return {"status": "error", "message": f"添加文件分类失败: {str(e)}"}
+
+    @router.put("/file-categories/{category_id}", tags=["myfolders"])
+    def update_file_category(
+        category_id: int,
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """更新文件分类信息"""
+        try:
+            name = data.get("name")
+            description = data.get("description")
+            icon = data.get("icon")
+            
+            success, result = myfolders_mgr.update_file_category(category_id, name, description, icon)
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"文件分类 '{result.name}' 更新成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"更新文件分类失败: {str(e)}")
+            return {"status": "error", "message": f"更新文件分类失败: {str(e)}"}
+
+    @router.delete("/file-categories/{category_id}", tags=["myfolders"])
+    def delete_file_category(
+        category_id: int,
+        force: bool = False,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """删除文件分类"""
+        try:
+            success, message = myfolders_mgr.delete_file_category(category_id, force)
+            if success:
+                return {"status": "success", "message": message}
+            else:
+                return {"status": "error", "message": message}
+        except Exception as e:
+            logger.error(f"删除文件分类失败: {str(e)}")
+            return {"status": "error", "message": f"删除文件分类失败: {str(e)}"}
+
+    # ========== 扩展名映射管理端点 ==========
+    
+    @router.get("/extension-mappings", tags=["myfolders"])
+    def get_extension_mappings(
+        category_id: int = None,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """获取扩展名映射列表"""
+        try:
+            mappings = myfolders_mgr.get_extension_mappings(category_id)
+            return {
+                "status": "success",
+                "data": mappings,
+                "count": len(mappings),
+                "message": f"成功获取 {len(mappings)} 个扩展名映射"
+            }
+        except Exception as e:
+            logger.error(f"获取扩展名映射失败: {str(e)}")
+            return {"status": "error", "message": f"获取扩展名映射失败: {str(e)}"}
+
+    @router.post("/extension-mappings", tags=["myfolders"])
+    def add_extension_mapping(
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """添加新的扩展名映射"""
+        try:
+            extension = data.get("extension", "").strip()
+            category_id = data.get("category_id")
+            description = data.get("description")
+            priority = data.get("priority", "medium")
+            
+            if not extension:
+                return {"status": "error", "message": "扩展名不能为空"}
+            if not category_id:
+                return {"status": "error", "message": "必须选择文件分类"}
+            
+            success, result = myfolders_mgr.add_extension_mapping(extension, category_id, description, priority)
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"扩展名映射 '{result.extension}' 添加成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"添加扩展名映射失败: {str(e)}")
+            return {"status": "error", "message": f"添加扩展名映射失败: {str(e)}"}
+
+    @router.put("/extension-mappings/{mapping_id}", tags=["myfolders"])
+    def update_extension_mapping(
+        mapping_id: int,
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """更新扩展名映射"""
+        try:
+            extension = data.get("extension")
+            category_id = data.get("category_id")
+            description = data.get("description")
+            priority = data.get("priority")
+            
+            success, result = myfolders_mgr.update_extension_mapping(mapping_id, extension, category_id, description, priority)
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"扩展名映射 '{result.extension}' 更新成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"更新扩展名映射失败: {str(e)}")
+            return {"status": "error", "message": f"更新扩展名映射失败: {str(e)}"}
+
+    @router.delete("/extension-mappings/{mapping_id}", tags=["myfolders"])
+    def delete_extension_mapping(
+        mapping_id: int,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """删除扩展名映射"""
+        try:
+            success, message = myfolders_mgr.delete_extension_mapping(mapping_id)
+            if success:
+                return {"status": "success", "message": message}
+            else:
+                return {"status": "error", "message": message}
+        except Exception as e:
+            logger.error(f"删除扩展名映射失败: {str(e)}")
+            return {"status": "error", "message": f"删除扩展名映射失败: {str(e)}"}
+
+    # ========== 文件过滤规则管理端点 ==========
+    
+    @router.get("/filter-rules", tags=["myfolders"])
+    def get_filter_rules(
+        enabled_only: bool = False,
+        user_only: bool = False,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """获取文件过滤规则列表"""
+        try:
+            rules = myfolders_mgr.get_filter_rules(enabled_only, user_only)
+            return {
+                "status": "success",
+                "data": rules,
+                "count": len(rules),
+                "message": f"成功获取 {len(rules)} 个文件过滤规则"
+            }
+        except Exception as e:
+            logger.error(f"获取文件过滤规则失败: {str(e)}")
+            return {"status": "error", "message": f"获取文件过滤规则失败: {str(e)}"}
+
+    @router.post("/filter-rules", tags=["myfolders"])
+    def add_filter_rule(
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """添加新的文件过滤规则"""
+        try:
+            name = data.get("name", "").strip()
+            rule_type = data.get("rule_type", "")
+            pattern = data.get("pattern", "").strip()
+            action = data.get("action", "exclude")
+            description = data.get("description")
+            priority = data.get("priority", "medium")
+            pattern_type = data.get("pattern_type", "regex")
+            category_id = data.get("category_id")
+            extra_data = data.get("extra_data")
+            
+            if not name:
+                return {"status": "error", "message": "规则名称不能为空"}
+            if not rule_type:
+                return {"status": "error", "message": "必须选择规则类型"}
+            if not pattern:
+                return {"status": "error", "message": "匹配模式不能为空"}
+            
+            success, result = myfolders_mgr.add_filter_rule(
+                name, rule_type, pattern, action, description, priority, pattern_type, category_id, extra_data
+            )
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"文件过滤规则 '{result.name}' 添加成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"添加文件过滤规则失败: {str(e)}")
+            return {"status": "error", "message": f"添加文件过滤规则失败: {str(e)}"}
+
+    @router.put("/filter-rules/{rule_id}", tags=["myfolders"])
+    def update_filter_rule(
+        rule_id: int,
+        data: Dict[str, Any] = Body(...),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """更新文件过滤规则"""
+        try:
+            # 移除空值
+            update_data = {k: v for k, v in data.items() if v is not None}
+            
+            success, result = myfolders_mgr.update_filter_rule(rule_id, **update_data)
+            if success:
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"文件过滤规则 '{result.name}' 更新成功"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"更新文件过滤规则失败: {str(e)}")
+            return {"status": "error", "message": f"更新文件过滤规则失败: {str(e)}"}
+
+    @router.patch("/filter-rules/{rule_id}/toggle", tags=["myfolders"])
+    def toggle_filter_rule_status(
+        rule_id: int,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """切换文件过滤规则的启用状态"""
+        try:
+            success, result = myfolders_mgr.toggle_filter_rule_status(rule_id)
+            if success:
+                status_text = "启用" if result.enabled else "禁用"
+                return {
+                    "status": "success",
+                    "data": result,
+                    "message": f"文件过滤规则 '{result.name}' 已{status_text}"
+                }
+            else:
+                return {"status": "error", "message": result}
+        except Exception as e:
+            logger.error(f"切换文件过滤规则状态失败: {str(e)}")
+            return {"status": "error", "message": f"切换文件过滤规则状态失败: {str(e)}"}
+
+    @router.delete("/filter-rules/{rule_id}", tags=["myfolders"])
+    def delete_filter_rule(
+        rule_id: int,
+        force: bool = False,
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """删除文件过滤规则"""
+        try:
+            success, message = myfolders_mgr.delete_filter_rule(rule_id, force)
+            if success:
+                return {"status": "success", "message": message}
+            else:
+                return {"status": "error", "message": message}
+        except Exception as e:
+            logger.error(f"删除文件过滤规则失败: {str(e)}")
+            return {"status": "error", "message": f"删除文件过滤规则失败: {str(e)}"}
+
     return router

@@ -7,7 +7,7 @@ from sqlmodel import (
     not_,
 )
 from datetime import datetime
-from db_mgr import MyFolders, BundleExtension
+from db_mgr import MyFolders, BundleExtension, FileCategory, FileExtensionMap, FileFilterRule
 from typing import Dict, List, Optional, Tuple, Set, Union
 import os
 import platform
@@ -183,12 +183,7 @@ class MyFoldersManager:
         self.session.refresh(new_file)  # 刷新以获取完整对象
         
         return True, new_file
-    
-    # 授权状态方法已移除
-        self.session.commit()
-        self.session.refresh(directory)
-        return True, directory
-    
+        
     def toggle_blacklist(self, directory_id: int, is_blacklist: bool) -> Tuple[bool, MyFolders | str]:
         """切换文件夹的黑名单状态
 
@@ -839,49 +834,572 @@ class MyFoldersManager:
             # 返回基本的默认扩展名作为备选
             return [".app", ".bundle", ".framework", ".fcpbundle", ".photoslibrary", ".imovielibrary"]
 
+    def toggle_bundle_extension_status(self, extension_id: int) -> Tuple[bool, Union[BundleExtension, str]]:
+        """切换Bundle扩展名的启用状态
+        
+        Args:
+            extension_id (int): Bundle扩展名ID
+            
+        Returns:
+            Tuple[bool, Union[BundleExtension, str]]: (成功标志, Bundle扩展名对象或错误消息)
+        """
+        try:
+            bundle_ext = self.session.get(BundleExtension, extension_id)
+            if not bundle_ext:
+                return False, "Bundle扩展名不存在"
+            
+            # 切换状态
+            bundle_ext.is_active = not bundle_ext.is_active
+            bundle_ext.updated_at = datetime.now()
+            
+            self.session.add(bundle_ext)
+            self.session.commit()
+            self.session.refresh(bundle_ext)
+            
+            return True, bundle_ext
+            
+        except Exception as e:
+            logger.error(f"切换Bundle扩展名状态失败: {str(e)}")
+            self.session.rollback()
+            return False, f"切换Bundle扩展名状态失败: {str(e)}"
+
+    # ========== 文件分类管理方法 ==========
+    
+    def get_file_categories(self) -> List[Dict]:
+        """获取所有文件分类及其关联的扩展名数量
+        
+        Returns:
+            List[Dict]: 文件分类列表，包含扩展名数量统计
+        """
+        try:
+            categories = self.session.exec(select(FileCategory).order_by(FileCategory.name)).all()
+            result = []
+            
+            for category in categories:
+                # 统计关联的扩展名数量
+                ext_count = len(self.session.exec(
+                    select(FileExtensionMap).where(FileExtensionMap.category_id == category.id)
+                ).all())
+                
+                result.append({
+                    "id": category.id,
+                    "name": category.name,
+                    "description": category.description,
+                    "icon": category.icon,
+                    "extension_count": ext_count,
+                    "created_at": category.created_at,
+                    "updated_at": category.updated_at
+                })
+            
+            return result
+        except Exception as e:
+            logger.error(f"获取文件分类失败: {str(e)}")
+            return []
+    
+    def add_file_category(self, name: str, description: str = None, icon: str = None) -> Tuple[bool, Union[FileCategory, str]]:
+        """添加新的文件分类
+        
+        Args:
+            name (str): 分类名称
+            description (str, optional): 分类描述
+            icon (str, optional): 图标标识
+            
+        Returns:
+            Tuple[bool, Union[FileCategory, str]]: (成功标志, 文件分类对象或错误消息)
+        """
+        try:
+            # 检查名称是否已存在
+            existing = self.session.exec(
+                select(FileCategory).where(FileCategory.name == name)
+            ).first()
+            
+            if existing:
+                return False, f"分类名称 '{name}' 已存在"
+            
+            # 创建新分类
+            new_category = FileCategory(
+                name=name,
+                description=description,
+                icon=icon
+            )
+            
+            self.session.add(new_category)
+            self.session.commit()
+            self.session.refresh(new_category)
+            
+            return True, new_category
+            
+        except Exception as e:
+            logger.error(f"添加文件分类失败: {str(e)}")
+            self.session.rollback()
+            return False, f"添加文件分类失败: {str(e)}"
+    
+    def update_file_category(self, category_id: int, name: str = None, description: str = None, icon: str = None) -> Tuple[bool, Union[FileCategory, str]]:
+        """更新文件分类信息
+        
+        Args:
+            category_id (int): 分类ID
+            name (str, optional): 新的分类名称
+            description (str, optional): 新的分类描述
+            icon (str, optional): 新的图标标识
+            
+        Returns:
+            Tuple[bool, Union[FileCategory, str]]: (成功标志, 文件分类对象或错误消息)
+        """
+        try:
+            category = self.session.get(FileCategory, category_id)
+            if not category:
+                return False, "文件分类不存在"
+            
+            # 如果要更新名称，检查是否与其他分类重名
+            if name and name != category.name:
+                existing = self.session.exec(
+                    select(FileCategory).where(FileCategory.name == name)
+                ).first()
+                if existing:
+                    return False, f"分类名称 '{name}' 已存在"
+                category.name = name
+            
+            # 更新其他字段
+            if description is not None:
+                category.description = description
+            if icon is not None:
+                category.icon = icon
+            
+            category.updated_at = datetime.now()
+            
+            self.session.add(category)
+            self.session.commit()
+            self.session.refresh(category)
+            
+            return True, category
+            
+        except Exception as e:
+            logger.error(f"更新文件分类失败: {str(e)}")
+            self.session.rollback()
+            return False, f"更新文件分类失败: {str(e)}"
+    
+    def delete_file_category(self, category_id: int, force: bool = False) -> Tuple[bool, str]:
+        """删除文件分类
+        
+        Args:
+            category_id (int): 分类ID
+            force (bool): 是否强制删除（会同时删除关联的扩展名映射）
+            
+        Returns:
+            Tuple[bool, str]: (成功标志, 消息)
+        """
+        try:
+            category = self.session.get(FileCategory, category_id)
+            if not category:
+                return False, "文件分类不存在"
+            
+            # 检查是否有关联的扩展名映射
+            related_extensions = self.session.exec(
+                select(FileExtensionMap).where(FileExtensionMap.category_id == category_id)
+            ).all()
+            
+            if related_extensions and not force:
+                return False, f"该分类还有 {len(related_extensions)} 个关联的扩展名映射，请先删除这些映射或使用强制删除"
+            
+            # 如果强制删除，先删除关联的扩展名映射
+            if force and related_extensions:
+                for ext_map in related_extensions:
+                    self.session.delete(ext_map)
+            
+            # 删除分类
+            self.session.delete(category)
+            self.session.commit()
+            
+            message = f"文件分类 '{category.name}' 已删除"
+            if force and related_extensions:
+                message += f"（同时删除了 {len(related_extensions)} 个关联的扩展名映射）"
+            
+            return True, message
+            
+        except Exception as e:
+            logger.error(f"删除文件分类失败: {str(e)}")
+            self.session.rollback()
+            return False, f"删除文件分类失败: {str(e)}"
+
+    # ========== 扩展名映射管理方法 ==========
+    
+    def get_extension_mappings(self, category_id: int = None) -> List[Dict]:
+        """获取扩展名映射列表
+        
+        Args:
+            category_id (int, optional): 按分类ID筛选
+            
+        Returns:
+            List[Dict]: 扩展名映射列表，包含分类信息
+        """
+        try:
+            query = select(FileExtensionMap, FileCategory).join(
+                FileCategory, FileExtensionMap.category_id == FileCategory.id
+            )
+            
+            if category_id:
+                query = query.where(FileExtensionMap.category_id == category_id)
+            
+            query = query.order_by(FileExtensionMap.extension)
+            results = self.session.exec(query).all()
+            
+            mappings = []
+            for ext_map, category in results:
+                mappings.append({
+                    "id": ext_map.id,
+                    "extension": ext_map.extension,
+                    "category_id": ext_map.category_id,
+                    "category_name": category.name,
+                    "description": ext_map.description,
+                    "priority": ext_map.priority,
+                    "created_at": ext_map.created_at,
+                    "updated_at": ext_map.updated_at
+                })
+            
+            return mappings
+        except Exception as e:
+            logger.error(f"获取扩展名映射失败: {str(e)}")
+            return []
+    
+    def add_extension_mapping(self, extension: str, category_id: int, description: str = None, priority: str = "medium") -> Tuple[bool, Union[FileExtensionMap, str]]:
+        """添加新的扩展名映射
+        
+        Args:
+            extension (str): 扩展名（不含点）
+            category_id (int): 分类ID
+            description (str, optional): 描述
+            priority (str): 优先级
+            
+        Returns:
+            Tuple[bool, Union[FileExtensionMap, str]]: (成功标志, 扩展名映射对象或错误消息)
+        """
+        try:
+            # 标准化扩展名（去掉点）
+            if extension.startswith('.'):
+                extension = extension[1:]
+            
+            # 检查分类是否存在
+            category = self.session.get(FileCategory, category_id)
+            if not category:
+                return False, "指定的文件分类不存在"
+            
+            # 检查扩展名是否已存在
+            existing = self.session.exec(
+                select(FileExtensionMap).where(FileExtensionMap.extension == extension)
+            ).first()
+            
+            if existing:
+                return False, f"扩展名 '{extension}' 已存在映射"
+            
+            # 创建新映射
+            new_mapping = FileExtensionMap(
+                extension=extension,
+                category_id=category_id,
+                description=description,
+                priority=priority
+            )
+            
+            self.session.add(new_mapping)
+            self.session.commit()
+            self.session.refresh(new_mapping)
+            
+            return True, new_mapping
+            
+        except Exception as e:
+            logger.error(f"添加扩展名映射失败: {str(e)}")
+            self.session.rollback()
+            return False, f"添加扩展名映射失败: {str(e)}"
+    
+    def update_extension_mapping(self, mapping_id: int, extension: str = None, category_id: int = None, description: str = None, priority: str = None) -> Tuple[bool, Union[FileExtensionMap, str]]:
+        """更新扩展名映射
+        
+        Args:
+            mapping_id (int): 映射ID
+            extension (str, optional): 新的扩展名
+            category_id (int, optional): 新的分类ID
+            description (str, optional): 新的描述
+            priority (str, optional): 新的优先级
+            
+        Returns:
+            Tuple[bool, Union[FileExtensionMap, str]]: (成功标志, 扩展名映射对象或错误消息)
+        """
+        try:
+            mapping = self.session.get(FileExtensionMap, mapping_id)
+            if not mapping:
+                return False, "扩展名映射不存在"
+            
+            # 如果要更新扩展名，检查是否重复
+            if extension and extension != mapping.extension:
+                if extension.startswith('.'):
+                    extension = extension[1:]
+                
+                existing = self.session.exec(
+                    select(FileExtensionMap).where(FileExtensionMap.extension == extension)
+                ).first()
+                if existing:
+                    return False, f"扩展名 '{extension}' 已存在映射"
+                mapping.extension = extension
+            
+            # 如果要更新分类，检查分类是否存在
+            if category_id and category_id != mapping.category_id:
+                category = self.session.get(FileCategory, category_id)
+                if not category:
+                    return False, "指定的文件分类不存在"
+                mapping.category_id = category_id
+            
+            # 更新其他字段
+            if description is not None:
+                mapping.description = description
+            if priority:
+                mapping.priority = priority
+            
+            mapping.updated_at = datetime.now()
+            
+            self.session.add(mapping)
+            self.session.commit()
+            self.session.refresh(mapping)
+            
+            return True, mapping
+            
+        except Exception as e:
+            logger.error(f"更新扩展名映射失败: {str(e)}")
+            self.session.rollback()
+            return False, f"更新扩展名映射失败: {str(e)}"
+    
+    def delete_extension_mapping(self, mapping_id: int) -> Tuple[bool, str]:
+        """删除扩展名映射
+        
+        Args:
+            mapping_id (int): 映射ID
+            
+        Returns:
+            Tuple[bool, str]: (成功标志, 消息)
+        """
+        try:
+            mapping = self.session.get(FileExtensionMap, mapping_id)
+            if not mapping:
+                return False, "扩展名映射不存在"
+            
+            extension = mapping.extension
+            self.session.delete(mapping)
+            self.session.commit()
+            
+            return True, f"扩展名映射 '{extension}' 已删除"
+            
+        except Exception as e:
+            logger.error(f"删除扩展名映射失败: {str(e)}")
+            self.session.rollback()
+            return False, f"删除扩展名映射失败: {str(e)}"
+
+    # ========== 文件过滤规则管理方法 ==========
+    
+    def get_filter_rules(self, enabled_only: bool = False, user_only: bool = False) -> List[FileFilterRule]:
+        """获取文件过滤规则列表
+        
+        Args:
+            enabled_only (bool): 是否只返回启用的规则
+            user_only (bool): 是否只返回用户自定义规则
+            
+        Returns:
+            List[FileFilterRule]: 文件过滤规则列表
+        """
+        try:
+            query = select(FileFilterRule)
+            
+            if enabled_only:
+                query = query.where(FileFilterRule.enabled)
+            
+            if user_only:
+                query = query.where(not_(FileFilterRule.is_system))
+            
+            query = query.order_by(FileFilterRule.priority.desc(), FileFilterRule.name)
+            return self.session.exec(query).all()
+        except Exception as e:
+            logger.error(f"获取文件过滤规则失败: {str(e)}")
+            return []
+    
+    def add_filter_rule(self, name: str, rule_type: str, pattern: str, action: str = "exclude", 
+                       description: str = None, priority: str = "medium", pattern_type: str = "regex",
+                       category_id: int = None, extra_data: Dict = None) -> Tuple[bool, Union[FileFilterRule, str]]:
+        """添加新的文件过滤规则
+        
+        Args:
+            name (str): 规则名称
+            rule_type (str): 规则类型
+            pattern (str): 匹配模式
+            action (str): 规则操作
+            description (str, optional): 规则描述
+            priority (str): 优先级
+            pattern_type (str): 模式类型
+            category_id (int, optional): 关联的分类ID
+            extra_data (Dict, optional): 额外数据
+            
+        Returns:
+            Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
+        """
+        try:
+            # 检查规则名称是否已存在
+            existing = self.session.exec(
+                select(FileFilterRule).where(FileFilterRule.name == name)
+            ).first()
+            
+            if existing:
+                return False, f"规则名称 '{name}' 已存在"
+            
+            # 如果指定了分类ID，检查分类是否存在
+            if category_id:
+                category = self.session.get(FileCategory, category_id)
+                if not category:
+                    return False, "指定的文件分类不存在"
+            
+            # 创建新规则
+            new_rule = FileFilterRule(
+                name=name,
+                description=description,
+                rule_type=rule_type,
+                category_id=category_id,
+                priority=priority,
+                action=action,
+                enabled=True,
+                is_system=False,  # 用户添加的规则
+                pattern=pattern,
+                pattern_type=pattern_type,
+                extra_data=extra_data
+            )
+            
+            self.session.add(new_rule)
+            self.session.commit()
+            self.session.refresh(new_rule)
+            
+            return True, new_rule
+            
+        except Exception as e:
+            logger.error(f"添加文件过滤规则失败: {str(e)}")
+            self.session.rollback()
+            return False, f"添加文件过滤规则失败: {str(e)}"
+    
+    def update_filter_rule(self, rule_id: int, **kwargs) -> Tuple[bool, Union[FileFilterRule, str]]:
+        """更新文件过滤规则
+        
+        Args:
+            rule_id (int): 规则ID
+            **kwargs: 要更新的字段
+            
+        Returns:
+            Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
+        """
+        try:
+            rule = self.session.get(FileFilterRule, rule_id)
+            if not rule:
+                return False, "文件过滤规则不存在"
+            
+            # 检查是否为系统规则
+            if rule.is_system and not kwargs.get('allow_system_edit', False):
+                return False, "系统规则不允许修改"
+            
+            # 如果要更新名称，检查是否重复
+            if 'name' in kwargs and kwargs['name'] != rule.name:
+                existing = self.session.exec(
+                    select(FileFilterRule).where(FileFilterRule.name == kwargs['name'])
+                ).first()
+                if existing:
+                    return False, f"规则名称 '{kwargs['name']}' 已存在"
+            
+            # 如果要更新分类ID，检查分类是否存在
+            if 'category_id' in kwargs and kwargs['category_id']:
+                category = self.session.get(FileCategory, kwargs['category_id'])
+                if not category:
+                    return False, "指定的文件分类不存在"
+            
+            # 更新字段
+            allowed_fields = ['name', 'description', 'rule_type', 'category_id', 'priority', 
+                             'action', 'pattern', 'pattern_type', 'extra_data']
+            
+            for field, value in kwargs.items():
+                if field in allowed_fields and value is not None:
+                    setattr(rule, field, value)
+            
+            rule.updated_at = datetime.now()
+            
+            self.session.add(rule)
+            self.session.commit()
+            self.session.refresh(rule)
+            
+            return True, rule
+            
+        except Exception as e:
+            logger.error(f"更新文件过滤规则失败: {str(e)}")
+            self.session.rollback()
+            return False, f"更新文件过滤规则失败: {str(e)}"
+    
+    def toggle_filter_rule_status(self, rule_id: int) -> Tuple[bool, Union[FileFilterRule, str]]:
+        """切换文件过滤规则的启用状态
+        
+        Args:
+            rule_id (int): 规则ID
+            
+        Returns:
+            Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
+        """
+        try:
+            rule = self.session.get(FileFilterRule, rule_id)
+            if not rule:
+                return False, "文件过滤规则不存在"
+            
+            # 切换状态
+            rule.enabled = not rule.enabled
+            rule.updated_at = datetime.now()
+            
+            self.session.add(rule)
+            self.session.commit()
+            self.session.refresh(rule)
+            
+            return True, rule
+            
+        except Exception as e:
+            logger.error(f"切换文件过滤规则状态失败: {str(e)}")
+            self.session.rollback()
+            return False, f"切换文件过滤规则状态失败: {str(e)}"
+    
+    def delete_filter_rule(self, rule_id: int, force: bool = False) -> Tuple[bool, str]:
+        """删除文件过滤规则
+        
+        Args:
+            rule_id (int): 规则ID
+            force (bool): 是否强制删除系统规则
+            
+        Returns:
+            Tuple[bool, str]: (成功标志, 消息)
+        """
+        try:
+            rule = self.session.get(FileFilterRule, rule_id)
+            if not rule:
+                return False, "文件过滤规则不存在"
+            
+            # 检查是否为系统规则
+            if rule.is_system and not force:
+                return False, "系统规则不允许删除，请使用强制删除"
+            
+            rule_name = rule.name
+            self.session.delete(rule)
+            self.session.commit()
+            
+            return True, f"文件过滤规则 '{rule_name}' 已删除"
+            
+        except Exception as e:
+            logger.error(f"删除文件过滤规则失败: {str(e)}")
+            self.session.rollback()
+            return False, f"删除文件过滤规则失败: {str(e)}"
+
 
 if __name__ == '__main__':
-    # 测试代码
-    from db_mgr import DBManager
-    
-    # 创建内存数据库用于测试
-    engine = create_engine("sqlite:///:memory:")
-    session = Session(engine)
-    
-    # 初始化数据库结构
-    db_mgr = DBManager(session)
-    db_mgr.init_db()
-    
-    # 测试文件管理器
-    files_mgr = MyFoldersManager(session)
-    
-    # 初始化默认文件夹
-    files_mgr.initialize_default_directories()
-    
-    # 打印所有文件夹
-    print("所有文件夹:")
-    for directory in files_mgr.get_all_directories():
-        print(f"- {directory.path} ({directory.alias or '无别名'})")
-    
-    # 测试添加文件夹
-    home_dir = os.path.expanduser("~")
-    success, msg = files_mgr.add_directory(os.path.join(home_dir, "Projects"), "我的项目")
-    print(f"\n添加文件夹: {msg}")
-    
-    # 不再需要测试更新授权状态
-    
-    # 测试黑名单
-    if files_mgr.get_all_directories():
-        test_dir = files_mgr.get_all_directories()[0]
-        success, msg = files_mgr.toggle_blacklist(test_dir.id, True)
-        print(f"\n切换黑名单: {msg}")
-    
-    # 打印授权文件夹
-    print("\n已授权文件夹:")
-    for directory in files_mgr.get_authorized_directories():
-        print(f"- {directory.path} ({directory.alias or '无别名'})")
-    
-    # 打印黑名单文件夹
-    print("\n黑名单文件夹:")
-    for directory in files_mgr.get_blacklist_directories():
-        print(f"- {directory.path} ({directory.alias or '无别名'})")
+    from sqlmodel import create_engine, Session
+    from config import TEST_DB_PATH
+    engine = create_engine(f"sqlite:///{TEST_DB_PATH}")
+    with Session(engine) as session:
+        mgr = MyFoldersManager(session)
+        categories = mgr.get_file_categories()
+        print(f'Found {len(categories)} categories:')
+        for cat in categories:
+            print(f'  {cat}')

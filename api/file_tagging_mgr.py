@@ -98,11 +98,6 @@ class FileTaggingMgr:
             return True
         else:
             return False
-        # try:
-        # except Exception as e:
-        #     logger.error(f"Error during vector-based tagging for {screening_result.file_path}: {e}")
-        #     screening_result.error_message = f"Vector tagging failed: {e}"
-        #     return False
 
     def _extract_content(self, file_path: str) -> str:
         """从文件中提取文本内容。"""
