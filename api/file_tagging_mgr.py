@@ -60,7 +60,7 @@ class FileTaggingMgr:
         如果没有可用模型，返回False并记录警告。
         """
         for capa in SCENE_FILE_TAGGING:
-            if not self.model_config_mgr.get_spec_model_config(capa):
+            if self.model_config_mgr.get_spec_model_config(capa) is None:
                 logger.warning(f"Model for file tagging is not available: {capa}")
                 return False
         return True
@@ -91,16 +91,18 @@ class FileTaggingMgr:
             return False
 
         # 2. Orchestrate the new tagging process
-        try:
-            success = self.tagging_mgr.generate_and_link_tags_for_file(screening_result, summary)
-            if success:
-                self._update_tagged_time(screening_result)
-                self.bridge_event_sender.tags_updated()
-            return success
-        except Exception as e:
-            logger.error(f"Error during vector-based tagging for {screening_result.file_path}: {e}")
-            screening_result.error_message = f"Vector tagging failed: {e}"
+        success = self.tagging_mgr.generate_and_link_tags_for_file(screening_result, summary)
+        if success:
+            self._update_tagged_time(screening_result)
+            self.bridge_event_sender.tags_updated()
+            return True
+        else:
             return False
+        # try:
+        # except Exception as e:
+        #     logger.error(f"Error during vector-based tagging for {screening_result.file_path}: {e}")
+        #     screening_result.error_message = f"Vector tagging failed: {e}"
+        #     return False
 
     def _extract_content(self, file_path: str) -> str:
         """从文件中提取文本内容。"""
@@ -297,7 +299,7 @@ if __name__ == "__main__":
     # result: FileScreeningResult = screening_mgr.get_by_path(test_file_path)
     # if result:
     #     test_logger.info(f"找到粗筛结果ID: {result.id}")
-    #     success = file_tagging_mgr.parse_and_tag_file(result)
+    #     success = await file_tagging_mgr.parse_and_tag_file(result)
     #     file_tagging_mgr.session.commit()
     #     test_logger.info(f"解析和标签生成结果: {success}")
     # else:

@@ -1,3 +1,15 @@
+//! # 文件管理协调器 (File Management Coordinator)
+//! 
+//! 该模块负责文件监控的管理和协调工作，包括：
+//! - 配置管理（获取、缓存、刷新API配置）
+//! - 监控基础设施和生命周期管理
+//! - API通信接口和数据同步
+//! - 批处理和队列管理
+//! - 监控状态和统计信息维护
+//! 
+//! 注意：尽管模块名为"monitor"，但它实际上是整个文件处理系统的协调中心，
+//! 负责调用file_scanner模块来执行具体的文件操作，同时管理整个系统的配置和状态。
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue; // For extra_data in FileFilterRuleRust
 use std::path::{Path, PathBuf};
@@ -194,6 +206,17 @@ pub struct AllConfigurations {
     pub full_disk_access: bool, // 是否有完全磁盘访问权限，特别是macOS
     #[serde(default)]
     pub bundle_extensions: Vec<String>, // 直接可用的 bundle 扩展名列表
+}
+
+// 简化的文件扫描配置结构（用于新的API端点）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileScanningConfig {
+    pub extension_mappings: std::collections::HashMap<String, i32>, // 扩展名到分类ID的映射
+    pub bundle_extensions: Vec<String>, // Bundle扩展名列表
+    pub ignore_patterns: Vec<String>, // 忽略规则模式
+    pub file_categories: Vec<FileCategoryRust>, // 文件分类信息
+    #[serde(default)]
+    pub error_message: Option<String>, // 错误信息
 }
 // --- End of New Configuration Structs ---
 
@@ -397,6 +420,49 @@ impl FileMonitor {
         
         // 如果所有重试都失败，返回最后一个错误
         Err(last_error)
+    }
+
+    // 新方法：获取简化的文件扫描配置
+    pub async fn fetch_file_scanning_config(&self) -> Result<FileScanningConfig, String> {
+        let url = format!("http://{}:{}/file-scanning-config", self.api_host, self.api_port);
+        println!("[CONFIG_FETCH] Fetching simplified file scanning config from URL: {}", url);
+
+        match self.client.get(&url).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    match response.json::<FileScanningConfig>().await {
+                        Ok(config) => {
+                            if let Some(error) = &config.error_message {
+                                println!("[CONFIG_FETCH] API returned error: {}", error);
+                                Err(format!("API error: {}", error))
+                            } else {
+                                println!("[CONFIG_FETCH] Successfully parsed FileScanningConfig. Extensions: {}, Bundles: {}, Ignore patterns: {}, Categories: {}",
+                                    config.extension_mappings.len(),
+                                    config.bundle_extensions.len(),
+                                    config.ignore_patterns.len(),
+                                    config.file_categories.len()
+                                );
+                                Ok(config)
+                            }
+                        }
+                        Err(e) => {
+                            let error_msg = format!("Failed to parse file scanning config JSON: {}", e);
+                            println!("[CONFIG_FETCH] {}", error_msg);
+                            Err(error_msg)
+                        }
+                    }
+                } else {
+                    let error_msg = format!("API request failed with status: {}", response.status());
+                    println!("[CONFIG_FETCH] {}", error_msg);
+                    Err(error_msg)
+                }
+            }
+            Err(e) => {
+                let error_msg = format!("Failed to send request: {}", e);
+                println!("[CONFIG_FETCH] {}", error_msg);
+                Err(error_msg)
+            }
+        }
     }
     // --- End of new method ---
 

@@ -110,6 +110,7 @@ class BundleExtension(SQLModel, table=True):
     extension: str = Field(index=True, unique=True)  # 扩展名（如.app, .bundle等）
     description: str | None = Field(default=None)  # 描述
     is_active: bool = Field(default=True)  # 是否启用
+    is_system_default: bool = Field(default=False)  # 是否为系统默认配置（不可删除/修改）
     created_at: datetime = Field(default=datetime.now())
     updated_at: datetime = Field(default=datetime.now())
     
@@ -136,8 +137,7 @@ class SystemConfig(SQLModel, table=True):
 class RuleType(str, PyEnum):
     EXTENSION = "extension"  # 文件扩展名分类
     FILENAME = "filename"    # 文件名模式/关键词识别
-    FOLDER = "folder"        # 项目文件夹识别
-    STRUCTURE = "structure"  # 项目结构特征识别
+    FOLDER = "folder"        # 文件夹路径识别（用于包含/排除特定目录）
     OS_BUNDLE = "os_bundle"  # 操作系统特定的bundle文件夹类型
 
 # 规则优先级
@@ -495,7 +495,7 @@ class DBManager:
             # 创建文件过滤规则表
             if not inspector.has_table(FileFilterRule.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[FileFilterRule.__table__])
-                self._init_file_filter_rules()  # 初始化文件过滤规则
+                self._init_basic_file_filter_rules()  # 初始化基础文件过滤规则（简化版）
                         
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
@@ -777,19 +777,103 @@ class DBManager:
                 BundleExtension(
                     extension=ext_data["extension"],
                     description=ext_data["description"],
-                    is_active=True
+                    is_active=True,
+                    is_system_default=True  # 系统初始化的记录标记为不可删除/修改
                 )
             )
         
         self.session.add_all(bundle_objs)
         self.session.commit()
     
-    # def _init_system_config(self) -> None:
-    #     """初始化系统配置数据，确保所有默认配置项都存在"""
-
-    # def _init_local_model_configs(self) -> None:
-    #     """初始化本地模型配置数据"""
-
+    def _init_basic_file_filter_rules(self) -> None:
+        """初始化基础文件过滤规则（仅保留基础忽略规则）"""
+        
+        # 基础忽略规则 - 系统文件和临时文件
+        basic_ignore_rules = [
+            # macOS系统文件
+            {
+                "name": "macOS系统文件",
+                "description": "忽略macOS系统生成的文件",
+                "rule_type": RuleType.FILENAME.value,
+                "pattern": r"^\.(DS_Store|AppleDouble|LSOverride|DocumentRevisions-V100|fseventsd|Spotlight-V100|TemporaryItems|Trashes|VolumeIcon\.icns|com\.apple\.timemachine\.donotpresent)$",
+                "pattern_type": "regex",
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            },
+            # Windows系统文件
+            {
+                "name": "Windows系统文件",
+                "description": "忽略Windows系统生成的文件",
+                "rule_type": RuleType.FILENAME.value,
+                "pattern": r"^(Thumbs\.db|ehthumbs\.db|Desktop\.ini|\$RECYCLE\.BIN|System Volume Information)$",
+                "pattern_type": "regex",
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            },
+            # 常见临时文件
+            {
+                "name": "临时文件",
+                "description": "忽略各类临时文件",
+                "rule_type": RuleType.FILENAME.value,
+                "pattern": r"(\.tmp$|\.temp$|~$|\$.*\$|\.swp$|\.swo$)",
+                "pattern_type": "regex",
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            },
+            # 开发相关忽略目录
+            {
+                "name": "开发工具缓存目录",
+                "description": "忽略开发工具生成的缓存目录",
+                "rule_type": RuleType.FOLDER.value,
+                "pattern": r"(node_modules|\.git|\.svn|\.hg|__pycache__|\.pytest_cache|\.tox|\.coverage|build|dist|\.env|venv|env)(/|$)",
+                "pattern_type": "regex", 
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            },
+            # 系统缓存目录
+            {
+                "name": "系统缓存目录",
+                "description": "忽略系统缓存目录",
+                "rule_type": RuleType.FOLDER.value,
+                "pattern": r"(Library/Caches|Library/Logs|\.cache|\.local/share/Trash)(/|$)",
+                "pattern_type": "regex",
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            },
+            # IDE配置目录
+            {
+                "name": "IDE配置目录",
+                "description": "忽略IDE配置目录",
+                "rule_type": RuleType.FOLDER.value,
+                "pattern": r"(\.vscode|\.idea|\.eclipse|\.settings)(/|$)",
+                "pattern_type": "regex",
+                "action": RuleAction.EXCLUDE.value,
+                "priority": RulePriority.HIGH.value
+            }
+        ]
+        
+        # 转换为FileFilterRule对象并批量插入
+        rule_objs = []
+        for rule_data in basic_ignore_rules:
+            rule_objs.append(
+                FileFilterRule(
+                    name=rule_data["name"],
+                    description=rule_data["description"],
+                    rule_type=rule_data["rule_type"],
+                    category_id=rule_data.get("category_id"),
+                    pattern=rule_data["pattern"],
+                    pattern_type=rule_data.get("pattern_type", "regex"),
+                    action=rule_data["action"],
+                    priority=rule_data["priority"],
+                    is_system=True,
+                    enabled=True,
+                    extra_data=rule_data.get("extra_data")
+                )
+            )
+        
+        self.session.add_all(rule_objs)
+        self.session.commit()
+    
     def _init_file_categories(self) -> None:
         """初始化文件分类数据"""
         categories = [
@@ -963,422 +1047,6 @@ class DBManager:
             )
         
         self.session.add_all(extension_objs)
-        self.session.commit()
-
-    def _init_file_filter_rules(self) -> None:
-        """初始化文件名模式过滤规则"""
-        # 获取分类ID映射
-        category_map = {cat.name: cat.id for cat in self.session.exec(select(FileCategory)).all()}
-        
-        # 文件名状态/版本关键词规则
-        status_version_rules = [
-            {
-                "name": "草稿文件识别",
-                "description": "识别包含草稿、Draft等关键词的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(草稿|draft|Draft|DRAFT)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "draft",
-                    "label_name": "草稿",
-                    "refine_type": "status"
-                }
-            },
-            {
-                "name": "最终版文件识别",
-                "description": "识别包含最终版、Final等关键词的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(最终版|终稿|final|Final|FINAL)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "final",
-                    "label_name": "最终版",
-                    "refine_type": "status"
-                }
-            },
-            {
-                "name": "版本号文件识别",
-                "description": "识别包含版本号标记的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(v\d+|v\d+\.\d+|版本\d+|V\d+)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "versioned",
-                    "label_name": "带版本号",
-                    "refine_type": "version"
-                }
-            },
-            {
-                "name": "旧版/备份文件识别",
-                "description": "识别旧版或备份文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(_old|_旧|_backup|_备份|_bak|副本|Copy of|\(\d+\))",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "backup",
-                    "label_name": "备份/旧版",
-                    "refine_type": "cleanup"
-                }
-            }
-        ]
-        
-        # 文档类型/内容关键词规则
-        doc_type_rules = [
-            {
-                "name": "报告文件识别",
-                "description": "识别各类报告文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(报告|Report|report|REPORT)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "report",
-                    "label_name": "报告",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "提案文件识别",
-                "description": "识别各类提案文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(提案|Proposal|proposal|PROPOSAL)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "proposal",
-                    "label_name": "提案",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "合同/协议文件识别",
-                "description": "识别合同或协议文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(合同|协议|合约|Contract|contract|Agreement|agreement)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "contract",
-                    "label_name": "合同/协议",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "发票/收据文件识别",
-                "description": "识别发票或收据文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(发票|收据|Invoice|invoice|Receipt|receipt)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "invoice",
-                    "label_name": "发票/收据",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "演示/幻灯片文件识别",
-                "description": "识别演示文稿或幻灯片文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(演示|幻灯片|Presentation|presentation|Slides|slides)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "presentation",
-                    "label_name": "演示/幻灯片",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "周报/月报文件识别",
-                "description": "识别周报或月报文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(周报|月报|周总结|月总结|Weekly|weekly|Monthly|monthly)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "report_periodical",
-                    "label_name": "周报/月报",
-                    "refine_type": "document_type"
-                }
-            },
-            {
-                "name": "简历文件识别",
-                "description": "识别简历文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(简历|Resume|resume|CV|cv)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "resume",
-                    "label_name": "简历",
-                    "refine_type": "document_type"
-                }
-            }
-        ]
-        
-        # 时间指示关键词规则
-        time_indicators_rules = [
-            {
-                "name": "年份-月份-日期格式",
-                "description": "识别包含YYYY-MM-DD格式日期的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(20\d{2}[-_]?(0[1-9]|1[0-2])[-_]?(0[1-9]|[12]\d|3[01]))",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "dated_ymd",
-                    "label_name": "带日期",
-                    "refine_type": "time"
-                }
-            },
-            {
-                "name": "季度标记",
-                "description": "识别包含季度标记的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(Q[1-4]|第[一二三四]季度|[一二三四]季度|上半年|下半年)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "quarterly",
-                    "label_name": "季度文件",
-                    "refine_type": "time"
-                }
-            },
-            {
-                "name": "月份标记",
-                "description": "识别包含月份标记的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|[一二三四五六七八九十]{1,2}月)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "monthly",
-                    "label_name": "月度文件",
-                    "refine_type": "time"
-                }
-            }
-        ]
-        
-        # 应用/来源关键词规则
-        app_source_rules = [
-            {
-                "name": "截图文件识别",
-                "description": "识别各类截图文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(截图|屏幕截图|Screenshot|screenshot|Screen Shot|screen shot|Snipaste|snipaste|CleanShot)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "priority": RulePriority.HIGH.value,
-                "extra_data": {
-                    "label": "screenshot",
-                    "label_name": "截图",
-                    "refine_type": "app_source"
-                }
-            },
-            {
-                "name": "相机/手机照片识别",
-                "description": "识别相机或手机生成的照片文件名模式",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(IMG_\d+|DSC_\d+|DCIM|DSCN\d+)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "camera",
-                    "label_name": "相机照片",
-                    "refine_type": "app_source"
-                }
-            },
-            {
-                "name": "微信文件识别",
-                "description": "识别微信相关的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(微信|WeChat|wechat|MicroMsg|mmexport)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "priority": RulePriority.HIGH.value,
-                "extra_data": {
-                    "label": "wechat",
-                    "label_name": "微信文件",
-                    "refine_type": "app_source"
-                }
-            },
-            {
-                "name": "下载文件识别",
-                "description": "识别下载的文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(下载|download|Download|DOWNLOAD)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "download",
-                    "label_name": "下载文件",
-                    "refine_type": "app_source"
-                }
-            },
-            {
-                "name": "视频会议文件识别",
-                "description": "识别视频会议相关文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(Zoom|zoom|Teams|teams|Meet|meet|会议记录|meeting)",
-                "pattern_type": "regex",
-                "action": RuleAction.LABEL.value,
-                "extra_data": {
-                    "label": "meeting",
-                    "label_name": "会议文件",
-                    "refine_type": "app_source"
-                }
-            }
-        ]
-        
-        # 临时/忽略文件规则
-        temp_ignore_rules = [
-            {
-                "name": "Office临时文件",
-                "description": "识别Office软件产生的临时文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(~\$)",
-                "pattern_type": "regex",
-                "action": RuleAction.EXCLUDE.value,
-                "priority": RulePriority.HIGH.value,
-                "category_id": category_map["temp"]
-            },
-            {
-                "name": "未完成下载文件",
-                "description": "识别未完成下载的临时文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(\.part$|\.partial$|\.download$|\.crdownload$)",
-                "pattern_type": "regex",
-                "action": RuleAction.EXCLUDE.value,
-                "priority": RulePriority.HIGH.value,
-                "category_id": category_map["temp"]
-            },
-            {
-                "name": "系统缓存文件",
-                "description": "识别操作系统生成的缓存文件",
-                "rule_type": RuleType.FILENAME.value,
-                "pattern": r"(Thumbs\.db$|\.DS_Store$|desktop\.ini$)",
-                "pattern_type": "regex",
-                "action": RuleAction.EXCLUDE.value,
-                "priority": RulePriority.HIGH.value,
-                "category_id": category_map["temp"]
-            }
-        ]
-        
-        # macOS Bundle文件夹规则
-        macos_bundle_rules = []
-        
-        # 只在macOS平台上添加这些规则
-        if os.name == 'posix' and os.uname().sysname == 'Darwin':  # 检测是否为macOS
-            macos_bundle_rules = [
-                {
-                    "name": "Final Cut Pro项目文件夹",
-                    "description": "识别Final Cut Pro项目bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.fcpbundle",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "iMovie项目文件夹",
-                    "description": "识别iMovie项目bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(imovielibrary|theater|localized|tvlibrary)",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "Photos照片库文件夹",
-                    "description": "识别Photos照片库bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.photoslibrary",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "其他常见macOS应用Bundle",
-                    "description": "识别其他常见macOS应用Bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(app|framework|plugin|bundle|kext)",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "macOS办公和开发工具Bundle",
-                    "description": "识别macOS苹果办公套件和开发工具Bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(pages|numbers|key|logicx|xcodeproj|xcworkspace)",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value, 
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "macOS设计和自动化Bundle",
-                    "description": "识别macOS设计和自动化工具Bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(sketch|lproj|workflow|lbaction|action|qlgenerator)",
-                    "pattern_type": "regex", 
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "macOS其他系统Bundle",
-                    "description": "识别macOS其他系统级Bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(prefpane|appex|component|wdgt|download|xcdatamodeld|scptd|rtfd)",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                },
-                {
-                    "name": "macOS开发相关Bundle",
-                    "description": "识别macOS开发相关Bundle",
-                    "rule_type": RuleType.OS_BUNDLE.value,
-                    "pattern": r"\.(safari-extension|xcassets|playground)",
-                    "pattern_type": "regex",
-                    "action": RuleAction.EXCLUDE.value,
-                    "priority": RulePriority.HIGH.value
-                }
-            ]
-        
-        # 合并所有规则
-        all_rules = []
-        all_rules.extend(status_version_rules)
-        all_rules.extend(doc_type_rules)
-        all_rules.extend(time_indicators_rules)
-        all_rules.extend(app_source_rules)
-        all_rules.extend(temp_ignore_rules)
-        all_rules.extend(macos_bundle_rules)
-        
-        # 转换为FileFilterRule对象并批量插入
-        rule_objs = []
-        for rule_data in all_rules:
-            priority = rule_data.get("priority", RulePriority.MEDIUM.value)
-            rule_objs.append(
-                FileFilterRule(
-                    name=rule_data["name"],
-                    description=rule_data["description"],
-                    rule_type=rule_data["rule_type"],
-                    category_id=rule_data.get("category_id"),
-                    pattern=rule_data["pattern"],
-                    pattern_type=rule_data.get("pattern_type", "regex"),
-                    action=rule_data["action"],
-                    priority=priority,
-                    is_system=True,
-                    enabled=True,
-                    extra_data=rule_data.get("extra_data")
-                )
-            )
-        
-        self.session.add_all(rule_objs)
         self.session.commit()
 
     def _init_default_directories(self) -> None:

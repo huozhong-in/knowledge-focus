@@ -4,6 +4,7 @@ from sqlmodel import (
     select, 
     and_, 
     or_, 
+    not_,
 )
 from datetime import datetime
 from db_mgr import MyFolders, BundleExtension
@@ -123,7 +124,7 @@ class MyFoldersManager:
         """
         return self.session.exec(
             select(MyFolders).where(
-                not MyFolders.is_blacklist
+                not_(MyFolders.is_blacklist)
             )
         ).all()
     
@@ -672,7 +673,7 @@ class MyFoldersManager:
                     and_(
                         # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
                         or_(
-                            not MyFolders.is_blacklist,
+                            not_(MyFolders.is_blacklist),
                             and_(MyFolders.is_blacklist, MyFolders.is_common_folder)
                         ),
                         # 都是一级文件夹

@@ -1,20 +1,13 @@
 from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session, select
-from typing import Dict, List, Any
+from typing import Dict, Any
 import time
 import sys
-from db_mgr import MyFolders, FileCategory, FileFilterRule, FileExtensionMap
-from api_cache_optimization import TimedCache, cached
+from db_mgr import MyFolders, FileCategory, FileFilterRule, FileExtensionMap, BundleExtension
 from myfolders_mgr import MyFoldersManager
 from screening_mgr import ScreeningManager
-import asyncio
 import logging
 logger = logging.getLogger(__name__)
-
-# 全局缓存实例
-config_cache = TimedCache[Dict[str, Any]](expiry_seconds=300)  # 5分钟过期
-folder_hierarchy_cache = TimedCache[List[Any]](expiry_seconds=180)  # 3分钟过期
-bundle_ext_cache = TimedCache[List[str]](expiry_seconds=600)   # 10分钟过期
 
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
@@ -25,40 +18,47 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     def get_screening_manager(session: Session = Depends(external_get_session)) -> ScreeningManager:
         return ScreeningManager(session)
-
-    def invalidate_config_caches():
-        """使所有配置相关缓存失效"""
-        config_cache.clear()
-        folder_hierarchy_cache.clear()
-        logger.info("[CACHE] 所有配置缓存已清除")
     
     # 获取所有配置信息的API端点
     @router.get("/config/all", tags=["myfolders"], summary="获取所有配置")
-    async def get_all_configuration(
+    def get_all_configuration(
         session: Session = Depends(external_get_session),
         myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """
         获取所有Rust端进行文件处理所需的配置信息。
         包括文件分类、粗筛规则、文件扩展名映射、项目识别规则以及监控的文件夹列表。
-        现在使用缓存机制提高性能，减少数据库查询。
         """
         try:
-            # 使用异步超时控制
-            try:
-                return await asyncio.wait_for(
-                    _get_all_configuration_async(session, myfolders_mgr), 
-                    timeout=5.0  # 设置5秒超时
-                )
-            except asyncio.TimeoutError:
-                logger.error("获取配置超时，返回缓存数据或空结果")
-                # 尝试从缓存获取
-                hit, cached_value = config_cache.get("config_all")
-                if hit:
-                    logger.info("使用缓存数据响应超时请求")
-                    return cached_value
-                # 没有缓存，返回空结果
-                raise Exception("获取配置超时")
+            start_time = time.time()
+            file_categories = session.exec(select(FileCategory)).all()
+            file_filter_rules = session.exec(select(FileFilterRule)).all()
+            file_extension_maps = session.exec(select(FileExtensionMap)).all()
+            monitored_folders = session.exec(select(MyFolders)).all()
+            
+            # 检查完全磁盘访问权限状态 
+            full_disk_access = False
+            if sys.platform == "darwin":  # macOS
+                access_status = myfolders_mgr.check_full_disk_access_status()
+                full_disk_access = access_status.get("has_full_disk_access", False)
+                logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
+            
+            elapsed = time.time() - start_time
+            logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
+            
+            # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
+            bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
+            logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
+            from file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
+            return {
+                "file_categories": file_categories,
+                "file_filter_rules": file_filter_rules,
+                "file_extension_maps": file_extension_maps,
+                "monitored_folders": monitored_folders,
+                "parsable_extensions": PARSEABLE_EXTENSIONS,
+                "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
+                "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
+            }
         except Exception as e:
             logger.error(f"Error fetching all configuration: {e}", exc_info=True)
             # Return a default structure in case of error to prevent client-side parsing issues.
@@ -72,42 +72,54 @@ def get_router(external_get_session: callable) -> APIRouter:
                 "error_message": f"Failed to fetch configuration: {str(e)}"
             }
 
-    async def _get_all_configuration_async(session: Session, myfolders_mgr: MyFoldersManager):
-        """异步包装缓存函数，用于超时控制"""
-        return _get_all_configuration_cached(session, myfolders_mgr)
-
-    @cached(config_cache, "config_all")
-    def _get_all_configuration_cached(session: Session, myfolders_mgr: MyFoldersManager):
-        """缓存版本的配置获取函数"""
-        start_time = time.time()
-        file_categories = session.exec(select(FileCategory)).all()
-        file_filter_rules = session.exec(select(FileFilterRule)).all()
-        file_extension_maps = session.exec(select(FileExtensionMap)).all()
-        monitored_folders = session.exec(select(MyFolders)).all()
-        
-        # 检查完全磁盘访问权限状态 
-        full_disk_access = False
-        if sys.platform == "darwin":  # macOS
-            access_status = myfolders_mgr.check_full_disk_access_status()
-            full_disk_access = access_status.get("has_full_disk_access", False)
-            logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
-        
-        elapsed = time.time() - start_time
-        logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
-        
-        # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
-        bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
-        logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-        from file_tagging_mgr import PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
-        return {
-            "file_categories": file_categories,
-            "file_filter_rules": file_filter_rules,
-            "file_extension_maps": file_extension_maps,
-            "monitored_folders": monitored_folders,
-            "parsable_extensions": PARSEABLE_EXTENSIONS,
-            "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
-            "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
-        }
+    @router.get("/file-scanning-config", tags=["myfolders"], summary="获取文件扫描配置（简化版）")
+    async def get_file_scanning_config(
+        session: Session = Depends(external_get_session),
+        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+    ):
+        """
+        获取Rust端文件扫描所需的简化配置信息。
+        只包含扩展名映射、Bundle扩展名和基础忽略规则。
+        """
+        try:
+            # 获取文件分类和扩展名映射
+            file_categories = session.exec(select(FileCategory)).all()
+            file_extension_maps = session.exec(select(FileExtensionMap)).all()
+            
+            # 构建扩展名到分类ID的映射
+            extension_mappings = {}
+            for ext_map in file_extension_maps:
+                extension_mappings[ext_map.extension] = ext_map.category_id
+            
+            # 获取Bundle扩展名列表
+            bundle_extensions_data = session.exec(select(BundleExtension).where(BundleExtension.is_active)).all()
+            bundle_extensions = [be.extension for be in bundle_extensions_data]
+            
+            # 获取基础忽略规则
+            ignore_rules = session.exec(
+                select(FileFilterRule).where(
+                    FileFilterRule.action == "exclude",
+                    FileFilterRule.enabled
+                )
+            ).all()
+            ignore_patterns = [rule.pattern for rule in ignore_rules]
+            
+            return {
+                "extension_mappings": extension_mappings,
+                "bundle_extensions": bundle_extensions,
+                "ignore_patterns": ignore_patterns,
+                "file_categories": [{"id": cat.id, "name": cat.name, "description": cat.description} for cat in file_categories]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching file scanning config: {e}", exc_info=True)
+            return {
+                "extension_mappings": {},
+                "bundle_extensions": [],
+                "ignore_patterns": [],
+                "file_categories": [],
+                "error_message": f"Failed to fetch file scanning configuration: {str(e)}"
+            }
     
     # 添加文件夹管理相关API
     @router.get("/directories", tags=["myfolders"])
@@ -163,9 +175,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             success, message_or_dir = myfolders_mgr.add_directory(path, alias, is_blacklist)
             
             if success:
-                # 清除相关缓存
-                invalidate_config_caches()
-                logger.info(f"[CACHE] 已清除缓存，因为添加了新文件夹: {path}")
+                logger.info(f"添加了新文件夹: {path}")
 
                 # 检查返回值是否是字符串或MyFolders对象
                 if isinstance(message_or_dir, str):
@@ -212,9 +222,7 @@ def get_router(external_get_session: callable) -> APIRouter:
 
             success, message_or_dir = myfolders_mgr.toggle_blacklist(directory_id, is_blacklist)
             if success:
-                # 清除相关缓存
-                invalidate_config_caches()
-                logger.info(f"[CACHE] 已清除缓存，因为切换了文件夹 {directory_id} 的黑名单状态为 {is_blacklist}")
+                logger.info(f"切换了文件夹 {directory_id} 的黑名单状态为 {is_blacklist}")
                 return {"status": "success", "data": message_or_dir.model_dump(), "message": "黑名单状态更新成功"}
             else:
                 return {"status": "error", "message": message_or_dir}
@@ -231,9 +239,7 @@ def get_router(external_get_session: callable) -> APIRouter:
         try:
             success, message = myfolders_mgr.remove_directory(directory_id)
             if success:
-                # 清除相关缓存
-                invalidate_config_caches()
-                logger.info(f"[CACHE] 已清除缓存，因为删除了文件夹 {directory_id}")
+                logger.info(f"删除了文件夹 {directory_id}")
                 return {"status": "success", "message": "文件夹删除成功"}
             else:
                 return {"status": "error", "message": message}
@@ -427,9 +433,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             success, result = myfolders_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
             
             if success:
-                # 清除相关缓存
-                invalidate_config_caches()
-                logger.info(f"[CACHE] 已清除缓存，因为添加了黑名单文件夹: {folder_path}")
+                logger.info(f"添加了黑名单文件夹: {folder_path}")
                 
                 # 当文件夹变为黑名单时，清理相关的粗筛结果数据
                 deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
@@ -455,47 +459,24 @@ def get_router(external_get_session: callable) -> APIRouter:
             return {"status": "error", "message": f"添加黑名单文件夹失败: {str(e)}"}
 
     @router.get("/folders/hierarchy", tags=["myfolders"])
-    async def get_folder_hierarchy(
+    def get_folder_hierarchy(
         myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """获取文件夹层级关系（白名单+其下的黑名单）"""
         try:
-            # 使用异步超时控制
-            try:
-                return await asyncio.wait_for(
-                    _get_folder_hierarchy_async(myfolders_mgr), 
-                    timeout=3.0  # 设置3秒超时
-                )
-            except asyncio.TimeoutError:
-                logger.error("获取文件夹层级关系超时")
-                # 尝试从缓存获取
-                hit, cached_value = folder_hierarchy_cache.get("folder_hierarchy")
-                if hit:
-                    logger.info("使用缓存数据响应超时请求")
-                    return cached_value
-                # 没有缓存，返回错误
-                return {"status": "error", "message": "获取文件夹层级关系超时"}
+            start_time = time.time()
+            hierarchy = myfolders_mgr.get_folder_hierarchy()
+            elapsed = time.time() - start_time
+            logger.info(f"[FOLDERS] 获取文件夹层级关系耗时 {elapsed:.3f}s (从数据库)")
+            
+            return {
+                "status": "success",
+                "data": hierarchy,
+                "count": len(hierarchy),
+                "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
+            }
         except Exception as e:
             logger.error(f"获取文件夹层级关系失败: {str(e)}")
             return {"status": "error", "message": f"获取文件夹层级关系失败: {str(e)}"}
-            
-    async def _get_folder_hierarchy_async(myfolders_mgr: MyFoldersManager):
-        """异步包装缓存函数，用于超时控制"""
-        return _get_folder_hierarchy_cached(myfolders_mgr)
-
-    @cached(folder_hierarchy_cache, "folder_hierarchy")
-    def _get_folder_hierarchy_cached(myfolders_mgr: MyFoldersManager):
-        """缓存版本的文件夹层级关系获取函数"""
-        start_time = time.time()
-        hierarchy = myfolders_mgr.get_folder_hierarchy()
-        elapsed = time.time() - start_time
-        logger.info(f"[FOLDERS] 获取文件夹层级关系耗时 {elapsed:.3f}s (从数据库)")
-        
-        return {
-            "status": "success",
-            "data": hierarchy,
-            "count": len(hierarchy),
-            "message": f"成功获取 {len(hierarchy)} 个父文件夹的层级关系"
-        }
 
     return router

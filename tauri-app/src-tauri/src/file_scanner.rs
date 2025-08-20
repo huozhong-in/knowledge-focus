@@ -1,3 +1,15 @@
+//! # 文件处理引擎 (File Processing Engine)
+//! 
+//! 该模块负责具体的文件操作和处理逻辑，包括：
+//! - 文件发现和扫描
+//! - 文件过滤和分类（按扩展名、类型、时间范围）
+//! - macOS Bundle识别和处理
+//! - 文件元数据提取和结构化
+//! - Tauri命令接口（供前端调用）
+//! 
+//! 注意：尽管模块名为"scanner"，但它实际上是整个文件处理的核心引擎，
+//! 被file_monitor模块调用来执行具体的文件操作任务。
+
 use chrono::{
     // Duration, 
     Local, 
@@ -159,6 +171,56 @@ fn is_inside_macos_bundle(path: &Path) -> Option<PathBuf> {
     None // 不在bundle内部
 }
 
+// Bundle处理相关函数 - 基于重构需求
+
+// 检查目录是否为macOS Bundle（方法1：扩展名预筛选）
+fn has_bundle_extension(path: &Path, bundle_extensions: &[String]) -> bool {
+    if let Some(extension) = path.extension().and_then(|ext| ext.to_str()) {
+        let ext_with_dot = format!(".{}", extension.to_lowercase());
+        bundle_extensions.iter().any(|bundle_ext| bundle_ext.to_lowercase() == ext_with_dot)
+    } else {
+        false
+    }
+}
+
+// 检查Bundle结构（方法2：Contents/Info.plist确认）
+fn has_bundle_structure(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    
+    let info_plist_path = path.join("Contents").join("Info.plist");
+    info_plist_path.exists()
+}
+
+// 组合方法：识别macOS Bundle（方法1+2）
+fn is_macos_bundle(path: &Path, bundle_extensions: &[String]) -> bool {
+    // 首先检查扩展名（快速预筛选）
+    if !has_bundle_extension(path, bundle_extensions) {
+        return false;
+    }
+    
+    // 然后确认内部结构（确保真正是Bundle）
+    has_bundle_structure(path)
+}
+
+// 检查给定路径是否在任何Bundle内部，如果是则返回最外层Bundle路径
+fn find_containing_bundle(path: &Path, bundle_extensions: &[String]) -> Option<PathBuf> {
+    let mut current_path = path;
+    let mut bundle_path: Option<PathBuf> = None;
+    
+    // 从当前路径向上遍历，寻找Bundle
+    while let Some(parent) = current_path.parent() {
+        if is_macos_bundle(parent, bundle_extensions) {
+            // 继续向上查找，确保找到最外层的Bundle
+            bundle_path = Some(parent.to_path_buf());
+        }
+        current_path = parent;
+    }
+    
+    bundle_path
+}
+
 #[derive(Debug, Default)]
 struct ScanStats {
     total_discovered: u64,  // 发现的所有文件数
@@ -282,6 +344,34 @@ pub async fn scan_files_by_type(
     println!("开始扫描文件...");
     let result = scan_files_with_filter(&config, None, Some(file_type)).await;
     println!("扫描完成, 文件数量: {}", result.as_ref().map_or(0, |files| files.len()));
+    result
+}
+
+// Tauri命令：使用简化配置扫描文件（支持时间范围和文件类型过滤）
+#[command]
+pub async fn scan_files_simplified_command(
+    _app_handle: AppHandle,
+    time_range: Option<TimeRange>,
+    file_type: Option<FileType>,
+    app_state: State<'_, AppState>,
+) -> Result<Vec<FileInfo>, String> {
+    println!("[SIMPLIFIED_SCAN] 调用简化扫描: 时间范围={:?}, 文件类型={:?}", time_range, file_type);
+
+    // 获取简化配置
+    let simplified_config = app_state.get_simplified_config().await?;
+    
+    // 获取监控文件夹
+    let config = app_state.get_config().await?;
+    let monitored_folders = &config.monitored_folders;
+
+    println!("[SIMPLIFIED_SCAN] 开始简化扫描，监控文件夹数: {}", monitored_folders.len());
+    let result = scan_files_simplified(&simplified_config, monitored_folders, time_range, file_type).await;
+    
+    match &result {
+        Ok(files) => println!("[SIMPLIFIED_SCAN] 扫描完成，文件数量: {}", files.len()),
+        Err(e) => println!("[SIMPLIFIED_SCAN] 扫描失败: {}", e),
+    }
+    
     result
 }
 
@@ -685,6 +775,272 @@ async fn scan_files_with_filter(
 
     // 打印扫描统计信息
     println!("[SCAN] 扫描统计: 发现文件总数: {}, 包含文件数: {}, 被过滤文件数: {} (隐藏: {}, 扩展名: {}, Bundle: {})", 
+        stats.total_discovered, 
+        stats.total_included,
+        stats.hidden_filtered + stats.extension_filtered + stats.bundle_filtered,
+        stats.hidden_filtered,
+        stats.extension_filtered,
+        stats.bundle_filtered
+    );
+
+    Ok(files)
+}
+
+// 新的简化扫描函数，使用FileScanningConfig
+async fn scan_files_simplified(
+    config: &crate::file_monitor::FileScanningConfig,
+    monitored_folders: &[crate::file_monitor::MonitoredDirectory],
+    time_range: Option<TimeRange>,
+    file_type: Option<FileType>,
+) -> Result<Vec<FileInfo>, String> {
+    let mut files = Vec::new();
+    let mut stats = ScanStats::default();
+
+    println!("[SCAN_SIMPLIFIED] 开始简化扫描，监控文件夹数: {}", monitored_folders.len());
+    println!("[SCAN_SIMPLIFIED] 配置：扩展名映射: {}, Bundle扩展名: {}, 忽略规则: {}", 
+        config.extension_mappings.len(), 
+        config.bundle_extensions.len(), 
+        config.ignore_patterns.len()
+    );
+
+    // 遍历所有监控的文件夹
+    for folder in monitored_folders {
+        if folder.is_blacklist {
+            println!("[SCAN_SIMPLIFIED] 跳过黑名单文件夹: {}", folder.path);
+            continue;
+        }
+
+        let folder_path = PathBuf::from(&folder.path);
+        if !folder_path.exists() {
+            println!("[SCAN_SIMPLIFIED] 文件夹不存在: {}", folder.path);
+            continue;
+        }
+
+        println!("[SCAN_SIMPLIFIED] 扫描文件夹: {}", folder.path);
+
+        // 使用walkdir遍历文件夹
+        let walker = WalkDir::new(&folder_path)
+            .follow_links(false)
+            .max_depth(10); // 限制最大深度避免无限递归
+
+        for entry in walker.into_iter() {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    println!("[SCAN_SIMPLIFIED] 读取文件时出错: {}", e);
+                    continue;
+                }
+            };
+
+            let file_path = entry.path();
+            stats.total_discovered += 1;
+
+            // 检查是否为隐藏文件
+            if is_hidden_file(file_path) {
+                stats.hidden_filtered += 1;
+                continue;
+            }
+
+            // 检查是否为Bundle
+            if file_path.is_dir() && is_macos_bundle(file_path, &config.bundle_extensions) {
+                println!("[SCAN_SIMPLIFIED] 发现Bundle: {}", file_path.display());
+                
+                // 将Bundle作为整体文件处理
+                let bundle_extension = get_file_extension(file_path);
+                
+                // 检查Bundle的扩展名是否在我们关注的范围内
+                if let Some(ref ext) = bundle_extension {
+                    if let Some(&category_id) = config.extension_mappings.get(ext) {
+                        // 获取Bundle的元数据
+                        let metadata = match entry.metadata() {
+                            Ok(m) => m,
+                            Err(_) => {
+                                stats.bundle_filtered += 1;
+                                continue;
+                            }
+                        };
+
+                        let modified_time = match metadata.modified() {
+                            Ok(time) => time,
+                            Err(_) => {
+                                stats.bundle_filtered += 1;
+                                continue;
+                            }
+                        };
+
+                        let modified_time_secs = match modified_time.duration_since(UNIX_EPOCH) {
+                            Ok(duration) => duration.as_secs(),
+                            Err(_) => {
+                                stats.bundle_filtered += 1;
+                                continue;
+                            }
+                        };
+
+                        // 应用时间范围过滤器
+                        if let Some(ref tr) = time_range {
+                            if !is_file_in_time_range(modified_time_secs, tr) {
+                                stats.bundle_filtered += 1;
+                                continue;
+                            }
+                        }
+
+                        // 应用文件类型过滤器（基于分类ID）
+                        if let Some(ref ft) = file_type {
+                            if *ft != FileType::All {
+                                let target_category_ids = get_category_ids_for_file_type(ft);
+                                if !target_category_ids.is_empty() && !target_category_ids.contains(&category_id) {
+                                    stats.bundle_filtered += 1;
+                                    continue;
+                                }
+                            }
+                        }
+
+                        let created_time = metadata
+                            .created()
+                            .ok()
+                            .map(|time| system_time_to_iso_string(time));
+
+                        let file_name = file_path
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        files.push(FileInfo {
+                            file_path: file_path.to_string_lossy().into_owned(),
+                            file_name,
+                            file_size: metadata.len(),
+                            extension: bundle_extension,
+                            created_time,
+                            modified_time: system_time_to_iso_string(modified_time),
+                            category_id: Some(category_id),
+                        });
+
+                        stats.total_included += 1;
+                        println!("[SCAN_SIMPLIFIED] 包含Bundle: {} (分类: {})", file_path.display(), category_id);
+                    } else {
+                        stats.bundle_filtered += 1;
+                        println!("[SCAN_SIMPLIFIED] Bundle扩展名不在关注范围: {}", ext);
+                    }
+                } else {
+                    stats.bundle_filtered += 1;
+                    println!("[SCAN_SIMPLIFIED] Bundle无法获取扩展名: {}", file_path.display());
+                }
+
+                // 跳过Bundle内部文件的扫描
+                continue;
+            }
+
+            // 检查是否在Bundle内部
+            if let Some(bundle_path) = find_containing_bundle(file_path, &config.bundle_extensions) {
+                println!("[SCAN_SIMPLIFIED] 跳过Bundle内部文件: {} (Bundle: {})", 
+                    file_path.display(), bundle_path.display());
+                stats.bundle_filtered += 1;
+                continue;
+            }
+
+            // 只处理普通文件
+            if !file_path.is_file() {
+                continue;
+            }
+
+            // 获取文件扩展名
+            let extension = get_file_extension(file_path);
+
+            // 只包含在扩展名映射中的文件
+            let category_id = if let Some(ref ext) = extension {
+                if let Some(&cat_id) = config.extension_mappings.get(ext) {
+                    cat_id
+                } else {
+                    stats.extension_filtered += 1;
+                    continue; // 扩展名不在关注范围内
+                }
+            } else {
+                stats.extension_filtered += 1;
+                continue; // 无扩展名文件不包含
+            };
+
+            // 应用文件类型过滤器
+            if let Some(ref ft) = file_type {
+                if *ft != FileType::All {
+                    let target_category_ids = get_category_ids_for_file_type(ft);
+                    if !target_category_ids.is_empty() && !target_category_ids.contains(&category_id) {
+                        stats.extension_filtered += 1;
+                        continue;
+                    }
+                }
+            }
+
+            // 获取文件元数据
+            let metadata = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => {
+                    stats.extension_filtered += 1;
+                    continue;
+                }
+            };
+
+            let modified_time = match metadata.modified() {
+                Ok(time) => time,
+                Err(_) => {
+                    stats.extension_filtered += 1;
+                    continue;
+                }
+            };
+
+            let modified_time_secs = match modified_time.duration_since(UNIX_EPOCH) {
+                Ok(duration) => duration.as_secs(),
+                Err(_) => {
+                    stats.extension_filtered += 1;
+                    continue;
+                }
+            };
+
+            // 应用时间范围过滤器
+            if let Some(ref tr) = time_range {
+                if !is_file_in_time_range(modified_time_secs, tr) {
+                    continue;
+                }
+            }
+
+            let created_time = metadata
+                .created()
+                .ok()
+                .map(|time| system_time_to_iso_string(time));
+
+            let file_name = file_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            files.push(FileInfo {
+                file_path: file_path.to_string_lossy().into_owned(),
+                file_name,
+                file_size: metadata.len(),
+                extension,
+                created_time,
+                modified_time: system_time_to_iso_string(modified_time),
+                category_id: Some(category_id),
+            });
+
+            stats.total_included += 1;
+
+            // 限制返回文件数量
+            if files.len() >= 500 {
+                println!("[SCAN_SIMPLIFIED] 已达到500个文件的限制，停止扫描");
+                break;
+            }
+        }
+
+        // 如果已经达到文件数量限制，跳出文件夹循环
+        if files.len() >= 500 {
+            break;
+        }
+    }
+
+    // 打印扫描统计信息
+    println!("[SCAN_SIMPLIFIED] 扫描统计: 发现总数: {}, 包含: {}, 过滤: {} (隐藏: {}, 扩展名: {}, Bundle: {})", 
         stats.total_discovered, 
         stats.total_included,
         stats.hidden_filtered + stats.extension_filtered + stats.bundle_filtered,

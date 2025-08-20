@@ -12,6 +12,9 @@ from db_mgr import (
     SystemConfig,
 )
 from pydantic import BaseModel
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ModelUseInterface(BaseModel):
     model_identifier: str
@@ -327,20 +330,23 @@ class ModelConfigMgr:
                 ).first()
         return None
     
-    def get_spec_model_config(self, capability: ModelCapability) -> ModelUseInterface:
+    def get_spec_model_config(self, capability: ModelCapability) -> ModelUseInterface | None:
         """取得全局指定能力的模型的model_identifier base_url api_key use_proxy"""
         model_config: ModelConfiguration = self.get_model_for_global_capability(capability)
         if model_config is None:
-            raise ValueError(f"No configuration found for {capability} model")
+            logger.info(f"No configuration found for {capability} model")
+            return None
 
         model_identifier = model_config.model_identifier
         model_provider: ModelProvider = self.session.exec(select(ModelProvider).where(ModelProvider.id == model_config.provider_id)).first()
 
         if model_provider is None:
-            raise ValueError(f"No provider found for {capability} model")
+            logger.info(f"No provider found for {capability} model")
+            return None
         base_url = model_provider.base_url
         if base_url is None or base_url == "":
-            raise ValueError(f"No base URL found for {capability} model")
+            logger.info(f"No base URL found for {capability} model")
+            return None
         api_key = model_provider.api_key
         use_proxy = model_provider.use_proxy
 

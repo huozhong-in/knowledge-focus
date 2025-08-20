@@ -55,7 +55,6 @@
       },
       "files": {
         "MacOS/venv": "../../api/.venv",
-        "Resources/api/api_cache_optimization.py": "../../api/api_cache_optimization.py",
         "Resources/api/bridge_events.py": "../../api/bridge_events.py",
         "Resources/api/chatsession_api.py": "../../api/chatsession_api.py",
         "Resources/api/chatsession_mgr.py": "../../api/chatsession_mgr.py",

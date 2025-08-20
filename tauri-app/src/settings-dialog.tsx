@@ -11,6 +11,7 @@ import {
   Info,
   Palette,
   Shield,
+  ArrowUpNarrowWide,
 } from "lucide-react"
 import {
   Dialog,
@@ -35,15 +36,17 @@ import {
 import { ScrollArea } from "./components/ui/scroll-area"
 import SettingsGeneral from "./settings-general"
 import SettingsAuthorization from "./settings-authorization"
+import SettingsFileRecognition from "./settings-file-recognition"
 import SettingsAIModels from "./settings-ai-models"
 import SettingsTheme from "./settings-theme-content"
 import SettingsAbout from "./settings-about"
 
 type SettingsPage =
   | "general"
-  | "theme"
   | "authorization"
+  | "file_recognition"
   | "aimodels"
+  | "theme"
   | "about"
 
 interface SettingsDialogProps {
@@ -88,7 +91,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
   const settingsPages = [
     {
       id: "general" as const,
-      label: "通用设置",
+      label: "基本设置",
       icon: Settings,
       group: "应用设置",
     },
@@ -96,6 +99,12 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
       id: "authorization" as const,
       label: "授权管理",
       icon: Shield,
+      group: "应用设置",
+    },
+    {
+      id: "file_recognition" as const,
+      label: "文件识别规则",
+      icon: ArrowUpNarrowWide,
       group: "应用设置",
     },
     {
@@ -149,20 +158,6 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
             </div>
           </div>
         )
-      case "theme":
-        return (
-          <div className="p-6">
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-medium">主题设置</h3>
-                <p className="text-sm text-muted-foreground">
-                  自定义应用外观和主题
-                </p>
-              </div>
-              <SettingsTheme />
-            </div>
-          </div>
-        )
       case "authorization":
         return (
           <div className="p-6">
@@ -177,6 +172,20 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
             </div>
           </div>
         )
+      case "file_recognition":
+        return (
+          <div className="p-6">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium">文件识别规则</h3>
+                <p className="text-sm text-muted-foreground">
+                  配置识别携带有知识的文件的规则
+                </p>
+              </div>
+              <SettingsFileRecognition />
+            </div>
+          </div>
+        )
       case "aimodels":
         return (
           <div className="p-6">
@@ -188,6 +197,20 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
                 </p>
               </div>
               <SettingsAIModels />
+            </div>
+          </div>
+        )
+      case "theme":
+        return (
+          <div className="p-6">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-medium">主题设置</h3>
+                <p className="text-sm text-muted-foreground">
+                  自定义应用外观和主题
+                </p>
+              </div>
+              <SettingsTheme />
             </div>
           </div>
         )

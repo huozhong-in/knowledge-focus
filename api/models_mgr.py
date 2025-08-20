@@ -3,11 +3,10 @@ from config import singleton
 from typing import List, Dict, Any
 import re
 import httpx
-import asyncio
 import logging
 from sqlmodel import Session, select
 from db_mgr import SystemConfig
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
@@ -43,9 +42,9 @@ class ModelsMgr:
         #         error_message=f"模型 '{model_id}' 在提供商 '{provider_type}' 中不可用"
         #     )
 
-    async def get_embedding(self, text_str: str) -> List[float]:
+    def get_embedding(self, text_str: str) -> List[float]:
         """
-        Generates an embedding for the given text using litellm.
+        Generates an embedding for the given text using sync OpenAI client.
         
         This is typically called by backend processes (document parsing, vectorization),
         so model validation failures will trigger IPC events to notify the frontend.
@@ -61,14 +60,14 @@ class ModelsMgr:
             return []
         
         proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-        openai_client = AsyncOpenAI(
+        http_client = httpx.Client(proxy=proxy.value if proxy is not None and use_proxy else None)
+        openai_client = OpenAI(
             api_key=api_key if api_key else "sk-xxx",
             base_url=base_url,
             max_retries=3,
             http_client=http_client,
         )
-        response = await openai_client.embeddings.create(
+        response = openai_client.embeddings.create(
             model=model_identifier,
             input=text_str,
         )
@@ -116,7 +115,7 @@ class ModelsMgr:
         try:
             response = agent.run_sync(
                 user_prompt=messages[1]['content'],
-                usage_limits=UsageLimits(response_tokens_limit=150), # 限制标签生成的最大token数
+                usage_limits=UsageLimits(response_tokens_limit=250), # 限制标签生成的最大token数
             )
             # print(response.output)
         except UsageLimitExceeded as e:
@@ -350,8 +349,10 @@ if __name__ == "__main__":
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     mgr = ModelsMgr(session)
     
+    import asyncio
+
     # # Test embedding generation
-    # embedding = asyncio.run(mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。"))
+    # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
     # print("Embedding Length:", len(embedding))
     
     # # Test tag generation

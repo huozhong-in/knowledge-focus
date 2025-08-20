@@ -4,6 +4,7 @@ from sqlmodel import (
     Session, 
     select, 
     and_, 
+    not_,
 )
 from datetime import datetime
 from db_mgr import (
@@ -518,13 +519,13 @@ class RulesManager:
                     FileFilterRule.enabled
                 )).all()),
                 "disabled": len(self.session.exec(select(FileFilterRule).where(
-                    not FileFilterRule.enabled
+                    not_(FileFilterRule.enabled)
                 )).all()),
                 "system": len(self.session.exec(select(FileFilterRule).where(
                     FileFilterRule.is_system
                 )).all()),
                 "custom": len(self.session.exec(select(FileFilterRule).where(
-                    not FileFilterRule.is_system
+                    not_(FileFilterRule.is_system)
                 )).all()),
                 "by_type": {
                     "filename": len(self.session.exec(select(FileFilterRule).where(
@@ -536,9 +537,6 @@ class RulesManager:
                     "folder": len(self.session.exec(select(FileFilterRule).where(
                         FileFilterRule.rule_type == RuleType.FOLDER.value
                     )).all()),
-                    "structure": len(self.session.exec(select(FileFilterRule).where(
-                        FileFilterRule.rule_type == RuleType.STRUCTURE.value
-                    )).all())
                 },
                 "by_action": {
                     "include": len(self.session.exec(select(FileFilterRule).where(

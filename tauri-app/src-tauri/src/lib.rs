@@ -57,6 +57,7 @@ struct ApiState(Arc<Mutex<ApiProcessState>>);
 // 应用配置状态，用于存储文件扫描配置
 pub struct AppState {
     config: Arc<Mutex<Option<file_monitor::AllConfigurations>>>,
+    simplified_config: Arc<Mutex<Option<file_monitor::FileScanningConfig>>>, // 新增简化配置
     file_monitor: Arc<Mutex<Option<FileMonitor>>>,
     debounced_file_monitor: Arc<Mutex<Option<DebouncedFileMonitor>>>,
     // 配置变更队列管理
@@ -68,6 +69,7 @@ impl AppState {
     fn new() -> Self {
         Self {
             config: Arc::new(Mutex::new(None)),
+            simplified_config: Arc::new(Mutex::new(None)), // 初始化简化配置
             file_monitor: Arc::new(Mutex::new(None)),
             debounced_file_monitor: Arc::new(Mutex::new(None)), // 初始化新字段
             pending_config_changes: Arc::new(Mutex::new(Vec::new())), // 初始化配置变更队列
@@ -86,6 +88,46 @@ impl AppState {
     pub fn update_config(&self, config: file_monitor::AllConfigurations) {
         let mut config_guard = self.config.lock().unwrap();
         *config_guard = Some(config);
+    }
+
+    // 新增：管理简化配置的方法
+    pub async fn get_simplified_config(&self) -> Result<file_monitor::FileScanningConfig, String> {
+        let config_guard = self.simplified_config.lock().unwrap();
+        match &*config_guard {
+            Some(config) => Ok(config.clone()),
+            None => Err("简化配置未初始化".to_string()),
+        }
+    }
+
+    pub fn update_simplified_config(&self, config: file_monitor::FileScanningConfig) {
+        let mut config_guard = self.simplified_config.lock().unwrap();
+        *config_guard = Some(config);
+    }
+
+    // 刷新简化配置（从API获取最新配置）
+    pub async fn refresh_simplified_config(&self) -> Result<(), String> {
+        println!("[CONFIG] 开始刷新简化配置");
+        
+        // 创建临时的FileMonitor实例来获取配置
+        let temp_monitor = file_monitor::FileMonitor::new(
+            "127.0.0.1".to_string(),
+            8848
+        );
+        
+        match temp_monitor.fetch_file_scanning_config().await {
+            Ok(config) => {
+                println!("[CONFIG] 成功获取简化配置: 扩展名映射={}, Bundle扩展名={}", 
+                    config.extension_mappings.len(), 
+                    config.bundle_extensions.len()
+                );
+                self.update_simplified_config(config);
+                Ok(())
+            }
+            Err(e) => {
+                println!("[CONFIG] 获取简化配置失败: {}", e);
+                Err(format!("获取简化配置失败: {}", e))
+            }
+        }
     }
     
     // 配置变更队列管理方法
@@ -569,12 +611,11 @@ pub fn run() {
                 }
             });
             
-            // 等待API就绪信号后再初始化文件监控基础设施（但不开始扫描）
+            // 等待API就绪信号后再准备文件监控基础设施
             let app_handle_for_monitor = app_handle.clone();
-            let monitor_state = Arc::clone(&app.state::<Arc<Mutex<Option<FileMonitor>>>>());
+            let monitor_state = app.state::<Arc<Mutex<Option<FileMonitor>>>>().inner().clone();
             let api_state_for_monitor = api_state_instance.0.clone();
             
-            // 等待API就绪信号后再准备文件监控基础设施
             tauri::async_runtime::spawn(async move {
                 // 等待API就绪信号
                 match rx.await {
@@ -582,10 +623,28 @@ pub fn run() {
                         println!("收到API就绪信号，准备文件监控基础设施（不开始扫描）...");
                         // 初始化文件监控基础设施，但不开始自动扫描
                         crate::setup_file_monitor::setup_file_monitoring_infrastructure(
-                            app_handle_for_monitor,
+                            app_handle_for_monitor.clone(),
                             monitor_state,
                             api_state_for_monitor,
                         ).await;
+                        
+                        // 初始化简化配置
+                        println!("开始初始化简化配置...");
+                        let app_state = app_handle_for_monitor.state::<AppState>();
+                        match app_state.refresh_simplified_config().await {
+                            Ok(()) => {
+                                println!("简化配置初始化成功");
+                                if let Some(window) = app_handle_for_monitor.get_webview_window("main") {
+                                    let _ = window.emit("simplified-config-ready", true);
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("简化配置初始化失败: {}", e);
+                                if let Some(window) = app_handle_for_monitor.get_webview_window("main") {
+                                    let _ = window.emit("simplified-config-error", format!("简化配置初始化失败: {}", e));
+                                }
+                            }
+                        }
                     },
                     _ => {
                         eprintln!("API未能成功启动，无法初始化文件监控基础设施");
@@ -802,6 +861,7 @@ pub fn run() {
         .manage(Arc::new(Mutex::new(Option::<FileMonitor>::None)))
         .invoke_handler(tauri::generate_handler![
             commands::refresh_monitoring_config, // 刷新监控配置
+            commands::refresh_simplified_config, // 刷新简化配置
             commands::read_directory, // 读取目录内容
             commands::get_tag_cloud_data, // 获取标签云数据
             commands::search_files_by_tags, // 按标签搜索文件
@@ -813,6 +873,7 @@ pub fn run() {
             file_scanner::start_backend_scanning, // 后端扫描启动命令
             file_scanner::scan_files_by_time_range, // 按时间范围扫描文件
             file_scanner::scan_files_by_type, // 按类型扫描文件
+            file_scanner::scan_files_simplified_command, // 简化扫描命令（支持Bundle和新配置）
         ])
         .on_window_event(|window, event| match event {
             WindowEvent::Destroyed => {

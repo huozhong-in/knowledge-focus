@@ -270,6 +270,7 @@ def get_task_manager(session: Session = Depends(get_session)):
 def task_processor(db_path: str, stop_event: threading.Event):
     """处理任务的后台工作线程"""
     logger.info("任务处理线程已启动")
+    
     sqlite_url = f"sqlite:///{db_path}"
     engine = create_engine(
         sqlite_url, 
@@ -691,10 +692,6 @@ def health_check():
     return {
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
-        # "cache_stats": {
-        #     "config": config_cache.get_stats(),
-        #     "folders": folder_hierarchy_cache.get_stats()
-        # }
     }
 
 @app.post("/pin-file")

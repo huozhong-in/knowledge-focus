@@ -95,7 +95,7 @@ class MultiVectorMgr:
         如果没有可用模型，返回False并记录警告。
         """
         for capa in SCENE_MULTIVECTOR:
-            if not self.model_config_mgr.get_spec_model_config(capa):
+            if self.model_config_mgr.get_spec_model_config(capa) is None:
                 logger.warning(f"Model for multivector is not available: {capa}")
                 return False
         return True

@@ -43,17 +43,15 @@ export function FolderTreeSelector({
   // 加载bundle扩展名配置
   const loadBundlePatterns = async (): Promise<string[]> => {
     try {
-      const response = await fetch("http://127.0.0.1:60315/config/all", {
+      const response = await fetch("http://127.0.0.1:60315/file-scanning-config", {
         method: "GET",
         headers: { "Content-Type": "application/json" }
       });
       
       if (response.ok) {
         const configData = await response.json();
-        // 从file_filter_rules中提取bundle相关的配置
-        const bundlePatterns = configData.file_filter_rules
-          ?.filter((rule: any) => rule.rule_type === "os_bundle" && rule.enabled)
-          ?.map((rule: any) => rule.pattern) || [];
+        // 直接使用简化端点返回的bundle_extensions
+        const bundlePatterns = configData.bundle_extensions || [];
         
         console.log('已加载Bundle过滤模式:', bundlePatterns);
         return bundlePatterns;
