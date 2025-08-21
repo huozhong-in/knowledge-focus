@@ -23,6 +23,7 @@ from db_mgr import (
     TaskPriority, 
     Task, 
     ParentChunk,
+    SystemConfig,
 )
 from screening_mgr import FileScreeningResult
 from models_mgr import ModelsMgr
@@ -36,6 +37,9 @@ from chatsession_api import get_router as get_chatsession_router
 from myfolders_api import get_router as get_myfolders_router
 from screening_api import get_router as get_screening_router
 from search_api import get_router as get_search_router
+
+# 初始化logger
+logger = logging.getLogger(__name__)
 
 # --- Centralized Logging Setup ---
 def setup_logging(logging_dir: str = None):
@@ -693,6 +697,83 @@ def health_check():
         "status": "ok", 
         "timestamp": datetime.now().isoformat(),
     }
+
+@app.get("/system-config/{config_key}")
+def get_system_config(config_key: str, session: Session = Depends(get_session)):
+    """获取系统配置
+    
+    参数:
+    - config_key: 配置键名
+    
+    返回:
+    - 配置值和描述信息
+    """
+    try:
+        config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
+        if not config:
+            return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
+        
+        return {
+            "success": True,
+            "config": {
+                "key": config.key,
+                "value": config.value,
+                "description": config.description,
+                "updated_at": config.updated_at
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"获取系统配置时发生错误: {e}", exc_info=True)
+        return {"success": False, "error": f"获取配置失败: {str(e)}"}
+
+@app.put("/system-config/{config_key}")
+def update_system_config(
+    config_key: str, 
+    data: Dict[str, Any] = Body(...),
+    session: Session = Depends(get_session)
+):
+    """更新系统配置
+    
+    参数:
+    - config_key: 配置键名
+    
+    请求体:
+    - value: 新的配置值
+    
+    返回:
+    - 更新结果
+    """
+    try:
+        new_value = data.get("value", "")
+        
+        config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
+        if not config:
+            return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
+        
+        # 更新配置值和时间戳
+        config.value = new_value
+        config.updated_at = datetime.now()
+        
+        session.add(config)
+        session.commit()
+        
+        logger.info(f"系统配置 '{config_key}' 已更新为: {new_value}")
+        
+        return {
+            "success": True,
+            "message": f"配置项 '{config_key}' 更新成功",
+            "config": {
+                "key": config.key,
+                "value": config.value,
+                "description": config.description,
+                "updated_at": config.updated_at
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"更新系统配置时发生错误: {e}", exc_info=True)
+        return {"success": False, "error": f"更新配置失败: {str(e)}"}
 
 @app.post("/pin-file")
 async def pin_file(
