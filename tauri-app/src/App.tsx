@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { create } from "zustand"
 import { load } from '@tauri-apps/plugin-store'
 import { appDataDir, join } from '@tauri-apps/api/path'
+import { listen } from '@tauri-apps/api/event'
 import { useAppStore } from "./main"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
@@ -12,31 +13,30 @@ import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "./app-sidebar"
 import { AppWorkspace } from "./app-workspace"
 import IntroDialog from "./intro-dialog"
-import { SettingsDialog } from "./settings-dialog"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
 
 
-// 创建一个store来管理页面内容
-interface PageState {
-  currentPage: string
-  currentTitle: string
-  currentSubtitle: string
-  setPage: (page: string, title: string, subtitle: string) => void
-}
+// // 创建一个store来管理页面内容
+// interface PageState {
+//   currentPage: string
+//   currentTitle: string
+//   currentSubtitle: string
+//   setPage: (page: string, title: string, subtitle: string) => void
+// }
 
-export const usePageStore = create<PageState>((set) => ({
-  currentPage: "new_task", // 默认为new_task页面，会在组件中根据是否首次启动进行调整
-  currentTitle: "新建任务",
-  currentSubtitle: "新建数据任务",
-  setPage: (page, title, subtitle) =>
-    set({
-      currentPage: page,
-      currentTitle: title,
-      currentSubtitle: subtitle,
-    }),
-}))
+// export const usePageStore = create<PageState>((set) => ({
+//   currentPage: "new_task", // 默认为new_task页面，会在组件中根据是否首次启动进行调整
+//   currentTitle: "新建任务",
+//   currentSubtitle: "新建数据任务",
+//   setPage: (page, title, subtitle) =>
+//     set({
+//       currentPage: page,
+//       currentTitle: title,
+//       currentSubtitle: subtitle,
+//     }),
+// }))
 
 // 创建一个store来管理设置对话框状态
 interface SettingsState {
@@ -44,6 +44,7 @@ interface SettingsState {
   initialPage: string
   setSettingsOpen: (open: boolean) => void
   setInitialPage: (page: string) => void
+  openSettingsPage: (page: string) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
@@ -51,6 +52,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   initialPage: "general",
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   setInitialPage: (page) => set({ initialPage: page }),
+  openSettingsPage: (page) => set({ isSettingsOpen: true, initialPage: page }),
 }))
 
 // ==================== 工具函数 ====================
@@ -97,7 +99,7 @@ export default function Page() {
     setApiReady, // Get action to set API ready state
   } = useAppStore()
 
-  const { setSettingsOpen } = useSettingsStore()
+  const { openSettingsPage } = useSettingsStore()
   const [showIntroDialog, setShowIntroDialog] = useState(false)
 
   // 会话状态管理
@@ -341,7 +343,7 @@ export default function Page() {
       // 检测 Cmd+, (macOS) 或 Ctrl+, (Windows/Linux)
       if ((event.metaKey || event.ctrlKey) && event.key === ',') {
         event.preventDefault()
-        setSettingsOpen(true)
+        openSettingsPage("general")
       }
     }
 
@@ -350,31 +352,30 @@ export default function Page() {
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [setSettingsOpen])
+  }, [openSettingsPage])
 
   // 监听菜单事件
-  // useEffect(() => {
-  //   let unlistenFn: (() => void) | undefined
+  useEffect(() => {
+    let unlistenFn: (() => void) | undefined
 
-  //   listen("menu-settings", (event) => {
-  //     const page = event.payload as string
-  //     console.log("收到菜单设置事件，要打开的页面:", page)
-  //     setSettingsOpen(true)
-  //     setInitialPage(page === "about" ? "about" : "general")
-  //   })
-  //     .then((fn) => {
-  //       unlistenFn = fn
-  //     })
-  //     .catch((err) => {
-  //       console.error("监听菜单事件失败:", err)
-  //     })
+    listen("menu-settings", (event) => {
+      const page = event.payload as string
+      console.log("收到菜单设置事件，要打开的页面:", page)
+      openSettingsPage(page === "about" ? "about" : "general")
+    })
+      .then((fn) => {
+        unlistenFn = fn
+      })
+      .catch((err) => {
+        console.error("监听菜单事件失败:", err)
+      })
 
-  //   return () => {
-  //     if (unlistenFn) {
-  //       unlistenFn()
-  //     }
-  //   }
-  // }, [setSettingsOpen, setInitialPage])
+    return () => {
+      if (unlistenFn) {
+        unlistenFn()
+      }
+    }
+  }, [openSettingsPage])
 
   // Listen for 'api-ready' event from backend ONCE using useBridgeEvents
   // 这是应用中唯一需要监听 api-ready 事件的地方
@@ -397,7 +398,7 @@ export default function Page() {
             duration: 8000,
             action: {
               label: "打开设置",
-              onClick: () => setSettingsOpen(true)
+              onClick: () => openSettingsPage("aimodels")
             }
           }
         )
@@ -587,8 +588,6 @@ export default function Page() {
             onOpenChange={setShowIntroDialog}
           />
           <Toaster />
-      {/* 全局设置对话框，可通过快捷键打开 */}
-      <SettingsDialog />
     </SidebarProvider>
   )
 }
