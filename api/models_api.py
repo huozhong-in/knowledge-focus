@@ -333,7 +333,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                             ui_chunk = {
                                 "type": "text-delta",
                                 "delta": content_chunk,
-                                "id": str(uuid.uuid4())
+                                "id": f"msg_{uuid.uuid4().hex}"
                             }
                             chunk_data = f"data: {json.dumps(ui_chunk)}\n\n"
                             print(f"[DEBUG] Sending chunk: {chunk_data}")
@@ -395,6 +395,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "Access-Control-Allow-Origin": "*",
                     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
                     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                    "x-vercel-ai-ui-message-stream": "v1"
                 }
             )
         except Exception as e:

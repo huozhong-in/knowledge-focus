@@ -37,7 +37,7 @@ interface AppWorkspaceProps {
 export function AppWorkspace({ 
   currentSession, 
   currentSessionId, 
-  tempPinnedFiles,
+  // tempPinnedFiles,
   onCreateSessionFromMessage,
   onAddTempPinnedFile,
   onRemoveTempPinnedFile,
@@ -105,7 +105,7 @@ export function AppWorkspace({
         direction="horizontal"
         className="w-full"
       >
-        <ResizablePanel defaultSize={20} minSize={20}>
+        <ResizablePanel defaultSize={30} minSize={20}>
           <ResizablePanelGroup direction="vertical">
             <ResizablePanel defaultSize={70} minSize={20}>
               {/* 文件列表区 */}

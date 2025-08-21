@@ -82,7 +82,7 @@ class MultiVectorMgr:
         # 获取数据库目录作为基础路径
         self._init_base_paths()
         # 初始化桥接事件发送器
-        self.bridge_events = BridgeEventSender(source="chunking-manager")
+        self.bridge_events = BridgeEventSender(source="multivector_mgr")
         
         # 初始化chunker
         self._init_chunker()

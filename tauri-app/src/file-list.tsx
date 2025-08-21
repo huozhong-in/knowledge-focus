@@ -471,7 +471,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
           <div className="text-center py-6">
             <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
             <p className="text-xs text-muted-foreground px-2 leading-relaxed">
-              请点击左侧标签云中的标签来搜索相关文件
+              请点击左侧标签云或在上方搜索文件
             </p>
           </div>
         ) : (
