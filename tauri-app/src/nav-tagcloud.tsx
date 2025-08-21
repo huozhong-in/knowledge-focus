@@ -160,8 +160,8 @@ export function NavTagCloud() {
               <Skeleton className="h-6 w-15 rounded-full" />
             </>
           ) : error ? (
-            <div className="text-sm text-destructive">
-              {error}
+            <div className="text-sm text-destructive text-center">
+              数据获取失败: {error}
             </div>
           ) : (
             tags.map(tag => (

@@ -68,6 +68,8 @@ impl EventBuffer {
         strategies.insert("system-status".to_string(), Immediate);
         // 模型状态变化影响用户操作，需要立即通知
         strategies.insert("model-status-changed".to_string(), Immediate);
+        // 标签生成模型缺失需要立即通知用户
+        strategies.insert("tagging-model-missing".to_string(), Immediate);
         // 多模态向量化关键状态变化需要立即通知
         strategies.insert("multivector-started".to_string(), Immediate);
         strategies.insert("multivector-completed".to_string(), Immediate);

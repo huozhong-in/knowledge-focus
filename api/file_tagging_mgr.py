@@ -57,12 +57,25 @@ class FileTaggingMgr:
     def check_file_tagging_model_availability(self) -> bool:
         """
         检查是否有可用的模型。
-        如果没有可用模型，返回False并记录警告。
+        如果没有可用模型，返回False并记录警告，并发送桥接事件通知前端。
         """
+        missing_models = []
         for capa in SCENE_FILE_TAGGING:
             if self.model_config_mgr.get_spec_model_config(capa) is None:
                 logger.warning(f"Model for file tagging is not available: {capa}")
-                return False
+                missing_models.append(capa.value)
+        
+        if missing_models:
+            # 发送桥接事件通知前端模型缺失
+            self.bridge_event_sender.tagging_model_missing(
+                message=f"标签生成需要的模型未配置: {', '.join(missing_models)}",
+                details={
+                    "missing_capabilities": missing_models,
+                    "required_for": "file_tagging"
+                }
+            )
+            return False
+        
         return True
 
     def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:

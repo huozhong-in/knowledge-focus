@@ -53,6 +53,9 @@ class BridgeEventSender:
         ERROR_OCCURRED = "error-occurred"
         SYSTEM_STATUS = "system-status"
         
+        # 标签相关事件
+        TAGGING_MODEL_MISSING = "tagging-model-missing"
+        
         # 多模态向量化事件
         MULTIVECTOR_STARTED = "multivector-started"
         MULTIVECTOR_PROGRESS = "multivector-progress"
@@ -167,6 +170,13 @@ class BridgeEventSender:
             "role_type": role_type,
             "available_models": available_models or [],
             "error_message": error_message
+        })
+    
+    def tagging_model_missing(self, message: str = "标签生成模型未配置", details: Dict[str, Any] = None):
+        """通知标签生成模型缺失"""
+        self.send_event(self.Events.TAGGING_MODEL_MISSING, {
+            "message": message,
+            "details": details or {}
         })
     
     # 多模态向量化便捷方法    

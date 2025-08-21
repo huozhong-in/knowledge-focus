@@ -403,6 +403,24 @@ export default function Page() {
           }
         )
       },
+      'tagging-model-missing': (payload: any) => {
+        console.warn("App.tsx: Tagging model missing:", payload)
+        
+        const { message } = payload
+        
+        // 显示标签模型缺失的错误toast
+        toast.error(
+          `标签生成模型未配置`,
+          {
+            description: message || '无法生成文件标签，请配置标签生成相关的AI模型',
+            duration: 8000,
+            action: {
+              label: "配置模型",
+              onClick: () => openSettingsPage("aimodels")
+            }
+          }
+        )
+      },
       // 多模态向量化事件处理
       'multivector-progress': (payload: any) => {
         // console.log("App.tsx: Multivector progress:", payload)

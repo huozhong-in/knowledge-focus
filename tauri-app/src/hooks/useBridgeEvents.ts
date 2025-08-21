@@ -27,6 +27,8 @@ interface EventHandlers {
   'error-occurred'?: (payload: BridgeEventPayload) => void;
   'system-status'?: (payload: BridgeEventPayload) => void;
   'api-ready'?: (payload: BridgeEventPayload) => void;
+  // 标签相关事件
+  'tagging-model-missing'?: (payload: BridgeEventPayload) => void;
   // 多模态向量化事件
   'multivector-started'?: (payload: BridgeEventPayload) => void;
   'multivector-progress'?: (payload: BridgeEventPayload) => void;
@@ -197,6 +199,19 @@ function showEventToast(eventName: string, payload: BridgeEventPayload) {
           description: data.message || `状态: ${data.status}`
         });
       }
+      break;
+      
+    case 'tagging-model-missing':
+      toast.warning('标签生成模型未配置', {
+        description: data.message || '需要配置标签生成相关的AI模型',
+        action: {
+          label: "去配置",
+          onClick: () => {
+            // 这里可以触发打开设置页面，但需要传递一个回调函数
+            console.log('用户点击了去配置标签模型')
+          }
+        }
+      });
       break;
       
     default:
