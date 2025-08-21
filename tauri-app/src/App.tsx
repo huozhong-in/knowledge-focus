@@ -17,27 +17,6 @@ import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
 
-
-// // 创建一个store来管理页面内容
-// interface PageState {
-//   currentPage: string
-//   currentTitle: string
-//   currentSubtitle: string
-//   setPage: (page: string, title: string, subtitle: string) => void
-// }
-
-// export const usePageStore = create<PageState>((set) => ({
-//   currentPage: "new_task", // 默认为new_task页面，会在组件中根据是否首次启动进行调整
-//   currentTitle: "新建任务",
-//   currentSubtitle: "新建数据任务",
-//   setPage: (page, title, subtitle) =>
-//     set({
-//       currentPage: page,
-//       currentTitle: title,
-//       currentSubtitle: subtitle,
-//     }),
-// }))
-
 // 创建一个store来管理设置对话框状态
 interface SettingsState {
   isSettingsOpen: boolean

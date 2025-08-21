@@ -778,7 +778,8 @@ def update_system_config(
 @app.post("/pin-file")
 async def pin_file(
     data: Dict[str, Any] = Body(...),
-    task_mgr: TaskManager = Depends(get_task_manager)
+    task_mgr: TaskManager = Depends(get_task_manager),
+    session: Session = Depends(get_session)
 ):
     """Pin文件并创建多模态向量化任务
     
@@ -830,7 +831,35 @@ async def pin_file(
                 "task_id": None,
                 "message": f"不支持的文件类型: {file_ext}，支持的类型: {supported_extensions}"
             }
-        
+
+        # 在创建任务前检查多模态向量化所需的模型配置
+        try:
+            # 创建必要的管理器实例来检查模型可用性
+            lancedb_mgr = LanceDBMgr(os.path.dirname(app.state.db_path))
+            models_mgr = ModelsMgr(session)
+            multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+            
+            # 检查多模态向量化所需的模型是否已配置
+            if not multivector_mgr.check_multivector_model_availability():
+                logger.warning(f"Pin文件失败，多模态向量化所需的模型配置缺失: {file_path}")
+                return {
+                    "success": False,
+                    "task_id": None,
+                    "error_type": "model_missing",
+                    "message": "多模态向量化需要配置文本模型、向量模型和视觉模型，请前往设置页面进行配置",
+                    "missing_models": ["文本模型", "向量模型", "视觉模型"]
+                }
+        except Exception as e:
+            logger.error(f"检查模型可用性时发生错误: {e}", exc_info=True)
+            # 如果检查失败，返回错误给前端，强制用户配置模型
+            return {
+                "success": False,
+                "task_id": None,
+                "error_type": "model_missing",
+                "message": "多模态向量化需要配置文本模型、向量模型和视觉模型，请前往设置页面进行配置",
+                "missing_models": ["文本模型", "向量模型", "视觉模型"]
+            }
+
         # 创建HIGH优先级MULTIVECTOR任务
         task = task_mgr.add_task(
             task_name=f"Pin文件多模态向量化: {Path(file_path).name}",

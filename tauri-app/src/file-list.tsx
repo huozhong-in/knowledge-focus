@@ -11,6 +11,7 @@ import { useState } from "react";
 import { VectorizationProgress } from "@/components/VectorizationProgress";
 import { useVectorizationStore } from "@/stores/useVectorizationStore";
 import { toast } from "sonner";
+import { useSettingsStore } from "./App";
 
 interface FileItemProps {
   file: TaggedFile;
@@ -151,6 +152,7 @@ interface FileListProps {
 export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPinnedFile }: FileListProps) {
   const { getFilteredFiles, togglePinnedFile, isLoading, error, setFiles, setLoading, setError } = useFileListStore();
   const { setFileStatus, setFileStarted, setFileFailed } = useVectorizationStore();
+  const { openSettingsPage } = useSettingsStore();
   const files = getFilteredFiles();
   
   // 搜索框状态
@@ -205,6 +207,12 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         }
 
         result = await vectorizeResponse.json();
+        
+        // 检查是否是模型配置缺失的错误
+        if (!result.success && result.error_type === 'model_missing') {
+          handleModelMissingError(result);
+          return result;
+        }
     } else {
         // 没有会话时，使用临时pin机制
         // 1. 添加到临时pin文件列表
@@ -230,6 +238,12 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         result = await response.json();
       }
 
+      // 检查是否是模型配置缺失的错误
+      if (!result.success && result.error_type === 'model_missing') {
+        handleModelMissingError(result);
+        return result;
+      }
+
       return result;
     } catch (error) {
       console.error('Pin file API error:', error);
@@ -237,6 +251,17 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         success: false,
         error: error instanceof Error ? error.message : '未知错误'
       };
+    }
+  };
+
+  // 处理模型配置缺失的情况
+  const handleModelMissingError = (response: any) => {
+    const confirmMessage = `${response.message}\n\n是否立即前往设置页面配置AI模型？`;
+    
+    // 使用原生confirm对话框
+    if (confirm(confirmMessage)) {
+      // 用户确认跳转到设置页面
+      openSettingsPage("aimodels");
     }
   };
 
@@ -307,13 +332,20 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
 
         toast.success(`文件 ${file.file_name} 已开始向量化处理`);
       } else {
-        // API失败，设置错误状态
-        setFileFailed(filePath, '', {
-          message: result.error || '向量化启动失败',
-          helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
-        });
+        // 检查是否是模型配置缺失的错误
+        if ((result as any).error_type === 'model_missing') {
+          // 处理模型配置缺失的情况
+          handleModelMissingError(result);
+          // 不设置向量化失败状态，因为这是配置问题不是文件问题
+        } else {
+          // API失败，设置错误状态
+          setFileFailed(filePath, '', {
+            message: result.error || '向量化启动失败',
+            helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
+          });
 
-        toast.error(`向量化失败：${result.error}`);
+          toast.error(`向量化失败：${result.error}`);
+        }
       }
     } catch (error) {
       // 网络或其他错误
