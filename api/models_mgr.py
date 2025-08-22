@@ -325,22 +325,22 @@ Based on all information, provide the best tags for this file.
         )
         
         # TODO: Replace this with a call to the real ToolProvider
-        def get_weather(city: str = Field(..., description="The city to get the weather for")) -> str:
-            """
-            A dummy function to get the weather for a city.
-            """
-            if "beijing" in city.lower():
-                return "The weather in Beijing is sunny."
-            if "tokyo" in city.lower():
-                return "The weather in Tokyo is rainy."
-            return f"Sorry, I don't know the weather for {city}."
+        # def get_weather(city: str = Field(..., description="The city to get the weather for")) -> str:
+        #     """
+        #     A dummy function to get the weather for a city.
+        #     """
+        #     if "beijing" in city.lower():
+        #         return "The weather in Beijing is sunny."
+        #     if "tokyo" in city.lower():
+        #         return "The weather in Tokyo is rainy."
+        #     return f"Sorry, I don't know the weather for {city}."
         
         
         system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
         
         agent = Agent(
             model=model,
-            tools=[get_weather],
+            # tools=[get_weather],
             system_prompt=system_prompt[0] if system_prompt else "You are a helpful assistant.",
         )
 

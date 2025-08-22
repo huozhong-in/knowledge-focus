@@ -390,7 +390,7 @@ class ChatSession(SQLModel, table=True):
     name: str = Field(max_length=100)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-    metadata_json: str | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
+    metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
     is_active: bool = Field(default=True)
     selected_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的工具
     scenario_id: int | None = Field(default=None, foreign_key="t_scenarios.id") # 关联的“场景”ID

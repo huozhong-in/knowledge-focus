@@ -6,7 +6,6 @@
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
 from sqlmodel import Session
 from typing import Dict, Any, Optional
-import json
 import logging
 
 from chatsession_mgr import ChatSessionMgr
@@ -41,7 +40,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "name": session.name,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "metadata": session.metadata_json or {},
                     "is_active": session.is_active
                 }
             }
@@ -76,7 +75,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "name": session.name,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "metadata": session.metadata_json or {},
                     "is_active": session.is_active
                 }
             }
@@ -111,7 +110,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "name": session.name,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "metadata": session.metadata_json or {},
                     "is_active": session.is_active,
                     "stats": stats
                 })
@@ -151,7 +150,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "name": session.name,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "metadata": session.metadata_json or {},
                     "is_active": session.is_active,
                     "stats": stats
                 }
@@ -188,7 +187,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "name": session.name,
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
-                    "metadata": json.loads(session.metadata_json or "{}"),
+                    "metadata": session.metadata_json or {},
                     "is_active": session.is_active
                 }
             }
@@ -246,9 +245,9 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "message_id": msg.message_id,
                     "role": msg.role,
                     "content": msg.content,
-                    "parts": json.loads(msg.parts or "[]"),
-                    "metadata": json.loads(msg.metadata_json or "{}"),
-                    "sources": json.loads(msg.sources or "[]"),
+                    "parts": msg.parts or [],  # 直接使用，SQLModel已处理JSON序列化
+                    "metadata": msg.metadata_json or {},  # 直接使用，SQLModel已处理JSON序列化
+                    "sources": msg.sources or [],  # 直接使用，SQLModel已处理JSON序列化
                     "created_at": msg.created_at.isoformat()
                 })
             
@@ -309,9 +308,9 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "message_id": message.message_id,
                     "role": message.role,
                     "content": message.content,
-                    "parts": json.loads(message.parts or "[]"),
-                    "metadata": json.loads(message.metadata_json or "{}"),
-                    "sources": json.loads(message.sources or "[]"),
+                    "parts": message.parts or [],  # 直接使用，SQLModel已处理JSON序列化
+                    "metadata": message.metadata_json or {},  # 直接使用，SQLModel已处理JSON序列化
+                    "sources": message.sources or [],  # 直接使用，SQLModel已处理JSON序列化
                     "created_at": message.created_at.isoformat()
                 }
             }
@@ -343,7 +342,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "file_path": file.file_path,
                     "file_name": file.file_name,
                     "pinned_at": file.pinned_at.isoformat(),
-                    "metadata": json.loads(file.metadata_json or "{}")
+                    "metadata": file.metadata_json or {}
                 })
             
             return {
@@ -389,7 +388,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "file_path": pin_file.file_path,
                     "file_name": pin_file.file_name,
                     "pinned_at": pin_file.pinned_at.isoformat(),
-                    "metadata": json.loads(pin_file.metadata_json or "{}")
+                    "metadata": pin_file.metadata_json or {}
                 }
             }
         except HTTPException:

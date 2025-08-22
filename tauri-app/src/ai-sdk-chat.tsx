@@ -173,10 +173,10 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
         messages: [
           {
             role: 'user',
-            parts: [{ type: 'text', text: currentInput }]
+            content: currentInput,
           }
         ],
-        trigger: 'submit-message',
+        // trigger: 'submit-message',
         chatId: `chat-${Date.now()}`,
       }
       

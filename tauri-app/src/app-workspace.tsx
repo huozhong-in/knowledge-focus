@@ -124,7 +124,7 @@ export function AppWorkspace({
           </ResizablePanelGroup>
         </ResizablePanel>
         <ResizableHandle withHandle className="bg-primary" />
-        <ResizablePanel defaultSize={0} minSize={20}>
+        <ResizablePanel defaultSize={40} minSize={20}>
           {/* ChatUI区 */}
           <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
             <div className="border-b p-2 flex flex-row h-[50px] relative">

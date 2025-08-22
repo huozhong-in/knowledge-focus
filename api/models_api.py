@@ -393,27 +393,27 @@ def get_router(external_get_session: callable) -> APIRouter:
             if request.messages and request.messages[-1].get("role") == "user":
                 last_user_message = request.messages[-1]
                 
-            if last_user_message:
-                # 如果消息有parts，只提取text类型part的文本内容
-                if "parts" in last_user_message and isinstance(last_user_message.get("parts"), list):
-                    content_text = " ".join(
-                        part.get("text", "") 
-                        for part in last_user_message["parts"] 
-                        if part.get("type") == "text" and "text" in part
-                    )
-                else:
-                    content_text = last_user_message.get("content", "")
+            if last_user_message is None:
+                # 如果没有找到用户消息，返回错误
+                yield f"data: {json.dumps({'type': 'error', 'errorText': 'No user message found'})}\n\n"
+                return
 
-                chat_mgr.save_message(
-                    session_id=request.session_id,
-                    message_id=last_user_message.get("id", str(uuid.uuid4())),
-                    role="user",
-                    content=content_text,
-                    # parts可以包含非文本内容，如图片，所以直接保存
-                    parts=last_user_message.get("parts") or [{"type": "text", "text": content_text}],
-                    metadata=last_user_message.get("metadata"),
-                    sources=last_user_message.get("sources")
-                )
+            # 提取用户消息内容
+            content_text = last_user_message.get("content", "").strip()
+            if not content_text:
+                yield f"data: {json.dumps({'type': 'error', 'errorText': 'No user message content found'})}\n\n"
+                return
+
+            chat_mgr.save_message(
+                session_id=request.session_id,
+                message_id=last_user_message.get("id", str(uuid.uuid4())),  # 使用id而不是chatId
+                role="user",
+                content=content_text,
+                # parts可以包含非文本内容，如图片，所以直接保存
+                parts=last_user_message.get("parts") or [{"type": "text", "text": content_text}],
+                metadata=last_user_message.get("metadata"),
+                sources=last_user_message.get("sources")
+            )
 
             # 2. 流式生成并保存助手消息
             assistant_message_id = f"asst_{uuid.uuid4().hex}"
