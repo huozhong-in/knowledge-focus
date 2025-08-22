@@ -392,19 +392,24 @@ class ChatSession(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata_json: str | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
     is_active: bool = Field(default=True)
+    selected_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的工具
+    scenario_id: int | None = Field(default=None, foreign_key="t_scenarios.id") # 关联的“场景”ID
 
 # 聊天消息表
 class ChatMessage(SQLModel, table=True):
     __tablename__ = "t_chat_messages"
     id: int = Field(default=None, primary_key=True)
     session_id: int = Field(foreign_key="t_chat_sessions.id", index=True)
-    message_id: str = Field(max_length=100)
-    role: str = Field(max_length=50)
-    content: str | None = Field(default=None)
-    # 按AI SDK v5建议，持久化UIMessage作为事实来源：将parts/metadata/sources存为结构化JSON
-    parts: str | None = Field(default=None, sa_column=Column(JSON))
-    metadata_json: str | None = Field(default=None, sa_column=Column(JSON))
-    sources: str | None = Field(default=None, sa_column=Column(JSON))
+    message_id: str = Field(max_length=100, unique=True)
+    role: str = Field(max_length=50) # user, assistant, tool
+    content: str | None = Field(default=None) # 纯文本内容，用于快速预览和不支持结构化内容的场景
+    
+    # 存储符合Vercel AI SDK UI协议的结构化消息内容
+    # e.g. [{'type': 'text', 'text': '...'}, {'type': 'tool-call', 'toolName': '...', 'args': {...}}]
+    parts: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
+    
+    metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    sources: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
 
 # 会话Pin文件表（会话级隔离）
@@ -415,8 +420,36 @@ class ChatSessionPinFile(SQLModel, table=True):
     file_path: str = Field(max_length=500)
     file_name: str = Field(max_length=100)
     pinned_at: datetime = Field(default_factory=datetime.now)
-    metadata_json: str | None = Field(default=None, sa_column=Column(JSON))
+    metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
 
+# 工具类型
+class ToolType(str, PyEnum):
+    GENERAL = "general"
+    SCENARIO = "scenario"  # 场景化工具
+    SPECIFIC = "specific"
+# 大模型可使用的工具表
+class Tool(SQLModel, table=True):
+    __tablename__ = "t_tools"
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, index=True, unique=True)
+    tool_type: ToolType = Field(default=ToolType.GENERAL)
+    description: str | None = Field(default=None, max_length=500)
+    metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+# 场景表
+class Scenario(SQLModel, table=True):
+    __tablename__ = "t_scenarios"
+    id: int = Field(default=None, primary_key=True)
+    name: str = Field(max_length=100, index=True, unique=True)
+    description: str | None = Field(default=None, max_length=500)
+    display_name: str | None = Field(default=None, max_length=100)
+    system_prompt: str | None = Field(default=None, max_length=500)
+    preset_tools: List[int] = Field(default=[], sa_column=Column(JSON))  # 存储Tool ID列表
+    metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
@@ -424,7 +457,6 @@ class DBManager:
     
     def __init__(self, session: Session) -> None:
         self.session = session
-        
 
     def init_db(self) -> bool:
         """初始化数据库"""
@@ -712,6 +744,14 @@ class DBManager:
             # 能力指派表
             if not inspector.has_table(CapabilityAssignment.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[CapabilityAssignment.__table__])
+        
+            # 工具表
+            if not inspector.has_table(Tool.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[Tool.__table__])
+            
+            # 场景表
+            if not inspector.has_table(Scenario.__tablename__):
+                SQLModel.metadata.create_all(engine, tables=[Scenario.__table__])
         
         return True
 

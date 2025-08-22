@@ -188,7 +188,7 @@ export function AiSdkChat({ initialMessages = [], sessionId, onCreateSessionFrom
         console.log('[AiSdkChat] No valid session_id, sending message without session binding')
       }
 
-      const response = await fetch('http://localhost:60315/chat/ui-stream', {
+      const response = await fetch('http://localhost:60315/chat/agent-stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

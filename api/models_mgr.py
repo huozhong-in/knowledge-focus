@@ -2,6 +2,8 @@
 from config import singleton
 from typing import List, Dict, Any
 import re
+import json
+import uuid
 import httpx
 import logging
 from sqlmodel import Session, select
@@ -9,6 +11,16 @@ from db_mgr import SystemConfig
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    PartStartEvent,
+    PartDeltaEvent,
+    TextPartDelta,
+    ThinkingPartDelta,
+    ToolCallPartDelta,
+    FinalResultEvent,
+)
 from pydantic_ai.models.openai import OpenAIModel
 # from pydantic_ai.profiles import InlineDefsJsonSchemaTransformer
 # from pydantic_ai.profiles.openai import OpenAIModelProfile
@@ -32,15 +44,6 @@ class ModelsMgr:
         self.session = session
         self.model_config_mgr = ModelConfigMgr(session)
         self.bridge_events = BridgeEventSender(source="models-manager")
-        # 只在非静默模式下发送桥接事件 (主要用于后端主动处理场景)
-        # if not silent_validation:
-        #     self.bridge_events.model_validation_failed(
-        #         provider_type=provider_type,
-        #         model_id=model_id,
-        #         role_type=role_type,
-        #         available_models=[m.get("id", "") for m in available_models[:10]],
-        #         error_message=f"模型 '{model_id}' 在提供商 '{provider_type}' 中不可用"
-        #     )
 
     def get_embedding(self, text_str: str) -> List[float]:
         """
@@ -285,6 +288,287 @@ Based on all information, provide the best tags for this file.
             # print(await response.get_output()) # 此行会破坏流式输出的效果
             async for message in response.stream_text(delta=True):
                 yield message
+    
+    async def stream_agent_chat(self, messages: List[Dict], session_id: int):
+        """
+        Streams an agentic chat response, using dynamic tools based on session context.
+        
+        This implementation now uses a dummy tool to demonstrate streaming of structured
+        events like tool calls and tool results.
+        """
+        logging.info(f"Agent chat invoked for session_id: {session_id}")
+
+        try:
+            model_interface = self.model_config_mgr.get_text_model_config()
+            model_identifier = model_interface.model_identifier
+            base_url = model_interface.base_url
+            api_key = model_interface.api_key
+            use_proxy = model_interface.use_proxy
+        except Exception as e:
+            logger.error(f"Failed to get text model config: {e}")
+            yield {"type": "error", "error": str(e)}
+            return
+
+        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
+        openai_client = AsyncOpenAI(
+            api_key=api_key if api_key else "sk-xxx",
+            base_url=base_url,
+            max_retries=3,
+            http_client=http_client,
+        )
+        model = OpenAIModel(
+            model_name=model_identifier,
+            provider=OpenAIProvider(
+                openai_client=openai_client,
+            ),
+        )
+        
+        # TODO: Replace this with a call to the real ToolProvider
+        def get_weather(city: str = Field(..., description="The city to get the weather for")) -> str:
+            """
+            A dummy function to get the weather for a city.
+            """
+            if "beijing" in city.lower():
+                return "The weather in Beijing is sunny."
+            if "tokyo" in city.lower():
+                return "The weather in Tokyo is rainy."
+            return f"Sorry, I don't know the weather for {city}."
+        
+        
+        system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
+        
+        agent = Agent(
+            model=model,
+            tools=[get_weather],
+            system_prompt=system_prompt[0] if system_prompt else "You are a helpful assistant.",
+        )
+
+        user_prompt = [msg['content'] for msg in messages if msg['role'] == 'user']
+        if not user_prompt:
+            raise ValueError("User prompt is empty")
+
+        # 状态跟踪变量
+        current_part_type = None  # 当前部分类型 ('text', 'reasoning', 'tool')
+        current_part_id = None    # 当前部分的 ID
+        active_tool_calls = {}    # 跟踪活跃的工具调用 {tool_call_id: {'id': str, 'started': bool}}
+        message_id_counter = 0    # 全局唯一的 messageId 计数器
+
+        def end_current_part():
+            """结束当前部分并发送 end 事件"""
+            nonlocal current_part_type, current_part_id
+            if current_part_type and current_part_id:
+                if current_part_type == 'text':
+                    data = {"type": "text-end", "id": current_part_id}
+                    return f'data: {json.dumps(data)}\n'
+                elif current_part_type == 'reasoning':
+                    data = {"type": "reasoning-end", "id": current_part_id}
+                    return f'data: {json.dumps(data)}\n'
+            current_part_type = None
+            current_part_id = None
+            return None
+
+        def start_new_part(part_type: str, part_id: str):
+            """开始新部分并发送 start 事件"""
+            nonlocal current_part_type, current_part_id
+            current_part_type = part_type
+            current_part_id = part_id
+            if part_type == 'text':
+                data = {"type": "text-start", "id": part_id}
+                return f'data: {json.dumps(data)}\n'
+            elif part_type == 'reasoning':
+                data = {"type": "reasoning-start", "id": part_id}
+                return f'data: {json.dumps(data)}\n'
+            return None
+
+        # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
+        async with agent.iter(user_prompt=user_prompt[-1], deps=None) as run:
+            async for node in run:
+                if Agent.is_user_prompt_node(node):
+                    # 结束之前的部分
+                    end_event = end_current_part()
+                    if end_event:
+                        yield end_event
+                    
+                    # 用户输入节点
+                    data = {"type": "user-prompt", "content": node.user_prompt}
+                    yield f'data: {json.dumps(data)}\n'
+                elif Agent.is_model_request_node(node):
+                    # 模型请求节点 - 可以流式获取模型的响应
+                    async with node.stream(run.ctx) as request_stream:
+                        final_result_found = False
+                        async for event in request_stream:
+                            if isinstance(event, PartStartEvent):
+                                data = {"type": "start", "messageId": message_id_counter}
+                                message_id_counter += 1
+                                yield f'data: {json.dumps(data)}\n'
+                            elif isinstance(event, PartDeltaEvent):
+                                if isinstance(event.delta, TextPartDelta):
+                                    # 检查是否需要切换到文本类型
+                                    if current_part_type != 'text':
+                                        # 结束之前的部分
+                                        end_event = end_current_part()
+                                        if end_event:
+                                            yield end_event
+                                        # 开始新的文本部分
+                                        part_id = f"msg_{uuid.uuid4().hex}"
+                                        start_event = start_new_part('text', part_id)
+                                        if start_event:
+                                            yield start_event
+                                    
+                                    # 文本增量事件
+                                    data = {
+                                        "type": "text-delta",
+                                        "id": current_part_id,
+                                        "delta": event.delta.content_delta
+                                    }
+                                    yield f'data: {json.dumps(data)}\n'
+                                elif isinstance(event.delta, ThinkingPartDelta):
+                                    # 检查是否需要切换到思考类型
+                                    if current_part_type != 'reasoning':
+                                        # 结束之前的部分
+                                        end_event = end_current_part()
+                                        if end_event:
+                                            yield end_event
+                                        # 开始新的思考部分
+                                        part_id = f"reasoning_{uuid.uuid4().hex}"
+                                        start_event = start_new_part('reasoning', part_id)
+                                        if start_event:
+                                            yield start_event
+                                    
+                                    # 思考过程增量事件
+                                    data = {
+                                        "type": "reasoning-delta",
+                                        "id": current_part_id,
+                                        "delta": event.delta.content_delta
+                                    }
+                                    yield f'data: {json.dumps(data)}\n'
+                                elif isinstance(event.delta, ToolCallPartDelta):
+                                    # 结束当前文本/思考部分（如果有的话）
+                                    if current_part_type in ['text', 'reasoning']:
+                                        end_event = end_current_part()
+                                        if end_event:
+                                            yield end_event
+                                    
+                                    tool_call_id = event.delta.tool_call_id
+                                    if tool_call_id:
+                                        # 如果是新的工具调用，发送 tool-input-start
+                                        if tool_call_id not in active_tool_calls:
+                                            active_tool_calls[tool_call_id] = {
+                                                'id': tool_call_id,
+                                                'started': True
+                                            }
+                                            # 发送 tool-input-start 事件
+                                            data = {
+                                                "type": "tool-input-start",
+                                                "toolCallId": tool_call_id,
+                                                "toolName": event.delta.tool_name_delta or ""
+                                            }
+                                            yield f'data: {json.dumps(data)}\n'
+                                        
+                                        # 工具调用参数增量事件
+                                        data = {
+                                            "type": "tool-input-delta",
+                                            "toolCallId": tool_call_id,
+                                            "inputTextDelta": event.delta.args_delta
+                                        }
+                                        yield f'data: {json.dumps(data)}\n'
+                            elif isinstance(event, FinalResultEvent):
+                                # 结束当前部分
+                                end_event = end_current_part()
+                                if end_event:
+                                    yield end_event
+                                
+                                # FinalResultEvent 标志工具调用完成，准备输出最终文本
+                                # 不发送特殊事件，让后续文本按标准协议处理
+                                final_result_found = True
+                                break
+
+                        # 如果找到了最终结果，开始流式输出文本
+                        if final_result_found:
+                            # 重置当前部分状态，因为这是一个新的文本流
+                            current_part_type = None
+                            current_part_id = None
+                            
+                            async for output in request_stream.stream_text():
+                                # 检查是否需要开始新的文本部分
+                                if current_part_type != 'text':
+                                    # 开始新的文本部分
+                                    part_id = f"msg_{uuid.uuid4().hex}"
+                                    start_event = start_new_part('text', part_id)
+                                    if start_event:
+                                        yield start_event
+                                
+                                data = {
+                                    "type": "text-delta",
+                                    "id": current_part_id,
+                                    "delta": output
+                                }
+                                yield f'data: {json.dumps(data)}\n'
+                elif Agent.is_call_tools_node(node):
+                    # 工具调用节点 - 处理工具的调用和响应
+                    async with node.stream(run.ctx) as handle_stream:
+                        async for event in handle_stream:
+                            if isinstance(event, FunctionToolCallEvent):
+                                tool_call_id = event.part.tool_call_id
+                                
+                                # 确保发送了 start 和 delta 事件
+                                if tool_call_id not in active_tool_calls:
+                                    # 发送 tool-input-start
+                                    data = {
+                                        "type": "tool-input-start",
+                                        "toolCallId": tool_call_id,
+                                        "toolName": event.part.tool_name
+                                    }
+                                    yield f'data: {json.dumps(data)}\n'
+                                    
+                                    # 发送 tool-input-delta（如果有参数）
+                                    if event.part.args:
+                                        args_str = event.part.args_as_json_str()
+                                        data = {
+                                            "type": "tool-input-delta",
+                                            "toolCallId": tool_call_id,
+                                            "inputTextDelta": args_str
+                                        }
+                                        yield f'data: {json.dumps(data)}\n'
+                                    
+                                    active_tool_calls[tool_call_id] = {
+                                        'id': tool_call_id,
+                                        'started': True
+                                    }
+                                
+                                # 工具调用完整参数可用事件
+                                data = {
+                                    "type": "tool-input-available",
+                                    "toolCallId": tool_call_id,
+                                    "toolName": event.part.tool_name,
+                                    "input": event.part.args
+                                }
+                                yield f'data: {json.dumps(data)}\n'
+                            elif isinstance(event, FunctionToolResultEvent):
+                                # 工具结果事件
+                                data = {
+                                    "type": "tool-output-available",
+                                    "toolCallId": event.tool_call_id,
+                                    "output": event.result.content
+                                }
+                                yield f'data: {json.dumps(data)}\n'
+                elif Agent.is_end_node(node):
+                    # 结束最后的部分（如果有的话）
+                    end_event = end_current_part()
+                    if end_event:
+                        yield end_event
+                    
+                    # 结束节点 - agent 运行完成
+                    data = {
+                        "type": "finish"
+                    }
+                    yield f'data: {json.dumps(data)}\n'
+                    yield 'data: [DONE]\n'
+                    break
+                else:
+                    # 其他未处理的节点类型
+                    logging.warning(f"Unhandled node type: {type(node)}")
 
     def get_chat_completion(self, messages: List[Dict[str, Any]]) -> str:
         """
@@ -348,6 +632,10 @@ if __name__ == "__main__":
     from sqlmodel import create_engine
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     mgr = ModelsMgr(session)
+
+    # # Test get TEXT model interface
+    # model_interface = mgr.model_config_mgr.get_text_model_config()
+    # print(model_interface.model_dump())
     
     import asyncio
 
@@ -372,12 +660,16 @@ if __name__ == "__main__":
     # except Exception as e:
     #     print("Chat Error:", e)
 
-    # test stream text
+    # # test stream
     async def test_stream():
-        async for chunk in mgr.stream_chat([
-            {"role": "user", "content": "尽量列举一些首都城市的名字"}
-        ]):
-            print(chunk, end='', flush=True)
-        print()  # 添加换行
+        messages = [
+            {'role': 'user', 'content': 'What is the weather in Beijing?'}
+        ]
+        
+        print('Testing Vercel AI SDK compatible stream protocol:')
+        print('=' * 50)
+        
+        async for chunk in mgr.stream_agent_chat(messages, session_id=1):
+            print(chunk, end='')
     
     asyncio.run(test_stream())

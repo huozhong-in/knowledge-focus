@@ -150,7 +150,7 @@ class ChatSessionMgr:
         Args:
             session_id: 会话ID
             message_id: 消息唯一ID
-            role: 消息角色（user/assistant）
+            role: 消息角色（user/assistant/tool）
             content: 消息文本内容
             parts: UIMessage.parts数组
             metadata: 消息元数据
@@ -164,9 +164,9 @@ class ChatSessionMgr:
             message_id=message_id,
             role=role,
             content=content,
-            parts=json.dumps(parts or []),
-            metadata_json=json.dumps(metadata or {}),
-            sources=json.dumps(sources or [])
+            parts=parts or [],
+            metadata_json=metadata or {},
+            sources=sources or []
         )
         
         self.session.add(message)

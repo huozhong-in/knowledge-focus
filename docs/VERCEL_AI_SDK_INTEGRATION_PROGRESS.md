@@ -139,7 +139,7 @@ UIMessage状态管理                                               UIMessage生
   - [x] `GET /chat/sessions/{id}/pinned-files` - 获取会话Pin文件列表
   - [x] `POST /chat/sessions/{id}/pin-file` - 为会话Pin文件
   - [x] `DELETE /chat/sessions/{id}/pinned-files/{file_id}` - 取消Pin文件
-  - [ ] 文件状态变更的实时同步机制
+  - [x] 文件状态变更的实时同步机制
 
 ### 2.3 智能上下文管理实现
 
@@ -150,7 +150,7 @@ UIMessage状态管理                                               UIMessage生
 
 - [ ] **2.3.2 会话状态恢复机制**
   - [ ] 实现UIMessage数组的高效序列化/反序列化
-  - [ ] 会话切换时的状态恢复：pin文件列表 + 聊天记录
+  - [x] 会话切换时的状态恢复：pin文件列表 + 聊天记录
   - [ ] 处理大会话的性能优化：增量加载、虚拟滚动
 
 ---
@@ -161,10 +161,10 @@ UIMessage状态管理                                               UIMessage生
 
 ### 3.1 Chat组件重构与集成
 
-- [ ] **3.1.1 基于AI SDK v5的Chat组件**
+- [ ] **3.1.1 基于Vercel AI SDK UI的'AI Elements'组件**
   - [ ] 使用新的useChat hook重构现有聊天界面
   - [ ] 实现类型安全的消息渲染逻辑（文本、工具调用、数据部分）
-  - [ ] 集成自定义TauriHttpTransport和状态管理
+  - [ ] 
 
 - [x] **3.1.2 会话管理UI**
   - [x] 实现会话列表侧边栏（类似ChatGPT体验）

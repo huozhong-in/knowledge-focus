@@ -1,14 +1,19 @@
 from fastapi import APIRouter, Depends, Body, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
-from typing import Dict, Any
+from typing import List, Dict, Any
 import json
 import uuid
+import logging
 from chatsession_mgr import ChatSessionMgr
 from db_mgr import ModelCapability
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
+# 注释：不再需要stream_protocol_helper，因为models_mgr已经输出标准SSE格式
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
@@ -76,7 +81,7 @@ def get_router(external_get_session: callable) -> APIRouter:
     async def update_provider_config(id: int, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """更新指定服务商的配置"""
         try:
-            provider_id = data.get("id", id)  # 使用路径参数作为默认值
+            provider_id = data.get("id", id)
             display_name = data.get("display_name", "")
             base_url = data.get("base_url", "")
             api_key = data.get("api_key", "")
@@ -104,7 +109,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         """检测并更新服务商的可用模型"""
         try:
             config = await config_mgr.discover_models_from_provider(id=id)
-            # config 是 List[ModelConfiguration]，空列表也是有效结果
             return {"success": True, "data": [model.model_dump() for model in config]}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -137,11 +141,9 @@ def get_router(external_get_session: callable) -> APIRouter:
     def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
         """获取全局指定能力的模型分配"""
         try:
-            # 验证能力值是否有效
             capability = ModelCapability(model_capability)
             config = config_mgr.get_model_for_global_capability(capability)
             if config is not None:
-                # 获取提供商信息以构建provider_key
                 from sqlmodel import select
                 from db_mgr import ModelProvider
                 provider = config_mgr.session.exec(
@@ -175,9 +177,8 @@ def get_router(external_get_session: callable) -> APIRouter:
             if not model_id:
                 return {"success": False, "message": "Missing model_id"}
             
-            # 验证能力值是否有效
             try:
-                capability = ModelCapability(model_capability)  # 直接传递字符串值
+                capability = ModelCapability(model_capability)
             except ValueError:
                 return {"success": False, "message": f"'{model_capability}' is not a valid ModelCapability"}
             
@@ -204,38 +205,6 @@ def get_router(external_get_session: callable) -> APIRouter:
                 return {"success": False, "message": "Failed to update model status"}
         except Exception as e:
             return {"success": False, "message": str(e)}
-
-    @router.post("/chat/stream", tags=["models"])
-    async def chat_stream(
-        request_data: Dict[str, Any] = Body(...),
-        models_mgr: ModelsMgr = Depends(get_models_manager)
-    ):
-        """处理聊天流式请求"""
-        try:
-            messages = request_data.get("messages", [])
-            # 可选：会话ID（用于持久化）；未提供则仅流式返回不落库
-            _session_id: int | None = request_data.get("session_id")
-            model_config = request_data.get("model_config", {})
-
-            if not messages or not model_config:
-                raise HTTPException(status_code=400, detail="Missing messages or model_config")
-
-            provider_type = model_config.get("provider_type")
-            model_name = model_config.get("model_name")
-
-            if not provider_type or not model_name:
-                raise HTTPException(status_code=400, detail="Missing provider_type or model_name in model_config")
-
-            return StreamingResponse(
-                models_mgr.stream_chat(
-                    messages=messages
-                ),
-                media_type="text/event-stream"
-            )
-        except Exception as e:
-            # Log the exception for debugging
-            print(f"Error in chat_stream: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
 
     @router.post("/chat/ui-stream", tags=["models"])
     async def chat_ui_stream(
@@ -402,5 +371,109 @@ def get_router(external_get_session: callable) -> APIRouter:
             print(f"Error in chat_ui_stream: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
-    # 返回路由对象给主应用
+    class AgentChatRequest(BaseModel):
+        messages: List[Dict[str, Any]]
+        session_id: int
+
+    @router.post("/chat/agent-stream", tags=["models"])
+    async def agent_chat_stream(
+        request: AgentChatRequest,
+        models_mgr: ModelsMgr = Depends(get_models_manager),
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+    ):
+        """
+        Handles agentic chat sessions that require tools and session context.
+        Streams responses according to the Vercel AI SDK v5 protocol.
+        """
+        async def stream_generator():
+            # 1. 保存用户消息
+            # Vercel AI SDK UI在每次请求时都会发送所有历史消息
+            # 我们只保存最后一条用户消息
+            last_user_message = None
+            if request.messages and request.messages[-1].get("role") == "user":
+                last_user_message = request.messages[-1]
+                
+            if last_user_message:
+                # 如果消息有parts，只提取text类型part的文本内容
+                if "parts" in last_user_message and isinstance(last_user_message.get("parts"), list):
+                    content_text = " ".join(
+                        part.get("text", "") 
+                        for part in last_user_message["parts"] 
+                        if part.get("type") == "text" and "text" in part
+                    )
+                else:
+                    content_text = last_user_message.get("content", "")
+
+                chat_mgr.save_message(
+                    session_id=request.session_id,
+                    message_id=last_user_message.get("id", str(uuid.uuid4())),
+                    role="user",
+                    content=content_text,
+                    # parts可以包含非文本内容，如图片，所以直接保存
+                    parts=last_user_message.get("parts") or [{"type": "text", "text": content_text}],
+                    metadata=last_user_message.get("metadata"),
+                    sources=last_user_message.get("sources")
+                )
+
+            # 2. 流式生成并保存助手消息
+            assistant_message_id = f"asst_{uuid.uuid4().hex}"
+            accumulated_parts = []  # 保存parts以便用户切换会话时能“恢复现场”，看到完整内容
+            accumulated_text_content = ""  # 保存纯文本内容，便于搜索和摘要等文本处理
+
+            try:
+                # 直接转发stream_agent_chat的标准化SSE输出
+                async for sse_chunk in models_mgr.stream_agent_chat(
+                    messages=request.messages, 
+                    session_id=request.session_id
+                ):
+                    # stream_agent_chat已经返回符合Vercel AI SDK v5标准的SSE格式
+                    # 直接传递给前端，无需额外转换
+                    yield sse_chunk
+                    
+                    # 解析SSE数据以便累积保存（用于持久化）
+                    if sse_chunk.startswith('data: ') and not sse_chunk.strip().endswith('[DONE]'):
+                        try:
+                            sse_data = sse_chunk[6:].strip()  # 移除 'data: ' 前缀
+                            if sse_data:
+                                parsed_data = json.loads(sse_data)
+                                accumulated_parts.append(parsed_data)
+                                
+                                # 累积文本内容用于保存
+                                if parsed_data.get('type') == 'text-delta':
+                                    accumulated_text_content += parsed_data.get('delta', '')
+                        except json.JSONDecodeError:
+                            # 忽略无法解析的数据行
+                            pass
+
+            except Exception as e:
+                logger.error(f"Error in agent_chat_stream: {e}")
+                # 发送标准错误事件
+                error_event = f'data: {json.dumps({"type": "error", "errorText": str(e)})}\n'
+                yield error_event
+            
+            finally:
+                # 3. 在流结束后，将完整的助手消息（包含所有parts）持久化
+                if accumulated_parts:
+                    chat_mgr.save_message(
+                        session_id=request.session_id,
+                        message_id=assistant_message_id,
+                        role="assistant",
+                        content=accumulated_text_content.strip(),
+                        parts=accumulated_parts
+                    )
+                    logger.info(f"Saved assistant message {assistant_message_id} with {len(accumulated_parts)} parts.")
+
+        return StreamingResponse(
+            stream_generator(), 
+            media_type="text/event-stream",  # 修改为标准SSE媒体类型
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+                "x-vercel-ai-ui-message-stream": "v1"
+            }
+        )
+
     return router
