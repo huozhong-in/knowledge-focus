@@ -490,7 +490,7 @@ Based on all information, provide the best tags for this file.
                             current_part_type = None
                             current_part_id = None
                             
-                            async for output in request_stream.stream_text():
+                            async for output in request_stream.stream_text(delta=True):
                                 # 检查是否需要开始新的文本部分
                                 if current_part_type != 'text':
                                     # 开始新的文本部分
