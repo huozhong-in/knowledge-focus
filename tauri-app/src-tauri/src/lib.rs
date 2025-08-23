@@ -490,6 +490,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_macos_permissions::init())
+        .plugin(tauri_plugin_screenshots::init())
         // 创建和管理AppState
         .manage(AppState::new())
         .setup(|app| {

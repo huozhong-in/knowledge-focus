@@ -36,8 +36,8 @@ def configure_parsing_warnings():
 
 # 可被markitdown解析的文件扩展名
 MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
-# 所有可解析的文件扩展名
-PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json'] + MARKITDOWN_EXTENSIONS
+# 其他可解析的纯文本类型文件扩展名
+OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json']
 # 本业务场景所需模型能力的组合
 SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING]
 
@@ -53,20 +53,28 @@ class FileTaggingMgr:
         self.md_parser = MarkItDown(enable_plugins=False)
         # ! markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
         self.bridge_event_sender = BridgeEventSender()
+        
+        # 通知计数器，用于控制通知频率
+        self._notification_counters = {}
 
     def check_file_tagging_model_availability(self) -> bool:
         """
         检查是否有可用的模型。
-        如果没有可用模型，返回False并记录警告，并发送桥接事件通知前端。
+        如果没有可用模型，返回False并记录警告，并根据频率控制发送通知。
         """
-        missing_models = []
-        for capa in SCENE_FILE_TAGGING:
-            if self.model_config_mgr.get_spec_model_config(capa) is None:
-                logger.warning(f"Model for file tagging is not available: {capa}")
-                missing_models.append(capa.value)
-        
-        if missing_models:
-            # 发送桥接事件通知前端模型缺失
+        def _should_send_notification(self, missing_models_key: str) -> bool:
+            """
+            判断是否应该发送通知。
+            第1次立即通知，之后每60次通知一次（第61、121、181...次）
+            """
+            count = self._notification_counters.get(missing_models_key, 0) + 1
+            self._notification_counters[missing_models_key] = count
+            
+            # 第1次或每60次倍数时通知
+            return count == 1 or count % 60 == 1
+
+        def _send_model_missing_notification(self, missing_models: list) -> None:
+            """发送模型缺失通知的实际执行方法"""
             self.bridge_event_sender.tagging_model_missing(
                 message=f"标签生成需要的模型未配置: {', '.join(missing_models)}",
                 details={
@@ -74,7 +82,26 @@ class FileTaggingMgr:
                     "required_for": "file_tagging"
                 }
             )
+        
+        missing_models = []
+        for capa in SCENE_FILE_TAGGING:
+            if self.model_config_mgr.get_spec_model_config(capa) is None:
+                logger.warning(f"Model for file tagging is not available: {capa}")
+                missing_models.append(capa.value)
+        
+        if missing_models:
+            # 使用缺失模型列表作为key来区分不同的错误状态
+            missing_models_key = ','.join(sorted(missing_models))
+            
+            # 判断是否应该发送通知（第1、61、121次...）
+            if _should_send_notification(missing_models_key):
+                _send_model_missing_notification(missing_models)
+            
             return False
+        else:
+            # 如果模型都可用了，清理对应的计数器
+            # 这样下次出现问题时会立即通知
+            self._notification_counters.clear()
         
         return True
 
@@ -122,7 +149,7 @@ class FileTaggingMgr:
             except Exception as e:
                 logger.error(f"解析文件时出错 {file_path}: {e}")
                 return ""
-        elif ext in ['md', 'markdown', 'txt', 'json']:
+        elif ext in OTHER_PARSEABLE_EXTENSIONS:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     return f.read()

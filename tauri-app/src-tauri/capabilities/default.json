@@ -8,9 +8,12 @@
   "permissions": [
     "core:default",
     "core:window:default",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:window:allow-start-dragging",
     "core:path:default",
     "core:resources:default",
-    "core:window:allow-start-dragging",
     "opener:default",
     "store:default",
     "fs:default",
@@ -20,6 +23,8 @@
     "log:default",
     "macos-permissions:default",
     "window-state:default",
+    "shell:allow-open",
+    "screenshots:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [
@@ -246,6 +251,16 @@
         },
         {
           "url": "https://github.com/huozhong-in/*"
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "run-applescript",
+          "cmd": "osascript",
+          "args": true
         }
       ]
     }

@@ -7,6 +7,7 @@
 ## 实施步骤与进度跟踪
 
 ### ✅ 阶段 0：方案设计与规划 (已完成)
+
 - [x] 确认了前端 Vercel AI SDK UI + 后端 Pydantic AI Core 的混合架构。
 - [x] 设计了会话与工具集/场景绑定的产品交互模式。
 - [x] 规划了工具的分类、代码组织、数据库存储和运行时供给策略。
@@ -17,58 +18,56 @@
 ### 阶段 1：核心后端 - 流协议与数据库
 
 - [x] **1. 完整实现 Vercel AI SDK UI 流协议转换**
-    - [x] **核心任务**: 在 `models_api.py` 的 `/chat/agent-stream` 路由中，实现 Pydantic AI 输出到 Vercel AI SDK v5 流协议的完整转换。
-    
+  - [x] **核心任务**: 在 `models_api.py` 的 `/chat/agent-stream` 路由中，实现 Pydantic AI 输出到 Vercel AI SDK v5 流协议的完整转换。
 
 - [ ] **2. 数据库架构设计与实现**
-    - [ ] **核心任务**: 在 `api/db_mgr.py` 中定义新的数据表模型，并在 `init_db()` 中实现创建和初始数据填充。
-    - [x] 定义 `Tool` 表的 SQLModel。
-    - [x] 定义 `Scenario` 表的 SQLModel。
-    - [x] 定义 `SessionSelectedTool` 关联表的 SQLModel。
-    - [x] 扩展 `ChatSession` 表，增加 `scenario_id` 字段。
-    - [ ] 在 `init_db()` 中添加新表的创建逻辑。
-    - [ ] 在 `init_db()` 中添加 `Tool` 和 `Scenario` 的初始数据填充脚本。
+  - [ ] **核心任务**: 在 `api/db_mgr.py` 中定义新的数据表模型，并在 `init_db()` 中实现创建和初始数据填充。
+  - [x] 定义 `Tool` 表的 SQLModel。
+  - [x] 定义 `Scenario` 表的 SQLModel。
+  - [x] 定义 `SessionSelectedTool` 关联表的 SQLModel。
+  - [x] 扩展 `ChatSession` 表，增加 `scenario_id` 字段。
+  - [x] 在 `init_db()` 中添加新表的创建逻辑。
+  - [ ] 在 `init_db()` 中添加 `Tool` 和 `Scenario` 的初始数据填充脚本。
 
 ---
 
 ### 阶段 2：工具化与 API 建设
 
 - [ ] **3. `tools` 模块代码组织**
-    - [ ] **核心任务**: 创建 `api/tools/` 目录结构，并迁移或创建初始工具代码。
-    - [ ] 创建 `general`, `scenarios`, `built_in` 子目录。
-    - [ ] 将“共读PDF”工具集代码迁移到 `tools/scenarios/`，并封装为 `Toolset` 类。
-    - [ ] 创建一个简单的通用工具（如 `calculator.py`）放入 `tools/general/` 用于测试。
+  - [ ] **核心任务**: 创建 `api/tools/` 目录结构，并迁移或创建初始工具代码。
+  - [ ] 将“共读PDF”工具集代码迁移到 `tools/co_reading.py`。
+  - [ ] 创建一个简单的通用工具（如 `calculator.py`）放入 `tools/` 用于测试。
 
 - [ ] **4. `ToolProvider` 服务与 API 端点**
-    - [ ] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
-    - [ ] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
-    - [ ] 创建 `tool_provider_api.py` 并定义 `GET /tools` 端点。
-    - [ ] 在 `main.py` 中注册新的 API 路由。
-    - [ ] **简化目标**: 初期 `/tools` 端点可先返回基于场景的预置工具和所有通用工具。
+  - [ ] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
+  - [ ] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
+  - [ ] 创建 `tool_provider_api.py` 并定义 `GET /tools` 端点。
+  - [ ] 在 `main.py` 中注册新的 API 路由。
+  - [ ] **简化目标**: 初期 `/tools` 端点可先返回基于场景的预置工具和所有通用工具。
 
 ---
 
 ### 阶段 3：模型集成与后端测试
 
 - [ ] **5. 集成模型上下文窗口限制**
-    - [ ] **核心任务**: 在调用大模型前，从数据库获取并传入模型的上下文和输出Token限制。
-    - [ ] 在 `models_mgr.py` 或相关模块中，实现查询逻辑：`CapabilityAssignment` -> `ModelConfiguration`。
-    - [ ] 获取 `max_context_length` 和 `max_output_tokens` 字段。
-    - [ ] 在实例化 Pydantic AI 的 `LLM` 对象时传入获取到的限制参数。
+  - [ ] **核心任务**: 在调用大模型前，从数据库获取并传入模型的上下文和输出Token限制。
+  - [ ] 在 `models_mgr.py` 或相关模块中，实现查询逻辑：`CapabilityAssignment` -> `ModelConfiguration`。
+  - [ ] 获取 `max_context_length` 和 `max_output_tokens` 字段。
+  - [ ] 在实例化 Pydantic AI 的 `LLM` 对象时传入获取到的限制参数。
 
 - [ ] **6. 后端集成测试 (非UI)**
-    - [ ] **核心任务**: 使用 `pytest` 等工具，在无UI环境下验证后端数据流和核心逻辑。
-    - [ ] **API 测试**: 编写测试用例请求 `/tools` 端点，验证返回的 JSON 结构。
-    - [ ] **服务测试**: 单元测试 `ToolProvider`，验证其能否为不同会话正确组装工具对象列表。
-    - [ ] **关键流程测试**: 编写集成测试，模拟调用 `/chat/ui-stream`，验证包含工具调用的完整流式响应是否正确。
+  - [ ] **核心任务**: 使用 `pytest` 等工具，在无UI环境下验证后端数据流和核心逻辑。
+  - [ ] **API 测试**: 编写测试用例请求 `/tools` 端点，验证返回的 JSON 结构。
+  - [ ] **服务测试**: 单元测试 `ToolProvider`，验证其能否为不同会话正确组装工具对象列表。
+  - [ ] **关键流程测试**: 编写集成测试，模拟调用 `/chat/ui-stream`，验证包含工具调用的完整流式响应是否正确。
 
 ---
 
 ### 阶段 4：前端改造与端到端测试
 
 - [ ] **7. 前端改造与端到端测试**
-    - [ ] **核心任务**: 使用 `AI Elements` 或 `useChat` hook 改造前端界面，并完成与后端的完整对接测试。
-    - [ ] **组件替换**: 使用 Vercel AI SDK 的 `<Chat />` 组件或 `useChat` hook 重构聊天界面。
-    - [ ] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/api/chat/ui-stream` 端点。
-    - [ ] **工具UI**: 根据 `/tools` 端点返回的数据，渲染可区分“预置”和“可选”的工具选择界面。
-    - [ ] **端到端测试**: 验证从前端勾选工具 -> 后端Agent使用 -> 前端流式展示结果的完整链路。
+  - [ ] **核心任务**: 使用 `AI Elements` 或 `useChat` hook 改造前端界面，并完成与后端的完整对接测试。
+  - [ ] **组件替换**: 使用 Vercel AI SDK 的 `<Chat />` 组件或 `useChat` hook 重构聊天界面。
+  - [ ] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/api/chat/ui-stream` 端点。
+  - [ ] **工具UI**: 根据 `/tools` 端点返回的数据，渲染可区分“预置”和“可选”的工具选择界面。
+  - [ ] **端到端测试**: 验证从前端勾选工具 -> 后端Agent使用 -> 前端流式展示结果的完整链路。

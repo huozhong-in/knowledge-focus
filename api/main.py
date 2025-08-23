@@ -37,6 +37,7 @@ from chatsession_api import get_router as get_chatsession_router
 from myfolders_api import get_router as get_myfolders_router
 from screening_api import get_router as get_screening_router
 from search_api import get_router as get_search_router
+from tools_provider_api import get_router as get_tools_router
 
 # 初始化logger
 logger = logging.getLogger(__name__)
@@ -259,11 +260,17 @@ app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
 myfolders_router = get_myfolders_router(external_get_session=get_session)
 app.include_router(myfolders_router, prefix="", tags=["myfolders"])
 
+# 添加粗筛API路由
 screening_router = get_screening_router(external_get_session=get_session)
 app.include_router(screening_router, prefix="", tags=["screening"])
 
+# 添加搜索API路由
 search_router = get_search_router(external_get_session=get_session)
 app.include_router(search_router, prefix="", tags=["search"])
+
+# 添加工具API路由
+tools_router = get_tools_router(external_get_session=get_session)
+app.include_router(tools_router, prefix="", tags=["tools"])
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
