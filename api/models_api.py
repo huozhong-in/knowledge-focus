@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Body, HTTPException
+from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 from typing import List, Dict, Any
@@ -10,7 +10,6 @@ from db_mgr import ModelCapability
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
-# 注释：不再需要stream_protocol_helper，因为models_mgr已经输出标准SSE格式
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -206,171 +205,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             return {"success": False, "message": str(e)}
 
-    @router.post("/chat/ui-stream", tags=["models"])
-    async def chat_ui_stream(
-        request_data: Dict[str, Any] = Body(...),
-        models_mgr: ModelsMgr = Depends(get_models_manager),
-        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
-    ):
-        """
-        处理AI SDK v5格式的聊天流式请求
-        兼容UIMessage格式，返回SSE事件流
-        """
-        try:
-            # 解析AI SDK v5格式的请求
-            _trigger = request_data.get("trigger", "submit-message")
-            _chat_id = request_data.get("chatId", str(uuid.uuid4()))
-            _message_id = request_data.get("messageId")
-            messages = request_data.get("messages", [])
-            session_id: int | None = request_data.get("session_id")
-
-            if not messages:
-                raise HTTPException(status_code=400, detail="Missing messages")
-
-            # 若提供了session_id，则在流式生成前持久化本次请求中的最新一条用户消息
-            if session_id and messages:
-                # 找到最后一条 user 角色的消息（通常就是本次输入）
-                last_user_msg = None
-                for m in reversed(messages):
-                    if m.get("role") == "user":
-                        last_user_msg = m
-                        break
-                        
-                if last_user_msg is not None:
-                    try:
-                        if "parts" in last_user_msg:
-                            # 提取text类型的parts
-                            text_parts = [part.get("text", "") for part in last_user_msg.get("parts", []) if part.get("type") == "text"]
-                            content_text = " ".join(text_parts) if text_parts else ""
-                            ui_parts = last_user_msg.get("parts", [])
-                        else:
-                            content_text = last_user_msg.get("content", "")
-                            ui_parts = [{"type": "text", "text": content_text}]
-
-                        # 使用ChatSessionMgr保存用户消息
-                        chat_mgr.save_message(
-                            session_id=session_id,
-                            message_id=str(uuid.uuid4()),
-                            role="user",
-                            content=content_text,
-                            parts=ui_parts,
-                            metadata=last_user_msg.get("metadata"),
-                            sources=last_user_msg.get("sources")
-                        )
-                        print(f"[DEBUG] Persisted user message for session {session_id}")
-                    except Exception as user_persist_err:
-                        print(f"[WARN] Failed to persist user message: {user_persist_err}")
-
-            # 转换UIMessage格式到标准消息格式（等价于ModelMessage）
-            converted_messages = []
-            for msg in messages:
-                if "parts" in msg:
-                    # 提取text类型的parts
-                    text_parts = [part.get("text", "") for part in msg.get("parts", []) if part.get("type") == "text"]
-                    content = " ".join(text_parts) if text_parts else ""
-                else:
-                    content = msg.get("content", "")
-
-                converted_messages.append({
-                    "role": msg.get("role", "user"),
-                    "content": content
-                })
-
-            async def generate_ui_stream():
-                """生成AI SDK v5兼容的SSE流"""
-                try:
-                    response_id = str(uuid.uuid4())
-                    accumulated_text = ""
-
-                    # 发送消息开始事件 - AI SDK标准格式
-                    yield f"data: {json.dumps({'type': 'start', 'messageId': response_id})}\n\n"
-
-                    # 发送文本开始事件
-                    yield f"data: {json.dumps({'type': 'text-start', 'id': response_id})}\n\n"
-
-                    # 调用现有的stream_chat方法
-                    print("[DEBUG] Starting stream_chat")
-                    chunk_count = 0
-                    async for content_chunk in models_mgr.stream_chat(
-                        messages=converted_messages
-                    ):
-                        chunk_count += 1
-                        print(f"[DEBUG] Received chunk {chunk_count}: '{content_chunk[:50]}...'")
-
-                        if content_chunk and not content_chunk.startswith("Error:"):
-                            # 发送文本增量事件
-                            ui_chunk = {
-                                "type": "text-delta",
-                                "delta": content_chunk,
-                                "id": f"msg_{uuid.uuid4().hex}"
-                            }
-                            chunk_data = f"data: {json.dumps(ui_chunk)}\n\n"
-                            print(f"[DEBUG] Sending chunk: {chunk_data}")
-                            yield chunk_data
-                            accumulated_text += content_chunk
-                        elif content_chunk.startswith("Error:"):
-                            # 发送错误事件
-                            error_chunk = {
-                                "type": "error",
-                                "errorText": content_chunk
-                            }
-                            yield f"data: {json.dumps(error_chunk)}\n\n"
-                            break
-
-                    print(f"[DEBUG] Stream completed, sent {chunk_count} chunks")
-
-                    # 流结束后：若提供了session_id，则持久化完整助手消息（更便于历史回放与上下文拼接）
-                    if session_id and accumulated_text.strip():
-                        try:
-                            assistant_parts = [
-                                {"type": "text", "text": accumulated_text}
-                            ]
-                            
-                            # 使用ChatSessionMgr保存助手消息
-                            chat_mgr.save_message(
-                                session_id=session_id,
-                                message_id=response_id,
-                                role="assistant",
-                                content=accumulated_text,
-                                parts=assistant_parts,
-                            )
-                            print(f"[DEBUG] Persisted assistant message for session {session_id}, message_id={response_id}")
-                        except Exception as persist_err:
-                            # 持久化失败不影响流
-                            print(f"[WARN] Failed to persist assistant message: {persist_err}")
-
-                    # 发送文本结束和消息完成事件 - AI SDK标准格式
-                    yield f"data: {json.dumps({'type': 'text-end', 'id': response_id})}\n\n"
-                    yield f"data: {json.dumps({'type': 'finish'})}\n\n"
-                    yield "data: [DONE]\n\n"
-
-                except Exception as e:
-                    # 发送错误事件
-                    error_chunk = {
-                        "type": "error",
-                        "errorText": f"Stream generation error: {str(e)}"
-                    }
-                    yield f"data: {json.dumps(error_chunk)}\n\n"
-                    # yield f"data: {json.dumps({'type': 'text-end', 'id': response_id})}\n\n"
-                    # yield f"data: {json.dumps({'type': 'finish'})}\n\n"
-                    # yield "data: [DONE]\n\n"
-
-            return StreamingResponse(
-                generate_ui_stream(),
-                media_type="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*",
-                    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-                    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-                    "x-vercel-ai-ui-message-stream": "v1"
-                }
-            )
-        except Exception as e:
-            print(f"Error in chat_ui_stream: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
-
     class AgentChatRequest(BaseModel):
         messages: List[Dict[str, Any]]
         session_id: int
@@ -465,7 +299,7 @@ def get_router(external_get_session: callable) -> APIRouter:
 
         return StreamingResponse(
             stream_generator(), 
-            media_type="text/event-stream",  # 修改为标准SSE媒体类型
+            media_type="text/event-stream",  # 标准SSE媒体类型
             headers={
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",

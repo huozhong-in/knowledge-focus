@@ -33,14 +33,14 @@
 - [x] **1. 完整实现 Vercel AI SDK UI 流协议转换**
   - [x] **核心任务**: 在 `models_api.py` 的 `/chat/agent-stream` 路由中，实现 Pydantic AI 输出到 Vercel AI SDK v5 流协议的完整转换。
 
-- [ ] **2. 数据库架构设计与实现**
-  - [ ] **核心任务**: 在 `api/db_mgr.py` 中定义新的数据表模型，并在 `init_db()` 中实现创建和初始数据填充。
+- [x] **2. 数据库架构设计与实现**
+  - [x] **核心任务**: 在 `api/db_mgr.py` 中定义新的数据表模型，并在 `init_db()` 中实现创建和初始数据填充。
   - [x] 定义 `Tool` 表的 SQLModel。
   - [x] 定义 `Scenario` 表的 SQLModel。
   - [x] 定义 `SessionSelectedTool` 关联表的 SQLModel。
   - [x] 扩展 `ChatSession` 表，增加 `scenario_id` 字段。
   - [x] 在 `init_db()` 中添加新表的创建逻辑。
-  - [ ] 在 `init_db()` 中添加 `Tool` 和 `Scenario` 的初始数据填充脚本。
+  - [x] 在 `init_db()` 中添加 `Tool` 和 `Scenario` 的初始数据填充脚本。
 
 ---
 
@@ -51,11 +51,11 @@
   - [x] 将“共读PDF”工具集代码迁移到 `tools/co_reading.py`，并完成测试。
   - [x] 创建一个简单的通用工具（如 `calculator.py`）放入 `tools/` 用于测试。
 
-- [ ] **4. `ToolProvider` 服务与 API 端点**
-  - [ ] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
+- [x] **4. `ToolProvider` 服务与 API 端点**
+  - [x] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
   - [x] 创建 `unified_tools_api.py` 并定义 `GET /tools/list` 端点，在 `main.py` 中注册新的 API 路由。
-  - [ ] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
-  - [ ] **简化目标**: 初期 `/tools/list` 端点可先返回基于场景的预置工具和所有通用工具。
+  - [x] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
+  - [x] **简化目标**: 初期 `/tools/list` 端点可先返回基于场景的预置工具和所有通用工具。
 
 ---
 
@@ -69,9 +69,9 @@
 
 - [ ] **6. 后端集成测试 (非UI)**
   - [ ] **核心任务**: 使用 `pytest` 等工具，在无UI环境下验证后端数据流和核心逻辑。
-  - [ ] **API 测试**: 编写测试用例请求 `/tools/list` 端点，验证返回的 JSON 结构。
-  - [ ] **服务测试**: 单元测试 `ToolProvider`，验证其能否为不同会话正确组装工具对象列表。
-  - [ ] **关键流程测试**: 编写集成测试，模拟调用 `/chat/ui-stream`，验证包含工具调用的完整流式响应是否正确。
+  - [x] **API 测试**: 编写测试用例请求 `/tools/list` 端点，验证返回的 JSON 结构。
+  - [x] **服务测试**: 单元测试 `ToolProvider`，验证其能否为不同会话正确组装工具对象列表。
+  - [ ] **关键流程测试**: 编写集成测试，模拟调用 `/chat/agent-stream`，验证包含工具调用的完整流式响应是否正确。
 
 ---
 
@@ -80,6 +80,6 @@
 - [ ] **7. 前端改造与端到端测试**
   - [ ] **核心任务**: 使用 `AI Elements` 或 `useChat` hook 改造前端界面，并完成与后端的完整对接测试。
   - [ ] **组件替换**: 使用 Vercel AI SDK 的 `<Chat />` 组件或 `useChat` hook 重构聊天界面。
-  - [ ] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/chat/ui-stream` 端点。
+  - [ ] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/chat/agent-stream` 端点。
   - [ ] **工具UI**: 根据 `/tools/list` 端点返回的数据，渲染可区分“预置”和“可选”的工具选择界面。
   - [ ] **端到端测试**: 验证从前端勾选工具 -> 后端Agent使用 -> 前端流式展示结果的完整链路。

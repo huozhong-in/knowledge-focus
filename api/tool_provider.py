@@ -41,7 +41,19 @@ class ToolProvider:
                 # 获取会话信息
                 chat_session = self.session.get(ChatSession, session_id)
                 if chat_session and chat_session.scenario_id:
-                    return self._get_scenario_tools(chat_session.scenario_id, session_id)
+                    tools = []
+                    # 获取场景的预置工具
+                    tools.extend(self._get_scenario_tools(chat_session.scenario_id))
+                    # 获取用户为此会话选择的额外工具
+                    stmt = select(ChatSession).where(
+                        ChatSession.id == session_id
+                    )
+                    selected_tool_ids = self.session.exec(stmt).first().selected_tool_ids if self.session.exec(stmt).first() else []
+                    for selected_tool_id in selected_tool_ids:
+                        tool_func = self._load_tool_function(selected_tool_id)
+                        if tool_func:
+                            tools.append(tool_func)
+                    return tools
                 else:
                     logger.warning(f"会话 {session_id} 未找到或没有场景，使用默认工具集")
             
@@ -52,12 +64,10 @@ class ToolProvider:
             logger.error(f"获取会话工具失败: {e}")
             return self._get_default_tools()
     
-    def _get_scenario_tools(self, scenario_id: int, session_id: int) -> List[Callable]:
-        """根据场景ID获取预置工具 + 用户选择的工具"""
+    def _get_scenario_tools(self, scenario_id: int) -> List[Callable]:
+        """根据场景ID获取预置工具"""
         tools = []
-        
         try:
-            # 1. 获取场景的预置工具
             scenario = self.session.get(Scenario, scenario_id)
             if scenario and scenario.preset_tool_ids:
                 preset_tool_ids = scenario.preset_tool_ids
@@ -66,25 +76,10 @@ class ToolProvider:
                     if tool_func:
                         tools.append(tool_func)
             
-            # 2. 获取用户为此会话选择的额外工具
-            stmt = select(ChatSession).where(
-                ChatSession.id == session_id
-            )
-            selected_tool_ids = self.session.exec(stmt).first().selected_tool_ids if self.session.exec(stmt).first() else []
+            logger.info(f"为场景 {scenario_id} 加载了 {len(tools)} 个工具")
 
-            for selected_tool_id in selected_tool_ids:
-                tool_func = self._load_tool_function(selected_tool_id)
-                if tool_func:
-                    tools.append(tool_func)
-            
-            logger.info(f"为场景 {scenario_id} 会话 {session_id} 加载了 {len(tools)} 个工具")
-            
         except Exception as e:
             logger.error(f"加载场景工具失败: {e}")
-        
-        # 如果没有工具，返回默认工具集
-        if not tools:
-            tools = self._get_default_tools()
         
         return tools
     
@@ -94,9 +89,10 @@ class ToolProvider:
         
         # 默认加载的工具ID列表
         default_tool_ids = [
-            "calculator_add",
-            "calculator_multiply", 
-            # "file_search",
+            1, #"calculator_add",
+            2, #"calculator_multiply",
+            3, #"calculator_bmi",
+            # 4, #"file_search",
         ]
         
         for tool_id in default_tool_ids:
@@ -140,20 +136,57 @@ class ToolProvider:
             """工具通道包装器 - 调用前端工具"""
             try:
                 result = await g_backend_tool_caller.call_frontend_tool(
-                    tool_name=tool.id,
+                    tool_name=tool.name,
                     timeout=30.0,
                     **kwargs
                 )
                 return result
             except Exception as e:
-                logger.error(f"工具通道调用失败 {tool.id}: {e}")
+                logger.error(f"工具通道调用失败 {tool.name}: {e}")
                 return {"success": False, "error": str(e)}
         
         # 设置函数属性用于Agent识别
-        channel_tool_wrapper.__name__ = tool.id
-        channel_tool_wrapper.__doc__ = tool.description
+        channel_tool_wrapper.__name__ = tool.name
+        
+        # 尝试从原始函数定义处获取文档字符串
+        original_doc = self._get_original_function_doc(tool)
+        if original_doc:
+            channel_tool_wrapper.__doc__ = original_doc
+        else:
+            # 如果无法获取原始文档，回退到使用数据库描述
+            channel_tool_wrapper.__doc__ = f'{tool.description}\n'
         
         return channel_tool_wrapper
+    
+    def _get_original_function_doc(self, tool: Tool) -> Optional[str]:
+        """从原始函数定义处获取文档字符串"""
+        try:
+            # 检查是否有model_path信息
+            metadata = tool.metadata_json
+            if not metadata or 'model_path' not in metadata:
+                return None
+            
+            # 解析模块路径和函数名
+            module_name, function_name = metadata['model_path'].split(':')
+            
+            # 动态导入模块
+            module = importlib.import_module(module_name)
+            
+            # 获取函数
+            if hasattr(module, function_name):
+                func = getattr(module, function_name)
+                if callable(func) and func.__doc__:
+                    return func.__doc__
+                else:
+                    logger.debug(f"函数 {module_name}.{function_name} 没有文档字符串")
+            else:
+                logger.debug(f"模块 {module_name} 中未找到函数 {function_name}")
+            
+            return None
+            
+        except Exception as e:
+            logger.debug(f"获取原始函数文档失败 {tool.name}: {e}")
+            return None
     
     def _import_direct_tool(self, tool: Tool) -> Optional[Callable]:
         """动态导入直接调用类型的工具"""
@@ -165,9 +198,7 @@ class ToolProvider:
                 module_name, function_name = metadata['model_path'].split(':')
             else:
                 # TODO 考虑怎么支持MCP
-                # ! 如果没有指定函数名，默认使用工具ID
-                module_name = tool.metadata_json
-                function_name = tool.id
+                return None
             
             # 动态导入模块
             module = importlib.import_module(module_name)
@@ -188,32 +219,32 @@ class ToolProvider:
             logger.error(f"导入工具函数失败 {tool.module_path}: {e}")
             return None
     
-    def get_tool_categories(self) -> Dict[str, List[Dict[str, Any]]]:
-        """获取工具分类信息 - 用于前端UI展示"""
-        try:
-            # 获取所有工具
-            stmt = select(Tool)
-            tools = self.session.exec(stmt).all()
+    # def get_tool_categories(self) -> Dict[str, List[Dict[str, Any]]]:
+    #     """获取工具分类信息 - 用于前端UI展示"""
+    #     try:
+    #         # 获取所有工具
+    #         stmt = select(Tool)
+    #         tools = self.session.exec(stmt).all()
             
-            categories = {}
-            for tool in tools:
-                category = tool.category or "未分类"
-                if category not in categories:
-                    categories[category] = []
+    #         categories = {}
+    #         for tool in tools:
+    #             category = tool.category or "未分类"
+    #             if category not in categories:
+    #                 categories[category] = []
                 
-                categories[category].append({
-                    "id": tool.id,
-                    "name": tool.name,
-                    "description": tool.description,
-                    "tool_type": tool.tool_type,
-                    "is_preset": tool.is_preset
-                })
+    #             categories[category].append({
+    #                 "id": tool.id,
+    #                 "name": tool.name,
+    #                 "description": tool.description,
+    #                 "tool_type": tool.tool_type,
+    #                 "is_preset": tool.is_preset
+    #             })
             
-            return categories
+    #         return categories
             
-        except Exception as e:
-            logger.error(f"获取工具分类失败: {e}")
-            return {}
+    #     except Exception as e:
+    #         logger.error(f"获取工具分类失败: {e}")
+    #         return {}
     
     def get_available_scenarios(self) -> List[Dict[str, Any]]:
         """获取可用场景列表"""
@@ -237,9 +268,31 @@ class ToolProvider:
 
 # 测试代码
 if __name__ == "__main__":
-    # 这里可以添加测试逻辑
-    print("ToolProvider 模块加载成功")
-    print("主要功能:")
-    print("1. get_tools_for_session() - 为Agent提供工具列表")
-    print("2. get_tool_categories() - 获取工具分类")
-    print("3. get_available_scenarios() - 获取可用场景")
+    from config import TEST_DB_PATH
+    from sqlmodel import create_engine
+    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
+    tool_provider = ToolProvider(session)
+
+    # # 获取默认工具列表
+    # default_tools = tool_provider._get_default_tools()
+    # print("默认工具列表:")
+    # for tool in default_tools:
+    #     print(f" - {tool.__name__}: {tool.__doc__}")
+    
+    # # 获取可用场景列表
+    # scenarios = tool_provider.get_available_scenarios()
+    # print("可用场景列表:")
+    # for scenario in scenarios:
+    #     print(f" - {scenario['name']}: {scenario['description']} (预置工具数: {scenario['preset_tool_count']})")
+
+    # # 根据场景ID获取预置工具
+    # preset_tools = tool_provider._get_scenario_tools(scenario_id=1)
+    # print("场景 ID 1 对应的预置工具列表:")
+    # for tool in preset_tools:
+    #     print(f" - {tool.__name__}: {tool.__doc__}")
+    
+    # 为指定会话获取工具列表
+    tools = tool_provider.get_tools_for_session(session_id=1)
+    print("聊天会话ID对应的工具列表:")
+    for tool in tools:
+        print(f" - {tool.__name__}: {tool.__doc__}")

@@ -432,7 +432,7 @@ class Tool(SQLModel, table=True):
     __tablename__ = "t_tools"
     id: int = Field(default=None, primary_key=True)
     name: str = Field(max_length=100, index=True, unique=True)
-    tool_type: ToolType = Field(default=ToolType.GENERAL)
+    tool_type: ToolType = Field(default=ToolType.DIRECT)
     description: str | None = Field(default=None, max_length=500)
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
@@ -751,64 +751,51 @@ class DBManager:
                 data = [
                     {
                         "name": "calculator_add",
-                        "description": "一个简单的加法计算器",
+                        "description": "简单的加法计算器",
                         "tool_type": "direct",
-                        "metadata_json": {"model_path": "tools.calculator:add"}
+                        "metadata_json": {"model_path": "tools.calculator:calculator_add"}
                     },
                     {
                         "name": "calculator_multiply",
-                        "description": "一个简单的乘法计算器",
+                        "description": "简单的乘法计算器",
                         "tool_type": "direct",
-                        "metadata_json": {"model_path": "tools.calculator:multiply"}
+                        "metadata_json": {"model_path": "tools.calculator:calculator_multiply"}
                     },
                     {
-                        "id": "scroll_pdf_reader",
-                        "name": "滚动PDF阅读器",
+                        "name": "calculator_bmi",
+                        "description": "BMI计算器",
+                        "tool_type": "direct",
+                        "metadata_json": {"model_path": "tools.calculator:calculator_bmi"}
+                    },
+                    {
+                        "name": "scroll_pdf_reader",
                         "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
-                        "category": "co_reading",
-                        "type": "direct",  # 直接调用
-                        "parameters": {
-                            "direction": {"type": "string", "required": True, "enum": ["up", "down"], "description": "滚动方向"},
-                            "amount": {"type": "integer", "required": False, "default": 10, "description": "滚动距离"}
-                        }
+                        "tool_type": "direct",  # 直接调用
+                        "metadata_json": {"model_path": "tools.co_reading:scroll_pdf_reader"}
                     },
                     {
-                        "id": "handle_pdf_reading",
-                        "name": "阅读PDF",
+                        "name": "handle_pdf_reading",
                         "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
-                        "category": "co_reading",
-                        "type": "channel",  # 通过工具通道调用
-                        "parameters": {
-                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                        }
+                        "tool_type": "channel",  # 通过工具通道调用
+                        "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reading"}
                     },
                     {
-                        "id": "ensure_accessibility_permission",
-                        "name": "确保辅助功能权限",
+                        "name": "ensure_accessibility_permission",
                         "description": "确保应用具有辅助功能权限",
-                        "category": "co_reading",
-                        "type": "channel",
-                        "parameters": {}
+                        "tool_type": "channel",
+                        "metadata_json": {"model_path": "tools.co_reading:ensure_accessibility_permission"}
                     },
                     {
-                        "id": "handle_activate_pdf_reader",
-                        "name": "激活PDF阅读器",
+                        "name": "handle_activate_pdf_reader",
                         "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
-                        "category": "co_reading",
-                        "type": "channel",
-                        "parameters": {
-                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                        }
+                        "tool_type": "channel",
+                        "metadata_json": {"model_path": "tools.co_reading:handle_activate_pdf_reader"}
                     },
                     {
-                        "id": "handle_pdf_reader_screenshot",
-                        "name": "PDF截图",
-                        "description": "对当前PDF页面截图",
-                        "category": "co_reading",
-                        "type": "channel",
-                        "parameters": {
-                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                        }
+                        "name": "handle_pdf_reader_screenshot",
+                        "description": "对当前PDF页面截图，并查看其内容",
+                        "tool_type": "channel",
+                        "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reader_screenshot"}
                     }
                 ]
                 self.session.add_all([Tool(**tool) for tool in data])
@@ -817,7 +804,19 @@ class DBManager:
             # 场景表
             if not inspector.has_table(Scenario.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Scenario.__table__])
-        
+                data = [
+                    {
+                        "name": "co_reading", 
+                        "description": "AI跟你一起阅读电子书", 
+                        "display_name": "共读电子书",
+                        "system_prompt": "你是一个具有视觉能力的AI助手。",
+                        "preset_tool_ids": [4,5,6,7,8],
+                        "metadata_json": []
+                    },
+                ]
+                self.session.add_all([Scenario(**scenario) for scenario in data])
+                self.session.commit()
+
         return True
 
     def _init_bundle_extensions(self) -> None:

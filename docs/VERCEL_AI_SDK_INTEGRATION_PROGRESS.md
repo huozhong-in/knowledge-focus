@@ -55,7 +55,7 @@ UIMessage状态管理                                               UIMessage生
 
 - [x] **1.1.3 基础连通性测试**
   - [x] ✅ **重大突破** - 端到端集成成功！
-  - [x] 创建并测试`/chat/ui-stream`端点，完美支持AI SDK v5格式
+  - [x] 创建并测试`/chat/agent-stream`端点，完美支持AI SDK v5格式
   - [x] 验证LM Studio + gemma-3n-e4b-it模型正确响应
   - [x] 确认SSE流式响应格式完全符合AI SDK v5规范
   - [x] 测试结果：前端Transport → 后端SSE → 模型响应 → 流式文本显示 ✅
@@ -63,7 +63,7 @@ UIMessage状态管理                                               UIMessage生
 ### 1.2 后端SSE兼容改造（风险2解决）
 
 - [x] **1.2.1 FastAPI SSE端点创建**
-  - [x] 在`models_api.py`中创建`/chat/ui-stream`端点
+  - [x] 在`models_api.py`中创建`/chat/agent-stream`端点
   - [x] 支持AI SDK v5的UIMessage格式解析
   - [x] 实现SSE (Server-Sent Events) 流式响应
   - [x] 设置正确的CORS头和Cache-Control策略
@@ -133,7 +133,7 @@ UIMessage状态管理                                               UIMessage生
 - [x] **2.2.2 消息持久化端点**
   - [x] `GET /chat/sessions/{id}/messages` - 获取会话消息（支持分页、最近30条优先）
   - [x] `POST /chat/sessions/{id}/messages` - 批量保存消息
-  - [x] 在`/chat/ui-stream`端点中集成自动消息保存逻辑
+  - [x] 在`/chat/agent-stream`端点中集成自动消息保存逻辑
 
 - [x] **2.2.3 会话文件管理端点**
   - [x] `GET /chat/sessions/{id}/pinned-files` - 获取会话Pin文件列表

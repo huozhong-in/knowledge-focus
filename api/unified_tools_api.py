@@ -26,6 +26,28 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     # ==================== 前端直接调用API ====================
 
+    @router.get("/tools/list")
+    async def get_available_tools(
+        session_id: Optional[int] = None,
+        tool_provider: ToolProvider = Depends(get_tool_provider)
+    ):
+        """
+        根据前端会话session_id获取工具列表        
+        """
+        tools = tool_provider.get_tools_for_session(session_id)
+        if tools:
+            return {
+                "success": True,
+                "tools": tools,
+                "session_id": session_id,
+                "count": len(tools),
+            }
+        return {
+            "success": False,
+            "message": "No tools found",
+            "session_id": session_id,
+        }
+
     # ==================== 工具通道响应API ====================
     # 新的工具通道机制相关API
     
@@ -93,7 +115,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             
             logger.info(f"测试工具调用: {tool_name}, 参数: {kwargs}")
             
-            # 根据工具名称调用对应的Python包装函数，而不是直接调用前端工具
+            # 根据工具名称调用对应的Python包装函数，其内部会利用“工具通道”调用前端工具
             if tool_name == "handle_pdf_reading":
                 from tools.co_reading import handle_pdf_reading
                 pdf_path = kwargs.get("pdfPath")
@@ -138,26 +160,5 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"测试工具调用失败: {e}")
             raise HTTPException(status_code=500, detail=f"Tool call failed: {str(e)}")
     
-    # ==================== 工具提供者API ====================
-
-    @router.get("/tools/list")
-    async def get_available_tools(
-        session_id: Optional[int] = None,
-        tool_provider: ToolProvider = Depends(get_tool_provider)
-    ):
-        """
-        根据前端会话session_id获取工具列表        
-        """
-        tools = tool_provider.get_tools_for_session(session_id)
-        
-        return {
-            "tools": tools,
-            "session_id": session_id,
-            "count": len(tools),
-            "categories": {
-                "system": [t for t in tools if t["category"] == "system"],
-                "co_reading": [t for t in tools if t["category"] == "co_reading"]
-            }
-        }
 
     return router

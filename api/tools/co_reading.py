@@ -167,7 +167,11 @@ def _is_window_exist(window_name: str) -> bool:
     return False
 
 async def handle_pdf_reading(pdf_path: str) -> Dict:
-    """使用系统默认PDF阅读器打开PDF文件 - 调用前端工具"""
+    """
+    使用系统默认PDF阅读器打开PDF文件 - 调用前端工具
+    Args:
+        pdf_path (str): PDF文件路径
+    """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
             "handle_pdf_reading",
@@ -194,7 +198,12 @@ async def handle_pdf_reading(pdf_path: str) -> Dict:
         return {"success": False, "message": f"打开PDF失败: {e}"}
 
 async def handle_pdf_reader_screenshot(pdf_path: str) -> Dict:
-    """对PDF窗口截图 - 调用前端工具"""
+    """
+    对PDF窗口截图 - 调用前端工具
+
+    Args:
+        pdf_path (str): PDF文件路径
+    """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
             "handle_pdf_reader_screenshot", 
@@ -205,7 +214,9 @@ async def handle_pdf_reader_screenshot(pdf_path: str) -> Dict:
         return {"success": False, "message": f"截图失败: {e}"}
 
 async def ensure_accessibility_permission() -> Dict:
-    """确保辅助功能权限 - 调用前端工具"""
+    """
+    确保辅助功能权限 - 调用前端工具
+    """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
             "ensure_accessibility_permission"
@@ -215,7 +226,13 @@ async def ensure_accessibility_permission() -> Dict:
         return {"success": False, "message": f"权限检查失败: {e}"}
 
 async def handle_activate_pdf_reader(pdf_path: str, action: str = "focus") -> Dict:
-    """寻找和激活PDF阅读器应用窗口 - 调用前端工具"""
+    """
+    寻找和激活PDF阅读器应用窗口 - 调用前端工具
+
+    Args:
+        pdf_path (str): PDF文件路径
+        action (str): 激活动作，默认为"focus"
+    """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
             "handle_activate_pdf_reader",
@@ -239,6 +256,6 @@ async def handle_activate_pdf_reader(pdf_path: str, action: str = "focus") -> Di
         return {"success": False, "message": f"控制Preview应用失败: {e}"}
 
 
+# Test the functions
 if __name__ == "__main__":
-    # Test the functions
     pass
