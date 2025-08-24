@@ -257,7 +257,8 @@ def get_router(external_get_session: callable) -> APIRouter:
             try:
                 # 直接转发stream_agent_chat的标准化SSE输出
                 async for sse_chunk in models_mgr.stream_agent_chat(
-                    messages=request.messages, 
+                    # messages=request.messages,  # ! 所有历史消息
+                    messages=last_user_message,  # 仅最后一条用户消息
                     session_id=request.session_id
                 ):
                     # stream_agent_chat已经返回符合Vercel AI SDK v5标准的SSE格式

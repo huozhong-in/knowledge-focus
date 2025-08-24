@@ -81,6 +81,8 @@ class ModelCapabilityConfirm:
                 base_url=model_provider.base_url,
                 api_key=model_provider.api_key if model_provider.api_key else "",
                 use_proxy=model_provider.use_proxy,
+                max_context_length=model_config.max_context_length,
+                max_output_tokens=model_config.max_output_tokens,
             )
     
     async def confirm_text_capability(self, config_id: int) -> bool:

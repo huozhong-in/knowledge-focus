@@ -28,6 +28,7 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr
+from tool_provider import ToolProvider
 from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class ModelsMgr:
     def __init__(self, session: Session):
         self.session = session
         self.model_config_mgr = ModelConfigMgr(session)
+        self.tool_provider = ToolProvider(session)
         self.bridge_events = BridgeEventSender(source="models-manager")
 
     def get_embedding(self, text_str: str) -> List[float]:
@@ -298,16 +300,18 @@ Based on all information, provide the best tags for this file.
         """
         logging.info(f"Agent chat invoked for session_id: {session_id}")
 
-        try:
-            model_interface = self.model_config_mgr.get_text_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
-        except Exception as e:
-            logger.error(f"Failed to get text model config: {e}")
-            yield {"type": "error", "error": str(e)}
+        model_interface = self.model_config_mgr.get_text_model_config()
+        if model_interface is None:
+            logger.error("Model interface is not configured.")
+            yield {"type": "error", "error": "Model interface is not configured."}
             return
+        
+        model_identifier = model_interface.model_identifier
+        base_url = model_interface.base_url
+        api_key = model_interface.api_key
+        use_proxy = model_interface.use_proxy
+        max_context_length = model_interface.max_context_length if model_interface.max_context_length != 0 else 4096
+        max_output_tokens = model_interface.max_output_tokens if model_interface.max_output_tokens != 0 else 1024
 
         proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
         http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
@@ -324,24 +328,19 @@ Based on all information, provide the best tags for this file.
             ),
         )
         
-        # TODO: Replace this with a call to the real ToolProvider
-        # def get_weather(city: str = Field(..., description="The city to get the weather for")) -> str:
-        #     """
-        #     A dummy function to get the weather for a city.
-        #     """
-        #     if "beijing" in city.lower():
-        #         return "The weather in Beijing is sunny."
-        #     if "tokyo" in city.lower():
-        #         return "The weather in Tokyo is rainy."
-        #     return f"Sorry, I don't know the weather for {city}."
+        # prepare tools
+        tools = self.tool_provider.get_tools_for_session(session_id)
         
-        
+        # ! 调用方过滤了只保留最后一条role=user消息，所以system_prompt始终为[]，保留给将来用户给AI定角色吧
         system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
-        
+        scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
+        if scenario_system_prompt:
+            system_prompt.append(scenario_system_prompt)  # 把场景prompt追加到系统prompt后面
+
         agent = Agent(
             model=model,
-            # tools=[get_weather],
-            system_prompt=system_prompt[0] if system_prompt else "You are a helpful assistant.",
+            tools=tools,
+            system_prompt=system_prompt if len(system_prompt) > 0 else ["You are a helpful assistant."],
         )
 
         user_prompt = [msg['content'] for msg in messages if msg['role'] == 'user']

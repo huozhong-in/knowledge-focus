@@ -64,6 +64,18 @@ class ToolProvider:
             logger.error(f"获取会话工具失败: {e}")
             return self._get_default_tools()
     
+    def get_session_scenario_system_prompt(self, session_id: int) -> str | None:
+        '''如果session_id对应的会话有配置场景，则返回场景的system_prompt'''
+        try:
+            chat_session = self.session.get(ChatSession, session_id)
+            if chat_session and chat_session.scenario_id:
+                scenario = self.session.get(Scenario, chat_session.scenario_id)
+                if scenario:
+                    return scenario.system_prompt
+        except Exception as e:
+            logger.error(f"获取会话 {session_id} 的场景system_prompt失败: {e}")
+        return None
+
     def _get_scenario_tools(self, scenario_id: int) -> List[Callable]:
         """根据场景ID获取预置工具"""
         tools = []
@@ -291,8 +303,13 @@ if __name__ == "__main__":
     # for tool in preset_tools:
     #     print(f" - {tool.__name__}: {tool.__doc__}")
     
-    # 为指定会话获取工具列表
-    tools = tool_provider.get_tools_for_session(session_id=1)
-    print("聊天会话ID对应的工具列表:")
-    for tool in tools:
-        print(f" - {tool.__name__}: {tool.__doc__}")
+    # # 为指定会话获取工具列表
+    # tools = tool_provider.get_tools_for_session(session_id=1)
+    # print("聊天会话ID对应的工具列表:")
+    # for tool in tools:
+    #     print(f" - {tool.__name__}: {tool.__doc__}")
+
+    # 获取聊天会话ID对应的场景system_prompt
+    system_prompt = tool_provider.get_session_scenario_system_prompt(session_id=1)
+    print(f"聊天会话ID对应的场景system_prompt: {system_prompt}")
+    

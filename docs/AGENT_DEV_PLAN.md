@@ -63,8 +63,9 @@
 
 - [ ] **5. 集成模型上下文窗口限制**
   - [ ] **核心任务**: 在调用大模型前，从数据库获取并传入模型的上下文和输出Token限制。
-  - [ ] 在 `models_mgr.py` 或相关模块中，实现查询逻辑：`CapabilityAssignment` -> `ModelConfiguration`。
-  - [ ] 获取 `max_context_length` 和 `max_output_tokens` 字段。
+  - [x] 在 `models_mgr.py` 或相关模块中，实现查询逻辑：`CapabilityAssignment` -> `ModelConfiguration`。
+  - [x] 获取 `max_context_length` 和 `max_output_tokens` 字段。
+  - [ ] 上下文工程(一期)：从数据库读出历史聊天记录，根据以上限制截取后拼接到提示词中。
   - [ ] 在实例化 Pydantic AI 的 `LLM` 对象时传入获取到的限制参数。
 
 - [ ] **6. 后端集成测试 (非UI)**

@@ -21,6 +21,8 @@ class ModelUseInterface(BaseModel):
     base_url: str
     api_key: str
     use_proxy: bool
+    max_context_length: int
+    max_output_tokens: int
 
 class ModelConfigMgr:
     def __init__(self, session: Session):
@@ -354,7 +356,9 @@ class ModelConfigMgr:
             model_identifier=model_identifier,
             base_url=base_url if base_url is not None else "",
             api_key=api_key if api_key is not None else "",
-            use_proxy=use_proxy
+            use_proxy=use_proxy,
+            max_context_length=model_config.max_context_length,
+            max_output_tokens=model_config.max_output_tokens,
         )
 
     def get_vision_model_config(self) -> ModelUseInterface:
