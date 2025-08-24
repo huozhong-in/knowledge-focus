@@ -48,15 +48,14 @@
 
 - [x] **3. `tools` 模块代码组织**
   - [x] **核心任务**: 创建 `api/tools/` 目录结构，并迁移或创建初始工具代码。
-  - [x] 将“共读PDF”工具集代码迁移到 `tools/co_reading.py`。
+  - [x] 将“共读PDF”工具集代码迁移到 `tools/co_reading.py`，并完成测试。
   - [x] 创建一个简单的通用工具（如 `calculator.py`）放入 `tools/` 用于测试。
 
 - [ ] **4. `ToolProvider` 服务与 API 端点**
   - [ ] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
+  - [x] 创建 `unified_tools_api.py` 并定义 `GET /tools/list` 端点，在 `main.py` 中注册新的 API 路由。
   - [ ] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
-  - [x] 创建 `unified_tools_api.py` 并定义 `GET /tools/list` 端点。
-  - [x] 在 `main.py` 中注册新的 API 路由。
-  - [x] **简化目标**: 初期 `/tools/list` 端点可先返回基于场景的预置工具和所有通用工具。
+  - [ ] **简化目标**: 初期 `/tools/list` 端点可先返回基于场景的预置工具和所有通用工具。
 
 ---
 

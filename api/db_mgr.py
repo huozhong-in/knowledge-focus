@@ -392,7 +392,7 @@ class ChatSession(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
     is_active: bool = Field(default=True)
-    selected_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的工具
+    selected_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的额外工具
     scenario_id: int | None = Field(default=None, foreign_key="t_scenarios.id") # 关联的“场景”ID
 
 # 聊天消息表
@@ -424,9 +424,9 @@ class ChatSessionPinFile(SQLModel, table=True):
 
 # 工具类型
 class ToolType(str, PyEnum):
-    GENERAL = "general"
-    SCENARIO = "scenario"  # 场景化工具
-    SPECIFIC = "specific"
+    DIRECT = "direct"
+    CHANNEL = "channel"
+    MCP = "mcp"
 # 大模型可使用的工具表
 class Tool(SQLModel, table=True):
     __tablename__ = "t_tools"
@@ -446,7 +446,7 @@ class Scenario(SQLModel, table=True):
     description: str | None = Field(default=None, max_length=500)
     display_name: str | None = Field(default=None, max_length=100)
     system_prompt: str | None = Field(default=None, max_length=500)
-    preset_tools: List[int] = Field(default=[], sa_column=Column(JSON))  # 存储Tool ID列表
+    preset_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON))  # 存储Tool ID列表
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -748,7 +748,72 @@ class DBManager:
             # 工具表
             if not inspector.has_table(Tool.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Tool.__table__])
-            
+                data = [
+                    {
+                        "name": "calculator_add",
+                        "description": "一个简单的加法计算器",
+                        "tool_type": "direct",
+                        "metadata_json": {"model_path": "tools.calculator:add"}
+                    },
+                    {
+                        "name": "calculator_multiply",
+                        "description": "一个简单的乘法计算器",
+                        "tool_type": "direct",
+                        "metadata_json": {"model_path": "tools.calculator:multiply"}
+                    },
+                    {
+                        "id": "scroll_pdf_reader",
+                        "name": "滚动PDF阅读器",
+                        "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
+                        "category": "co_reading",
+                        "type": "direct",  # 直接调用
+                        "parameters": {
+                            "direction": {"type": "string", "required": True, "enum": ["up", "down"], "description": "滚动方向"},
+                            "amount": {"type": "integer", "required": False, "default": 10, "description": "滚动距离"}
+                        }
+                    },
+                    {
+                        "id": "handle_pdf_reading",
+                        "name": "阅读PDF",
+                        "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
+                        "category": "co_reading",
+                        "type": "channel",  # 通过工具通道调用
+                        "parameters": {
+                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
+                        }
+                    },
+                    {
+                        "id": "ensure_accessibility_permission",
+                        "name": "确保辅助功能权限",
+                        "description": "确保应用具有辅助功能权限",
+                        "category": "co_reading",
+                        "type": "channel",
+                        "parameters": {}
+                    },
+                    {
+                        "id": "handle_activate_pdf_reader",
+                        "name": "激活PDF阅读器",
+                        "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
+                        "category": "co_reading",
+                        "type": "channel",
+                        "parameters": {
+                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
+                        }
+                    },
+                    {
+                        "id": "handle_pdf_reader_screenshot",
+                        "name": "PDF截图",
+                        "description": "对当前PDF页面截图",
+                        "category": "co_reading",
+                        "type": "channel",
+                        "parameters": {
+                            "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
+                        }
+                    }
+                ]
+                self.session.add_all([Tool(**tool) for tool in data])
+                self.session.commit()
+
             # 场景表
             if not inspector.has_table(Scenario.__tablename__):
                 SQLModel.metadata.create_all(engine, tables=[Scenario.__table__])

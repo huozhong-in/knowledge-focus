@@ -7,11 +7,12 @@
 3. 工具提供者API（获取工具列表等，为动态组织给agent的工具/工具集列表做支持）
 """
 
-from fastapi import APIRouter, HTTPException
+from sqlmodel import Session
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Any, Optional
 import logging
-
+from tool_provider import ToolProvider
 from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 def get_router(external_get_session: callable) -> APIRouter:
     """获取统一的工具API路由器"""
     router = APIRouter()
+
+    def get_tool_provider(session: Session = Depends(external_get_session)) -> ToolProvider:
+        return ToolProvider(session)
 
     # ==================== 前端直接调用API ====================
 
@@ -137,63 +141,14 @@ def get_router(external_get_session: callable) -> APIRouter:
     # ==================== 工具提供者API ====================
 
     @router.get("/tools/list")
-    async def get_available_tools(session_id: Optional[int] = None):
+    async def get_available_tools(
+        session_id: Optional[int] = None,
+        tool_provider: ToolProvider = Depends(get_tool_provider)
+    ):
         """
-        根据前端会话session_id获取工具列表
-        
-        # TODO: 这里将来要集成 tool_provider.py 的逻辑
+        根据前端会话session_id获取工具列表        
         """
-        tools = [
-            {
-                "id": "scroll_pdf_reader",
-                "name": "滚动PDF阅读器",
-                "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
-                "category": "co_reading",
-                "type": "direct",  # 直接调用
-                "parameters": {
-                    "direction": {"type": "string", "required": True, "enum": ["up", "down"], "description": "滚动方向"},
-                    "amount": {"type": "integer", "required": False, "default": 10, "description": "滚动距离"}
-                }
-            },
-            {
-                "id": "handle_pdf_reading",
-                "name": "阅读PDF",
-                "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
-                "category": "co_reading",
-                "type": "channel",  # 通过工具通道调用
-                "parameters": {
-                    "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                }
-            },
-            {
-                "id": "ensure_accessibility_permission",
-                "name": "确保辅助功能权限",
-                "description": "确保应用具有辅助功能权限",
-                "category": "co_reading",
-                "type": "channel",
-                "parameters": {}
-            },
-            {
-                "id": "handle_activate_pdf_reader",
-                "name": "激活PDF阅读器",
-                "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
-                "category": "co_reading",
-                "type": "channel",
-                "parameters": {
-                    "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                }
-            },
-            {
-                "id": "handle_pdf_reader_screenshot",
-                "name": "PDF截图",
-                "description": "对当前PDF页面截图",
-                "category": "co_reading",
-                "type": "channel",
-                "parameters": {
-                    "pdf_path": {"type": "string", "required": True, "description": "PDF文件路径"}
-                }
-            }
-        ]
+        tools = tool_provider.get_tools_for_session(session_id)
         
         return {
             "tools": tools,
@@ -201,11 +156,8 @@ def get_router(external_get_session: callable) -> APIRouter:
             "count": len(tools),
             "categories": {
                 "system": [t for t in tools if t["category"] == "system"],
-                "pdf_reading": [t for t in tools if t["category"] == "pdf_reading"]
+                "co_reading": [t for t in tools if t["category"] == "co_reading"]
             }
         }
 
     return router
-
-# 为了向后兼容，保持原来的路由器实例
-# router = get_router(None)

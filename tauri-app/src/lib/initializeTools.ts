@@ -5,7 +5,7 @@
  */
 
 import { registerTools } from './toolChannel';
-import { pdfCoReadingTools } from './pdfCoReadingTools';
+import { pdfCoReadingTools } from './pdfCoReadingTools'; // PDF共读工具
 
 /**
  * 初始化并注册所有工具
@@ -13,10 +13,7 @@ import { pdfCoReadingTools } from './pdfCoReadingTools';
 export function initializeTools() {
   console.log('🔧 开始初始化前端工具...');
 
-  // 注册PDF共读工具
   registerTools(pdfCoReadingTools);
-
-  // 这里可以注册其他工具模块
   // registerTools(otherTools);
 
   console.log('✅ 前端工具初始化完成');

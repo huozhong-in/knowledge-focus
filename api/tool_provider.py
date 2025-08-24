@@ -13,7 +13,7 @@ import logging
 import importlib
 from typing import List, Dict, Any, Optional, Callable
 from sqlmodel import Session, select
-from db_mgr import ChatSession, Tool, Scenario, SessionSelectedTool
+from db_mgr import ChatSession, Tool, Scenario
 from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ class ToolProvider:
             return self._get_default_tools()
     
     def _get_scenario_tools(self, scenario_id: int, session_id: int) -> List[Callable]:
-        """根据场景ID获取预置工具 + 会话选择的工具"""
+        """根据场景ID获取预置工具 + 用户选择的工具"""
         tools = []
         
         try:
@@ -67,13 +67,13 @@ class ToolProvider:
                         tools.append(tool_func)
             
             # 2. 获取用户为此会话选择的额外工具
-            stmt = select(SessionSelectedTool).where(
-                SessionSelectedTool.session_id == session_id
+            stmt = select(ChatSession).where(
+                ChatSession.id == session_id
             )
-            selected_tools = self.session.exec(stmt).all()
-            
-            for selected_tool in selected_tools:
-                tool_func = self._load_tool_function(selected_tool.tool_id)
+            selected_tool_ids = self.session.exec(stmt).first().selected_tool_ids if self.session.exec(stmt).first() else []
+
+            for selected_tool_id in selected_tool_ids:
+                tool_func = self._load_tool_function(selected_tool_id)
                 if tool_func:
                     tools.append(tool_func)
             
@@ -89,18 +89,14 @@ class ToolProvider:
         return tools
     
     def _get_default_tools(self) -> List[Callable]:
-        """获取默认工具集 - 通用工具 + PDF共读工具"""
+        """获取默认工具集"""
         tools = []
         
         # 默认加载的工具ID列表
         default_tool_ids = [
             "calculator_add",
             "calculator_multiply", 
-            "handle_active_preview_app",
-            "handle_scroll_pdf",
-            "handle_preview_app_screenshot",
-            "handle_control_preview_app",
-            "ensure_accessibility_permission"
+            # "file_search",
         ]
         
         for tool_id in default_tool_ids:
@@ -163,12 +159,14 @@ class ToolProvider:
         """动态导入直接调用类型的工具"""
         try:
             # 解析模块路径和函数名
-            # 假设 tool.module_path 格式为 "tools.calculator:add"
-            if ':' in tool.module_path:
-                module_name, function_name = tool.module_path.split(':')
+            # 假设 tool.metadata_json 格式为 {"model_path": "tools.calculator:add"}
+            metadata = tool.metadata_json
+            if 'model_path' in metadata:
+                module_name, function_name = metadata['model_path'].split(':')
             else:
-                # 如果没有指定函数名，默认使用工具ID
-                module_name = tool.module_path
+                # TODO 考虑怎么支持MCP
+                # ! 如果没有指定函数名，默认使用工具ID
+                module_name = tool.metadata_json
                 function_name = tool.id
             
             # 动态导入模块

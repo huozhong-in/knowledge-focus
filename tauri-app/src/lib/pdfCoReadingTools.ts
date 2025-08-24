@@ -337,7 +337,7 @@ handlePdfWindow();
 
       return pdf_center_point
     } else {
-      console.log("pdfreader应用没有窗口")
+      console.log("PDF阅读器应用没有窗口")
       return undefined
     }
   } else {
