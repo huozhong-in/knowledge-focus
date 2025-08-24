@@ -9,7 +9,7 @@
     
     # 在PydanticAI工具中调用前端功能
     result = await backend_tool_caller.call_frontend_tool(
-        "handle_active_preview_app", 
+        "handle_pdf_reading", 
         pdf_path="/path/to/file.pdf"
     )
 """
@@ -184,7 +184,7 @@ class BackendToolCaller:
     
 
 # 全局实例
-backend_tool_caller = BackendToolCaller()
+g_backend_tool_caller = BackendToolCaller()
 
 # 测试代码
 if __name__ == "__main__":

@@ -12,8 +12,7 @@ from pydantic import BaseModel
 from typing import Any, Optional
 import logging
 
-from backend_tool_caller import backend_tool_caller
-from tools.co_reading import send_scroll_at_point, scroll_pdf_reader
+from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.info(f"收到工具响应: call_id={response.call_id}, success={response.success}")
             
             # 将响应传递给工具调用器
-            backend_tool_caller.handle_tool_response(response.model_dump())
+            g_backend_tool_caller.handle_tool_response(response.model_dump())
             
             return {"status": "ok", "message": "Response handled successfully"}
             
@@ -61,7 +60,7 @@ def get_router(external_get_session: callable) -> APIRouter:
         用于调试和监控
         """
         try:
-            pending_calls = list(backend_tool_caller.pending_calls.keys())
+            pending_calls = list(g_backend_tool_caller.pending_calls.keys())
             return {
                 "pending_calls": pending_calls,
                 "count": len(pending_calls)
@@ -69,48 +68,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         except Exception as e:
             logger.error(f"获取等待调用列表失败: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to get pending calls: {str(e)}")
-
-    @router.post("/tools/call")
-    async def call_tool_directly(tool_call: dict):
-        """
-        直接调用工具 - 用于处理type="direct"的工具
-        
-        Args:
-            tool_call: 包含tool_id和参数的调用请求
-        """
-        try:
-            tool_id = tool_call.get("tool_id")
-            args = tool_call.get("args", {})
-            
-            logger.info(f"直接调用工具: {tool_id}, 参数: {args}")
-            
-            # 根据工具ID调用对应的函数
-            if tool_id == "send_scroll_at_point":
-                x = args.get("x")
-                y = args.get("y") 
-                direction = args.get("direction", "down")
-                amount = args.get("amount", 10)
-                
-                if x is None or y is None:
-                    return {"success": False, "error": "缺少必要参数 x 或 y"}
-                
-                dy = amount if direction == "down" else -amount
-                result = send_scroll_at_point(x, y, dy)
-                return {"success": result, "message": f"在坐标({x}, {y})执行{direction}滚动"}
-                
-            elif tool_id == "scroll_pdf_reader":
-                direction = args.get("direction", "down")
-                amount = args.get("amount", 10)
-                
-                result = scroll_pdf_reader(direction, amount)
-                return result
-                
-            else:
-                return {"success": False, "error": f"未知的工具ID: {tool_id}"}
-                
-        except Exception as e:
-            logger.error(f"直接调用工具失败: {e}")
-            return {"success": False, "error": str(e)}
 
     @router.post("/tools/test")
     async def test_frontend_tool_call(test_request: dict):
@@ -161,7 +118,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                 
             else:
                 # 对于其他工具，直接调用前端工具
-                result = await backend_tool_caller.call_frontend_tool(
+                result = await g_backend_tool_caller.call_frontend_tool(
                     tool_name=tool_name,
                     timeout=10.0,
                     **kwargs
@@ -187,27 +144,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         # TODO: 这里将来要集成 tool_provider.py 的逻辑
         """
         tools = [
-            # {
-            #     "id": "get_window_list",
-            #     "name": "获取窗口列表", 
-            #     "description": "获取当前系统中所有打开的窗口",
-            #     "category": "built-in",
-            #     "type": "direct",  # 直接调用
-            #     "parameters": {}
-            # },
-            {
-                "id": "send_scroll_at_point",
-                "name": "指定坐标滚动",
-                "description": "在指定坐标发送滚动事件（需要明确的x,y坐标）",
-                "category": "built-in", 
-                "type": "direct",  # 直接调用
-                "parameters": {
-                    "x": {"type": "integer", "required": True, "description": "X坐标"},
-                    "y": {"type": "integer", "required": True, "description": "Y坐标"},
-                    "direction": {"type": "string", "required": True, "enum": ["up", "down"], "description": "滚动方向"},
-                    "amount": {"type": "integer", "required": False, "default": 10, "description": "滚动距离"}
-                }
-            },
             {
                 "id": "scroll_pdf_reader",
                 "name": "滚动PDF阅读器",

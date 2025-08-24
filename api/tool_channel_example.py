@@ -6,7 +6,7 @@
 
 import asyncio
 from pydantic_ai import Agent
-from backend_tool_caller import backend_tool_caller
+from backend_tool_caller import g_backend_tool_caller
 from tools.co_reading import (
     handle_active_preview_app,
     handle_scroll_pdf,
@@ -132,7 +132,7 @@ async def test_tool_channel_directly():
     # 测试1：激活PDF应用
     print("🔧 测试1：激活PDF应用")
     try:
-        result = await backend_tool_caller.call_frontend_tool(
+        result = await g_backend_tool_caller.call_frontend_tool(
             "handle_active_preview_app",
             pdf_path="/Users/example/Documents/sample.pdf"
         )
@@ -145,7 +145,7 @@ async def test_tool_channel_directly():
     # 测试2：滚动PDF
     print("📜 测试2：向下滚动PDF")
     try:
-        result = await backend_tool_caller.call_frontend_tool(
+        result = await g_backend_tool_caller.call_frontend_tool(
             "handle_scroll_pdf",
             direction="down",
             amount=2
@@ -159,7 +159,7 @@ async def test_tool_channel_directly():
     # 测试3：权限检查
     print("🛡️  测试3：权限检查")
     try:
-        result = await backend_tool_caller.call_frontend_tool(
+        result = await g_backend_tool_caller.call_frontend_tool(
             "ensure_accessibility_permission"
         )
         print(f"结果: {result}")

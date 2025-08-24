@@ -14,7 +14,7 @@ import importlib
 from typing import List, Dict, Any, Optional, Callable
 from sqlmodel import Session, select
 from db_mgr import ChatSession, Tool, Scenario, SessionSelectedTool
-from backend_tool_caller import backend_tool_caller
+from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +143,7 @@ class ToolProvider:
         async def channel_tool_wrapper(**kwargs):
             """工具通道包装器 - 调用前端工具"""
             try:
-                result = await backend_tool_caller.call_frontend_tool(
+                result = await g_backend_tool_caller.call_frontend_tool(
                     tool_name=tool.id,
                     timeout=30.0,
                     **kwargs
