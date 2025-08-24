@@ -93,6 +93,14 @@ impl EventBuffer {
         // 多模态向量化进度：控制UI更新频率，最多每秒1次
         strategies.insert("multivector-progress".to_string(), Throttle(Duration::from_secs(1)));
         
+        // === 工具通道事件（立即转发，保证实时性） ===
+        // 工具调用请求：需要立即传递给前端执行
+        strategies.insert("tool-call-request".to_string(), Immediate);
+        // 工具调用响应：通过HTTP API处理，这里不需要特殊配置
+        strategies.insert("tool-call-response".to_string(), Immediate);
+        // 工具调用错误：需要立即通知
+        strategies.insert("tool-call-error".to_string(), Immediate);
+        
         // 注意：未在此配置的事件类型将使用默认策略（500ms延迟合并）
     }
     

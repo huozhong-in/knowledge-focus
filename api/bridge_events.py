@@ -61,6 +61,11 @@ class BridgeEventSender:
         MULTIVECTOR_PROGRESS = "multivector-progress"
         MULTIVECTOR_COMPLETED = "multivector-completed"
         MULTIVECTOR_FAILED = "multivector-failed"
+        
+        # 工具通道事件 - 通用工具调用机制
+        TOOL_CALL_REQUEST = "tool-call-request"   # Python请求前端执行工具
+        TOOL_CALL_RESPONSE = "tool-call-response" # 前端返回执行结果（通过HTTP API）
+        TOOL_CALL_ERROR = "tool-call-error"       # 工具执行错误
     
     def __init__(self, source: str = "python-backend"):
         """

@@ -34,6 +34,10 @@ interface EventHandlers {
   'multivector-progress'?: (payload: BridgeEventPayload) => void;
   'multivector-completed'?: (payload: BridgeEventPayload) => void;
   'multivector-failed'?: (payload: BridgeEventPayload) => void;
+  // 工具通道事件
+  'tool-call-request'?: (payload: BridgeEventPayload) => void;
+  'tool-call-response'?: (payload: BridgeEventPayload) => void;
+  'tool-call-error'?: (payload: BridgeEventPayload) => void;
   [eventName: string]: ((payload: BridgeEventPayload) => void) | undefined;
 }
 

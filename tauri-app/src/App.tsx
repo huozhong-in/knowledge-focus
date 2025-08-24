@@ -400,6 +400,16 @@ export default function Page() {
           }
         )
       },
+      // 工具通道事件处理
+      'tool-call-request': async (payload: any) => {
+        console.log("App.tsx: 收到工具调用请求:", payload)
+        
+        // 动态导入工具通道和工具实现
+        const { handleToolCall } = await import('./lib/toolChannel')
+        
+        // 处理工具调用请求
+        await handleToolCall(payload)
+      },
       // 多模态向量化事件处理
       'multivector-progress': (payload: any) => {
         // console.log("App.tsx: Multivector progress:", payload)

@@ -1,6 +1,19 @@
 # Agent 功能开发与集成计划
 
-> **项目目标**：基于我们对产品架构的讨论，将 Pydantic AI 作为后端 Agent 框架，与 Vercel AI SDK 驱动的前端 UI 深度集成。实现一个支持动态工具集、特定场景模式和完整生命周期管理的智能对话系统。
+> **项目目标**：基于我### 阶段 2：工具化与 API 建设
+
+- [x] **3. `tools` 模块代码组织**
+  - [x] **核心任务**: 创建 `api/tools/` 目录结构，并迁移或创建初始工具代码。
+  - [x] 将"共读PDF"工具集代码迁移到 `tools/co_reading.py`。
+  - [x] 创建一个简单的通用工具（如 `calculator.py`）放入 `tools/` 用于测试。
+  - [x] **工具通道机制**: 实现了Python后端与TypeScript前端的工具调用通道，解决了跨平台工具执行问题。
+
+- [x] **4. `ToolProvider` 服务与 API 端点**
+  - [x] **核心任务**: 实现工具的动态加载服务及前端获取工具清单的 API。
+  - [x] 创建 `tool_provider.py` 并实现 `ToolProvider` 类及其 `get_tools_for_session` 方法。
+  - [x] 创建 `unified_tools_api.py` 整合了工具直接调用、工具通道响应和工具列表获取的API端点。
+  - [x] 在 `main.py` 中注册新的 API 路由。
+  - [x] **扩展实现**: 不仅支持基于场景的预置工具，还实现了工具通道机制，支持前端工具执行。ydantic AI 作为后端 Agent 框架，与 Vercel AI SDK 驱动的前端 UI 深度集成。实现一个支持动态工具集、特定场景模式和完整生命周期管理的智能对话系统。
 
 ---
 

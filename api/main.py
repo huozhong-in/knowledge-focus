@@ -37,7 +37,7 @@ from chatsession_api import get_router as get_chatsession_router
 from myfolders_api import get_router as get_myfolders_router
 from screening_api import get_router as get_screening_router
 from search_api import get_router as get_search_router
-from tools_provider_api import get_router as get_tools_router
+from unified_tools_api import get_router as get_tools_router
 
 # 初始化logger
 logger = logging.getLogger(__name__)
