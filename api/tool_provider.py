@@ -104,7 +104,8 @@ class ToolProvider:
             1, #"calculator_add",
             2, #"calculator_multiply",
             3, #"calculator_bmi",
-            # 4, #"file_search",
+            # "file_search",  # 本机文件搜索工具
+            # "memory_summary",  # 上下文工程(二期)：汇总会话历史记录
         ]
         
         for tool_id in default_tool_ids:
@@ -312,4 +313,3 @@ if __name__ == "__main__":
     # 获取聊天会话ID对应的场景system_prompt
     system_prompt = tool_provider.get_session_scenario_system_prompt(session_id=1)
     print(f"聊天会话ID对应的场景system_prompt: {system_prompt}")
-    

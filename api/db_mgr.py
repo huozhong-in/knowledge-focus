@@ -656,7 +656,7 @@ class DBManager:
                         "use_proxy": False,
                     },
                     {
-                        "display_name": "Google AI Studio", 
+                        "display_name": "Google Gemini", 
                         "provider_type": "google", 
                         "source_type": ModelSourceType.CONFIGURABLE.value, 
                         "base_url": "https://generativelanguage.googleapis.com/v1beta",

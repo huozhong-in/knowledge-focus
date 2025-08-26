@@ -10,7 +10,7 @@ from sqlmodel import Session, select
 from db_mgr import SystemConfig
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai import Agent
+from pydantic_ai import Agent, Tool
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -29,6 +29,7 @@ from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr
 from tool_provider import ToolProvider
+from memory_mgr import MemoryMgr
 from bridge_events import BridgeEventSender
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class ModelsMgr:
         self.session = session
         self.model_config_mgr = ModelConfigMgr(session)
         self.tool_provider = ToolProvider(session)
+        self.memory_mgr = MemoryMgr(session)
         self.bridge_events = BridgeEventSender(source="models-manager")
 
     def get_embedding(self, text_str: str) -> List[float]:
@@ -329,23 +331,34 @@ Based on all information, provide the best tags for this file.
         )
         
         # prepare tools
-        tools = self.tool_provider.get_tools_for_session(session_id)
-        
-        # ! 调用方过滤了只保留最后一条role=user消息，所以system_prompt始终为[]，保留给将来用户给AI定角色吧
-        system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
+        tools = [Tool(tool, takes_ctx=False) for tool in self.tool_provider.get_tools_for_session(session_id)]
+        count_tokens_tools = self.memory_mgr.calculate_tools_tokens(tools)
+        logger.info(f"当前工具数: {len(tools)}, 当前token数: {count_tokens_tools}")
+        # 把场景prompt追加到系统prompt后面
+        system_prompt = ["You are a helpful assistant."]
         scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
         if scenario_system_prompt:
-            system_prompt.append(scenario_system_prompt)  # 把场景prompt追加到系统prompt后面
-
+            system_prompt.append(scenario_system_prompt)
+        count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
+        logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
+        # 处理用户输入
+        user_prompt: List[str] = [msg['content'] for msg in messages if msg['role'] == 'user']
+        if user_prompt == []:
+            raise ValueError("User prompt is empty")
+        count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
+        logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
+        # 留给会话历史记录的token数为max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
+        available_tokens = max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
+        logger.info(f"当前可用历史消息token数: {available_tokens}")
+        chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
+        # 将会话历史记录插到用户提示词上方
+        user_prompt.insert(0, chat_history)
+        logger.info(f"当前用户提示词: {user_prompt}")
         agent = Agent(
             model=model,
             tools=tools,
-            system_prompt=system_prompt if len(system_prompt) > 0 else ["You are a helpful assistant."],
+            system_prompt=system_prompt,
         )
-
-        user_prompt = [msg['content'] for msg in messages if msg['role'] == 'user']
-        if not user_prompt:
-            raise ValueError("User prompt is empty")
 
         # 状态跟踪变量
         current_part_type = None  # 当前部分类型 ('text', 'reasoning', 'tool')
@@ -381,7 +394,7 @@ Based on all information, provide the best tags for this file.
             return None
 
         # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
-        async with agent.iter(user_prompt=user_prompt[-1], deps=None) as run:
+        async with agent.iter(user_prompt=user_prompt, deps=None) as run:
             async for node in run:
                 if Agent.is_user_prompt_node(node):
                     # 结束之前的部分

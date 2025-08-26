@@ -217,7 +217,7 @@ class ChatSessionMgr:
         return list(messages), total
     
     def get_recent_messages(self, session_id: int, limit: int = 10) -> List[ChatMessage]:
-        """获取会话的最近N条消息"""
+        """获取会话的最近N条消息，用作恢复聊天现场"""
         messages = self.session.exec(
             select(ChatMessage)
             .where(ChatMessage.session_id == session_id)

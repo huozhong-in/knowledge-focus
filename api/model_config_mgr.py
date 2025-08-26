@@ -333,7 +333,7 @@ class ModelConfigMgr:
         return None
     
     def get_spec_model_config(self, capability: ModelCapability) -> ModelUseInterface | None:
-        """取得全局指定能力的模型的model_identifier base_url api_key use_proxy"""
+        """取得全局指定能力的模型的model使用参数"""
         model_config: ModelConfiguration = self.get_model_for_global_capability(capability)
         if model_config is None:
             logger.info(f"No configuration found for {capability} model")
@@ -362,15 +362,15 @@ class ModelConfigMgr:
         )
 
     def get_vision_model_config(self) -> ModelUseInterface:
-        """取得全局视觉模型的model_identifier base_url api_key use_proxy"""
+        """取得全局视觉模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.VISION)
 
     def get_embedding_model_config(self) -> ModelUseInterface:
-        """取得全局嵌入模型的model_identifier base_url api_key use_proxy"""
+        """取得全局嵌入模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.EMBEDDING)
 
     def get_text_model_config(self) -> ModelUseInterface:
-        """取得全局文本模型的model_identifier base_url api_key use_proxy"""
+        """取得全局文本模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.TEXT)
 
     def toggle_model_enabled(self, model_id: int, is_enabled: bool) -> bool:
