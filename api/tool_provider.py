@@ -58,11 +58,11 @@ class ToolProvider:
                     logger.warning(f"会话 {session_id} 未找到或没有场景，使用默认工具集")
             
             # 返回默认工具集
-            return self._get_default_tools()
+            return []
             
         except Exception as e:
             logger.error(f"获取会话工具失败: {e}")
-            return self._get_default_tools()
+            return []
     
     def get_session_scenario_system_prompt(self, session_id: int) -> str | None:
         '''如果session_id对应的会话有配置场景，则返回场景的system_prompt'''

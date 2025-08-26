@@ -12,13 +12,6 @@ import { RagLocal } from "./rag-local"
 import { AiSdkChat } from "./ai-sdk-chat"
 import { ChatSession } from "./lib/chat-session-api"
 
-interface Message {
-  id: string
-  content: string
-  type: "incoming" | "outgoing"
-  timestamp: Date
-}
-
 interface AppWorkspaceProps {
   currentSession?: ChatSession | null
   currentSessionId?: number | null
@@ -50,22 +43,6 @@ export function AppWorkspace({
     // 直接使用传入的currentSessionId，可能为null
     setSessionId(currentSessionId || null)
   }, [currentSessionId])
-  const [messages] = useState<Message[]>([
-    {
-      id: "1",
-      content: `# 欢迎使用AI助手！🤖
-
-我是您的**智能数据助手**，可以帮您：
-
-- 📄 分析和处理文档
-- 🏷️ 提取关键信息和标签  
-- 📊 生成数据摘要
-- 💡 回答各种问题
-`,
-      type: "incoming",
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
-    },
-  ])
 
   // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
   // const { state, setOpen } = useSidebar()
@@ -138,7 +115,6 @@ export function AppWorkspace({
               </div>
             </div>
             <AiSdkChat 
-              initialMessages={messages} 
               sessionId={sessionId ? String(sessionId) : undefined}
               onCreateSessionFromMessage={onCreateSessionFromMessage}
               resetTrigger={chatResetTrigger}

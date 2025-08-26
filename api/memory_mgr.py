@@ -70,7 +70,7 @@ class MemoryMgr:
     def calculate_tools_tokens(self, tools: List[Tool]) -> int:
         result = 0
         for tool in tools:
-            logger.info(f"工具: {tool.name}, 描述: {tool.description}, 参数: {tool.function_schema}")
+            # logger.info(f"工具: {tool.name}, 描述: {tool.description}, 参数: {tool.function_schema}")
             result += num_tokens_from_string(tool.description + json.dumps(tool.function_schema.json_schema))
         return result
 

@@ -207,7 +207,24 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     class AgentChatRequest(BaseModel):
         messages: List[Dict[str, Any]]
-        session_id: int
+        session_id: int = None  # 使session_id可选，以防前端没有发送
+
+        @classmethod
+        def model_validate(cls, data):
+            # 如果session_id在body中而不是顶级字段，尝试提取
+            if isinstance(data, dict):
+                if 'session_id' not in data and hasattr(data, 'get'):
+                    # 检查是否在嵌套的body中
+                    if 'body' in data and isinstance(data['body'], dict):
+                        session_id = data['body'].get('session_id')
+                        if session_id:
+                            data['session_id'] = session_id
+                
+                # 确保messages是列表
+                if 'messages' in data and not isinstance(data['messages'], list):
+                    data['messages'] = [data['messages']]
+            
+            return super().model_validate(data)
 
     @router.post("/chat/agent-stream", tags=["models"])
     async def agent_chat_stream(
@@ -220,20 +237,56 @@ def get_router(external_get_session: callable) -> APIRouter:
         Streams responses according to the Vercel AI SDK v5 protocol.
         """
         async def stream_generator():
-            # 1. 保存用户消息
-            # Vercel AI SDK UI在每次请求时都会发送所有历史消息
-            # 我们只保存最后一条用户消息
-            last_user_message = None
-            if request.messages and request.messages[-1].get("role") == "user":
-                last_user_message = request.messages[-1]
+            try:
+                # 添加调试日志
+                # logger.info(f"Received request: messages={request.messages}, session_id={request.session_id}")
                 
-            if last_user_message is None:
-                # 如果没有找到用户消息，返回错误
-                yield f"data: {json.dumps({'type': 'error', 'errorText': 'No user message found'})}\n\n"
+                # 1. 保存用户消息
+                # Vercel AI SDK UI在每次请求时都会发送所有历史消息
+                # 我们只保存最后一条用户消息
+                last_user_message = None
+                if request.messages and len(request.messages) > 0:
+                    # 确保messages是列表且最后一个元素是字典
+                    last_message = request.messages[-1]
+                    logger.info(f"Last message: {last_message}, type: {type(last_message)}")
+                    
+                    if isinstance(last_message, dict) and last_message.get("role") == "user":
+                        last_user_message = last_message
+                    elif isinstance(last_message, str):
+                        # 如果是字符串，尝试解析JSON
+                        try:
+                            last_message = json.loads(last_message)
+                            if last_message.get("role") == "user":
+                                last_user_message = last_message
+                        except json.JSONDecodeError:
+                            logger.error(f"Failed to parse message as JSON: {last_message}")
+                
+                if last_user_message is None:
+                    # 如果没有找到用户消息，返回错误
+                    yield f"data: {json.dumps({'type': 'error', 'errorText': 'No user message found'})}\n\n"
+                    return
+
+                logger.info(f"Processing user message: {last_user_message}")
+            
+            except Exception as e:
+                logger.error(f"Error in initial processing: {e}")
+                yield f"data: {json.dumps({'type': 'error', 'errorText': f'Initial processing error: {str(e)}'})}\n\n"
                 return
 
-            # 提取用户消息内容
-            content_text = last_user_message.get("content", "").strip()
+            # 提取用户消息内容 - 兼容AI SDK v5的parts格式
+            content_text = ""
+            
+            # AI SDK v5格式：优先从parts中提取文本
+            if "parts" in last_user_message:
+                for part in last_user_message["parts"]:
+                    if part.get("type") == "text":
+                        content_text += part.get("text", "")
+            
+            # 备用：检查传统的content字段
+            if not content_text:
+                content_text = last_user_message.get("content", "")
+            
+            content_text = content_text.strip()
             if not content_text:
                 yield f"data: {json.dumps({'type': 'error', 'errorText': 'No user message content found'})}\n\n"
                 return
@@ -251,17 +304,23 @@ def get_router(external_get_session: callable) -> APIRouter:
 
             # 2. 流式生成并保存助手消息
             assistant_message_id = f"asst_{uuid.uuid4().hex}"
-            accumulated_parts = []  # 保存parts以便用户切换会话时能“恢复现场”，看到完整内容
             accumulated_text_content = ""  # 保存纯文本内容，便于搜索和摘要等文本处理
+            # 用于累积不同类型的parts内容
+            # accumulated_parts = []  # 保存parts以便用户切换会话时能“恢复现场”，看到完整内容
+            # accumulated_reasoning_content = ""  # 思考过程内容
+            # tool_calls = {}  # 工具调用：{tool_call_id: {'name': str, 'input': str, 'output': str}}
+            final_parts = []  # 最终的parts数组
 
             try:
-                # 直接转发stream_agent_chat的标准化SSE输出
-                async for sse_chunk in models_mgr.stream_agent_chat(
-                    # messages=request.messages,  # 前端所有历史消息，包括从数据库读出来预填充的
-                    messages=last_user_message,  # 仅最后一条用户消息
+                # 临时使用 v5_compatible 方法进行调试
+                logger.info(f"Starting stream_agent_chat_v5_compatible for session_id: {request.session_id}")
+                chunk_count = 0
+                async for sse_chunk in models_mgr.stream_agent_chat_v5_compatible(
+                    messages=[last_user_message],  # 传递包含最后一条用户消息的列表
                     session_id=request.session_id
                 ):
-                    # stream_agent_chat已经返回符合Vercel AI SDK v5标准的SSE格式
+                    chunk_count += 1
+                    # 使用修复后的stream_agent_chat方法，它现在有正确的SSE格式
                     # 直接传递给前端，无需额外转换
                     yield sse_chunk
                     
@@ -271,14 +330,19 @@ def get_router(external_get_session: callable) -> APIRouter:
                             sse_data = sse_chunk[6:].strip()  # 移除 'data: ' 前缀
                             if sse_data:
                                 parsed_data = json.loads(sse_data)
-                                accumulated_parts.append(parsed_data)
                                 
-                                # 累积文本内容用于保存
+                                # 只累积text-delta事件来构建最终的文本内容
                                 if parsed_data.get('type') == 'text-delta':
                                     accumulated_text_content += parsed_data.get('delta', '')
+                                    logger.info(f"Accumulated text delta: {parsed_data.get('delta', '')}")
+                                
+                                # 额外日志：记录所有事件类型
+                                logger.info(f"Received SSE event type: {parsed_data.get('type', 'unknown')}")
                         except json.JSONDecodeError:
                             # 忽略无法解析的数据行
                             pass
+                
+                logger.info(f"Stream completed with {chunk_count} chunks, accumulated text length: {len(accumulated_text_content)}")
 
             except Exception as e:
                 logger.error(f"Error in agent_chat_stream: {e}")
@@ -287,16 +351,21 @@ def get_router(external_get_session: callable) -> APIRouter:
                 yield error_event
             
             finally:
-                # 3. 在流结束后，将完整的助手消息（包含所有parts）持久化
-                if accumulated_parts:
+                # 3. 在流结束后，将完整的助手消息持久化
+                if accumulated_text_content.strip():
+                    # 构建符合AI SDK v5格式的parts
+                    final_parts = [{"type": "text", "text": accumulated_text_content.strip()}]
+                    
                     chat_mgr.save_message(
                         session_id=request.session_id,
                         message_id=assistant_message_id,
                         role="assistant",
                         content=accumulated_text_content.strip(),
-                        parts=accumulated_parts
+                        parts=final_parts
                     )
-                    logger.info(f"Saved assistant message {assistant_message_id} with {len(accumulated_parts)} parts.")
+                    logger.info(f"Saved assistant message {assistant_message_id} with content length: {len(accumulated_text_content.strip())}")
+                else:
+                    logger.warning(f"No content to save for assistant message {assistant_message_id}")
 
         return StreamingResponse(
             stream_generator(), 

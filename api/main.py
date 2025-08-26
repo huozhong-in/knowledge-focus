@@ -43,7 +43,7 @@ from unified_tools_api import get_router as get_tools_router
 logger = logging.getLogger(__name__)
 
 # --- Centralized Logging Setup ---
-def setup_logging(logging_dir: str = None):
+def setup_logging(logging_dir: str):
     """
     Configures the root logger for the application.
 
@@ -53,14 +53,7 @@ def setup_logging(logging_dir: str = None):
     
     try:
         # Determine log directory
-        if logging_dir is not None:
-            log_dir = Path(logging_dir)
-        else:
-            script_path = os.path.abspath(__file__)
-            log_dir = Path(script_path).parent / 'logs'
-        if not log_dir.exists():
-            log_dir.mkdir(exist_ok=True, parents=True)
-
+        log_dir = Path(logging_dir)
         log_filename = f'api_{time.strftime("%Y%m%d")}.log'
         log_filepath = log_dir / log_filename
 
@@ -908,20 +901,15 @@ if __name__ == "__main__":
         parser.add_argument("--mode", type=str, default="dev", help="标记是开发环境还是生产环境")
         args = parser.parse_args()
 
-        # 检查数据库路径是否存在
+        # 设置日志目录
         db_dir = os.path.dirname(os.path.abspath(args.db_path))
-        if db_dir and not os.path.exists(db_dir):
-            os.makedirs(db_dir, exist_ok=True)
-
-        if args.mode is not None and args.mode == "dev":
-            setup_logging()
-        else:
-            logging_dir = os.path.join(db_dir, "logs")
-            setup_logging(logging_dir)
-
+        logging_dir = os.path.join(db_dir, "logs")
+        if not os.path.exists(logging_dir):
+            os.makedirs(logging_dir, exist_ok=True)
+        setup_logging(logging_dir)
         logger = logging.getLogger(__name__)
         logger.info("API服务程序启动")
-        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}, mode={args.mode}")
+        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
 
         # 检查端口是否被占用，如果被占用则终止占用进程
         try:
