@@ -238,9 +238,6 @@ def get_router(external_get_session: callable) -> APIRouter:
         """
         async def stream_generator():
             try:
-                # 添加调试日志
-                # logger.info(f"Received request: messages={request.messages}, session_id={request.session_id}")
-                
                 # 1. 保存用户消息
                 # Vercel AI SDK UI在每次请求时都会发送所有历史消息
                 # 我们只保存最后一条用户消息
@@ -305,22 +302,15 @@ def get_router(external_get_session: callable) -> APIRouter:
             # 2. 流式生成并保存助手消息
             assistant_message_id = f"asst_{uuid.uuid4().hex}"
             accumulated_text_content = ""  # 保存纯文本内容，便于搜索和摘要等文本处理
-            # 用于累积不同类型的parts内容
-            # accumulated_parts = []  # 保存parts以便用户切换会话时能“恢复现场”，看到完整内容
-            # accumulated_reasoning_content = ""  # 思考过程内容
-            # tool_calls = {}  # 工具调用：{tool_call_id: {'name': str, 'input': str, 'output': str}}
-            final_parts = []  # 最终的parts数组
+            accumulated_parts = []  # 用于累积不同类型的parts内容，保存到数据库，以便用户切换会话时能“恢复现场”
 
             try:
-                # 临时使用 v5_compatible 方法进行调试
-                logger.info(f"Starting stream_agent_chat_v5_compatible for session_id: {request.session_id}")
                 chunk_count = 0
                 async for sse_chunk in models_mgr.stream_agent_chat_v5_compatible(
                     messages=[last_user_message],  # 传递包含最后一条用户消息的列表
                     session_id=request.session_id
                 ):
                     chunk_count += 1
-                    # 使用修复后的stream_agent_chat方法，它现在有正确的SSE格式
                     # 直接传递给前端，无需额外转换
                     yield sse_chunk
                     
@@ -330,19 +320,29 @@ def get_router(external_get_session: callable) -> APIRouter:
                             sse_data = sse_chunk[6:].strip()  # 移除 'data: ' 前缀
                             if sse_data:
                                 parsed_data = json.loads(sse_data)
-                                
-                                # 只累积text-delta事件来构建最终的文本内容
+                                # 记录各种类型的parts，参考 https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
                                 if parsed_data.get('type') == 'text-delta':
+                                    # 只累积text-delta事件来构建单独保存的文本内容
                                     accumulated_text_content += parsed_data.get('delta', '')
-                                    logger.info(f"Accumulated text delta: {parsed_data.get('delta', '')}")
-                                
-                                # 额外日志：记录所有事件类型
-                                logger.info(f"Received SSE event type: {parsed_data.get('type', 'unknown')}")
+                                    # data: {"type":"text-delta","delta":"Hello"}
+                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('delta', '').strip()})
+                                elif parsed_data.get('type') == 'reasoning-delta':
+                                    # data: {"type":"reasoning-delta","delta":"This is some reasoning"}
+                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('delta', '').strip()})
+                                elif parsed_data.get('type') == 'tool-input-delta':
+                                    # data: {"type":"tool-input-available","toolName":"getWeatherInformation","input":{"city":"San Francisco"}}
+                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('toolName', '').strip()})
+                                elif parsed_data.get('type') == 'tool-output-available':
+                                    # data: {"type":"tool-output-available","output":{"city":"San Francisco","weather":"sunny"}}
+                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('output', '').strip()})
+                                elif parsed_data.get('type') == 'error':
+                                    # data: {"type":"error","errorText":"error message"}
+                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('errorText', '').strip()})
+                                else:
+                                    pass  # 忽略其他类型
                         except json.JSONDecodeError:
                             # 忽略无法解析的数据行
                             pass
-                
-                logger.info(f"Stream completed with {chunk_count} chunks, accumulated text length: {len(accumulated_text_content)}")
 
             except Exception as e:
                 logger.error(f"Error in agent_chat_stream: {e}")
@@ -351,17 +351,14 @@ def get_router(external_get_session: callable) -> APIRouter:
                 yield error_event
             
             finally:
-                # 3. 在流结束后，将完整的助手消息持久化
+                # 3. 在流结束后，将完整的助手消息持久化到数据库
                 if accumulated_text_content.strip():
-                    # 构建符合AI SDK v5格式的parts
-                    final_parts = [{"type": "text", "text": accumulated_text_content.strip()}]
-                    
                     chat_mgr.save_message(
                         session_id=request.session_id,
                         message_id=assistant_message_id,
                         role="assistant",
                         content=accumulated_text_content.strip(),
-                        parts=final_parts
+                        parts=accumulated_parts
                     )
                     logger.info(f"Saved assistant message {assistant_message_id} with content length: {len(accumulated_text_content.strip())}")
                 else:
