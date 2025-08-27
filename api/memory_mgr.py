@@ -57,15 +57,15 @@ class MemoryMgr:
                 messages.pop(0)
             else:
                 break
-        # 将历史消息拼接到用户提示词上方：其中用户消息前拼接'user:'，助手消息前拼接'assistant:'
+        # 历史消息内容清洗：用户消息前拼接'user:'，助手消息前拼接'assistant:'
         result = []
         for chat_msg in messages:
             if chat_msg.role == 'user':
                 result.append(f"user: {chat_msg.content}")
             elif chat_msg.role == 'assistant':
                 result.append(f"assistant: {chat_msg.content}")
-        return "\n--- \n## 会话历史: \n" + "\n".join(result) + "\n ---"
-    
+        return result
+
     # 计算tools的token数
     def calculate_tools_tokens(self, tools: List[Tool]) -> int:
         result = 0

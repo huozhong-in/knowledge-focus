@@ -324,21 +324,21 @@ def get_router(external_get_session: callable) -> APIRouter:
                                 if parsed_data.get('type') == 'text-delta':
                                     # 只累积text-delta事件来构建单独保存的文本内容
                                     accumulated_text_content += parsed_data.get('delta', '')
-                                    # data: {"type":"text-delta","delta":"Hello"}
-                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('delta', '').strip()})
-                                elif parsed_data.get('type') == 'reasoning-delta':
-                                    # data: {"type":"reasoning-delta","delta":"This is some reasoning"}
-                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('delta', '').strip()})
-                                elif parsed_data.get('type') == 'tool-input-delta':
-                                    # data: {"type":"tool-input-available","toolName":"getWeatherInformation","input":{"city":"San Francisco"}}
-                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('toolName', '').strip()})
-                                elif parsed_data.get('type') == 'tool-output-available':
-                                    # data: {"type":"tool-output-available","output":{"city":"San Francisco","weather":"sunny"}}
-                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('output', '').strip()})
-                                elif parsed_data.get('type') == 'error':
-                                    # data: {"type":"error","errorText":"error message"}
-                                    accumulated_parts.append({"type": parsed_data.get('type'), "text": parsed_data.get('errorText', '').strip()})
+                                if parsed_data.get('type') in [
+                                        'start',
+                                        'text-start',
+                                        'text-delta', 
+                                        'text-end',
+                                        'reasoning-start',
+                                        'reasoning-delta',
+                                        'reasoning-end',
+                                        'tool-input-available', 
+                                        'tool-output-available',
+                                        'finish',
+                                        ]:
+                                    accumulated_parts.append(parsed_data)
                                 else:
+                                    # data: {"type":"error","errorText":"error message"}
                                     pass  # 忽略其他类型
                         except json.JSONDecodeError:
                             # 忽略无法解析的数据行

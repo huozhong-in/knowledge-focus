@@ -1,6 +1,7 @@
 import os
-from typing import Dict, List
+from typing import Dict, List, Literal
 from pydantic import BaseModel
+from pydantic_ai import RunContext
 from backend_tool_caller import g_backend_tool_caller
 import pyautogui
 from Quartz.CoreGraphics import (
@@ -119,7 +120,7 @@ def _send_scroll_at_point(x, y, dy: int = 22) -> bool:
     pyautogui.moveTo(ori_pos.x, ori_pos.y)
     return True
 
-def scroll_pdf_reader(direction: str = "down", amount: int = 10) -> Dict:
+def scroll_pdf_reader(ctx: RunContext, direction: Literal["up", "down"] = "down", amount: int = 10) -> Dict:
     """
     智能滚动PDF阅读器 - 自动使用缓存的中心点坐标
     
@@ -139,15 +140,15 @@ def scroll_pdf_reader(direction: str = "down", amount: int = 10) -> Dict:
         x, y = center_point["x"], center_point["y"]
         
         # 根据方向确定滚动距离（向上为负值）
-        dy = amount if direction == "down" else -amount
-        
+        dy = amount if direction.deps == "down" else -amount
+
         # 执行滚动
         success = _send_scroll_at_point(x, y, dy)
         
         if success:
             return {
                 "success": True, 
-                "message": f"已在坐标({x}, {y})执行{direction}滚动，距离{amount}"
+                "message": f"已在坐标({x}, {y})执行{direction.deps}滚动，距离{amount}"
             }
         else:
             return {
@@ -166,11 +167,11 @@ def _is_window_exist(window_name: str) -> bool:
             return True
     return False
 
-async def handle_pdf_reading(pdf_path: str) -> Dict:
+async def handle_pdf_reading(ctx: RunContext, pdf_path: str) -> Dict:
     """
-    使用系统默认PDF阅读器打开PDF文件 - 调用前端工具
+    使用系统默认PDF阅读器打开PDF文件
     Args:
-        pdf_path (str): PDF文件路径
+        pdf_path (str): PDF文件的完整路径
     """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
@@ -197,9 +198,9 @@ async def handle_pdf_reading(pdf_path: str) -> Dict:
     except Exception as e:
         return {"success": False, "message": f"打开PDF失败: {e}"}
 
-async def handle_pdf_reader_screenshot(pdf_path: str) -> Dict:
+async def handle_pdf_reader_screenshot(ctx: RunContext, pdf_path: str) -> Dict:
     """
-    对PDF窗口截图 - 调用前端工具
+    对PDF窗口截图
 
     Args:
         pdf_path (str): PDF文件路径
@@ -215,7 +216,7 @@ async def handle_pdf_reader_screenshot(pdf_path: str) -> Dict:
 
 async def ensure_accessibility_permission() -> Dict:
     """
-    确保辅助功能权限 - 调用前端工具
+    确保已经获得macOS辅助功能权限
     """
     try:
         result = await g_backend_tool_caller.call_frontend_tool(
@@ -225,12 +226,12 @@ async def ensure_accessibility_permission() -> Dict:
     except Exception as e:
         return {"success": False, "message": f"权限检查失败: {e}"}
 
-async def handle_activate_pdf_reader(pdf_path: str, action: str = "focus") -> Dict:
+async def handle_activate_pdf_reader(ctx: RunContext, pdf_path: str, action: str = "focus") -> Dict:
     """
-    寻找和激活PDF阅读器应用窗口 - 调用前端工具
+    寻找和激活PDF阅读器应用窗口
 
     Args:
-        pdf_path (str): PDF文件路径
+        pdf_path (str): PDF文件的完整路径
         action (str): 激活动作，默认为"focus"
     """
     try:

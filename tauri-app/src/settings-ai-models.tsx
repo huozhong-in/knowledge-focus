@@ -1096,9 +1096,9 @@ function SettingsAIModels() {
       console.log('Model capabilities:', capabilities)
       
       // 更新模型状态为可用（如果成功获取到能力信息）
-      setModels(prev => prev.map(model => 
-        model.id === modelId ? { ...model, is_available: true, capabilities } : model
-      ))
+      // setModels(prev => prev.map(model => 
+      //   model.id === modelId ? { ...model, is_available: true, capabilities } : model
+      // ))
       
       // 计算能力数量
       const capabilityCount = Object.values(capabilities).filter(Boolean).length
@@ -1107,9 +1107,9 @@ function SettingsAIModels() {
       console.error("Failed to test model capability:", error)
       
       // 如果测试失败，标记模型为不可用
-      setModels(prev => prev.map(model => 
-        model.id === modelId ? { ...model, is_available: false } : model
-      ))
+      // setModels(prev => prev.map(model => 
+      //   model.id === modelId ? { ...model, is_available: false } : model
+      // ))
       
       toast.error(`模型能力测试失败: ${error instanceof Error ? error.message : '未知错误'}`)
     } finally {

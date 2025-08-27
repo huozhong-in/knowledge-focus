@@ -89,16 +89,24 @@ export async function ensureAccessibilityPermission(args: Record<string, any>): 
 
 export const handlePdfReading = async (args: Record<string, any>): Promise<PdfReaderCenterPoint | undefined> => {
   try {
-    const { pdfPath } = args as { pdfPath: string };
+    // 支持两种参数格式：pdfPath (前端期望) 和 pdf_path (Python函数参数)
+    const { pdfPath, pdf_path } = args as { pdfPath?: string; pdf_path?: string };
+    const actualPdfPath = pdfPath || pdf_path;
+    
+    if (!actualPdfPath) {
+      console.error("PDF路径参数为空")
+      return undefined;
+    }
+    
     // 检查辅助功能权限
     const hasPermission = await ensureAccessibilityPermission({})
     console.log("权限检查结果:", hasPermission)
 
     if (hasPermission.success) {
       // --- 第1步：打开PDF并抢回焦点 ---
-      const window_info = await handleActivatePdfReader({ pdfPath })
+      const window_info = await handleActivatePdfReader({ pdfPath: actualPdfPath })
       if (window_info === undefined) {
-        const result = await handleOpenPDF(pdfPath)
+        const result = await handleOpenPDF(actualPdfPath)
         if (!result) {
           console.error("未能打开PDF文件")
           return undefined
@@ -107,6 +115,10 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
       const appWindow = Window.getCurrent()
       const windowFactor = await getCurrentWindow().scaleFactor()
       console.log("窗口缩放因子:", windowFactor)
+      // 取得当前窗口高度
+      const windowSize = await getCurrentWindow().innerSize()
+      const windowHeight = windowSize.height
+      // console.log("当前窗口高度:", windowHeight)
 
       // const windowList = await Window.getAll();
       // console.log("当前所有窗口列表:", windowList);
@@ -125,7 +137,7 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
 
       // --- 第3步：将Tauri应用窗口置于左侧 ---
       console.log("正在将本应用窗口移动到左侧...")
-      await appWindow.setSize(new PhysicalSize(halfWidth, monitorSize.height))
+      await appWindow.setSize(new PhysicalSize(halfWidth, windowHeight))  // 窗口宽度变化，但高度保持不变
       // 使用 monitor.position 来处理多显示器情况更佳
       await appWindow.setPosition(
         new PhysicalPosition(monitor.position.x, monitor.position.y)
@@ -152,7 +164,7 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
       pdf_center_point.y = Math.floor(scaledMonitorHeight / 2)
       // refer https://apple.stackexchange.com/questions/376928/apple-script-how-do-i-check-if-the-bounds-of-a-window-are-equal-to-specific-va
       
-      const defaultPDFReaderName = await getPdfReaderName(pdfPath)
+      const defaultPDFReaderName = await getPdfReaderName(actualPdfPath)
       const appleScript = `
 const app = Application("${defaultPDFReaderName}");
 
@@ -219,12 +231,20 @@ if (app.windows.length > 0) {
 
 export const handleActivatePdfReader = async (args: Record<string, any>): Promise<PdfReaderCenterPoint | undefined> => {
   // 激活PDF阅读器窗口
-  const { pdfPath } = args as { pdfPath: string };
-  const pdfFileName = pdfPath.split("/").pop() || ""
+  // 支持两种参数格式：pdfPath (前端期望) 和 pdf_path (Python函数参数)
+  const { pdfPath, pdf_path } = args as { pdfPath?: string; pdf_path?: string };
+  const actualPdfPath = pdfPath || pdf_path;
+  
+  if (!actualPdfPath) {
+    console.error("PDF路径参数为空")
+    return undefined;
+  }
+  
+  const pdfFileName = actualPdfPath.split("/").pop() || ""
   if (pdfFileName === "") {
     return undefined
   }
-  const defaultPDFReaderName = await getPdfReaderName(pdfPath)
+  const defaultPDFReaderName = await getPdfReaderName(actualPdfPath)
   const appleScript = `
 // JXA (JavaScript for Automation) Script
 //
@@ -359,7 +379,14 @@ const handleOpenPDF = async (pdfPath: string): Promise<boolean> => {
 
 export async function handlePdfReaderScreenshot(args: Record<string, any>): Promise<string> {
   // 截屏
-  const { pdfPath } = args as { pdfPath: string };
+  // 支持两种参数格式：pdfPath (前端期望) 和 pdf_path (Python函数参数)
+  const { pdfPath, pdf_path } = args as { pdfPath?: string; pdf_path?: string };
+  const actualPdfPath = pdfPath || pdf_path;
+  
+  if (!actualPdfPath) {
+    console.error("PDF路径参数为空")
+    return "";
+  }
   const hasPermission = await checkScreenRecordingPermission()
   if (!hasPermission) {
     // 如果没有屏幕录制权限，尝试请求权限
@@ -372,14 +399,14 @@ export async function handlePdfReaderScreenshot(args: Record<string, any>): Prom
     }
   }
   
-  // 取得pdfPath中文件名的部分
-  const pdfFileName = pdfPath.split("/").pop() || ""
+  // 取得actualPdfPath中文件名的部分
+  const pdfFileName = actualPdfPath.split("/").pop() || ""
   if (pdfFileName === "") {
     console.error("无法获取PDF文件名，无法进行截图")
     return ''
   }
   // 激活PDF阅读器窗口，即使它被最小化了
-  const window_info = await handleActivatePdfReader({ pdfPath })
+  const window_info = await handleActivatePdfReader({ pdfPath: actualPdfPath })
   if (!window_info) {
     console.error("未能激活PDF阅读器窗口")
     return ''

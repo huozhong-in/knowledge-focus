@@ -426,7 +426,7 @@ Based on all information, provide the best tags for this file.
             )
             
             # 准备工具
-            tools = [Tool(tool, takes_ctx=False) for tool in self.tool_provider.get_tools_for_session(session_id)]
+            tools = [Tool(tool, takes_ctx=True) for tool in self.tool_provider.get_tools_for_session(session_id)]
             count_tokens_tools = self.memory_mgr.calculate_tools_tokens(tools)
             logger.info(f"当前工具数: {len(tools)}, 当前token数: {count_tokens_tools}")
             
@@ -468,7 +468,8 @@ Based on all information, provide the best tags for this file.
             logger.info(f"当前可用历史消息token数: {available_tokens}")
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
             # 将会话历史记录插到用户提示词上方
-            user_prompt.insert(0, chat_history)
+            if chat_history != []:
+                user_prompt = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt
             logger.info(f"当前用户提示词: {user_prompt}")
             
             # 创建agent
@@ -511,7 +512,7 @@ Based on all information, provide the best tags for this file.
                 return None
 
             # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
-            async with agent.iter(user_prompt=user_prompt, deps=None) as run:
+            async with agent.iter(user_prompt=user_prompt, deps=session_id) as run:
                 async for node in run:
                     logger.info(f"Processing node type: {type(node)}")
                     if Agent.is_user_prompt_node(node):
@@ -525,17 +526,17 @@ Based on all information, provide the best tags for this file.
                             final_result_found = False
                             logger.info("Starting model request stream processing")
                             async for event in request_stream:
-                                logger.info(f"Received event type: {type(event)}")
+                                # logger.info(f"Received event type: {type(event)}")
                                 if isinstance(event, PartStartEvent):
                                     logger.info("Processing PartStartEvent")
                                     # 在AI SDK v5中，我们不需要发送通用的start事件
                                     # 文本部分会在TextPartDelta事件中自动开始
-                                    logger.info("Skipping PartStartEvent - will start parts when content arrives")
+                                    # logger.info("Skipping PartStartEvent - will start parts when content arrives")
                                     continue
                                 elif isinstance(event, PartDeltaEvent):
-                                    logger.info(f"Processing PartDeltaEvent with delta type: {type(event.delta)}")
+                                    # logger.info(f"Processing PartDeltaEvent with delta type: {type(event.delta)}")
                                     if isinstance(event.delta, TextPartDelta):
-                                        logger.info(f"Processing TextPartDelta: {event.delta.content_delta}")
+                                        # logger.info(f"Processing TextPartDelta: {event.delta.content_delta}")
                                         # 检查是否需要切换到文本类型
                                         if current_part_type != 'text':
                                             # 结束之前的部分

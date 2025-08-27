@@ -145,9 +145,10 @@ class ToolProvider:
     
     def _create_channel_tool_wrapper(self, tool: Tool) -> Callable:
         """为工具通道类型的工具创建包装函数"""
-        async def channel_tool_wrapper(**kwargs):
+        async def channel_tool_wrapper(ctx=None, **kwargs):
             """工具通道包装器 - 调用前端工具"""
             try:
+                # 注意：传递给前端时不包含RunContext，只传递业务参数
                 result = await g_backend_tool_caller.call_frontend_tool(
                     tool_name=tool.name,
                     timeout=30.0,
@@ -168,6 +169,16 @@ class ToolProvider:
         else:
             # 如果无法获取原始文档，回退到使用数据库描述
             channel_tool_wrapper.__doc__ = f'{tool.description}\n'
+        
+        # 动态生成参数信息并附加到函数上（用于PydanticAI）
+        sig_info = self._get_function_signature_info(tool)
+        if sig_info:
+            # 为PydanticAI提供参数信息
+            channel_tool_wrapper.__annotations__ = {}
+            if 'properties' in sig_info:
+                for param_name in sig_info['properties']:
+                    # 简单的类型映射，可以根据需要改进
+                    channel_tool_wrapper.__annotations__[param_name] = str
         
         return channel_tool_wrapper
     
@@ -200,6 +211,52 @@ class ToolProvider:
         except Exception as e:
             logger.debug(f"获取原始函数文档失败 {tool.name}: {e}")
             return None
+    
+    def _get_function_signature_info(self, tool: Tool) -> Dict[str, Any]:
+        """从原始函数定义处获取参数签名信息"""
+        try:
+            import inspect
+            
+            # 检查是否有model_path信息
+            metadata = tool.metadata_json
+            if not metadata or 'model_path' not in metadata:
+                return {}
+            
+            # 解析模块路径和函数名
+            module_name, function_name = metadata['model_path'].split(':')
+            
+            # 动态导入模块
+            module = importlib.import_module(module_name)
+            
+            # 获取函数
+            if hasattr(module, function_name):
+                func = getattr(module, function_name)
+                if callable(func):
+                    sig = inspect.signature(func)
+                    params = {}
+                    for param_name, param in sig.parameters.items():
+                        if param_name != 'ctx':  # 排除RunContext参数
+                            param_info = {
+                                "type": "string",  # 默认为string，可以根据需要改进
+                                "description": f"参数 {param_name}"
+                            }
+                            # 如果有默认值，标记为可选
+                            if param.default != inspect.Parameter.empty:
+                                param_info["default"] = param.default
+                            params[param_name] = param_info
+                    
+                    return {
+                        "type": "object",
+                        "properties": params,
+                        "required": [p for p, param in sig.parameters.items() 
+                                   if p != 'ctx' and param.default == inspect.Parameter.empty]
+                    }
+            
+            return {}
+            
+        except Exception as e:
+            logger.debug(f"获取函数签名信息失败 {tool.name}: {e}")
+            return {}
     
     def _import_direct_tool(self, tool: Tool) -> Optional[Callable]:
         """动态导入直接调用类型的工具"""
@@ -304,12 +361,12 @@ if __name__ == "__main__":
     # for tool in preset_tools:
     #     print(f" - {tool.__name__}: {tool.__doc__}")
     
-    # # 为指定会话获取工具列表
-    # tools = tool_provider.get_tools_for_session(session_id=1)
-    # print("聊天会话ID对应的工具列表:")
-    # for tool in tools:
-    #     print(f" - {tool.__name__}: {tool.__doc__}")
+    # 为指定会话获取工具列表
+    tools = tool_provider.get_tools_for_session(session_id=1)
+    print("聊天会话ID对应的工具列表:")
+    for tool in tools:
+        print(f" - {tool.__name__}: {tool.__doc__}")
 
-    # 获取聊天会话ID对应的场景system_prompt
-    system_prompt = tool_provider.get_session_scenario_system_prompt(session_id=1)
-    print(f"聊天会话ID对应的场景system_prompt: {system_prompt}")
+    # # 获取聊天会话ID对应的场景system_prompt
+    # system_prompt = tool_provider.get_session_scenario_system_prompt(session_id=1)
+    # print(f"聊天会话ID对应的场景system_prompt: {system_prompt}")
