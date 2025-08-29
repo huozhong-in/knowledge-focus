@@ -151,7 +151,7 @@ class ModelCapabilityConfirm:
             http_client=http_client,
         )
         try:
-            _ = await client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model_interface.model_identifier,
                 messages=[
                     {
@@ -172,8 +172,9 @@ class ModelCapabilityConfirm:
                 ],
                 max_tokens=100,
             )
-            # print(response.choices[0].message.content)
-            return True
+            if 'dog' in response.choices[0].message.content:
+                return True
+            return False
         except Exception as e:
             print(f"Error testing vision capability: {e}")
             return False
@@ -362,9 +363,10 @@ if __name__ == "__main__":
             # print(await mgr.confirm_text_capability(3))
             # print(await mgr.confirm_tooluse_capability(3))
             # print(await mgr.confirm_structured_output_capability(3))
-            # print(await mgr.confirm_vision_capability(3))
-            print(await mgr.confirm_embedding_capability())
+            print(await mgr.confirm_vision_capability(2))
 
-            # print(await mgr.confirm_model_capability_dict(3, save_config=False))
+            # print(await mgr.confirm_embedding_capability())
+
+            # print(await mgr.confirm_model_capability_dict(2, save_config=False))
 
     asyncio.run(main())

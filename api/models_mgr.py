@@ -1,4 +1,4 @@
-from config import singleton
+from config import singleton, EMBEDDING_MODEL
 from typing import List, Dict, Any
 import re
 import json
@@ -881,6 +881,5 @@ if __name__ == "__main__":
     # 下载MLX优化的Qwen3 Embedding模型
     import os
     cache_dir = os.path.dirname(TEST_DB_PATH)
-    from config import EMBEDDING_MODEL
     path = mgr.download_embedding_model(EMBEDDING_MODEL, cache_dir)
     print(path)
