@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 不同业务场景所需模型能力的组合
-SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING, ModelCapability.VISION]
+SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.VISION]
 
 @singleton
 class MultiVectorMgr:

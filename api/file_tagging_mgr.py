@@ -39,7 +39,7 @@ MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 # 其他可解析的纯文本类型文件扩展名
 OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json']
 # 本业务场景所需模型能力的组合
-SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.EMBEDDING]
+SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.TEXT]
 
 class FileTaggingMgr:
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:

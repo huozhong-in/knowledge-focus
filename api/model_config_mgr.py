@@ -210,6 +210,9 @@ class ModelConfigMgr:
                 models_list = models_data.get("data", [])
                 for model in models_list:
                     model_identifier=model.get("id", "")
+                    # 过滤掉embedding模型
+                    if "embedding" in model_identifier.lower():
+                        continue
                     all_model_identifiers.append(model_identifier)
                     # 将type的值对应转换为ModelCapability.value的list
                     capabilities = []
@@ -220,8 +223,8 @@ class ModelConfigMgr:
                         elif type_name == "vlm":
                             capabilities.append(ModelCapability.TEXT.value)
                             capabilities.append(ModelCapability.VISION.value)
-                        elif type_name == "embeddings":
-                            capabilities.append(ModelCapability.EMBEDDING.value)
+                        # elif type_name == "embeddings":
+                        #     capabilities.append(ModelCapability.EMBEDDING.value)
                         else:
                             pass
                     # LM Studio有一个额外的capabilities字段
@@ -393,10 +396,6 @@ class ModelConfigMgr:
         """取得全局视觉模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.VISION)
 
-    def get_embedding_model_config(self) -> ModelUseInterface:
-        """取得全局嵌入模型的model使用参数"""
-        return self.get_spec_model_config(ModelCapability.EMBEDDING)
-
     def get_text_model_config(self) -> ModelUseInterface:
         """取得全局文本模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.TEXT)
@@ -444,9 +443,6 @@ if __name__ == "__main__":
         # # test set global vision model
         # mgr.assign_global_capability_to_model(2, ModelCapability.VISION)
         
-        # # test set global embedding model
-        # mgr.assign_global_capability_to_model(7, ModelCapability.EMBEDDING)
-
         # # test update_model_capabilities and get_model_capabilities
         # mgr.update_model_capabilities(1, [ModelCapability.TEXT, ModelCapability.TOOL_USE])
         # capabilities = mgr.get_model_capabilities(1)

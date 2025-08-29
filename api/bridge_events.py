@@ -183,6 +183,37 @@ class BridgeEventSender:
             "message": message,
             "details": details or {}
         })
+
+    def model_download_progress(self, model_name: str, current: int, total: int, 
+                               message: str = "", stage: str = "downloading"):
+        """通知模型下载进度"""
+        self.send_event("model-download-progress", {
+            "model_name": model_name,
+            "current": current,
+            "total": total,
+            "percentage": round((current / total) * 100, 2) if total > 0 else 0,
+            "message": message,
+            "stage": stage,  # downloading, extracting, completed, failed
+            "timestamp": time.time()
+        })
+
+    def model_download_completed(self, model_name: str, local_path: str, message: str = ""):
+        """通知模型下载完成"""
+        self.send_event("model-download-completed", {
+            "model_name": model_name,
+            "local_path": local_path,
+            "message": message or f"模型 {model_name} 下载完成",
+            "timestamp": time.time()
+        })
+
+    def model_download_failed(self, model_name: str, error_message: str, details: Dict[str, Any] = None):
+        """通知模型下载失败"""
+        self.send_event("model-download-failed", {
+            "model_name": model_name,
+            "error_message": error_message,
+            "details": details or {},
+            "timestamp": time.time()
+        })
     
     # 多模态向量化便捷方法    
     def multivector_progress(self, file_path: str, task_id: str, current: int, total: int, 

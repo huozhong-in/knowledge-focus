@@ -42,7 +42,6 @@ import {
   AlertCircle,
   Zap,
   BadgeCheckIcon,
-  // DatabaseBackup,
   SearchCheck,
 } from "lucide-react"
 import {
@@ -72,7 +71,7 @@ interface ModelCapabilities {
   text: boolean
   vision: boolean
   tool_use: boolean
-  embedding: boolean
+  structured_output: boolean
 }
 
 interface Model {
@@ -103,14 +102,14 @@ const BUSINESS_SCENES: BusinessScene[] = [
     key: "SCENE_FILE_TAGGING",
     name: "文件自动打标签",
     description: "基于文件内容自动生成相关标签，帮助快速分类和检索文件",
-    required_capabilities: ["text", "embedding"],
+    required_capabilities: ["text"],
     icon: <Settings className="w-4 h-4" />
   },
   {
     key: "SCENE_MULTIVECTOR", 
     name: "多模态检索",
     description: "支持文本、图像等多种模态内容的智能检索和对话关联",
-    required_capabilities: ["text", "embedding", "vision"],
+    required_capabilities: ["text", "vision"],
     icon: <Zap className="w-4 h-4" />
   }
 ]
@@ -125,7 +124,7 @@ class ModelSettingsAPI {
         text: capabilitiesData.includes('text') || capabilitiesData.includes('TEXT'),
         vision: capabilitiesData.includes('vision') || capabilitiesData.includes('VISION'),
         tool_use: capabilitiesData.includes('tool_use') || capabilitiesData.includes('TOOL_USE'),
-        embedding: capabilitiesData.includes('embedding') || capabilitiesData.includes('EMBEDDING')
+        structured_output: capabilitiesData.includes('structured_output') || capabilitiesData.includes('STRUCTURED_OUTPUT')
       }
     }
     
@@ -134,7 +133,7 @@ class ModelSettingsAPI {
       text: capabilitiesData?.text ?? false,
       vision: capabilitiesData?.vision ?? false,
       tool_use: capabilitiesData?.tool_use ?? false,
-      embedding: capabilitiesData?.embedding ?? false
+      structured_output: capabilitiesData?.structured_output ?? false
     }
   }
   // 获取所有提供商配置
@@ -854,7 +853,9 @@ function ProviderDetailSection({
                               variant={hasCapability ? "default" : "outline"}
                               className={`text-xs rounded-full px-2 py-0.5 font-semibold ${hasCapability ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
                             >
-                              <BadgeCheckIcon className={`${hasCapability ? '' : 'hidden'}`} />{t(`ModelCapability.${cap.toUpperCase()}`)}
+                              {/* <BadgeCheckIcon className={`${hasCapability ? '' : 'hidden'}`} /> */}
+                              <BadgeCheckIcon />
+                              {t(`ModelCapability.${cap.toUpperCase()}`)}
                             </Badge>
                           )
                         })}
@@ -1095,22 +1096,18 @@ function SettingsAIModels() {
       const capabilities = await ModelSettingsAPI.confirmModelCapability(numericModelId)
       console.log('Model capabilities:', capabilities)
       
-      // 更新模型状态为可用（如果成功获取到能力信息）
-      // setModels(prev => prev.map(model => 
-      //   model.id === modelId ? { ...model, is_available: true, capabilities } : model
-      // ))
+      // 更新模型状态中的能力信息
+      setModels(prev => prev.map(model => 
+        model.id === modelId 
+          ? { ...model, capabilities: capabilities }
+          : model
+      ))
       
       // 计算能力数量
       const capabilityCount = Object.values(capabilities).filter(Boolean).length
       toast.success(`模型能力测试完成，发现 ${capabilityCount} 项能力`)
     } catch (error) {
       console.error("Failed to test model capability:", error)
-      
-      // 如果测试失败，标记模型为不可用
-      // setModels(prev => prev.map(model => 
-      //   model.id === modelId ? { ...model, is_available: false } : model
-      // ))
-      
       toast.error(`模型能力测试失败: ${error instanceof Error ? error.message : '未知错误'}`)
     } finally {
       setIsLoading(false)

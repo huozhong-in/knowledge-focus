@@ -1,4 +1,3 @@
-# from config import EMBEDDING_DIMENSIONS
 from config import singleton
 from typing import List, Dict, Any
 import re
@@ -8,7 +7,7 @@ import httpx
 import logging
 from sqlmodel import Session, select
 from db_mgr import SystemConfig
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent, Tool
 from pydantic_ai.messages import (
@@ -31,15 +30,93 @@ from model_config_mgr import ModelConfigMgr
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
 from bridge_events import BridgeEventSender
+from huggingface_hub import snapshot_download
+from tqdm import tqdm
+from mlx_embeddings.utils import load as load_embedding_model
+import os
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 class SessionTitleResponse(BaseModel):
     title: str = Field(description="Generated session title (max 20 characters)")
 
 class TagResponse(BaseModel):
     tags: List[str] = Field(default_factory=list, description="List of generated tags")
+
+# 定义一个可以在运行时创建的 BridgeProgressReporter 类
+def create_bridge_progress_reporter(bridge_events, model_name):
+    """
+    动态创建带有bridge events的tqdm子类
+    
+    这个工厂函数解决了在类方法内部创建子类时的作用域问题。
+    """    
+    class BridgeProgressReporter(tqdm):
+        """
+        继承自真正的tqdm类，确保完全兼容
+        """
+        
+        def __init__(self, *args, **kwargs):
+            # 注入我们的自定义参数
+            self.bridge_events = bridge_events
+            self.model_name = model_name
+            
+            # 调用父类初始化
+            super().__init__(*args, **kwargs)
+            
+            # 发送开始事件
+            if self.bridge_events and not self.disable:
+                self.bridge_events.model_download_progress(
+                    model_name=self.model_name,
+                    current=0,
+                    total=self.total or 0,
+                    message=f"开始下载 {self.model_name}",
+                    stage="downloading"
+                )
+        
+        def update(self, n=1):
+            """重写update方法，添加bridge events"""
+            # 调用父类的update方法
+            result = super().update(n)
+            
+            # 发送进度事件
+            if self.bridge_events and not self.disable:
+                # 格式化消息
+                if self.unit_scale and self.unit == 'B':
+                    # 自动缩放字节单位
+                    current_mb = self.n / (1024 * 1024)
+                    total_mb = self.total / (1024 * 1024) if self.total and self.total > 0 else 0
+                    message = f"{self.desc}: {current_mb:.1f}MB/{total_mb:.1f}MB"
+                else:
+                    message = f"{self.desc}: {self.n}/{self.total or '?'}"
+                
+                self.bridge_events.model_download_progress(
+                    model_name=self.model_name,
+                    current=self.n,
+                    total=self.total or 0,
+                    message=message,
+                    stage="downloading"
+                )
+            
+            return result
+        
+        def close(self):
+            """重写close方法，发送完成事件"""
+            # 发送完成事件
+            if self.bridge_events and not self.disable:
+                self.bridge_events.model_download_progress(
+                    model_name=self.model_name,
+                    current=self.n,
+                    total=self.total or self.n,
+                    message=f"{self.model_name} 下载完成",
+                    stage="completed"
+                )
+            
+            # 调用父类的close方法
+            return super().close()
+    
+    return BridgeProgressReporter
 
 @singleton
 class ModelsMgr:
@@ -57,29 +134,16 @@ class ModelsMgr:
         This is typically called by backend processes (document parsing, vectorization),
         so model validation failures will trigger IPC events to notify the frontend.
         """
-        try:
-            model_interface = self.model_config_mgr.get_embedding_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
-        except Exception as e:
-            logger.error(f"Failed to get embedding model config: {e}")
-            return []
-        
-        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-        http_client = httpx.Client(proxy=proxy.value if proxy is not None and use_proxy else None)
-        openai_client = OpenAI(
-            api_key=api_key if api_key else "sk-xxx",
-            base_url=base_url,
-            max_retries=3,
-            http_client=http_client,
-        )
-        response = openai_client.embeddings.create(
-            model=model_identifier,
-            input=text_str,
-        )
-        return response.data[0].embedding
+        sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
+        db_path = sqlite_url.replace('sqlite:///', '')
+        cache_directory = os.path.dirname(db_path)
+        model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+        model, tokenizer = load_embedding_model(model_path)
+        input_ids = tokenizer.encode(text_str, return_tensors="mlx")
+        outputs = model(input_ids)
+        # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
+        text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
+        return text_embeds[0].tolist()
 
     def get_tags_from_llm(self, file_summary: str, candidate_tags: List[str]) -> List[str]:
         """
@@ -718,6 +782,54 @@ Based on all information, provide the best tags for this file.
             logger.error(f"Error in stream_agent_chat_v5_compatible: {e}")
             yield f'data: {json.dumps({"type": "error", "errorText": str(e)})}\n\n'
 
+    def download_embedding_model(self, model_id: str, cache_dir: str = None) -> str:
+        """
+        下载指定的embedding模型到本地
+        
+        Args:
+            model_id: HuggingFace模型ID，如 'BAAI/bge-small-zh-v1.5'
+            cache_dir: 缓存目录，默认使用HuggingFace默认目录
+            
+        Returns:
+            str: 下载后的本地模型路径
+            
+        Raises:
+            Exception: 下载过程中的其他错误
+        """
+        
+        try:
+            # 使用工厂函数创建自定义的tqdm子类
+            ProgressReporter = create_bridge_progress_reporter(
+                bridge_events=self.bridge_events,
+                model_name=model_id
+            )            
+            # 使用snapshot_download下载模型
+            local_path = snapshot_download(
+                repo_id=model_id,
+                cache_dir=cache_dir,
+                tqdm_class=ProgressReporter,
+                allow_patterns=["*.safetensors", "*.json", "*.txt"],  # 只下载需要的文件
+            )
+            # 发送完成事件
+            self.bridge_events.model_download_completed(
+                model_name=model_id,
+                local_path=local_path,
+                message=f"模型 {model_id} 下载完成"
+            )
+            return local_path
+            
+        except Exception as e:
+            error_msg = f"下载模型失败: {str(e)}"
+            logger.error(f"下载模型 {model_id} 失败: {e}", exc_info=True)
+            # 发送失败事件
+            self.bridge_events.model_download_failed(
+                model_name=model_id,
+                error_message=error_msg,
+                details={"exception_type": type(e).__name__}
+            )            
+            raise
+
+
 # for testing
 if __name__ == "__main__":
     from config import TEST_DB_PATH
@@ -729,7 +841,7 @@ if __name__ == "__main__":
     # model_interface = mgr.model_config_mgr.get_text_model_config()
     # print(model_interface.model_dump())
     
-    import asyncio
+    # import asyncio
 
     # # Test embedding generation
     # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
@@ -753,15 +865,22 @@ if __name__ == "__main__":
     #     print("Chat Error:", e)
 
     # # test stream
-    async def test_stream():
-        messages = [
-            {'role': 'user', 'content': 'What is the weather in Beijing?'}
-        ]
+    # async def test_stream():
+    #     messages = [
+    #         {'role': 'user', 'content': 'What is the weather in Beijing?'}
+    #     ]
         
-        print('Testing Vercel AI SDK compatible stream protocol:')
-        print('=' * 50)
+    #     print('Testing Vercel AI SDK compatible stream protocol:')
+    #     print('=' * 50)
         
-        async for chunk in mgr.stream_agent_chat(messages, session_id=1):
-            print(chunk, end='')
+    #     async for chunk in mgr.stream_agent_chat(messages, session_id=1):
+    #         print(chunk, end='')
     
-    asyncio.run(test_stream())
+    # asyncio.run(test_stream())
+
+    # 下载MLX优化的Qwen3 Embedding模型
+    import os
+    cache_dir = os.path.dirname(TEST_DB_PATH)
+    from config import EMBEDDING_MODEL
+    path = mgr.download_embedding_model(EMBEDDING_MODEL, cache_dir)
+    print(path)

@@ -1,3 +1,4 @@
+from config import EMBEDDING_MODEL
 from db_mgr import (
     ModelProvider,
     ModelCapability,
@@ -33,7 +34,6 @@ class ModelCapabilityConfirm:
             ModelCapability.VISION.value,
             ModelCapability.TOOL_USE.value,
             ModelCapability.STRUCTURED_OUTPUT.value,
-            ModelCapability.EMBEDDING.value,
         ]
 
     async def confirm_model_capability_dict(self, config_id: int, save_config: bool = True) -> Dict[str, bool]:
@@ -62,8 +62,6 @@ class ModelCapabilityConfirm:
             return await self.confirm_tooluse_capability(config_id)
         elif capa == ModelCapability.STRUCTURED_OUTPUT:
             return await self.confirm_structured_output_capability(config_id)
-        elif capa == ModelCapability.EMBEDDING:
-            return await self.confirm_embedding_capability(config_id)
         else:
             return False
 
@@ -180,32 +178,31 @@ class ModelCapabilityConfirm:
             print(f"Error testing vision capability: {e}")
             return False
 
-    async def confirm_embedding_capability(self, config_id: int) -> bool:
+    async def confirm_embedding_capability(self) -> bool:
         """
-        确认模型是否有向量化能力
+        确认向量化模型是否可用
         """
-        model_interface = self._get_spec_model_config(config_id)
-        if model_interface is None:
-            return False
-        if model_interface.use_proxy:
-            http_client = httpx.AsyncClient(proxy=self.system_proxy)
-        else:
-            http_client = httpx.AsyncClient()
-        client = AsyncOpenAI(
-            api_key=model_interface.api_key if model_interface.api_key else "",
-            base_url=model_interface.base_url,
-            max_retries=2,
-            http_client=http_client,
-        )
+        from models_mgr import ModelsMgr
+        model_mgr = ModelsMgr(self.session)
+        from mlx_embeddings.utils import load
+        sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
+        db_path = sqlite_url.replace('sqlite:///', '')
+        cache_directory = Path(db_path).parent
+        model_path = model_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
         try:
-            _ = await client.embeddings.create(
-                model=model_interface.model_identifier,
-                input="Hello, world!",
-            )
-            # print(len(response.data[0].embedding))
+            # Load the model and tokenizer
+            model, tokenizer = load(model_path)
+            # Prepare the text
+            text = "I like reading"
+            # Tokenize and generate embedding
+            input_ids = tokenizer.encode(text, return_tensors="mlx")
+            outputs = model(input_ids)
+            # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
+            _text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
+            # print(len(_text_embeds[0]))
             return True
         except Exception as e:
-            print(f"Error testing embedding capability: {e}")
+            print(f"Error confirming embedding capability: {e}")
             return False
 
     async def confirm_tooluse_capability(self, config_id: int) -> bool:
@@ -304,12 +301,10 @@ class ModelCapabilityConfirm:
                 model=model,
                 output_type=CityLocation,
             )
-            # result = await agent.run('Where were the olympics held in 2012?')
-            # print(result.output)
-            await agent.run('Where is the city of Paris located?')
+            await agent.run('Where were the olympics held in 2012?')
             return True
         except Exception as e:
-            print(f"Error testing text capability: {e}")
+            print(f"Error testing structured output capability: {e}")
             return False
 
 
@@ -364,12 +359,12 @@ if __name__ == "__main__":
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
-            # print(await mgr.confirm_text_capability(40))
-            # print(await mgr.confirm_tooluse_capability(10))
-            print(await mgr.confirm_structured_output_capability(14))
-            # print(await mgr.confirm_vision_capability(40))
-            # print(await mgr.confirm_embedding_capability(39))
+            # print(await mgr.confirm_text_capability(3))
+            # print(await mgr.confirm_tooluse_capability(3))
+            # print(await mgr.confirm_structured_output_capability(3))
+            # print(await mgr.confirm_vision_capability(3))
+            print(await mgr.confirm_embedding_capability())
 
-            # print(await mgr.confirm_model_capability_dict(52, save_config=False))
+            # print(await mgr.confirm_model_capability_dict(3, save_config=False))
 
     asyncio.run(main())
