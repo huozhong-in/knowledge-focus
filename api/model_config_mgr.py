@@ -98,6 +98,7 @@ class ModelConfigMgr:
         """Discovers available models from a provider."""
 
         def _already_exists(provider_id: int, model_identifier: str) -> bool:
+            # 判断模型是否已经存在
             if model_identifier == "":
                 print("Model identifier is empty.")
                 return False
@@ -143,39 +144,46 @@ class ModelConfigMgr:
             print(f"Error discovering models for {id}: {e}")
             return []
         
+        all_model_identifiers: List[str] = []  # 存放从API拉取回来的所有model_identifier
         if provider.provider_type == "openai":
             if provider.display_name == "OpenAI":
                 # https://platform.openai.com/docs/api-reference/models/list
                 models_list = models_data.get("data", [])
                 for model in models_list:
+                    model_identifier=model.get("id", "")
+                    all_model_identifiers.append(model_identifier)
                     result.append(ModelConfiguration(
                         provider_id=id,
-                        model_identifier=model.get("id", ""),
-                        display_name=model.get("id", ""),
-                    )) if not _already_exists(id, model.get("id", "")) else None
+                        model_identifier=model_identifier,
+                        display_name=model_identifier,
+                    )) if not _already_exists(id, model_identifier) else None
             elif provider.display_name == "OpenRouter":
                 # https://openrouter.ai/docs/api-reference/list-available-models
                 models_list = models_data.get("data", [])
                 for model in models_list:
+                    model_identifier=model.get("id", "")
+                    all_model_identifiers.append(model_identifier)
                     result.append(ModelConfiguration(
                         provider_id=id,
-                        model_identifier=model.get("id", ""),
+                        model_identifier=model_identifier,
                         display_name=model.get("name", ""),
                         max_context_length=model.get("top_provider", {}).get("context_length", 0),
                         max_output_tokens=model.get("top_provider", {}).get("max_completion_tokens", 0),
-                    )) if not _already_exists(id, model.get("id", "")) else None
+                    )) if not _already_exists(id, model_identifier) else None
             elif provider.display_name == "Ollama":
                 # https://github.com/ollama/ollama/blob/main/docs/api.md#list-local-models
                 models_list = models_data.get("models", [])
                 for model in models_list:
                     # https://github.com/ollama/ollama/blob/main/docs/api.md#show-model-information
                     # POST /api/show to get context_length:`curl http://localhost:11434/api/show -d '{"model": "llava"}'`
+                    model_identifier=model.get("model", "")
+                    all_model_identifiers.append(model_identifier)
                     max_content_length = 0
                     extra_data_json = {}
                     capabilities = []
                     try:
                         async with httpx.AsyncClient() as client:
-                            response = await client.post("http://127.0.0.1:11434/api/show", json={"model": model.get("model", "")})
+                            response = await client.post("http://127.0.0.1:11434/api/show", json={"model": model_identifier})
                             response.raise_for_status()
                             model_data = response.json()
                             architecture = model_data.get("model_info", {}).get("general.architecture", "")
@@ -191,16 +199,18 @@ class ModelConfigMgr:
                         print(f"Error fetching model info for Ollama: {e}")
                     result.append(ModelConfiguration(
                         provider_id=id,
-                        model_identifier=model.get("model", ""),
+                        model_identifier=model_identifier,
                         display_name=model.get("name", ""),
                         max_context_length=max_content_length,
                         extra_data_json=extra_data_json,
                         capabilities_json=capabilities,
-                    )) if not _already_exists(id, model.get("model", "")) else None
+                    )) if not _already_exists(id, model_identifier) else None
             elif provider.display_name == "LM Studio":
                 # https://lmstudio.ai/docs/app/api/endpoints/rest
                 models_list = models_data.get("data", [])
                 for model in models_list:
+                    model_identifier=model.get("id", "")
+                    all_model_identifiers.append(model_identifier)
                     # 将type的值对应转换为ModelCapability.value的list
                     capabilities = []
                     type_name = model.get("type", "") # 已经发现的值有llm/vlm/embeddings
@@ -216,12 +226,12 @@ class ModelConfigMgr:
                             pass
                     result.append(ModelConfiguration(
                         provider_id=id,
-                        model_identifier=model.get("id", ""),
-                        display_name=model.get("id", ""),
+                        model_identifier=model_identifier,
+                        display_name=model_identifier,
                         max_context_length=model.get("max_context_length", 0),
                         extra_data_json={"type": model.get("type", "")},
                         capabilities_json=capabilities,
-                    )) if not _already_exists(id, model.get("id", "")) else None
+                    )) if not _already_exists(id, model_identifier) else None
             else:
                 return []
         
@@ -229,42 +239,50 @@ class ModelConfigMgr:
             # https://docs.anthropic.com/en/api/models-list
             models_list = models_data.get("data", [])
             for model in models_list:
+                model_identifier=model.get("id", "")
+                all_model_identifiers.append(model_identifier)
                 result.append(ModelConfiguration(
                     provider_id=id,
-                    model_identifier=model.get("id", ""),
+                    model_identifier=model_identifier,
                     display_name=model.get("display_name", ""),
-                )) if not _already_exists(id, model.get("id", "")) else None
+                )) if not _already_exists(id, model_identifier) else None
         elif provider.provider_type == "google":
             # https://ai.google.dev/api/models
             models_list = models_data.get("models", [])
             for model in models_list:
+                model_identifier=model.get("name", "")
+                all_model_identifiers.append(model_identifier)
                 result.append(ModelConfiguration(
                     provider_id=id,
-                    model_identifier=model.get("name", ""),
+                    model_identifier=model_identifier,
                     display_name=model.get("display_name", ""),
                     max_context_length=model.get("inputTokenLimit", 0) + model.get("outputTokenLimit", 0),
                     max_output_tokens=model.get("outputTokenLimit", 0),
-                )) if not _already_exists(id, model.get("name", "")) else None
+                )) if not _already_exists(id, model_identifier) else None
         elif provider.provider_type == "grok":
             # https://docs.x.ai/docs/api-reference#list-models
             models_list = models_data.get("data", [])
             for model in models_list:
+                model_identifier=model.get("id", "")
+                all_model_identifiers.append(model_identifier)
                 result.append(ModelConfiguration(
                     provider_id=id,
-                    model_identifier=model.get("id", ""),
-                    display_name=model.get("id", ""),
-                )) if not _already_exists(id, model.get("id", "")) else None
+                    model_identifier=model_identifier,
+                    display_name=model_identifier,
+                )) if not _already_exists(id, model_identifier) else None
         elif provider.provider_type == "groq":
             # https://console.groq.com/docs/models
             models_list = models_data.get("data", [])
             for model in models_list:
+                model_identifier=model.get("id", "")
+                all_model_identifiers.append(model_identifier)
                 result.append(ModelConfiguration(
                     provider_id=id,
-                    model_identifier=model.get("id", ""),
-                    display_name=model.get("id", ""),
+                    model_identifier=model_identifier,
+                    display_name=model_identifier,
                     max_context_length=model.get("context_window", 0),
                     max_output_tokens=model.get("max_completion_tokens", 0),
-                )) if not _already_exists(id, model.get("id", "")) else None
+                )) if not _already_exists(id, model_identifier) else None
         else:
             return []
         
@@ -274,6 +292,13 @@ class ModelConfigMgr:
             # 刷新对象以获取数据库分配的 ID
             for model in result:
                 self.session.refresh(model)
+            # API返回的结果中不再存在的模型从数据库删除
+            for model in self.session.exec(select(ModelConfiguration).where(
+                ModelConfiguration.provider_id == id,
+            )).all():
+                if model.model_identifier not in all_model_identifiers:
+                    self.session.delete(model)
+                    self.session.commit()
         return result
 
     def get_model_capabilities(self, model_id: int) -> List[ModelCapability]:
