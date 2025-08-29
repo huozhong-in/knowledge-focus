@@ -224,6 +224,9 @@ class ModelConfigMgr:
                             capabilities.append(ModelCapability.EMBEDDING.value)
                         else:
                             pass
+                    # LM Studio有一个额外的capabilities字段
+                    if "tool_use" in model.get("capabilities", []):
+                        capabilities.append(ModelCapability.TOOL_USE.value)
                     result.append(ModelConfiguration(
                         provider_id=id,
                         model_identifier=model_identifier,
@@ -285,20 +288,20 @@ class ModelConfigMgr:
                 )) if not _already_exists(id, model_identifier) else None
         else:
             return []
-        
+
         if result != []:
             self.session.add_all(result)
             self.session.commit()
             # 刷新对象以获取数据库分配的 ID
             for model in result:
                 self.session.refresh(model)
-            # API返回的结果中不再存在的模型从数据库删除
-            for model in self.session.exec(select(ModelConfiguration).where(
-                ModelConfiguration.provider_id == id,
-            )).all():
-                if model.model_identifier not in all_model_identifiers:
-                    self.session.delete(model)
-                    self.session.commit()
+        # API返回的结果中不再存在的模型从数据库删除
+        for model in self.session.exec(select(ModelConfiguration).where(
+            ModelConfiguration.provider_id == id,
+        )).all():
+            if model.model_identifier not in all_model_identifiers:
+                self.session.delete(model)
+                self.session.commit()
         return result
 
     def get_model_capabilities(self, model_id: int) -> List[ModelCapability]:

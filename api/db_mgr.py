@@ -320,7 +320,7 @@ class ChildChunk(SQLModel, table=True):
 
 # 模型来源
 class ModelSourceType(str, PyEnum):
-    BUILDIN = "buildin" # App内置框架(MLX/llama-cpp-python)直接运行的模型，直接管理下载过程
+    BUILTIN = "builtin" # App内置框架(MLX/llama-cpp-python)直接运行的模型，直接管理下载过程
     CONFIGURABLE = "configurable" # 可配置的模型服务商，本地如Ollama、LM Studio，远程如OpenAI、Anthropic
     VIP = "vip" # 由本App服务端提供的模型组合
 # 模型提供者表
@@ -349,6 +349,7 @@ class ModelCapability(str, PyEnum):
     REASONING = "reasoning"
     VISION = "vision"
     TOOL_USE = "tool_use"
+    STRUCTURED_OUTPUT = "structured_output"
     WEB_SEARCH = "web_search"  # https://ai.pydantic.dev/api/builtin_tools/#pydantic_ai.builtin_tools.WebSearchTool
     EMBEDDING = "embedding"
     RERANKER = "reranker"

@@ -32,6 +32,7 @@ class ModelCapabilityConfirm:
             ModelCapability.TEXT.value,
             ModelCapability.VISION.value,
             ModelCapability.TOOL_USE.value,
+            ModelCapability.STRUCTURED_OUTPUT.value,
             ModelCapability.EMBEDDING.value,
         ]
 
@@ -59,6 +60,8 @@ class ModelCapabilityConfirm:
             return await self.confirm_vision_capability(config_id)
         elif capa == ModelCapability.TOOL_USE:
             return await self.confirm_tooluse_capability(config_id)
+        elif capa == ModelCapability.STRUCTURED_OUTPUT:
+            return await self.confirm_structured_output_capability(config_id)
         elif capa == ModelCapability.EMBEDDING:
             return await self.confirm_embedding_capability(config_id)
         else:
@@ -88,7 +91,6 @@ class ModelCapabilityConfirm:
     async def confirm_text_capability(self, config_id: int) -> bool:
         """
         确认模型是否有文字处理能力
-        # TODO 还要测一下结构化输出能力
         """
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
@@ -264,6 +266,52 @@ class ModelCapabilityConfirm:
         except Exception as e:
             print(f"Error testing tool use capability: {e}")
             return False
+    
+    async def confirm_structured_output_capability(self, config_id: int) -> bool:
+        """
+        确认模型是否有结构化数据处理能力
+        """
+        from pydantic import BaseModel, Field
+        from pydantic_ai import Agent
+        from pydantic_ai.models.openai import OpenAIModel
+        from pydantic_ai.providers.openai import OpenAIProvider
+
+        class CityLocation(BaseModel):
+            city: str = Field(description="The name of the city")
+            country: str = Field(description="The name of the country")
+
+        model_interface = self._get_spec_model_config(config_id)
+        if model_interface is None:
+            return False
+        if model_interface.use_proxy:
+            http_client = httpx.AsyncClient(proxy=self.system_proxy)
+        else:
+            http_client = httpx.AsyncClient()
+        openai_client = AsyncOpenAI(
+            api_key=model_interface.api_key if model_interface.api_key else "",
+            base_url=model_interface.base_url,
+            max_retries=2,
+            http_client=http_client,
+        )
+        model = OpenAIModel(
+            model_name=model_interface.model_identifier,
+            provider=OpenAIProvider(
+                openai_client=openai_client,
+            ),
+        )
+        try:
+            agent = Agent(
+                model=model,
+                output_type=CityLocation,
+            )
+            # result = await agent.run('Where were the olympics held in 2012?')
+            # print(result.output)
+            await agent.run('Where is the city of Paris located?')
+            return True
+        except Exception as e:
+            print(f"Error testing text capability: {e}")
+            return False
+
 
     def add_capability(self, config_id: int, capa: ModelCapability) -> bool:
         """
@@ -317,10 +365,11 @@ if __name__ == "__main__":
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
             # print(await mgr.confirm_text_capability(40))
-            # print(await mgr.confirm_tooluse_capability(40))
+            # print(await mgr.confirm_tooluse_capability(10))
+            print(await mgr.confirm_structured_output_capability(14))
             # print(await mgr.confirm_vision_capability(40))
             # print(await mgr.confirm_embedding_capability(39))
 
-            print(await mgr.confirm_model_capability_dict(52, save_config=False))
+            # print(await mgr.confirm_model_capability_dict(52, save_config=False))
 
     asyncio.run(main())
