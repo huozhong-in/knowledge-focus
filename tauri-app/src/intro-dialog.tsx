@@ -145,7 +145,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         if (permission) {
           console.log("[初始化] 权限检查通过，等待API就绪后启动后端扫描");
           setLoading(true);
-          setLoadingMessage("权限验证通过，正在等待后端API就绪...");
+          setLoadingMessage("权限验证通过，正在等待后端程序就绪...");
         } else {
           console.log("[初始化] 权限检查未通过，阻止后端初始化");
           // 没有权限，显示请求权限界面，不允许进入应用或开始后端扫描
@@ -218,7 +218,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       onOpenChange(false);
       // 更新状态以便将来不再显示首次启动对话框
       await setShowWelcomeDialog(false);
-      console.log('首次启动流程：欢迎对话框已关闭，状态已更新，跳转到文件夹授权页面');
+      console.log('首次启动流程：欢迎对话框已关闭，状态已更新');
     } catch (error) {
       console.error('更新首次启动状态时出错:', error);
     }
@@ -299,7 +299,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
               KnowledgeFocus需要完全磁盘访问权限才能正常工作。这将允许应用扫描和索引您的文件，以提供智能文件分类功能。
             </p>
             <p className="text-sm text-yellow-700">
-              您的数据始终保存在本地，我们不会收集或上传您的文件内容。
+              您的数据文件始终保存在本地，我们不会收集或上传您的文件内容。
             </p>
           </div>
         )}

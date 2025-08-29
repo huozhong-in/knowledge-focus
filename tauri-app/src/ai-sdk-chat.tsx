@@ -10,7 +10,7 @@ import {
   ConversationContent,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation"
-import { Message, MessageContent } from "@/components/ai-elements/message"
+import { Message, MessageContent, MessageAvatar } from "@/components/ai-elements/message"
 import {
   Reasoning,
   ReasoningContent,
@@ -286,6 +286,11 @@ export function AiSdkChat({
                       }
                     })}
                   </MessageContent>
+                  <MessageAvatar 
+                    src={message.role === 'user' ? '/user.png' : '/bot.png'}
+                    name={message.role === 'user' ? 'User' : 'Assistant'}
+                    className="size-6"
+                  />
                 </Message>
               ))
             )}
