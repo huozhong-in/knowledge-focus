@@ -245,7 +245,7 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">欢迎使用 KnowledgeFocus</DialogTitle>
           <DialogDescription className="text-center">
-            从文件管理到知识管理
+            释放本地文件知识价值的桌面智能体平台
           </DialogDescription>
         </DialogHeader>
         

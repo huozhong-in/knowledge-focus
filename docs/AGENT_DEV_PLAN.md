@@ -79,8 +79,8 @@
 ### 阶段 4：前端改造与端到端测试
 
 - [ ] **7. 前端改造与端到端测试**
-  - [ ] **核心任务**: 使用 `AI Elements` 或 `useChat` hook 改造前端界面，并完成与后端的完整对接测试。
-  - [ ] **组件替换**: 使用 Vercel AI SDK 的 `<Chat />` 组件或 `useChat` hook 重构聊天界面。
-  - [ ] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/chat/agent-stream` 端点。
+  - [x] **核心任务**: 使用 `AI Elements` 或 `useChat` hook 改造前端界面，并完成与后端的完整对接测试。
+  - [x] **组件替换**: 使用 Vercel AI SDK 的 `<Chat />` 组件或 `useChat` hook 重构聊天界面。
+  - [x] **API 对接**: 将 `useChat` 的 `api` 参数或自定义的 `fetch` 调用指向后端的 `/chat/agent-stream` 端点。
   - [ ] **工具UI**: 根据 `/tools/list` 端点返回的数据，渲染可区分“预置”和“可选”的工具选择界面。
   - [ ] **端到端测试**: 验证从前端勾选工具 -> 后端Agent使用 -> 前端流式展示结果的完整链路。

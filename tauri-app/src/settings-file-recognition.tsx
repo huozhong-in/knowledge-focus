@@ -880,7 +880,7 @@ export default function SettingsFileRecognition() {
                   <div>
                     <CardTitle>文件过滤规则管理</CardTitle>
                     <CardDescription>
-                      定义文件过滤规则，控制哪些文件需要包含或排除
+                      定义文件过滤规则，控制哪些文件需要排除
                     </CardDescription>
                   </div>
                   <Button onClick={() => setFilterDialog({ open: true, mode: 'add', editId: null })}>
@@ -1199,7 +1199,7 @@ export default function SettingsFileRecognition() {
               {filterDialog.mode === 'add' ? '添加过滤规则' : '编辑过滤规则'}
             </DialogTitle>
             <DialogDescription>
-              配置文件过滤规则，控制文件的包含或排除逻辑
+              配置文件过滤规则，控制文件的排除逻辑
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">

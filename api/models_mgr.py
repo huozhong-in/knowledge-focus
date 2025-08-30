@@ -531,6 +531,9 @@ Based on all information, provide the best tags for this file.
             available_tokens = max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
             logger.info(f"当前可用历史消息token数: {available_tokens}")
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
+            
+            
+            
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
                 user_prompt = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt
