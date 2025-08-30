@@ -29,6 +29,10 @@ interface EventHandlers {
   'api-ready'?: (payload: BridgeEventPayload) => void;
   // 标签相关事件
   'tagging-model-missing'?: (payload: BridgeEventPayload) => void;
+  // RAG相关事件
+  'rag-retrieval-result'?: (payload: BridgeEventPayload) => void;
+  'rag-progress'?: (payload: BridgeEventPayload) => void;
+  'rag-error'?: (payload: BridgeEventPayload) => void;
   // 多模态向量化事件
   'multivector-started'?: (payload: BridgeEventPayload) => void;
   'multivector-progress'?: (payload: BridgeEventPayload) => void;
@@ -215,6 +219,27 @@ function showEventToast(eventName: string, payload: BridgeEventPayload) {
             console.log('用户点击了去配置标签模型')
           }
         }
+      });
+      break;
+      
+    case 'rag-retrieval-result':
+      toast.success('RAG检索完成', {
+        description: `找到 ${data.sources_count || 0} 个相关片段`,
+        duration: 3000
+      });
+      break;
+      
+    case 'rag-progress':
+      toast.info('RAG处理中', {
+        description: data.message || `阶段: ${data.stage}`,
+        duration: 2000
+      });
+      break;
+      
+    case 'rag-error':
+      toast.error('RAG检索失败', {
+        description: data.error_message || '检索过程中发生错误',
+        duration: 5000
       });
       break;
       

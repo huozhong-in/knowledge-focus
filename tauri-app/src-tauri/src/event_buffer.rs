@@ -101,6 +101,14 @@ impl EventBuffer {
         // 工具调用错误：需要立即通知
         strategies.insert("tool-call-error".to_string(), Immediate);
         
+        // === RAG相关事件 ===
+        // RAG检索结果：需要立即发送到观察窗
+        strategies.insert("rag-retrieval-result".to_string(), Immediate);
+        // RAG错误：需要立即通知用户
+        strategies.insert("rag-error".to_string(), Immediate);
+        // RAG进度：节流处理，避免过于频繁的更新
+        strategies.insert("rag-progress".to_string(), Throttle(Duration::from_millis(500)));
+        
         // 注意：未在此配置的事件类型将使用默认策略（500ms延迟合并）
     }
     

@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 import re
 import json
 import uuid
+import time
 import httpx
 import logging
 from sqlmodel import Session, select
@@ -532,7 +533,15 @@ Based on all information, provide the best tags for this file.
             logger.info(f"当前可用历史消息token数: {available_tokens}")
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
             
-            
+            # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
+            user_query = "\n".join(user_prompt)  # 合并用户输入作为查询
+            rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
+            if rag_context:
+                user_prompt = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt
+                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
+                
+                # 通过桥接器发送RAG数据到知识观察窗
+                self._send_rag_to_observation_window(rag_sources, user_query)
             
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
@@ -581,7 +590,7 @@ Based on all information, provide the best tags for this file.
             # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
             async with agent.iter(user_prompt=user_prompt, deps=session_id) as run:
                 async for node in run:
-                    logger.info(f"Processing node type: {type(node)}")
+                    # logger.info(f"Processing node type: {type(node)}")
                     if Agent.is_user_prompt_node(node):
                         # 用户输入节点 - 在v5协议中我们不需要发送user-prompt事件
                         # AI SDK v5协议中用户消息由前端直接处理，我们只处理AI响应
@@ -591,7 +600,7 @@ Based on all information, provide the best tags for this file.
                         # 模型请求节点 - 可以流式获取模型的响应
                         async with node.stream(run.ctx) as request_stream:
                             final_result_found = False
-                            logger.info("Starting model request stream processing")
+                            # logger.info("Starting model request stream processing")
                             async for event in request_stream:
                                 # logger.info(f"Received event type: {type(event)}")
                                 if isinstance(event, PartStartEvent):
@@ -622,7 +631,7 @@ Based on all information, provide the best tags for this file.
                                             "id": current_part_id,
                                             "delta": event.delta.content_delta
                                         }
-                                        logger.info(f"Yielding text-delta: {data}")
+                                        # logger.info(f"Yielding text-delta: {data}")
                                         yield f'data: {json.dumps(data)}\n\n'
                                     elif isinstance(event.delta, ThinkingPartDelta):
                                         # 检查是否需要切换到思考类型
@@ -675,7 +684,7 @@ Based on all information, provide the best tags for this file.
                                             }
                                             yield f'data: {json.dumps(data)}\n\n'
                                 elif isinstance(event, FinalResultEvent):
-                                    logger.info("Processing FinalResultEvent")
+                                    # logger.info("Processing FinalResultEvent")
                                     # 结束当前部分
                                     end_event = end_current_part()
                                     if end_event:
@@ -687,15 +696,15 @@ Based on all information, provide the best tags for this file.
 
                             # 如果找到了最终结果，开始流式输出文本
                             if final_result_found:
-                                logger.info("Starting final result text streaming")
+                                # logger.info("Starting final result text streaming")
                                 # 重置当前部分状态，因为这是一个新的文本流
                                 current_part_type = None
                                 current_part_id = None
                                 
                                 try:
-                                    logger.info("About to call request_stream.stream_text(delta=True)")
+                                    # logger.info("About to call request_stream.stream_text(delta=True)")
                                     async for output in request_stream.stream_text(delta=True):
-                                        logger.info(f"Streaming text output: {output}")
+                                        # logger.info(f"Streaming text output: {output}")
                                         # 检查是否需要开始新的文本部分
                                         if current_part_type != 'text':
                                             # 开始新的文本部分
@@ -709,9 +718,9 @@ Based on all information, provide the best tags for this file.
                                             "id": current_part_id,
                                             "delta": output
                                         }
-                                        logger.info(f"Yielding final text-delta: {data}")
+                                        # logger.info(f"Yielding final text-delta: {data}")
                                         yield f'data: {json.dumps(data)}\n\n'
-                                    logger.info("Finished streaming text from request_stream")
+                                    # logger.info("Finished streaming text from request_stream")
                                 except Exception as e:
                                     logger.error(f"Error in final result text streaming: {e}")
                             else:
@@ -832,6 +841,135 @@ Based on all information, provide the best tags for this file.
             )            
             raise
 
+    def _get_rag_context(self, session_id: int, user_query: str, available_tokens: int) -> tuple[str, list]:
+        """
+        获取RAG上下文和来源信息
+        
+        Args:
+            session_id: 会话ID  
+            user_query: 用户查询内容
+            available_tokens: 可用token数量
+            
+        Returns:
+            tuple: (rag_context_text, rag_sources_list)
+        """
+        try:
+            # 获取会话Pin文件对应的文档ID
+            from chatsession_mgr import ChatSessionMgr
+            chat_mgr = ChatSessionMgr(self.session)
+            document_ids = chat_mgr.get_pinned_document_ids(session_id)
+            
+            if not document_ids:
+                logger.debug(f"会话 {session_id} 没有Pin文档，跳过RAG")
+                return "", []
+            
+            # 使用SearchManager进行检索
+            from lancedb_mgr import LanceDBMgr
+            sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
+            if sqlite_url.startswith('sqlite:///'):
+                db_path = sqlite_url.replace('sqlite:///', '')
+                db_directory = os.path.dirname(db_path)
+                lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+            from search_mgr import SearchManager
+            search_mgr = SearchManager(
+                session=self.session, 
+                lancedb_mgr=lancedb_mgr, 
+                models_mgr=self
+            )
+            # 执行搜索，限制在Pin的文档内
+            search_response = search_mgr.search_documents(
+                query=user_query,
+                top_k=5,  # 取前5个最相关的片段
+                document_ids=document_ids  # 限制搜索范围
+            )
+            
+            # 检查搜索是否成功
+            if not search_response or not search_response.get('success', False):
+                error_msg = search_response.get('error', '未知错误') if search_response else '搜索响应为空'
+                logger.debug(f"RAG检索失败: {error_msg}")
+                return "", []
+            
+            # 获取实际的搜索结果
+            search_results = search_response.get('raw_results', [])
+            if not search_results:
+                logger.debug(f"RAG检索无结果，查询: {user_query[:50]}...")
+                return "", []
+            
+            logger.debug(f"RAG检索到 {len(search_results)} 个结果")
+            if search_results:
+                logger.debug(f"首个结果字段: {list(search_results[0].keys())}")
+            
+            # 构建RAG上下文文本
+            context_parts = []
+            sources = []
+            
+            for result in search_results:
+                # 限制每个片段的长度，避免token超限
+                content = result.get('retrieval_content', '')[:1000]  # 限制1000字符
+                
+                # 将distance转换为相似度百分比 (1 - normalized_distance)
+                distance = result.get('_distance', 1.0)  # 修正字段名
+                # 假设distance在0-2之间，转换为相似度百分比
+                similarity_score = max(0.0, min(1.0, 1.0 - (distance / 2.0)))
+                
+                source_info = {
+                    'chunk_id': result.get('child_chunk_id', ''),
+                    'file_path': result.get('file_path', ''),
+                    'similarity_score': similarity_score,  # 使用转换后的相似度
+                    'content': content,
+                    'metadata': result.get('metadata', {})
+                }
+                
+                context_parts.append(f"**来源**: {result.get('file_path', '未知文件')}\n{content}")
+                sources.append(source_info)
+            
+            rag_context = "\n\n".join(context_parts)
+            
+            logger.info(f"RAG成功检索 {len(sources)} 个片段，总长度: {len(rag_context)} 字符")
+            return rag_context, sources
+            
+        except Exception as e:
+            logger.error(f"RAG检索失败: {e}", exc_info=True)
+            return "", []
+
+    def _send_rag_to_observation_window(self, rag_sources: list, user_query: str):
+        """
+        通过桥接器发送RAG数据到知识观察窗
+        
+        Args:
+            rag_sources: RAG检索的来源列表
+            user_query: 用户查询内容
+        """
+        try:
+            if not rag_sources:
+                return
+                
+            # 构建发送给观察窗的数据
+            observation_data = {
+                "timestamp": int(time.time() * 1000),
+                "query": user_query[:200],  # 限制查询长度
+                "sources_count": len(rag_sources),
+                "sources": [
+                    {
+                        "file_path": source.get('file_path', ''),
+                        "similarity_score": round(source.get('similarity_score', 0.0), 3),
+                        "content_preview": source.get('content', '')[:300],  # 内容预览
+                        "chunk_id": source.get('chunk_id'),
+                        "metadata": source.get('metadata', {})
+                    }
+                    for source in rag_sources
+                ],
+                "event_type": "rag_retrieval"
+            }
+            
+            # 通过桥接器发送事件
+            self.bridge_events.send_event("rag-retrieval-result", observation_data)
+            
+            logger.debug(f"RAG观察数据已发送: {len(rag_sources)} 个来源")
+            
+        except Exception as e:
+            logger.error(f"发送RAG观察数据失败: {e}", exc_info=True)
+
 
 # for testing
 if __name__ == "__main__":
@@ -881,8 +1019,97 @@ if __name__ == "__main__":
     
     # asyncio.run(test_stream())
 
-    # 下载MLX优化的Qwen3 Embedding模型
-    import os
-    cache_dir = os.path.dirname(TEST_DB_PATH)
-    path = mgr.download_embedding_model(EMBEDDING_MODEL, cache_dir)
-    print(path)
+    # # 下载MLX优化的Qwen3 Embedding模型
+    # import os
+    # cache_dir = os.path.dirname(TEST_DB_PATH)
+    # path = mgr.download_embedding_model(EMBEDDING_MODEL, cache_dir)
+    # print(path)
+    
+    # === RAG测试代码 ===
+    print("\n" + "="*50)
+    print("测试RAG检索结果和相似度计算")
+    print("="*50)
+    
+    # 测试会话ID=18的RAG检索
+    session_id = 18
+    user_query = "Manus项目有哪些经验教训？"
+    available_tokens = 2000
+    
+    print(f"测试查询: {user_query}")
+    print(f"会话ID: {session_id}")
+    
+    try:
+        rag_context, rag_sources = mgr._get_rag_context(session_id, user_query, available_tokens)
+        
+        print("\n检索结果:")
+        print(f"- 上下文长度: {len(rag_context)} 字符")
+        print(f"- 来源数量: {len(rag_sources)}")
+        
+        if rag_sources:
+            print("\n详细来源信息:")
+            for i, source in enumerate(rag_sources):
+                print(f"\n[来源 {i+1}]")
+                print(f"  文件: {source.get('file_path', 'Unknown')}")
+                print(f"  相似度分数: {source.get('similarity_score', 0.0)}")
+                print(f"  内容长度: {len(source.get('content', ''))}")
+                print(f"  内容预览: {source.get('content', '')[:200]}...")
+                
+                # 如果有原始distance数据，也显示出来
+                if 'raw_distance' in source:
+                    print(f"  原始距离: {source.get('raw_distance')}")
+        
+        # 同时测试SearchManager的原始返回
+        print("\n" + "-"*30)
+        print("原始SearchManager返回数据:")
+        
+        from chatsession_mgr import ChatSessionMgr
+        chat_mgr = ChatSessionMgr(session)
+        document_ids = chat_mgr.get_pinned_document_ids(session_id)
+        print(f"Pin的文档ID: {document_ids}")
+        
+        if document_ids:
+            from lancedb_mgr import LanceDBMgr
+            from search_mgr import SearchManager
+            
+            sqlite_url = str(session.get_bind().url)
+            db_path = sqlite_url.replace('sqlite:///', '')
+            db_directory = os.path.dirname(db_path)
+            lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+            
+            search_mgr = SearchManager(
+                session=session, 
+                lancedb_mgr=lancedb_mgr, 
+                models_mgr=mgr
+            )
+            
+            search_response = search_mgr.search_documents(
+                query=user_query,
+                top_k=5,
+                document_ids=document_ids
+            )
+            
+            if search_response and search_response.get('success'):
+                raw_results = search_response.get('raw_results', [])
+                print(f"原始结果数量: {len(raw_results)}")
+                
+                if raw_results:
+                    print(f"\n首个原始结果字段: {list(raw_results[0].keys())}")
+                    
+                    for i, result in enumerate(raw_results[:3]):  # 只显示前3个
+                        print(f"\n[原始结果 {i+1}]")
+                        print(f"  所有字段: {result}")
+                        
+                        distance = result.get('distance', 'N/A')
+                        print(f"  原始distance: {distance}")
+                        
+                        # 使用相同的转换公式
+                        if isinstance(distance, (int, float)):
+                            similarity_score = max(0.0, min(1.0, 1.0 - (distance / 2.0)))
+                            print(f"  转换后相似度: {similarity_score} ({similarity_score*100:.1f}%)")
+            else:
+                print(f"搜索失败: {search_response.get('error', '未知错误') if search_response else '无响应'}")
+                
+    except Exception as e:
+        print(f"RAG测试失败: {e}")
+        import traceback
+        traceback.print_exc()

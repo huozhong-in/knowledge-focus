@@ -15,7 +15,7 @@ import json
 import time
 import logging
 import sys
-from typing import Dict, Any
+from typing import Dict, Any, List
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,11 @@ class BridgeEventSender:
         
         # 标签相关事件
         TAGGING_MODEL_MISSING = "tagging-model-missing"
+        
+        # RAG相关事件
+        RAG_RETRIEVAL_RESULT = "rag-retrieval-result"
+        RAG_PROGRESS = "rag-progress"
+        RAG_ERROR = "rag-error"
         
         # 多模态向量化事件
         MULTIVECTOR_STARTED = "multivector-started"
@@ -250,6 +255,43 @@ class BridgeEventSender:
             "help_link": help_link,
             "error_code": error_code,
             "stage": "failed"
+        })
+
+    # RAG相关便捷方法
+    def rag_retrieval_result(self, query: str, sources: List[Dict[str, Any]], 
+                           session_id: int = None, metadata: Dict[str, Any] = None):
+        """通知RAG检索结果"""
+        self.send_event(self.Events.RAG_RETRIEVAL_RESULT, {
+            "query": query,
+            "sources": sources,
+            "sources_count": len(sources),
+            "session_id": session_id,
+            "metadata": metadata or {},
+            "timestamp": time.time()
+        })
+    
+    def rag_progress(self, query: str, stage: str, current: int = 0, total: int = 0, 
+                    message: str = ""):
+        """通知RAG处理进度"""
+        self.send_event(self.Events.RAG_PROGRESS, {
+            "query": query,
+            "stage": stage,  # searching, ranking, formatting
+            "current": current,
+            "total": total,
+            "percentage": round((current / total) * 100, 2) if total > 0 else 0,
+            "message": message,
+            "timestamp": time.time()
+        })
+    
+    def rag_error(self, query: str, error_message: str, stage: str = "", 
+                 details: Dict[str, Any] = None):
+        """通知RAG处理错误"""
+        self.send_event(self.Events.RAG_ERROR, {
+            "query": query,
+            "error_message": error_message,
+            "stage": stage,
+            "details": details or {},
+            "timestamp": time.time()
         })
 
 # 测试代码

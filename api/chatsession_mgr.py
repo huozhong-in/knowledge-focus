@@ -4,10 +4,13 @@
 """
 
 import json
+import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from sqlmodel import Session, select, desc, and_
 from db_mgr import ChatSession, ChatMessage, ChatSessionPinFile
+
+logger = logging.getLogger(__name__)
 
 
 class ChatSessionMgr:
@@ -314,6 +317,34 @@ class ChatSessionMgr:
             .where(ChatSessionPinFile.session_id == session_id)
             .order_by(ChatSessionPinFile.pinned_at)
         ).all())
+
+    def get_pinned_document_ids(self, session_id: int) -> List[int]:
+        """
+        获取会话Pin文件对应的文档ID列表
+        用于RAG检索时限定搜索范围
+        
+        Returns:
+            List[int]: 文档ID列表，如果找不到对应文档则跳过
+        """
+        from db_mgr import Document
+        
+        # 获取session的所有pin文件路径
+        pin_files = self.get_pinned_files(session_id)
+        if not pin_files:
+            return []
+        
+        # 通过file_path查找对应的Document记录
+        file_paths = [pf.file_path for pf in pin_files]
+        documents = self.session.exec(
+            select(Document)
+            .where(Document.file_path.in_(file_paths))
+        ).all()
+        
+        # 返回文档ID列表
+        document_ids = [doc.id for doc in documents]
+        
+        logger.debug(f"会话 {session_id} Pin文件: {len(pin_files)}个, 对应文档: {len(document_ids)}个")
+        return document_ids
 
     # ==================== 辅助方法 ====================
     
