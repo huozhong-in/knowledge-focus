@@ -308,7 +308,7 @@ impl FileMonitor {
             stats: Arc::new(Mutex::new(MonitorStats::default())),
             metadata_tx: None,
             batch_size: 50,
-            batch_interval: Duration::from_secs(5),
+            batch_interval: Duration::from_secs(10),
             blacklist_trie: Arc::new(Mutex::new(BlacklistTrieNode::default())), // Initialize Trie
             // 初始化状态标志位
             is_batch_processor_running: Arc::new(Mutex::new(false)),

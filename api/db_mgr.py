@@ -503,7 +503,7 @@ class DBManager:
                     {
                         "key": "proxy",
                         "value": "http://127.0.0.1:7890",
-                        "description": "代理服务器地址"
+                        "description": "Proxy server address"
                     },
                 ]
                 for config_data in system_configs:
@@ -824,56 +824,56 @@ class DBManager:
         """初始化macOS Bundle扩展名数据"""
         bundle_extensions = [
             # 应用程序Bundle
-            {"extension": ".app", "description": "macOS应用程序包"},
-            {"extension": ".bundle", "description": "macOS通用Bundle包"},
-            {"extension": ".framework", "description": "macOS框架Bundle"},
-            {"extension": ".plugin", "description": "macOS插件Bundle"},
-            {"extension": ".kext", "description": "macOS内核扩展"},
+            {"extension": ".app", "description": "macOS application"},
+            {"extension": ".bundle", "description": "macOS bundle"},
+            {"extension": ".framework", "description": "macOS framework bundle"},
+            {"extension": ".plugin", "description": "macOS plugin bundle"},
+            {"extension": ".kext", "description": "macOS core extension"},
             
             # 媒体和创意软件Bundle
-            {"extension": ".fcpbundle", "description": "Final Cut Pro项目包"},
-            {"extension": ".imovielibrary", "description": "iMovie项目库"},
-            {"extension": ".tvlibrary", "description": "TV应用库"},
-            {"extension": ".theater", "description": "Theater应用库"},
-            {"extension": ".photoslibrary", "description": "Photos照片库"},
-            {"extension": ".logicx", "description": "Logic Pro X项目包"},
+            {"extension": ".fcpbundle", "description": "Final Cut Pro project"},
+            {"extension": ".imovielibrary", "description": "iMovie library"},
+            {"extension": ".tvlibrary", "description": "TV library"},
+            {"extension": ".theater", "description": "Theater app library"},
+            {"extension": ".photoslibrary", "description": "Photos library"},
+            {"extension": ".logicx", "description": "Logic Pro X project"},
             
             # 办公软件Bundle
-            {"extension": ".pages", "description": "Apple Pages文档包"},
-            {"extension": ".numbers", "description": "Apple Numbers电子表格包"},
-            {"extension": ".key", "description": "Apple Keynote演示文稿包"},
+            {"extension": ".pages", "description": "Apple Pages document bundle"},
+            {"extension": ".numbers", "description": "Apple Numbers spreadsheet bundle"},
+            {"extension": ".key", "description": "Apple Keynote presentation bundle"},
             
             # 开发工具Bundle
-            {"extension": ".xcodeproj", "description": "Xcode项目包"},
-            {"extension": ".xcworkspace", "description": "Xcode工作空间包"},
-            {"extension": ".playground", "description": "Swift Playground包"},
-            {"extension": ".xcassets", "description": "Xcode资源目录包"},
-            {"extension": ".xcdatamodeld", "description": "Core Data模型包"},
+            {"extension": ".xcodeproj", "description": "Xcode project bundle"},
+            {"extension": ".xcworkspace", "description": "Xcode workspace bundle"},
+            {"extension": ".playground", "description": "Swift Playground bundle"},
+            {"extension": ".xcassets", "description": "Xcode asset catalog bundle"},
+            {"extension": ".xcdatamodeld", "description": "Core Data model bundle"},
             
             # 设计和自动化Bundle
-            {"extension": ".sketch", "description": "Sketch设计文件包"},
-            {"extension": ".workflow", "description": "Automator工作流程包"},
-            {"extension": ".action", "description": "Automator动作包"},
-            {"extension": ".lbaction", "description": "LaunchBar动作包"},
+            {"extension": ".sketch", "description": "Sketch design file bundle"},
+            {"extension": ".workflow", "description": "Automator workflow bundle"},
+            {"extension": ".action", "description": "Automator action bundle"},
+            {"extension": ".lbaction", "description": "LaunchBar action bundle"},
             
             # 系统相关Bundle
-            {"extension": ".prefpane", "description": "系统偏好设置面板"},
-            {"extension": ".appex", "description": "App扩展"},
-            {"extension": ".component", "description": "音频单元组件"},
-            {"extension": ".wdgt", "description": "Dashboard小部件"},
-            {"extension": ".qlgenerator", "description": "Quick Look生成器"},
-            {"extension": ".mdimporter", "description": "Spotlight元数据导入器"},
-            {"extension": ".safari-extension", "description": "Safari扩展"},
+            {"extension": ".prefpane", "description": "System Preferences pane"},
+            {"extension": ".appex", "description": "App extension"},
+            {"extension": ".component", "description": "Audio unit component"},
+            {"extension": ".wdgt", "description": "Dashboard widget"},
+            {"extension": ".qlgenerator", "description": "Quick Look generator"},
+            {"extension": ".mdimporter", "description": "Spotlight metadata importer"},
+            {"extension": ".safari-extension", "description": "Safari extension"},
             
             # 本地化和资源Bundle
-            {"extension": ".lproj", "description": "本地化资源目录"},
-            {"extension": ".nib", "description": "Interface Builder文件包"},
-            {"extension": ".storyboard", "description": "Interface Builder故事板包"},
+            {"extension": ".lproj", "description": "Localization resource directory"},
+            {"extension": ".nib", "description": "Interface Builder file bundle"},
+            {"extension": ".storyboard", "description": "Interface Builder storyboard bundle"},
             
             # 其他Bundle
-            {"extension": ".download", "description": "未完成下载的文件包"},
-            {"extension": ".scptd", "description": "AppleScript脚本包"},
-            {"extension": ".rtfd", "description": "富文本格式目录"},
+            {"extension": ".download", "description": "Incomplete download bundle"},
+            {"extension": ".scptd", "description": "AppleScript file"},
+            {"extension": ".rtfd", "description": "Rich Text Format directory"},
         ]
         
         bundle_objs = []
@@ -895,60 +895,60 @@ class DBManager:
         
         # 基础忽略规则 - 系统文件和临时文件
         basic_ignore_rules = [
-            # macOS系统文件
+            # macOS system files
             {
-                "name": "macOS系统文件",
-                "description": "忽略macOS系统生成的文件",
+                "name": "macOS system files",
+                "description": "Ignore files generated by macOS",
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"^\.(DS_Store|AppleDouble|LSOverride|DocumentRevisions-V100|fseventsd|Spotlight-V100|TemporaryItems|Trashes|VolumeIcon\.icns|com\.apple\.timemachine\.donotpresent)$",
                 "pattern_type": "regex",
                 "action": RuleAction.EXCLUDE.value,
                 "priority": RulePriority.HIGH.value
             },
-            # Windows系统文件
+            # Windows system files
             {
-                "name": "Windows系统文件",
-                "description": "忽略Windows系统生成的文件",
+                "name": "Windows system files",
+                "description": "Ignore files generated by Windows",
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"^(Thumbs\.db|ehthumbs\.db|Desktop\.ini|\$RECYCLE\.BIN|System Volume Information)$",
                 "pattern_type": "regex",
                 "action": RuleAction.EXCLUDE.value,
                 "priority": RulePriority.HIGH.value
             },
-            # 常见临时文件
+            # Common temporary files
             {
-                "name": "临时文件",
-                "description": "忽略各类临时文件",
+                "name": "Temporary files",
+                "description": "Ignore various temporary files",
                 "rule_type": RuleType.FILENAME.value,
                 "pattern": r"(\.tmp$|\.temp$|~$|\$.*\$|\.swp$|\.swo$)",
                 "pattern_type": "regex",
                 "action": RuleAction.EXCLUDE.value,
                 "priority": RulePriority.HIGH.value
             },
-            # 开发相关忽略目录
+            # Development related ignore directories
             {
-                "name": "开发工具缓存目录",
-                "description": "忽略开发工具生成的缓存目录",
+                "name": "Development tool cache directories",
+                "description": "Ignore cache directories generated by development tools",
                 "rule_type": RuleType.FOLDER.value,
                 "pattern": r"(node_modules|\.git|\.svn|\.hg|__pycache__|\.pytest_cache|\.tox|\.coverage|build|dist|\.env|venv|env)(/|$)",
                 "pattern_type": "regex", 
                 "action": RuleAction.EXCLUDE.value,
                 "priority": RulePriority.HIGH.value
             },
-            # 系统缓存目录
+            # System cache directories
             {
-                "name": "系统缓存目录",
-                "description": "忽略系统缓存目录",
+                "name": "System cache directories",
+                "description": "Ignore system cache directories",
                 "rule_type": RuleType.FOLDER.value,
                 "pattern": r"(Library/Caches|Library/Logs|\.cache|\.local/share/Trash)(/|$)",
                 "pattern_type": "regex",
                 "action": RuleAction.EXCLUDE.value,
                 "priority": RulePriority.HIGH.value
             },
-            # IDE配置目录
+            # IDE configuration directories
             {
-                "name": "IDE配置目录",
-                "description": "忽略IDE配置目录",
+                "name": "IDE configuration directories",
+                "description": "Ignore IDE configuration directories",
                 "rule_type": RuleType.FOLDER.value,
                 "pattern": r"(\.vscode|\.idea|\.eclipse|\.settings)(/|$)",
                 "pattern_type": "regex",
@@ -982,15 +982,15 @@ class DBManager:
     def _init_file_categories(self) -> None:
         """初始化文件分类数据"""
         categories = [
-            FileCategory(name="document", description="文档类文件", icon="📄"),
-            FileCategory(name="image", description="图片类文件", icon="🖼️"),
-            FileCategory(name="audio_video", description="音视频文件", icon="🎬"),
-            FileCategory(name="archive", description="压缩包文件", icon="🗃️"),
-            FileCategory(name="installer", description="安装包文件", icon="📦"),
-            FileCategory(name="code", description="代码文件", icon="💻"),
-            FileCategory(name="design", description="设计文件", icon="🎨"),
-            FileCategory(name="temp", description="临时文件", icon="⏱️"),
-            FileCategory(name="other", description="其他类型文件", icon="📎"),
+            FileCategory(name="document", description="Document files", icon="📄"),
+            FileCategory(name="image", description="Image files", icon="🖼️"),
+            FileCategory(name="audio_video", description="Audio/Video files", icon="🎬"),
+            FileCategory(name="archive", description="Archive files", icon="🗃️"),
+            FileCategory(name="installer", description="Installer files", icon="📦"),
+            FileCategory(name="code", description="Code files", icon="💻"),
+            FileCategory(name="design", description="Design files", icon="🎨"),
+            FileCategory(name="temp", description="Temporary files", icon="⏱️"),
+            FileCategory(name="other", description="Other files", icon="📎"),
         ]
         self.session.add_all(categories)
         self.session.commit()
@@ -1004,127 +1004,127 @@ class DBManager:
         # 文档类扩展名
         doc_extensions = [
             # MS Office
-            {"extension": "doc", "category_id": category_map["document"], "description": "Microsoft Word文档(旧版)"},
-            {"extension": "docx", "category_id": category_map["document"], "description": "Microsoft Word文档"},
-            {"extension": "ppt", "category_id": category_map["document"], "description": "Microsoft PowerPoint演示文稿(旧版)"},
-            {"extension": "pptx", "category_id": category_map["document"], "description": "Microsoft PowerPoint演示文稿"},
-            {"extension": "xls", "category_id": category_map["document"], "description": "Microsoft Excel电子表格(旧版)"},
-            {"extension": "xlsx", "category_id": category_map["document"], "description": "Microsoft Excel电子表格"},
+            {"extension": "doc", "category_id": category_map["document"], "description": "Microsoft Word Document (Old Version)"},
+            {"extension": "docx", "category_id": category_map["document"], "description": "Microsoft Word Document"},
+            {"extension": "ppt", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation (Old Version)"},
+            {"extension": "pptx", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation"},
+            {"extension": "xls", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet (Old Version)"},
+            {"extension": "xlsx", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet"},
             # Apple iWork
-            {"extension": "pages", "category_id": category_map["document"], "description": "Apple Pages文档"},
-            {"extension": "key", "category_id": category_map["document"], "description": "Apple Keynote演示文稿"},
-            {"extension": "numbers", "category_id": category_map["document"], "description": "Apple Numbers电子表格"},
-            # 文本文档
-            {"extension": "md", "category_id": category_map["document"], "description": "Markdown文档"},
-            {"extension": "markdown", "category_id": category_map["document"], "description": "Markdown文档"},
-            {"extension": "txt", "category_id": category_map["document"], "description": "纯文本文档"},
-            {"extension": "rtf", "category_id": category_map["document"], "description": "富文本格式文档"},
-            # 电子书/固定格式
-            {"extension": "pdf", "category_id": category_map["document"], "description": "PDF文档", "priority": "high"},
-            {"extension": "epub", "category_id": category_map["document"], "description": "EPUB电子书"},
-            {"extension": "mobi", "category_id": category_map["document"], "description": "MOBI电子书"},
-            # Web文档
-            {"extension": "html", "category_id": category_map["document"], "description": "HTML网页"},
-            {"extension": "htm", "category_id": category_map["document"], "description": "HTML网页"},
+            {"extension": "pages", "category_id": category_map["document"], "description": "Apple Pages Document"},
+            {"extension": "key", "category_id": category_map["document"], "description": "Apple Keynote Presentation"},
+            {"extension": "numbers", "category_id": category_map["document"], "description": "Apple Numbers Spreadsheet"},
+            # Text Documents
+            {"extension": "md", "category_id": category_map["document"], "description": "Markdown Document"},
+            {"extension": "markdown", "category_id": category_map["document"], "description": "Markdown Document"},
+            {"extension": "txt", "category_id": category_map["document"], "description": "Plain Text Document"},
+            {"extension": "rtf", "category_id": category_map["document"], "description": "Rich Text Format Document"},
+            # E-books/Fixed Format
+            {"extension": "pdf", "category_id": category_map["document"], "description": "PDF Document", "priority": "high"},
+            {"extension": "epub", "category_id": category_map["document"], "description": "EPUB E-book"},
+            {"extension": "mobi", "category_id": category_map["document"], "description": "MOBI E-book"},
+            # Web Documents
+            {"extension": "html", "category_id": category_map["document"], "description": "HTML Web Page"},
+            {"extension": "htm", "category_id": category_map["document"], "description": "HTML Web Page"},
         ]
         
-        # 图片类扩展名
+        # Image Extensions
         image_extensions = [
-            {"extension": "jpg", "category_id": category_map["image"], "description": "JPEG图片", "priority": "high"},
-            {"extension": "jpeg", "category_id": category_map["image"], "description": "JPEG图片", "priority": "high"},
-            {"extension": "png", "category_id": category_map["image"], "description": "PNG图片", "priority": "high"},
-            {"extension": "gif", "category_id": category_map["image"], "description": "GIF图片"},
-            {"extension": "bmp", "category_id": category_map["image"], "description": "BMP图片"},
-            {"extension": "tiff", "category_id": category_map["image"], "description": "TIFF图片"},
-            {"extension": "heic", "category_id": category_map["image"], "description": "HEIC图片(苹果设备)"},
-            {"extension": "webp", "category_id": category_map["image"], "description": "WebP图片"},
-            {"extension": "svg", "category_id": category_map["image"], "description": "SVG矢量图"},
-            {"extension": "cr2", "category_id": category_map["image"], "description": "佳能RAW格式图片"},
-            {"extension": "nef", "category_id": category_map["image"], "description": "尼康RAW格式图片"},
-            {"extension": "arw", "category_id": category_map["image"], "description": "索尼RAW格式图片"},
-            {"extension": "dng", "category_id": category_map["image"], "description": "通用RAW格式图片"},
+            {"extension": "jpg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
+            {"extension": "jpeg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
+            {"extension": "png", "category_id": category_map["image"], "description": "PNG Image", "priority": "high"},
+            {"extension": "gif", "category_id": category_map["image"], "description": "GIF Image"},
+            {"extension": "bmp", "category_id": category_map["image"], "description": "BMP Image"},
+            {"extension": "tiff", "category_id": category_map["image"], "description": "TIFF Image"},
+            {"extension": "heic", "category_id": category_map["image"], "description": "HEIC Image (Apple Devices)"},
+            {"extension": "webp", "category_id": category_map["image"], "description": "WebP Image"},
+            {"extension": "svg", "category_id": category_map["image"], "description": "SVG Vector Image"},
+            {"extension": "cr2", "category_id": category_map["image"], "description": "Canon RAW Image"},
+            {"extension": "nef", "category_id": category_map["image"], "description": "Nikon RAW Image"},
+            {"extension": "arw", "category_id": category_map["image"], "description": "Sony RAW Image"},
+            {"extension": "dng", "category_id": category_map["image"], "description": "Generic RAW Image"},
         ]
         
-        # 音视频类扩展名
+        # Audio/Video Extensions
         av_extensions = [
-            # 音频
-            {"extension": "mp3", "category_id": category_map["audio_video"], "description": "MP3音频", "priority": "high"},
-            {"extension": "wav", "category_id": category_map["audio_video"], "description": "WAV音频"},
-            {"extension": "aac", "category_id": category_map["audio_video"], "description": "AAC音频"},
-            {"extension": "flac", "category_id": category_map["audio_video"], "description": "FLAC无损音频"},
-            {"extension": "ogg", "category_id": category_map["audio_video"], "description": "OGG音频"},
-            {"extension": "m4a", "category_id": category_map["audio_video"], "description": "M4A音频"},
-            # 视频
-            {"extension": "mp4", "category_id": category_map["audio_video"], "description": "MP4视频", "priority": "high"},
-            {"extension": "mov", "category_id": category_map["audio_video"], "description": "MOV视频(苹果设备)", "priority": "high"},
-            {"extension": "avi", "category_id": category_map["audio_video"], "description": "AVI视频"},
-            {"extension": "mkv", "category_id": category_map["audio_video"], "description": "MKV视频"},
-            {"extension": "wmv", "category_id": category_map["audio_video"], "description": "WMV视频(Windows)"},
-            {"extension": "flv", "category_id": category_map["audio_video"], "description": "Flash视频"},
-            {"extension": "webm", "category_id": category_map["audio_video"], "description": "WebM视频"},
+            # Audio
+            {"extension": "mp3", "category_id": category_map["audio_video"], "description": "MP3 Audio", "priority": "high"},
+            {"extension": "wav", "category_id": category_map["audio_video"], "description": "WAV Audio"},
+            {"extension": "aac", "category_id": category_map["audio_video"], "description": "AAC Audio"},
+            {"extension": "flac", "category_id": category_map["audio_video"], "description": "FLAC Lossless Audio"},
+            {"extension": "ogg", "category_id": category_map["audio_video"], "description": "OGG Audio"},
+            {"extension": "m4a", "category_id": category_map["audio_video"], "description": "M4A Audio"},
+            # Video
+            {"extension": "mp4", "category_id": category_map["audio_video"], "description": "MP4 Video", "priority": "high"},
+            {"extension": "mov", "category_id": category_map["audio_video"], "description": "MOV Video (Apple Devices)", "priority": "high"},
+            {"extension": "avi", "category_id": category_map["audio_video"], "description": "AVI Video"},
+            {"extension": "mkv", "category_id": category_map["audio_video"], "description": "MKV Video"},
+            {"extension": "wmv", "category_id": category_map["audio_video"], "description": "WMV Video (Windows)"},
+            {"extension": "flv", "category_id": category_map["audio_video"], "description": "Flash Video"},
+            {"extension": "webm", "category_id": category_map["audio_video"], "description": "WebM Video"},
         ]
         
-        # 压缩包类扩展名
+        # Archive Extensions
         archive_extensions = [
-            {"extension": "zip", "category_id": category_map["archive"], "description": "ZIP压缩文件", "priority": "high"},
-            {"extension": "rar", "category_id": category_map["archive"], "description": "RAR压缩文件"},
-            {"extension": "7z", "category_id": category_map["archive"], "description": "7-Zip压缩文件"},
-            {"extension": "tar", "category_id": category_map["archive"], "description": "TAR归档文件"},
-            {"extension": "gz", "category_id": category_map["archive"], "description": "GZIP压缩文件"},
-            {"extension": "bz2", "category_id": category_map["archive"], "description": "BZIP2压缩文件"},
+            {"extension": "zip", "category_id": category_map["archive"], "description": "ZIP Archive", "priority": "high"},
+            {"extension": "rar", "category_id": category_map["archive"], "description": "RAR Archive"},
+            {"extension": "7z", "category_id": category_map["archive"], "description": "7-Zip Archive"},
+            {"extension": "tar", "category_id": category_map["archive"], "description": "TAR Archive"},
+            {"extension": "gz", "category_id": category_map["archive"], "description": "GZIP Archive"},
+            {"extension": "bz2", "category_id": category_map["archive"], "description": "BZIP2 Archive"},
         ]
         
-        # 安装包类扩展名
+        # Installer Extensions
         installer_extensions = [
-            {"extension": "dmg", "category_id": category_map["installer"], "description": "macOS磁盘镜像", "priority": "high"},
-            {"extension": "pkg", "category_id": category_map["installer"], "description": "macOS安装包", "priority": "high"},
-            {"extension": "exe", "category_id": category_map["installer"], "description": "Windows可执行文件", "priority": "high"},
-            {"extension": "msi", "category_id": category_map["installer"], "description": "Windows安装包"},
+            {"extension": "dmg", "category_id": category_map["installer"], "description": "macOS Disk Image", "priority": "high"},
+            {"extension": "pkg", "category_id": category_map["installer"], "description": "macOS Installer Package", "priority": "high"},
+            {"extension": "exe", "category_id": category_map["installer"], "description": "Windows Executable File", "priority": "high"},
+            {"extension": "msi", "category_id": category_map["installer"], "description": "Windows Installer Package"},
         ]
         
-        # 代码类扩展名
+        # Code Extensions
         code_extensions = [
-            {"extension": "py", "category_id": category_map["code"], "description": "Python源代码"},
-            {"extension": "js", "category_id": category_map["code"], "description": "JavaScript源代码"},
-            {"extension": "ts", "category_id": category_map["code"], "description": "TypeScript源代码"},
-            {"extension": "java", "category_id": category_map["code"], "description": "Java源代码"},
-            {"extension": "c", "category_id": category_map["code"], "description": "C源代码"},
-            {"extension": "cpp", "category_id": category_map["code"], "description": "C++源代码"},
-            {"extension": "h", "category_id": category_map["code"], "description": "C/C++头文件"},
-            {"extension": "cs", "category_id": category_map["code"], "description": "C#源代码"},
-            {"extension": "php", "category_id": category_map["code"], "description": "PHP源代码"},
-            {"extension": "rb", "category_id": category_map["code"], "description": "Ruby源代码"},
-            {"extension": "go", "category_id": category_map["code"], "description": "Go源代码"},
-            {"extension": "swift", "category_id": category_map["code"], "description": "Swift源代码"},
-            {"extension": "kt", "category_id": category_map["code"], "description": "Kotlin源代码"},
-            {"extension": "sh", "category_id": category_map["code"], "description": "Shell脚本"},
-            {"extension": "bat", "category_id": category_map["code"], "description": "Windows批处理文件"},
-            {"extension": "json", "category_id": category_map["code"], "description": "JSON数据文件"},
-            {"extension": "yaml", "category_id": category_map["code"], "description": "YAML配置文件"},
-            {"extension": "yml", "category_id": category_map["code"], "description": "YAML配置文件"},
-            {"extension": "toml", "category_id": category_map["code"], "description": "TOML配置文件"},
-            {"extension": "xml", "category_id": category_map["code"], "description": "XML数据文件"},
-            {"extension": "css", "category_id": category_map["code"], "description": "CSS样式表"},
-            {"extension": "scss", "category_id": category_map["code"], "description": "SCSS样式表"},
+            {"extension": "py", "category_id": category_map["code"], "description": "Python Source Code"},
+            {"extension": "js", "category_id": category_map["code"], "description": "JavaScript Source Code"},
+            {"extension": "ts", "category_id": category_map["code"], "description": "TypeScript Source Code"},
+            {"extension": "java", "category_id": category_map["code"], "description": "Java Source Code"},
+            {"extension": "c", "category_id": category_map["code"], "description": "C Source Code"},
+            {"extension": "cpp", "category_id": category_map["code"], "description": "C++ Source Code"},
+            {"extension": "h", "category_id": category_map["code"], "description": "C/C++ Header File"},
+            {"extension": "cs", "category_id": category_map["code"], "description": "C# Source Code"},
+            {"extension": "php", "category_id": category_map["code"], "description": "PHP Source Code"},
+            {"extension": "rb", "category_id": category_map["code"], "description": "Ruby Source Code"},
+            {"extension": "go", "category_id": category_map["code"], "description": "Go Source Code"},
+            {"extension": "swift", "category_id": category_map["code"], "description": "Swift Source Code"},
+            {"extension": "kt", "category_id": category_map["code"], "description": "Kotlin Source Code"},
+            {"extension": "sh", "category_id": category_map["code"], "description": "Shell Script"},
+            {"extension": "bat", "category_id": category_map["code"], "description": "Windows Batch File"},
+            {"extension": "json", "category_id": category_map["code"], "description": "JSON Data File"},
+            {"extension": "yaml", "category_id": category_map["code"], "description": "YAML Configuration File"},
+            {"extension": "yml", "category_id": category_map["code"], "description": "YAML Configuration File"},
+            {"extension": "toml", "category_id": category_map["code"], "description": "TOML Configuration File"},
+            {"extension": "xml", "category_id": category_map["code"], "description": "XML Data File"},
+            {"extension": "css", "category_id": category_map["code"], "description": "CSS Stylesheet"},
+            {"extension": "scss", "category_id": category_map["code"], "description": "SCSS Stylesheet"},
         ]
         
-        # 设计类扩展名
+        # Design Extensions
         design_extensions = [
-            {"extension": "psd", "category_id": category_map["design"], "description": "Photoshop设计文件"},
-            {"extension": "ai", "category_id": category_map["design"], "description": "Adobe Illustrator设计文件"},
-            {"extension": "sketch", "category_id": category_map["design"], "description": "Sketch设计文件"},
-            {"extension": "fig", "category_id": category_map["design"], "description": "Figma设计文件"},
-            {"extension": "xd", "category_id": category_map["design"], "description": "Adobe XD设计文件"},
+            {"extension": "psd", "category_id": category_map["design"], "description": "Photoshop Design File"},
+            {"extension": "ai", "category_id": category_map["design"], "description": "Adobe Illustrator Design File"},
+            {"extension": "sketch", "category_id": category_map["design"], "description": "Sketch Design File"},
+            {"extension": "fig", "category_id": category_map["design"], "description": "Figma Design File"},
+            {"extension": "xd", "category_id": category_map["design"], "description": "Adobe XD Design File"},
         ]
         
-        # 临时文件扩展名
+        # Temporary File Extensions
         temp_extensions = [
-            {"extension": "tmp", "category_id": category_map["temp"], "description": "临时文件"},
-            {"extension": "temp", "category_id": category_map["temp"], "description": "临时文件"},
-            {"extension": "part", "category_id": category_map["temp"], "description": "未完成下载的部分文件"},
-            {"extension": "crdownload", "category_id": category_map["temp"], "description": "Chrome下载临时文件"},
-            {"extension": "download", "category_id": category_map["temp"], "description": "下载临时文件"},
-            {"extension": "bak", "category_id": category_map["temp"], "description": "备份文件"},
+            {"extension": "tmp", "category_id": category_map["temp"], "description": "Temporary File"},
+            {"extension": "temp", "category_id": category_map["temp"], "description": "Temporary File"},
+            {"extension": "part", "category_id": category_map["temp"], "description": "Incomplete Downloaded File"},
+            {"extension": "crdownload", "category_id": category_map["temp"], "description": "Chrome Download Temporary File"},
+            {"extension": "download", "category_id": category_map["temp"], "description": "Download Temporary File"},
+            {"extension": "bak", "category_id": category_map["temp"], "description": "Backup File"},
         ]
         
         # 合并所有扩展名
@@ -1172,12 +1172,12 @@ class DBManager:
         if system == "Darwin":  # macOS
             # 白名单常用文件夹（用户数据文件夹，通常希望被扫描）
             whitelist_common_dirs = [
-                {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
-                {"name": "文稿", "path": os.path.join(home_dir, "Documents")},
-                {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
-                {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
-                {"name": "音乐", "path": os.path.join(home_dir, "Music")},
-                {"name": "影片", "path": os.path.join(home_dir, "Movies")},
+                {"name": "Desktop", "path": os.path.join(home_dir, "Desktop")},
+                {"name": "Documents", "path": os.path.join(home_dir, "Documents")},
+                {"name": "Downloads", "path": os.path.join(home_dir, "Downloads")},
+                {"name": "Pictures", "path": os.path.join(home_dir, "Pictures")},
+                {"name": "Music", "path": os.path.join(home_dir, "Music")},
+                {"name": "Movies", "path": os.path.join(home_dir, "Movies")},
             ]
             
         elif system == "Windows":
@@ -1185,12 +1185,12 @@ class DBManager:
             if home_dir:
                 # 白名单常用文件夹
                 whitelist_common_dirs = [
-                    {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
-                    {"name": "文档", "path": os.path.join(home_dir, "Documents")},
-                    {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
-                    {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
-                    {"name": "音乐", "path": os.path.join(home_dir, "Music")},
-                    {"name": "视频", "path": os.path.join(home_dir, "Videos")},
+                    {"name": "Desktop", "path": os.path.join(home_dir, "Desktop")},
+                    {"name": "Documents", "path": os.path.join(home_dir, "Documents")},
+                    {"name": "Downloads", "path": os.path.join(home_dir, "Downloads")},
+                    {"name": "Pictures", "path": os.path.join(home_dir, "Pictures")},
+                    {"name": "Music", "path": os.path.join(home_dir, "Music")},
+                    {"name": "Videos", "path": os.path.join(home_dir, "Videos")},
                 ]
                 
             else:
@@ -1198,12 +1198,12 @@ class DBManager:
         else:
             # Linux系统
             whitelist_common_dirs = [
-                {"name": "桌面", "path": os.path.join(home_dir, "Desktop")},
-                {"name": "文档", "path": os.path.join(home_dir, "Documents")},
-                {"name": "下载", "path": os.path.join(home_dir, "Downloads")},
-                {"name": "图片", "path": os.path.join(home_dir, "Pictures")},
-                {"name": "音乐", "path": os.path.join(home_dir, "Music")},
-                {"name": "视频", "path": os.path.join(home_dir, "Videos")},
+                {"name": "Desktop", "path": os.path.join(home_dir, "Desktop")},
+                {"name": "Documents", "path": os.path.join(home_dir, "Documents")},
+                {"name": "Downloads", "path": os.path.join(home_dir, "Downloads")},
+                {"name": "Pictures", "path": os.path.join(home_dir, "Pictures")},
+                {"name": "Music", "path": os.path.join(home_dir, "Music")},
+                {"name": "Videos", "path": os.path.join(home_dir, "Videos")},
             ]
         
         # 处理白名单文件夹（用户数据文件夹）
