@@ -51,7 +51,7 @@ class FileTaggingMgr:
         
         # 初始化markitdown解析器
         self.md_parser = MarkItDown(enable_plugins=False)
-        # ! markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
+        # * markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
         self.bridge_event_sender = BridgeEventSender()
         
         # 通知计数器，用于控制通知频率
@@ -122,7 +122,7 @@ class FileTaggingMgr:
                 self._update_tagged_time(screening_result)
                 return True # Mark as processed even if no content
             
-            # ! Use a summary for efficiency
+            # * Use a summary for efficiency
             summary = content[:3000] # Use the first 3000 characters as a summary
 
         except Exception as e:

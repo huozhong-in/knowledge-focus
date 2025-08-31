@@ -356,8 +356,7 @@ export default function Page() {
     }
   }, [openSettingsPage])
 
-  // Listen for 'api-ready' event from backend ONCE using useBridgeEvents
-  // 这是应用中唯一需要监听 api-ready 事件的地方
+  // * 这是前端统一监听来自Rust的IPC事件的地方
   useBridgeEvents(
     {
       'api-ready': (payload: any) => {

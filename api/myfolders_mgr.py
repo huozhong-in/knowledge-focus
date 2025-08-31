@@ -672,6 +672,7 @@ class MyFoldersManager:
                             and_(MyFolders.is_blacklist, MyFolders.is_common_folder)
                         ),
                         # 都是一级文件夹
+                        # * is_ 的用法理解不了
                         or_(MyFolders.parent_id.is_(None), MyFolders.parent_id == 0)
                     )
                 ).order_by(MyFolders.created_at)

@@ -62,7 +62,11 @@ class ModelConfigMgr:
     def set_embeddings_model_path(self, model_path: str) -> bool:
         embeddings_config = self.session.exec(select(SystemConfig).where(SystemConfig.key == "embeddings_model_path")).first()
         if embeddings_config is None:
-            embeddings_config = SystemConfig(key="embeddings_model_path", value=model_path)
+            embeddings_config = SystemConfig(
+                key="embeddings_model_path", 
+                value=model_path,
+                description="Path to the built-in embeddings model file",
+            )
             try:
                 self.session.add(embeddings_config)
                 self.session.commit()
