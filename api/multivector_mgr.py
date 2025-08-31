@@ -421,6 +421,12 @@ Give a concise summary of the image that is well optimized for retrieval.
 
         try:
             logger.info(f"[MULTIVECTOR] Parsing document with docling: {file_path}")
+            
+            # 通过环境变量方式设置代理，以支持apivlm方式使用vision模型API
+            proxy = self.model_config_mgr.get_proxy_value()
+            if proxy is not None and proxy.value is not None and proxy.value != "":
+                os.environ['ALL_PROXY'] = proxy.value
+            
             result = self.converter.convert(source=file_path)
             
             if not result or not result.document:
@@ -432,6 +438,9 @@ Give a concise summary of the image that is well optimized for retrieval.
         except Exception as e:
             logger.error(f"Docling parsing failed for {file_path}: {e}")
             raise
+        finally:
+            # 恢复环境变量
+            os.environ.pop('ALL_PROXY', None)
     
     def _save_docling_result(self, file_path: str, result: ConversionResult) -> str:
         """保存docling解析结果到JSON文件"""

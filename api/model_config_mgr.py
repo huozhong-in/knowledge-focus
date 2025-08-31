@@ -11,7 +11,19 @@ from db_mgr import (
     CapabilityAssignment,
     SystemConfig,
 )
+from openai import AsyncOpenAI
+from google.genai import Client
+from google.genai.types import HttpOptions
 from pydantic import BaseModel
+from pydantic_ai.models import Model
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.providers.google import GoogleProvider
+from pydantic_ai.models.google import GoogleModel
+from pydantic_ai.providers.groq import GroqProvider
+from pydantic_ai.models.groq import GroqModel
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,6 +35,7 @@ class ModelUseInterface(BaseModel):
     use_proxy: bool
     max_context_length: int
     max_output_tokens: int
+    provider_type: str = "openai"
 
 class ModelConfigMgr:
     def __init__(self, session: Session):
@@ -36,6 +49,9 @@ class ModelConfigMgr:
         """Retrieves all model configurations for a specific provider."""
         return self.session.exec(select(ModelConfiguration).where(ModelConfiguration.provider_id == provider_id)).all()
 
+    def get_proxy_value(self) -> SystemConfig | None:
+        return self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+    
     def create_provider(self, provider_type: str, display_name: str, base_url: str = "", api_key: str = "", extra_data_json: Dict = None, is_active: bool = True, use_proxy: bool = False) -> ModelProvider:
         """Creates a new model provider configuration."""
         if extra_data_json is None:
@@ -102,6 +118,9 @@ class ModelConfigMgr:
             if model_identifier == "":
                 print("Model identifier is empty.")
                 return False
+            # 也过滤掉embedding模型
+            if "embedding" in model_identifier.lower():
+                return True
             return self.session.exec(select(ModelConfiguration).where(
                 ModelConfiguration.provider_id == provider_id,
                 ModelConfiguration.model_identifier == model_identifier
@@ -135,7 +154,7 @@ class ModelConfigMgr:
             print(f"Error reading discovery_api from extra_data_json: {e}")
 
         try:
-            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+            proxy = self.get_proxy_value()
             async with httpx.AsyncClient(proxy=proxy.value if proxy is not None and provider.use_proxy else None) as client:
                 response = await client.get(discover_url, headers=headers, timeout=10)
                 response.raise_for_status()
@@ -210,9 +229,6 @@ class ModelConfigMgr:
                 models_list = models_data.get("data", [])
                 for model in models_list:
                     model_identifier=model.get("id", "")
-                    # 过滤掉embedding模型
-                    if "embedding" in model_identifier.lower():
-                        continue
                     all_model_identifiers.append(model_identifier)
                     # 将type的值对应转换为ModelCapability.value的list
                     capabilities = []
@@ -382,6 +398,7 @@ class ModelConfigMgr:
             return None
         api_key = model_provider.api_key
         use_proxy = model_provider.use_proxy
+        provider_type = model_provider.provider_type
 
         return ModelUseInterface(
             model_identifier=model_identifier,
@@ -390,6 +407,7 @@ class ModelConfigMgr:
             use_proxy=use_proxy,
             max_context_length=model_config.max_context_length,
             max_output_tokens=model_config.max_output_tokens,
+            provider_type=provider_type,
         )
 
     def get_vision_model_config(self) -> ModelUseInterface:
@@ -420,6 +438,61 @@ class ModelConfigMgr:
             print(f"Error toggling model enabled state for model {model_id}: {e}")
             return False
 
+    def model_adapter(self, model_interface: ModelUseInterface) -> Model | None:
+        model_identifier = model_interface.model_identifier
+        base_url = model_interface.base_url
+        api_key = model_interface.api_key
+        use_proxy = model_interface.use_proxy
+        proxy = self.get_proxy_value()
+        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
+        provider_type = model_interface.provider_type
+        
+        if provider_type == "openai" or provider_type == "grok":
+            openai_client = AsyncOpenAI(
+                api_key=api_key if api_key else "sk-xxx",
+                base_url=base_url,
+                max_retries=3,
+                http_client=http_client,
+            )
+            model = OpenAIChatModel(
+                model_name=model_identifier,
+                provider=OpenAIProvider(
+                    openai_client=openai_client,
+                ),
+            )
+        elif provider_type == "anthropic":
+            model = AnthropicModel(
+                model_name=model_identifier,
+                provider=AnthropicProvider(
+                    api_key=api_key,
+                    http_client=http_client
+                ),
+            )
+        elif provider_type == "google":
+            client_args = {'proxy': proxy.value} if use_proxy and proxy is not None else None
+            async_client_args = {'proxy': proxy.value} if use_proxy and proxy is not None else None
+            http_options = HttpOptions(client_args=client_args, async_client_args=async_client_args) if client_args and async_client_args else None
+            client = Client(
+                api_key=api_key,
+                http_options=http_options,
+            )
+            provider = GoogleProvider(client=client)
+            model = GoogleModel(
+                model_name=model_identifier, 
+                provider=provider,
+            )
+        elif provider_type == "groq":
+            model = GroqModel(
+                model_name=model_identifier,
+                provider=GroqProvider(
+                    api_key=api_key,
+                    http_client=http_client
+                ),
+            )
+        else:
+            return None
+        
+        return model
 
 if __name__ == "__main__":
     from sqlmodel import create_engine

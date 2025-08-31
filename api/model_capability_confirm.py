@@ -3,22 +3,22 @@ from db_mgr import (
     ModelProvider,
     ModelCapability,
     ModelConfiguration,
-    SystemConfig,
 )
+import json
 from pathlib import Path
 from sqlmodel import Session, select
-import json
+from pydantic import BaseModel, Field
 from typing import List, Dict
-from openai import AsyncOpenAI
-import httpx
-import base64
-from model_config_mgr import ModelUseInterface
+from pydantic_ai import Agent, BinaryContent, RunContext
+from pydantic_ai.usage import UsageLimits
+from model_config_mgr import ModelConfigMgr, ModelUseInterface
 
-# 每种能力都需要一段测试程序来确认模型是否具备
 class ModelCapabilityConfirm:
+    """每种能力都需要一段测试程序来确认模型是否具备"""
     def __init__(self, session: Session):
         self.session = session
-        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
+        self.model_config_mgr = ModelConfigMgr(session)
+        proxy = self.model_config_mgr.get_proxy_value()
         if proxy is not None and proxy.value is not None and proxy.value != "":
             self.system_proxy = proxy.value
         else:
@@ -93,23 +93,14 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy:
-            http_client = httpx.AsyncClient(proxy=self.system_proxy)
-        else:
-            http_client = httpx.AsyncClient()
-        client = AsyncOpenAI(
-            api_key=model_interface.api_key if model_interface.api_key else "",
-            base_url=model_interface.base_url,
-            max_retries=2,
-            http_client=http_client,
+        model = self.model_config_mgr.model_adapter(model_interface)
+        agent = Agent(
+            model=model,
         )
         try:
-            await client.chat.completions.create(
-                model=model_interface.model_identifier,
-                messages=[
-                    {"role": "user", "content": "Hello, world!"}
-                ],
-                max_tokens=30,
+            await agent.run(
+                user_prompt="Hello, how are you?",
+                usage_limits=UsageLimits(output_tokens_limit=100),
             )
             return True
         except Exception as e:
@@ -120,11 +111,6 @@ class ModelCapabilityConfirm:
         """
         确认模型是否有视觉处理能力
         """
-        
-        def encode_image(image_path):
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode("utf-8")
-
         # 确保使用绝对路径
         script_dir = Path(__file__).resolve().parent
         image_path = script_dir / "dog.png"
@@ -134,45 +120,25 @@ class ModelCapabilityConfirm:
             print(f"Script directory: {script_dir}")
             print(f"Current working directory: {Path.cwd()}")
             return False
-        
-        base64_image = encode_image(str(image_path))
 
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy:
-            http_client = httpx.AsyncClient(proxy=self.system_proxy)
-        else:
-            http_client = httpx.AsyncClient()
-        client = AsyncOpenAI(
-            api_key=model_interface.api_key if model_interface.api_key else "",
-            base_url=model_interface.base_url,
-            max_retries=2,
-            http_client=http_client,
+        model = self.model_config_mgr.model_adapter(model_interface)
+        agent = Agent(
+            model=model,
         )
         try:
-            response = await client.chat.completions.create(
-                model=model_interface.model_identifier,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "What is in this image?"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                "url": f"data:image/png;base64,{base64_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=100,
+            result = await agent.run(user_prompt=
+                [
+                    'What is in this image?',
+                    BinaryContent(data=image_path.read_bytes(), media_type='image/png'),
+                ]
             )
-            if 'dog' in response.choices[0].message.content:
+            # print(result.output)
+            if 'dog' in result.output.lower():
+                return True
+            if 'puppy' in result.output.lower():
                 return True
             return False
         except Exception as e:
@@ -191,9 +157,7 @@ class ModelCapabilityConfirm:
         cache_directory = Path(db_path).parent
         model_path = model_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
         try:
-            # Load the model and tokenizer
             model, tokenizer = load(model_path)
-            # Prepare the text
             text = "I like reading"
             # Tokenize and generate embedding
             input_ids = tokenizer.encode(text, return_tensors="mlx")
@@ -213,53 +177,21 @@ class ModelCapabilityConfirm:
         model_interface = self._get_spec_model_config(config_id)
         if model_interface is None:
             return False
-        if model_interface.use_proxy:
-            http_client = httpx.AsyncClient(proxy=self.system_proxy)
-        else:
-            http_client = httpx.AsyncClient()
-        client = AsyncOpenAI(
-            api_key=model_interface.api_key if model_interface.api_key else "",
-            base_url=model_interface.base_url,
-            max_retries=2,
-            http_client=http_client,
-        )
-        tools = [
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_current_weather",
-                    "description": "Get the current weather in a given location",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "location": {
-                                "type": "string",
-                                "description": "The city and state, e.g. San Francisco, CA",
-                            },
-                            "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]},
-                        },
-                        "required": ["location"],
-                    },
-                },
-            }
-        ]
+        model = self.model_config_mgr.model_adapter(model_interface)
+        agent = Agent(model=model)
+
+        @agent.tool
+        def get_current_weather(ctx: RunContext, location: str, unit: str = "celsius") -> str:
+            """
+            Get the current weather in a given location.
+            Args:
+                location (str): The name of the city and state, e.g. San Francisco, CA.
+                unit (str): The unit of temperature (celsius or fahrenheit).
+            """
+            return f"The current weather in {location} is 20 degrees {unit}."
+
         try:
-            _ = await client.chat.completions.create(
-                model=model_interface.model_identifier,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": "What is the weather like in San Francisco?",
-                    }
-                ],
-                tools=tools,
-                tool_choice="required",
-            )
-            # if response_message.choices[0].message.tool_calls:
-            #     for tool_call in response_message.choices[0].message.tool_calls:
-            #         function_name = tool_call.function.name
-            #         arguments = tool_call.function.arguments
-            #         print(f"Tool call: {function_name} with arguments {arguments}")
+            await agent.run('What is the weather like in San Francisco?')
             return True
         except Exception as e:
             print(f"Error testing tool use capability: {e}")
@@ -269,34 +201,13 @@ class ModelCapabilityConfirm:
         """
         确认模型是否有结构化数据处理能力
         """
-        from pydantic import BaseModel, Field
-        from pydantic_ai import Agent
-        from pydantic_ai.models.openai import OpenAIModel
-        from pydantic_ai.providers.openai import OpenAIProvider
-
+        
         class CityLocation(BaseModel):
             city: str = Field(description="The name of the city")
             country: str = Field(description="The name of the country")
 
         model_interface = self._get_spec_model_config(config_id)
-        if model_interface is None:
-            return False
-        if model_interface.use_proxy:
-            http_client = httpx.AsyncClient(proxy=self.system_proxy)
-        else:
-            http_client = httpx.AsyncClient()
-        openai_client = AsyncOpenAI(
-            api_key=model_interface.api_key if model_interface.api_key else "",
-            base_url=model_interface.base_url,
-            max_retries=2,
-            http_client=http_client,
-        )
-        model = OpenAIModel(
-            model_name=model_interface.model_identifier,
-            provider=OpenAIProvider(
-                openai_client=openai_client,
-            ),
-        )
+        model = self.model_config_mgr.model_adapter(model_interface)
         try:
             agent = Agent(
                 model=model,
@@ -307,7 +218,6 @@ class ModelCapabilityConfirm:
         except Exception as e:
             print(f"Error testing structured output capability: {e}")
             return False
-
 
     def add_capability(self, config_id: int, capa: ModelCapability) -> bool:
         """
@@ -360,10 +270,10 @@ if __name__ == "__main__":
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
-            # print(await mgr.confirm_text_capability(3))
-            # print(await mgr.confirm_tooluse_capability(3))
-            # print(await mgr.confirm_structured_output_capability(3))
-            print(await mgr.confirm_vision_capability(2))
+            # print(await mgr.confirm_text_capability(34))
+            # print(await mgr.confirm_tooluse_capability(34))
+            # print(await mgr.confirm_structured_output_capability(34))
+            print(await mgr.confirm_vision_capability(34))
 
             # print(await mgr.confirm_embedding_capability())
 

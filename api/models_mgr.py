@@ -1,14 +1,12 @@
 from config import singleton, EMBEDDING_MODEL
-from typing import List, Dict, Any
+import os
 import re
 import json
 import uuid
 import time
-import httpx
 import logging
-from sqlmodel import Session, select
-from db_mgr import SystemConfig
-from openai import AsyncOpenAI
+from typing import List, Dict, Any
+from sqlmodel import Session
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent, Tool
 from pydantic_ai.messages import (
@@ -21,20 +19,15 @@ from pydantic_ai.messages import (
     ToolCallPartDelta,
     FinalResultEvent,
 )
-from pydantic_ai.models.openai import OpenAIModel
-# from pydantic_ai.profiles import InlineDefsJsonSchemaTransformer
-# from pydantic_ai.profiles.openai import OpenAIModelProfile
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import UsageLimits
-from model_config_mgr import ModelConfigMgr
+from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
 from bridge_events import BridgeEventSender
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model
-import os
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -145,7 +138,7 @@ class ModelsMgr:
         # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
         text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
         return text_embeds[0].tolist()
-
+    
     def get_tags_from_llm(self, file_summary: str, candidate_tags: List[str]) -> List[str]:
         """
         Generates tags from the LLM using instructor and litellm.
@@ -154,32 +147,15 @@ class ModelsMgr:
         so model validation failures will trigger IPC events to notify the frontend.
         """
         try:
-            model_interface = self.model_config_mgr.get_text_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
+            model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
         except Exception as e:
             logger.error(f"Failed to get text model config: {e}")
             return []
+        model = self.model_config_mgr.model_adapter(model_interface)
         messages = [
             {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
             {"role": "user", "content": self._build_tagging_prompt(file_summary, candidate_tags)}
         ]
-        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-        openai_client = AsyncOpenAI(
-            api_key=api_key if api_key else "sk-xxx",
-            base_url=base_url,
-            max_retries=3,
-            http_client=http_client,
-        )
-        model = OpenAIModel(
-            model_name=model_identifier,
-            provider=OpenAIProvider(
-                openai_client=openai_client,
-            ),
-        )
         agent = Agent(
             model=model,
             system_prompt=messages[0]['content'],
@@ -188,7 +164,7 @@ class ModelsMgr:
         try:
             response = agent.run_sync(
                 user_prompt=messages[1]['content'],
-                usage_limits=UsageLimits(response_tokens_limit=250), # 限制标签生成的最大token数
+                usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数
             )
             # print(response.output)
         except UsageLimitExceeded as e:
@@ -218,41 +194,25 @@ class ModelsMgr:
             Generated session title (max 20 characters)
         """
         try:
-            model_interface = self.model_config_mgr.get_text_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
+            model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
+    
         except Exception as e:
             logger.error(f"Failed to get model config: {e}")
             return "新会话"
+        model = self.model_config_mgr.model_adapter(model_interface)
+        messages = [
+            {"role": "system", "content": "You are an expert at creating concise, meaningful titles. Generate a short title (max 20 characters) that captures the essence of the user's request or question."},
+            {"role": "user", "content": self._build_title_prompt(first_message_content)}
+        ]
+        agent = Agent(
+            model=model,
+            system_prompt=messages[0]['content'],
+            output_type=SessionTitleResponse,
+        )
         try:
-            messages = [
-                {"role": "system", "content": "You are an expert at creating concise, meaningful titles. Generate a short title (max 20 characters) that captures the essence of the user's request or question."},
-                {"role": "user", "content": self._build_title_prompt(first_message_content)}
-            ]
-            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-            http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-            openai_client = AsyncOpenAI(
-                api_key=api_key if api_key else "sk-xxx",
-                base_url=base_url,
-                max_retries=3,
-                http_client=http_client,
-            )
-            model = OpenAIModel(
-                model_name=model_identifier,
-                provider=OpenAIProvider(
-                    openai_client=openai_client,
-                ),
-            )
-            agent = Agent(
-                model=model,
-                system_prompt=messages[0]['content'],
-                output_type=SessionTitleResponse,
-            )
             response = agent.run_sync(
                 user_prompt=messages[1]['content'],
-                usage_limits=UsageLimits(response_tokens_limit=50),  # 限制生成的最大token数，确保简洁
+                usage_limits=UsageLimits(output_tokens_limit=50),  # 限制生成的最大token数，确保简洁
             )
             title = response.output.title.strip()
             
@@ -312,71 +272,6 @@ Please analyze the following file summary and context to generate between 0 and 
 Based on all information, provide the best tags for this file.
         '''
 
-    async def stream_chat(self, messages: List[Dict[str, Any]]):
-        """
-        Streams a chat response from the specified model provider.
-        
-        Note: This method is typically called by frontend requests, so model validation
-        errors will be returned as HTTP responses rather than IPC events.
-        """
-        try:
-            model_interface = self.model_config_mgr.get_text_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
-        except Exception as e:
-            logger.error(f"Failed to get text model config: {e}")
-            return
-
-        proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-        http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-        openai_client = AsyncOpenAI(
-            api_key=api_key if api_key else "sk-xxx",
-            base_url=base_url,
-            max_retries=3,
-            http_client=http_client,
-        )
-        model = OpenAIModel(
-            model_name=model_identifier,
-            provider=OpenAIProvider(
-                openai_client=openai_client,
-            ),
-        )
-        system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
-        agent = Agent(
-            model=model,
-            system_prompt=system_prompt[0] if system_prompt else "",
-        )
-        
-        # 处理用户输入 - 兼容AI SDK v5的parts格式
-        user_prompt_texts = []
-        for msg in messages:
-            if msg['role'] == 'user':
-                # 优先从parts中提取文本内容
-                content_text = ""
-                if "parts" in msg:
-                    for part in msg["parts"]:
-                        if part.get("type") == "text":
-                            content_text += part.get("text", "")
-                
-                # 备用：检查传统的content字段
-                if not content_text:
-                    content_text = msg.get("content", "")
-                
-                if content_text.strip():
-                    user_prompt_texts.append(content_text.strip())
-        
-        if user_prompt_texts == []:
-            raise ValueError("User prompt is empty")
-        async with agent.run_stream(
-                user_prompt=user_prompt_texts[0],
-                # usage_limits=UsageLimits(response_tokens_limit=500),
-            ) as response:
-            # print(await response.get_output()) # 此行会破坏流式输出的效果
-            async for message in response.stream_text(delta=True):
-                yield message
-
     def get_chat_completion(self, messages: List[Dict[str, Any]]) -> str:
         """
         Get a single chat completion response (non-streaming).
@@ -394,28 +289,11 @@ Based on all information, provide the best tags for this file.
         """
         try:
             model_interface = self.model_config_mgr.get_text_model_config()
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
         except Exception as e:
             logger.error(f"Failed to get model config: {e}")
-            return "新会话"
+            return ""
+        model = self.model_config_mgr.model_adapter(model_interface)
         try:
-            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-            http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-            openai_client = AsyncOpenAI(
-                api_key=api_key if api_key else "sk-xxx",
-                base_url=base_url,
-                max_retries=3,
-                http_client=http_client,
-            )
-            model = OpenAIModel(
-                model_name=model_identifier,
-                provider=OpenAIProvider(
-                    openai_client=openai_client,
-                ),
-            )
             system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
             agent = Agent(
                 model=model,
@@ -444,7 +322,7 @@ Based on all information, provide the best tags for this file.
                 raise ValueError("User prompt is empty")
             response = agent.run_sync(
                 user_prompt=user_prompt_texts[0]
-                # usage_limits=UsageLimits(response_tokens_limit=50),
+                # usage_limits=UsageLimits(output_tokens_limit=50),
             )
             return response.output
         except Exception as e:
@@ -461,34 +339,16 @@ Based on all information, provide the best tags for this file.
             logger.info(f"Agent chat v5_compatible invoked for session_id: {session_id}")
 
             # 获取模型配置
-            model_interface = self.model_config_mgr.get_text_model_config()
+            model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
             if model_interface is None:
                 logger.error("Model interface is not configured.")
                 yield f'data: {json.dumps({"type": "error", "errorText": "Model interface is not configured."})}\n\n'
                 return
             
-            model_identifier = model_interface.model_identifier
-            base_url = model_interface.base_url
-            api_key = model_interface.api_key
-            use_proxy = model_interface.use_proxy
             max_context_length = model_interface.max_context_length if model_interface.max_context_length != 0 else 4096
             max_output_tokens = model_interface.max_output_tokens if model_interface.max_output_tokens != 0 else 1024
-
-            # 设置HTTP客户端和OpenAI客户端
-            proxy = self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
-            http_client = httpx.AsyncClient(proxy=proxy.value if proxy is not None and use_proxy else None)
-            openai_client = AsyncOpenAI(
-                api_key=api_key if api_key else "sk-xxx",
-                base_url=base_url,
-                max_retries=3,
-                http_client=http_client,
-            )
-            model = OpenAIModel(
-                model_name=model_identifier,
-                provider=OpenAIProvider(
-                    openai_client=openai_client,
-                ),
-            )
+            
+            model = self.model_config_mgr.model_adapter(model_interface)
             
             # 准备工具
             tools = [Tool(tool, takes_ctx=True) for tool in self.tool_provider.get_tools_for_session(session_id)]
