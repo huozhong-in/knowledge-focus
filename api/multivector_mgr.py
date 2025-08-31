@@ -79,6 +79,7 @@ class MultiVectorMgr:
         self.embedding_dimensions = EMBEDDING_DIMENSIONS
         # 在用户指定vision模型之前，需要初始化才能使用
         self.converter = None
+        self.use_proxy = False
         # 获取数据库目录作为基础路径
         self._init_base_paths()
         # 初始化桥接事件发送器
@@ -140,8 +141,7 @@ class MultiVectorMgr:
             vision_model_id = model_interface.model_identifier
             vision_base_url = model_interface.base_url
             vision_api_key = model_interface.api_key
-            _use_proxy = model_interface.use_proxy
-            
+            self.use_proxy = model_interface.use_proxy
 
             # 配置PDF处理选项
             pipeline_options = PdfPipelineOptions()
@@ -150,13 +150,6 @@ class MultiVectorMgr:
             pipeline_options.images_scale = 2.0  # 图片分辨率scale
             pipeline_options.do_picture_description = True
             pipeline_options.enable_remote_services = True  # 启用远程服务用于图片描述
-            
-            # 配置图片描述API选项 - 使用vision模型时通过proxy
-            _PROXIES = {
-                "http": "http://127.0.0.1:7890",
-                "https": "http://127.0.0.1:7890",
-                "socks5": "socks5://127.0.0.1:7890",
-            }
             params=dict(
                 model=vision_model_id,
                 seed=42,
@@ -164,9 +157,6 @@ class MultiVectorMgr:
                 max_completion_tokens=250,
                 api_key=vision_api_key,
             )
-            # if use_proxy == True:
-            #     params["proxies"] = PROXIES
-            # TODO 强制使用本地VLM?
             pipeline_options.picture_description_options = PictureDescriptionApiOptions(
                 url=f"{vision_base_url}/chat/completions",
                 params=params,
@@ -424,7 +414,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             
             # 通过环境变量方式设置代理，以支持apivlm方式使用vision模型API
             proxy = self.model_config_mgr.get_proxy_value()
-            if proxy is not None and proxy.value is not None and proxy.value != "":
+            if self.use_proxy and proxy is not None and proxy.value is not None and proxy.value != "":
                 os.environ['ALL_PROXY'] = proxy.value
             
             result = self.converter.convert(source=file_path)

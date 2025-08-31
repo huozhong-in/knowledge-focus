@@ -25,6 +25,13 @@ from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
 from bridge_events import BridgeEventSender
+from tenacity import (
+    retry, 
+    wait_random_exponential, 
+    stop_after_attempt, 
+    retry_if_not_exception_type,
+    retry_if_exception_type,
+    )
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model
@@ -373,7 +380,10 @@ Based on all information, provide the best tags for this file.
                         for part in msg["parts"]:
                             if part.get("type") == "text":
                                 content_text += part.get("text", "")
-                    
+                            # elif part.get("type") == "file":
+                            #     logger.info(f'{part.get("mediaType")} {part.get("filename")} {part.get("url")}')
+                            else:
+                                logger.info(f'Unknown part type: {part}')
                     # 备用：检查传统的content字段
                     if not content_text:
                         content_text = msg.get("content", "")
@@ -669,37 +679,59 @@ Based on all information, provide the best tags for this file.
             Exception: 下载过程中的其他错误
         """
         
-        try:
-            # 使用工厂函数创建自定义的tqdm子类
-            ProgressReporter = create_bridge_progress_reporter(
-                bridge_events=self.bridge_events,
-                model_name=model_id
-            )            
-            # 使用snapshot_download下载模型
-            local_path = snapshot_download(
-                repo_id=model_id,
-                cache_dir=cache_dir,
-                tqdm_class=ProgressReporter,
-                allow_patterns=["*.safetensors", "*.json", "*.txt"],  # 只下载需要的文件
-            )
-            # 发送完成事件
-            self.bridge_events.model_download_completed(
-                model_name=model_id,
-                local_path=local_path,
-                message=f"模型 {model_id} 下载完成"
-            )
-            return local_path
-            
-        except Exception as e:
-            error_msg = f"下载模型失败: {str(e)}"
-            logger.error(f"下载模型 {model_id} 失败: {e}", exc_info=True)
-            # 发送失败事件
-            self.bridge_events.model_download_failed(
-                model_name=model_id,
-                error_message=error_msg,
-                details={"exception_type": type(e).__name__}
-            )            
-            raise
+        max_attempts_per_endpoint = 3
+        endpoints = ['https://huggingface.co', 'https://hf-mirror.com']
+        last_exception = None
+
+        for endpoint in endpoints:
+            for attempt in range(max_attempts_per_endpoint):
+                try:
+                    # 使用工厂函数创建自定义的tqdm子类
+                    ProgressReporter = create_bridge_progress_reporter(
+                        bridge_events=self.bridge_events,
+                        model_name=model_id
+                    )            
+                    # 使用snapshot_download下载模型
+                    local_path = snapshot_download(
+                        repo_id=model_id,
+                        cache_dir=cache_dir,
+                        tqdm_class=ProgressReporter,
+                        allow_patterns=["*.safetensors", "*.json", "*.txt"],  # 只下载需要的文件
+                        endpoint=endpoint, # 添加endpoint参数
+                    )
+                    # 发送完成事件
+                    self.bridge_events.model_download_completed(
+                        model_name=model_id,
+                        local_path=local_path,
+                        message=f"模型 {model_id} 下载完成"
+                    )
+                    return local_path
+                except Exception as e:
+                    last_exception = e
+                    error_msg = f"下载模型失败 (尝试 {attempt + 1}/{max_attempts_per_endpoint}，镜像站: {endpoint}): {str(e)}"
+                    logger.warning(f"下载模型 {model_id} 失败: {e}", exc_info=True)
+                    # 发送失败事件，但不是最终失败，只是单次尝试失败
+                    self.bridge_events.model_download_progress(
+                        model_name=model_id,
+                        current=0,
+                        total=0,
+                        message=f"下载失败 (尝试 {attempt + 1}/{max_attempts_per_endpoint}，镜像站: {endpoint})",
+                        stage="failed_attempt"
+                    )
+                    time.sleep(2) # 等待2秒后重试
+
+            logger.error(f"镜像站 {endpoint} 下载模型 {model_id} 失败，已达到最大重试次数 {max_attempts_per_endpoint}。")
+
+        # 如果所有镜像站和所有尝试都失败了
+        error_msg = f"所有镜像站下载模型 {model_id} 均失败: {str(last_exception)}"
+        logger.error(error_msg, exc_info=True)
+        # 发送最终失败事件
+        self.bridge_events.model_download_failed(
+            model_name=model_id,
+            error_message=error_msg,
+            details={"exception_type": type(last_exception).__name__ if last_exception else "UnknownError"}
+        )            
+        raise last_exception
 
     def _get_rag_context(self, session_id: int, user_query: str, available_tokens: int) -> tuple[str, list]:
         """

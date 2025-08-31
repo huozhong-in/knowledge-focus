@@ -1,4 +1,3 @@
-from config import EMBEDDING_MODEL
 from db_mgr import (
     ModelProvider,
     ModelCapability,
@@ -149,22 +148,11 @@ class ModelCapabilityConfirm:
         """
         确认向量化模型是否可用
         """
-        from models_mgr import ModelsMgr
-        model_mgr = ModelsMgr(self.session)
-        from mlx_embeddings.utils import load
-        sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
-        db_path = sqlite_url.replace('sqlite:///', '')
-        cache_directory = Path(db_path).parent
-        model_path = model_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
         try:
-            model, tokenizer = load(model_path)
-            text = "I like reading"
-            # Tokenize and generate embedding
-            input_ids = tokenizer.encode(text, return_tensors="mlx")
-            outputs = model(input_ids)
-            # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
-            _text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
-            # print(len(_text_embeds[0]))
+            from models_mgr import ModelsMgr
+            model_mgr = ModelsMgr(self.session)
+            _text_embeds = model_mgr.get_embedding("I like reading")
+            # print(len(_text_embeds))
             return True
         except Exception as e:
             print(f"Error confirming embedding capability: {e}")
@@ -273,9 +261,9 @@ if __name__ == "__main__":
             # print(await mgr.confirm_text_capability(34))
             # print(await mgr.confirm_tooluse_capability(34))
             # print(await mgr.confirm_structured_output_capability(34))
-            print(await mgr.confirm_vision_capability(34))
+            # print(await mgr.confirm_vision_capability(34))
 
-            # print(await mgr.confirm_embedding_capability())
+            print(await mgr.confirm_embedding_capability())
 
             # print(await mgr.confirm_model_capability_dict(2, save_config=False))
 
