@@ -52,6 +52,34 @@ class ModelConfigMgr:
     def get_proxy_value(self) -> SystemConfig | None:
         return self.session.exec(select(SystemConfig).where(SystemConfig.key == "proxy")).first()
     
+    def get_embeddings_model_path(self) -> str:
+        embeddings_config = self.session.exec(select(SystemConfig).where(SystemConfig.key == "embeddings_model_path")).first()
+        if embeddings_config is not None and embeddings_config.value is not None and embeddings_config.value != "":
+            return embeddings_config.value
+        else:
+            return ""
+    
+    def set_embeddings_model_path(self, model_path: str) -> bool:
+        embeddings_config = self.session.exec(select(SystemConfig).where(SystemConfig.key == "embeddings_model_path")).first()
+        if embeddings_config is None:
+            embeddings_config = SystemConfig(key="embeddings_model_path", value=model_path)
+            try:
+                self.session.add(embeddings_config)
+                self.session.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Failed to set embeddings model path: {e}")
+                return False
+        else:
+            embeddings_config.value = model_path
+            try:
+                self.session.add(embeddings_config)
+                self.session.commit()
+                return True
+            except Exception as e:
+                logger.error(f"Failed to update embeddings model path: {e}")
+                return False    
+    
     def create_provider(self, provider_type: str, display_name: str, base_url: str = "", api_key: str = "", extra_data_json: Dict = None, is_active: bool = True, use_proxy: bool = False) -> ModelProvider:
         """Creates a new model provider configuration."""
         if extra_data_json is None:

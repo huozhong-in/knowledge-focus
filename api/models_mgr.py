@@ -131,7 +131,10 @@ class ModelsMgr:
         sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
         db_path = sqlite_url.replace('sqlite:///', '')
         cache_directory = os.path.dirname(db_path)
-        model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+        model_path = self.model_config_mgr.get_embeddings_model_path()
+        if model_path == "":
+            model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+            self.model_config_mgr.set_embeddings_model_path(model_path)        
         model, tokenizer = load_embedding_model(model_path)
         input_ids = tokenizer.encode(text_str, return_tensors="mlx")
         outputs = model(input_ids)
@@ -724,7 +727,7 @@ Based on all information, provide the best tags for this file.
             error_message=error_msg,
             details={"exception_type": type(last_exception).__name__ if last_exception else "UnknownError"}
         )            
-        raise last_exception
+        return ""
 
     def _get_rag_context(self, session_id: int, user_query: str, available_tokens: int) -> tuple[str, list]:
         """

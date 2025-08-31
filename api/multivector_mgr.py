@@ -12,7 +12,7 @@
 5. 存储到SQLite(元数据)和LanceDB(向量)
 """
 
-from config import singleton, generate_vector_id, EMBEDDING_DIMENSIONS
+from config import singleton, generate_vector_id, EMBEDDING_MODEL
 import os
 import json
 import hashlib
@@ -75,8 +75,6 @@ class MultiVectorMgr:
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
         self.model_config_mgr = ModelConfigMgr(session)
-        # 获取embedding维度配置
-        self.embedding_dimensions = EMBEDDING_DIMENSIONS
         # 在用户指定vision模型之前，需要初始化才能使用
         self.converter = None
         self.use_proxy = False
@@ -199,33 +197,20 @@ Give a concise summary of the image that is well optimized for retrieval.
     def _init_chunker(self):
         """初始化Docling原生chunker，基于最佳实践配置"""
         try:
-            # 关键设计决策：chunker的tokenizer与embedding模型解耦
-            # 
-            # 原因：
-            # 1. HybridChunker的tokenizer主要用于chunk大小控制，不需要与embedding模型完全一致
-            # 2. 我们通过API调用embedding服务（ollama/lm_studio），无法直接使用其tokenizer
-            # 3. 使用通用tokenizer进行近似估算更稳定可靠
-            
-            # 使用通用的中英文友好tokenizer作为chunk大小估算器
-            try:
-                # 优先尝试使用一个通用的多语言tokenizer
-                tokenizer = HuggingFaceTokenizer(
-                    tokenizer=AutoTokenizer.from_pretrained("microsoft/multilingual-MiniLM-L12-H384"),
-                    max_tokens=512,  # 保守的chunk大小，确保embedding API调用稳定
-                )
-                logger.info("Using multilingual tokenizer for chunking")
-            except Exception as e:
-                logger.warning(f"Failed to load multilingual tokenizer: {e}")
-                try:
-                    # 备用方案：使用BERT tokenizer
-                    tokenizer = HuggingFaceTokenizer(
-                        tokenizer=AutoTokenizer.from_pretrained("bert-base-uncased"),
-                        max_tokens=512,
-                    )
-                    logger.info("Using BERT tokenizer as fallback for chunking")
-                except Exception as e2:
-                    logger.error(f"Failed to load any tokenizer: {e2}")
-                    raise Exception(f"Cannot initialize any tokenizer. Primary error: {e}, Fallback error: {e2}")
+            # chunker的tokenizer与embedding模型可以不是同一个
+            # HybridChunker的tokenizer主要用于chunk大小控制，不需要与embedding模型完全一致
+            # 使用通用tokenizer进行近似估算更稳定可靠，这里我们使用内置的中英文友好tokenizer作为chunk大小估算器
+            model_path = self.model_config_mgr.get_embeddings_model_path()
+            if model_path == "":
+                sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
+                db_path = sqlite_url.replace('sqlite:///', '')
+                cache_directory = os.path.dirname(db_path)
+                model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+                self.model_config_mgr.set_embeddings_model_path(model_path)  
+            tokenizer = HuggingFaceTokenizer(
+                tokenizer=AutoTokenizer.from_pretrained(model_path),
+                max_tokens=512,  # 保守的chunk大小，确保embedding API调用稳定
+            )
             
             # 创建HybridChunker实例
             self.chunker = HybridChunker(
@@ -1351,7 +1336,6 @@ def test_multivector_file():
         multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
         logging.info('✅ MultivectorMgr初始化成功')
         logging.info('✅ Tokenizer解耦架构已启用')
-        logging.info(f'✅ 配置的embedding维度: {multivector_mgr.embedding_dimensions}')
         logging.info(f'✅ Chunker最大tokens: {multivector_mgr.chunker.tokenizer.get_max_tokens()}')
     except Exception as e:
         logger.info(f"❌ Docling转换器创建失败: {e}")
@@ -1360,7 +1344,7 @@ def test_multivector_file():
     logger.info("✅ 组件初始化完成")
 
     # 2. 找一个测试文档
-    file_path = "/Users/dio/Downloads/AI代理的上下文工程：构建Manus的经验教训.pdf"
+    file_path = "/Users/dio/Downloads/Context Engineering for AI Agents_ Lessons from Building Manus.pdf"
     
     # # 3. 从process_document()中拆分出的方法进行独立测试
     # logger.info("🧪 测试基本方法...")
@@ -1404,9 +1388,10 @@ if __name__ == "__main__":
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
-    # 10秒倒计时
-    import time
-    for i in range(10, 0, -1):
-        print(f"倒计时: {i}秒")
-        time.sleep(1)
+    # # 10秒倒计时
+    # import time
+    # for i in range(10, 0, -1):
+    #     print(f"倒计时: {i}秒")
+    #     time.sleep(1)
+    
     test_multivector_file()

@@ -258,12 +258,12 @@ if __name__ == "__main__":
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
-            print(await mgr.confirm_text_capability(6))
-            print(await mgr.confirm_tooluse_capability(6))
-            print(await mgr.confirm_structured_output_capability(6))
-            print(await mgr.confirm_vision_capability(6))
+            # print(await mgr.confirm_text_capability(6))
+            # print(await mgr.confirm_tooluse_capability(6))
+            # print(await mgr.confirm_structured_output_capability(6))
+            # print(await mgr.confirm_vision_capability(6))
 
-            # print(await mgr.confirm_embedding_capability())
+            print(await mgr.confirm_embedding_capability())
 
             # print(await mgr.confirm_model_capability_dict(2, save_config=False))
 
