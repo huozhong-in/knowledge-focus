@@ -235,7 +235,7 @@
             "bundle-extension-description": "Configure macOS bundle extensions. Folders with these extensions will be recognized as bundles."
         },
         "aimodels": {
-            "name": "AI Models and Scene Configuration",
+            "name": "AI Models and Scene",
             "description": "Configure options related to AI models and scenes.",
             "file-auto-tagging": "File Auto-Tagging",
             "file-auto-tagging-description": "Automatically generate relevant tags based on file content to help with quick classification and retrieval.",

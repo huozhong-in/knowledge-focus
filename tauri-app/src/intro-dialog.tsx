@@ -170,14 +170,14 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
       // 启动后端扫描（仅在权限和API都就绪时）
       const startBackendScan = async () => {
         try {
-          setLoadingMessage("正在启动后端文件扫描...\nStarting backend file scanning...");
+          setLoadingMessage("Starting backend file scanning...");
           await invoke('start_backend_scanning');
           // console.log("[API就绪] 已通知Rust后端开始粗筛工作");
-          setLoadingMessage("后端扫描已启动，准备进入应用...\nBackend scanning started, preparing to enter the app...");
+          setLoadingMessage("Backend scanning started, preparing to enter the app...");
         } catch (error) {
           console.error("[API就绪] 启动后端扫描失败:", error);
-          setLoadingMessage("后端扫描启动失败，请重启应用\nBackend scanning failed to start, please restart the app");
-          toast.error("后端扫描启动失败，请重启应用");
+          setLoadingMessage("Backend scanning failed to start, please restart the app");
+          toast.error("Backend scanning failed to start, please restart the app");
           return;
         }
         

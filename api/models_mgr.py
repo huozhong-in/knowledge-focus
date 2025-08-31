@@ -25,13 +25,6 @@ from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
 from bridge_events import BridgeEventSender
-from tenacity import (
-    retry, 
-    wait_random_exponential, 
-    stop_after_attempt, 
-    retry_if_not_exception_type,
-    retry_if_exception_type,
-    )
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model

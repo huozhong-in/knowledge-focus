@@ -837,7 +837,7 @@ function ProviderDetailSection({
         {models.length > 0 && (
           <div className="mt-0 space-y-4">
             <div className="text-sm font-medium">
-              {t('SETTINGS.aimodels.model-list')}  ({availableModels.length}/{models.length})可用:
+              {t('SETTINGS.aimodels.model-list')}  ({availableModels.length}/{models.length})available:
             </div>
             <div className="space-y-2 h-full">
               {models.map(model => (
@@ -1247,7 +1247,7 @@ function SettingsAIModels() {
                 <div className="flex items-center gap-2 w-full">
                   <Settings className="w-4 h-4 flex-shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium truncate">{provider.name}</div>
+                    <div className={`${provider.is_enabled ? 'font-bold' : 'font-medium'} truncate`}>{provider.name}</div>
                     <div className="text-xs text-muted-foreground truncate">
                       {provider.is_enabled ? t('SETTINGS.aimodels.enabled') : t('SETTINGS.aimodels.disabled')}
                     </div>
