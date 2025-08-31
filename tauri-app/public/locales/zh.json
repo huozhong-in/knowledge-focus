@@ -265,7 +265,7 @@
             "add": "添加",
             "delete": "删除",
             "discover-models": "发现模型",
-            "model-list": "模型列表 ({available}/{total} 可用): ",
+            "model-list": "模型列表",
             "test-model-capability": "测试模型能力",
             "enabled": "已启用",
             "disabled": "未启用",

@@ -265,7 +265,7 @@
             "add": "Add",
             "delete": "Delete",
             "discover-models": "Discover Models",
-            "model-list": "Model List ({available}/{total} available): ",
+            "model-list": "Model List",
             "test-model-capability": "Test Model Capability",
             "enabled": "Enabled",
             "disabled": "Disabled",

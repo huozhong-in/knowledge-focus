@@ -837,7 +837,7 @@ function ProviderDetailSection({
         {models.length > 0 && (
           <div className="mt-0 space-y-4">
             <div className="text-sm font-medium">
-              {t('SETTINGS.aimodels.models-list', {available: availableModels.length, total: models.length})}
+              {t('SETTINGS.aimodels.model-list')}  ({availableModels.length}/{models.length})可用:
             </div>
             <div className="space-y-2 h-full">
               {models.map(model => (
