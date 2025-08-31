@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetch } from '@tauri-apps/plugin-http';
+import { useTranslation } from 'react-i18next';
 
 interface FolderNode {
   name: string;
@@ -39,6 +40,8 @@ export function FolderTreeSelector({
 
   const [bundlePatterns, setBundlePatterns] = useState<string[]>([]);
   // const [bundlePatternsLoaded, setBundlePatternsLoaded] = useState<boolean>(false);
+
+  const { t } = useTranslation();
 
   // 加载bundle扩展名配置
   const loadBundlePatterns = async (): Promise<string[]> => {
@@ -319,7 +322,7 @@ export function FolderTreeSelector({
               onPathSelect(node.path);
             }
           }}
-          title={isBlacklisted ? '此文件夹已在黑名单中' : ''}
+          title={isBlacklisted ? t('SETTINGS.authorization.folder-already-in-blacklist') : ''}
         >
           <div className="flex items-center flex-1">
             {canExpand ? (
@@ -352,7 +355,7 @@ export function FolderTreeSelector({
             )}
             
             <span className={`text-sm ${isBlacklisted ? 'line-through text-red-500' : ''}`}>{node.name}</span>
-            {isBlacklisted && <span className="ml-2 text-xs text-red-500">(已在黑名单)</span>}
+            {isBlacklisted && <span className="ml-2 text-xs text-red-500">({t('SETTINGS.authorization.folder-already-in-blacklist-tooltip')})</span>}
           </div>
         </div>
         
@@ -373,16 +376,16 @@ export function FolderTreeSelector({
     <div className="space-y-4">
       <div>
         <h4 className="text-sm font-medium mb-2">
-          选择要添加到黑名单的子文件夹：
+          {t('SETTINGS.authorization.select-blacklist-subfolder')}:
         </h4>
         <div className="text-xs text-gray-500 mb-1">
-          父文件夹：{rootAlias || rootPath}
+          {t('SETTINGS.authorization.parent-folder')}: {rootAlias || rootPath}
         </div>
         <div className="text-xs text-amber-600 mb-1">
-          注意：Bundle类型文件夹（如.app等）已自动过滤，不会显示在列表中
+          {t('SETTINGS.authorization.note')}
         </div>
         <div className="text-xs text-red-500 mb-3">
-          已在黑名单中的文件夹会被标记为红色且不可选择
+          {t('SETTINGS.authorization.folder-already-in-blacklist-details')}
         </div>
       </div>
       
@@ -392,20 +395,20 @@ export function FolderTreeSelector({
       
       {selectedPath && (
         <div className={`text-sm ${isSelectedPathBlacklisted ? 'text-red-600' : 'text-gray-600'}`}>
-          <strong>已选择:</strong> {selectedPath}
-          {isSelectedPathBlacklisted && <span className="ml-2 text-red-500 font-medium">(已在黑名单中，不能重复添加)</span>}
+          <strong>{t('SETTINGS.authorization.selected')}:</strong> {selectedPath}
+          {isSelectedPathBlacklisted && <span className="ml-2 text-red-500 font-medium">({t('SETTINGS.authorization.folder-already-in-blacklist-details2')})</span>}
         </div>
       )}
       
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={onCancel}>
-          取消
+          {t('SETTINGS.authorization.cancel')}
         </Button>
         <Button 
           onClick={onConfirm}
           disabled={!selectedPath || selectedPath === rootPath || isSelectedPathBlacklisted}
         >
-          确认添加到黑名单
+          {t('SETTINGS.authorization.confirm-add-to-blacklist')}
         </Button>
       </div>
     </div>

@@ -97,7 +97,7 @@ export function VectorizationProgress({
     console.error('VectorizationProgress: Invalid config for status:', status);
     return (
       <div className="bg-muted border border-muted rounded-md p-2">
-        <div className="text-xs text-muted-foreground">状态显示错误</div>
+        <div className="text-xs text-muted-foreground">status check failed</div>
       </div>
     );
   }
@@ -114,7 +114,7 @@ export function VectorizationProgress({
         if (stage) {
           switch (stage) {
             case 'queued':
-              return t('queued');
+              return t('FILELIST.VectorizationFileState.queued');
             case 'parsing':
               return '解析中...';
             case 'chunking':
@@ -125,11 +125,11 @@ export function VectorizationProgress({
               return stage + '...';
           }
         }
-        return t('processing');
+        return t('FILELIST.VectorizationFileState.processing');
       case 'completed':
-        return t('completed');
+        return t('FILELIST.VectorizationFileState.completed');
       case 'failed':
-        return t('failed');
+        return t('FILELIST.VectorizationFileState.failed');
       default:
         return 'Unknown status'; // 未知状态
     }
@@ -186,7 +186,7 @@ export function VectorizationProgress({
                 className="h-5 px-2 text-xs"
               >
                 <RotateCcw className="h-2.5 w-2.5 mr-1" />
-                重试
+                {t('retry')}
               </Button>
             )}
             {error.helpLink && (
@@ -197,7 +197,7 @@ export function VectorizationProgress({
                 className="h-5 px-2 text-xs"
               >
                 <ExternalLink className="h-2.5 w-2.5 mr-1" />
-                帮助
+                {t('get-help')}
               </Button>
             )}
           </div>
@@ -205,11 +205,11 @@ export function VectorizationProgress({
       )}
 
       {/* 完成状态的统计信息 */}
-      {/* {status === 'completed' && (state.parentChunksCount || state.childChunksCount) && (
+      {status === 'completed' && (state.parentChunksCount || state.childChunksCount) && (
         <p className="text-xs text-muted-foreground mt-1">
-          已生成 {state.parentChunksCount || 0} 个父块，{state.childChunksCount || 0} 个子块
+          {state.parentChunksCount || 0} parent chunks, {state.childChunksCount || 0} child chunks
         </p>
-      )} */}
+      )}
     </div>
   );
 }

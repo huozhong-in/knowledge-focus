@@ -51,6 +51,7 @@ import { NavTagCloud } from "./nav-tagcloud"
 import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
 import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
+import { useTranslation } from "react-i18next"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
@@ -87,6 +88,7 @@ export function AppSidebar({
   
   // 获取全局AppStore实例
   const appStore = useAppStore()
+  const { t } = useTranslation()
 
   // 加载会话列表
   const loadSessions = async (search?: string) => {
@@ -245,7 +247,7 @@ export function AppSidebar({
               size="icon"
               className="h-8 w-8"
               onClick={handleCreateSession}
-              title="新对话"
+              title="{t('new-chat')}"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -253,7 +255,7 @@ export function AppSidebar({
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              title="搜索"
+              title="{t('search')}"
               onClick={() => setSearchOpen(true)}
             >
               <Search className="h-4 w-4" />
@@ -269,7 +271,7 @@ export function AppSidebar({
               onClick={handleCreateSession}
             >
               <Plus className="h-4 w-4" />
-              <span>新对话</span>
+              <span>{t('APPSIDEBAR.new-chat')}</span>
             </Button>
             <Button
               variant="ghost"
@@ -278,7 +280,7 @@ export function AppSidebar({
               onClick={() => setSearchOpen(true)}
             >
               <Search className="h-4 w-4" />
-              <span>搜索对话</span>
+              <span>{t('APPSIDEBAR.search-chat')}</span>
             </Button>
           </div>
         )}
@@ -325,7 +327,7 @@ export function AppSidebar({
                                 className="flex items-center"
                               >
                                 <Edit3 className="mr-1 h-4 w-4" />
-                                <span className="text-xs">重命名会话</span>
+                                <span className="text-xs">{t('APPSIDEBAR.rename-chat')}</span>
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={(e) => {
@@ -335,7 +337,7 @@ export function AppSidebar({
                                 className="flex items-center"
                               >
                                 <Trash2 className="mr-1 h-4 w-4" />
-                                <span className="text-xs">删除会话</span>
+                                <span className="text-xs">{t('APPSIDEBAR.delete-chat')}</span>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
@@ -346,7 +348,7 @@ export function AppSidebar({
                 </SidebarGroup>
               ))}
               <Button variant="ghost" className="w-full justify-center mb-2" size="sm">
-                <span className="text-xs">More</span>
+                <span className="text-xs">{t('APPSIDEBAR.more')}</span>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </div>
@@ -360,10 +362,10 @@ export function AppSidebar({
 
       {/* Search Dialog */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput placeholder="搜索任务..." />
+        <CommandInput placeholder={t('APPSIDEBAR.search')} />
         <CommandList>
-          <CommandEmpty>未找到任务。</CommandEmpty>
-          <CommandGroup heading="任务列表">
+          <CommandEmpty>{t('APPSIDEBAR.chat-not-found')}</CommandEmpty>
+          <CommandGroup heading={t('APPSIDEBAR.chat-list')}>
             {sessionsByTime.flatMap((timeGroup) =>
               timeGroup.chat_sessions.map((chat_session) => (
                 <CommandItem
@@ -385,16 +387,16 @@ export function AppSidebar({
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>重命名会话</DialogTitle>
+            <DialogTitle>{t('APPSIDEBAR.rename-chat')}</DialogTitle>
             <DialogDescription>
-              请输入新的会话名称
+              {t('APPSIDEBAR.enter-new-chat-name')}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <Input
               value={newSessionName}
               onChange={(e) => setNewSessionName(e.target.value)}
-              placeholder="请输入会话名称"
+              placeholder={t('APPSIDEBAR.chat-name')}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   confirmRename()
@@ -404,10 +406,10 @@ export function AppSidebar({
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              取消
+              {t('cancel')}
             </Button>
             <Button onClick={confirmRename} disabled={!newSessionName.trim()}>
-              确认
+              {t('confirm')}
             </Button>
           </div>
         </DialogContent>
@@ -417,17 +419,17 @@ export function AppSidebar({
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>删除会话</DialogTitle>
+            <DialogTitle>{t('APPSIDEBAR.delete-chat')}</DialogTitle>
             <DialogDescription>
-              确定要删除会话 "{selectedSession?.name}" 吗？此操作无法撤销。
+              {t('APPSIDEBAR.confirm-delete-chat', { chatName: selectedSession?.name })}
             </DialogDescription>
           </DialogHeader>
           <div className="flex justify-end gap-2 pt-4">
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              取消
+              {t('APPSIDEBAR.cancel')}
             </Button>
             <Button variant="destructive" onClick={confirmDelete}>
-              删除
+              {t('APPSIDEBAR.confirm')}
             </Button>
           </div>
         </DialogContent>

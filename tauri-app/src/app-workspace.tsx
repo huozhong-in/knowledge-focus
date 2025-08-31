@@ -11,6 +11,7 @@ import { FileList } from "./file-list"
 import { RagLocal } from "./rag-local"
 import { AiSdkChat } from "./ai-sdk-chat"
 import { ChatSession } from "./lib/chat-session-api"
+import { useTranslation } from 'react-i18next'
 
 interface AppWorkspaceProps {
   currentSession?: ChatSession | null
@@ -38,6 +39,7 @@ export function AppWorkspace({
 }: AppWorkspaceProps) {
   // 使用传入的sessionId，不生成临时ID
   const [sessionId, setSessionId] = useState<number | null>(currentSessionId || null)
+  const { t } = useTranslation()
   
   useEffect(() => {
     // 直接使用传入的currentSessionId，可能为null
@@ -106,7 +108,7 @@ export function AppWorkspace({
           <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
             <div className="border-b p-2 flex flex-row h-[50px] relative">
               <div className="text-md font-semibold text-muted-foreground">
-                {currentSession ? currentSession.name : "新对话"}
+                {currentSession ? currentSession.name : t('new-chat')}
               </div>
               <div className="absolute bottom-0 right-1 z-10">
                 <PanelRightIcon 

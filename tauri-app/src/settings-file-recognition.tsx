@@ -74,6 +74,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "react-i18next";
 
 // ========== 类型定义 ==========
 
@@ -165,6 +166,8 @@ export default function SettingsFileRecognition() {
   const [bundleDialog, setBundleDialog] = useState({ open: false, mode: 'add' as 'add' | 'edit', editId: null as number | null });
   const [bundleForm, setBundleForm] = useState({ extension: '', description: '' });
 
+  const { t } = useTranslation();
+  
   // ========== 数据加载函数 ==========
 
   // 加载文件分类
@@ -182,11 +185,11 @@ export default function SettingsFileRecognition() {
         }
       } else {
         console.error("加载文件分类失败:", response.status);
-        toast.error("加载文件分类失败");
+        toast.error(t('SETTINGS.file-recognition.load-category-failed'));
       }
     } catch (error) {
       console.error("加载文件分类失败:", error);
-      toast.error("加载文件分类失败");
+      toast.error(t('SETTINGS.file-recognition.load-category-failed'));
     }
   };
 
@@ -205,11 +208,11 @@ export default function SettingsFileRecognition() {
         }
       } else {
         console.error("加载扩展名映射失败:", response.status);
-        toast.error("加载扩展名映射失败");
+        toast.error(t('SETTINGS.file-recognition.load-extension-mapping-failed'));
       }
     } catch (error) {
       console.error("加载扩展名映射失败:", error);
-      toast.error("加载扩展名映射失败");
+      toast.error(t('SETTINGS.file-recognition.load-extension-mapping-failed'));
     }
   };
 
@@ -228,11 +231,11 @@ export default function SettingsFileRecognition() {
         }
       } else {
         console.error("加载过滤规则失败:", response.status);
-        toast.error("加载过滤规则失败");
+        toast.error(t('SETTINGS.file-recognition.load-filter-rule-failed'));
       }
     } catch (error) {
       console.error("加载过滤规则失败:", error);
-      toast.error("加载过滤规则失败");
+      toast.error(t('SETTINGS.file-recognition.load-filter-rule-failed'));
     }
   };
 
@@ -251,11 +254,11 @@ export default function SettingsFileRecognition() {
         }
       } else {
         console.error("加载Bundle扩展名失败:", response.status);
-        toast.error("加载Bundle扩展名失败");
+        toast.error(t('SETTINGS.file-recognition.load-bundle-extension-failed'));
       }
     } catch (error) {
       console.error("加载Bundle扩展名失败:", error);
-      toast.error("加载Bundle扩展名失败");
+      toast.error(t('SETTINGS.file-recognition.load-bundle-extension-failed'));
     }
   };
 
@@ -272,7 +275,7 @@ export default function SettingsFileRecognition() {
         ]);
       } catch (error) {
         console.error("初始化数据失败:", error);
-        toast.error("初始化数据失败");
+        toast.error(t('SETTINGS.file-recognition.init-data-failed'));
       } finally {
         setLoading(false);
       }
@@ -285,7 +288,7 @@ export default function SettingsFileRecognition() {
 
   const handleCategorySubmit = async () => {
     if (!categoryForm.name.trim()) {
-      toast.error("分类名称不能为空");
+      toast.error(t('SETTINGS.file-recognition.category-name-required'));
       return;
     }
 
@@ -309,20 +312,20 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success(categoryDialog.mode === 'add' ? "分类添加成功" : "分类更新成功");
+          toast.success(categoryDialog.mode === 'add' ? t('SETTINGS.file-recognition.category-added-successfully') : t('SETTINGS.file-recognition.category-updated-successfully'));
           setCategoryDialog({ open: false, mode: 'add', editId: null });
           setCategoryForm({ name: '', description: '', icon: '' });
           await loadCategories();
         } else {
-          toast.error(result.message || "操作失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "操作失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("分类操作失败:", error);
-      toast.error("操作失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -335,19 +338,19 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success("分类删除成功");
+          toast.success(t('SETTINGS.file-recognition.category-deleted-successfully'));
           await loadCategories();
           await loadExtensionMappings(); // 重新加载映射以更新显示
         } else {
-          toast.error(result.message || "删除失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "删除失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("删除分类失败:", error);
-      toast.error("删除失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -355,12 +358,12 @@ export default function SettingsFileRecognition() {
 
   const handleExtensionSubmit = async () => {
     if (!extensionForm.extension.trim()) {
-      toast.error("扩展名不能为空");
+      toast.error(t('SETTINGS.file-recognition.extension-name-required'));
       return;
     }
 
     if (!extensionForm.category_id) {
-      toast.error("请选择分类");
+      toast.error(t('SETTINGS.file-recognition.category-name-required'));
       return;
     }
 
@@ -385,21 +388,21 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success(extensionDialog.mode === 'add' ? "扩展名映射添加成功" : "扩展名映射更新成功");
+          toast.success(extensionDialog.mode === 'add' ? t('SETTINGS.file-recognition.extension-mapping-added-successfully') : t('SETTINGS.file-recognition.extension-mapping-updated-successfully'));
           setExtensionDialog({ open: false, mode: 'add', editId: null });
           setExtensionForm({ extension: '', category_id: 0, description: '', priority: 'medium' });
           await loadExtensionMappings();
           await loadCategories(); // 重新加载分类以更新计数
         } else {
-          toast.error(result.message || "操作失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "操作失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("扩展名映射操作失败:", error);
-      toast.error("操作失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -412,19 +415,19 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success("扩展名映射删除成功");
+          toast.success(t('SETTINGS.file-recognition.extension-mapping-deleted-successfully'));
           await loadExtensionMappings();
           await loadCategories(); // 重新加载分类以更新计数
         } else {
-          toast.error(result.message || "删除失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "删除失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("删除扩展名映射失败:", error);
-      toast.error("删除失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -442,26 +445,26 @@ export default function SettingsFileRecognition() {
           toast.success(result.message);
           await loadFilterRules();
         } else {
-          toast.error(result.message || "切换失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "切换失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("切换过滤规则状态失败:", error);
-      toast.error("切换失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
   const handleFilterSubmit = async () => {
     if (!filterForm.name.trim()) {
-      toast.error("规则名称不能为空");
+      toast.error(t('SETTINGS.file-recognition.rule-name-required'));
       return;
     }
 
     if (!filterForm.pattern.trim()) {
-      toast.error("匹配模式不能为空");
+      toast.error(t('SETTINGS.file-recognition.pattern-required'));
       return;
     }
 
@@ -490,7 +493,7 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success(filterDialog.mode === 'add' ? "过滤规则添加成功" : "过滤规则更新成功");
+          toast.success(filterDialog.mode === 'add' ? t('SETTINGS.file-recognition.filter-rule-added-successfully') : t('SETTINGS.file-recognition.filter-rule-updated-successfully'));
           setFilterDialog({ open: false, mode: 'add', editId: null });
           setFilterForm({
             name: '',
@@ -504,15 +507,15 @@ export default function SettingsFileRecognition() {
           });
           await loadFilterRules();
         } else {
-          toast.error(result.message || "操作失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "操作失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("过滤规则操作失败:", error);
-      toast.error("操作失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -525,18 +528,18 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success("过滤规则删除成功");
+          toast.success(t('SETTINGS.file-recognition.filter-rule-deleted-successfully'));
           await loadFilterRules();
         } else {
-          toast.error(result.message || "删除失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "删除失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("删除过滤规则失败:", error);
-      toast.error("删除失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -544,7 +547,7 @@ export default function SettingsFileRecognition() {
 
   const handleBundleSubmit = async () => {
     if (!bundleForm.extension.trim()) {
-      toast.error("扩展名不能为空");
+      toast.error(t('SETTINGS.file-recognition.extension-name-required'));
       return;
     }
 
@@ -567,20 +570,20 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success(bundleDialog.mode === 'add' ? "Bundle扩展名添加成功" : "Bundle扩展名更新成功");
+          toast.success(bundleDialog.mode === 'add' ? t('SETTINGS.file-recognition.bundle-extension-added-successfully') : t('SETTINGS.file-recognition.bundle-extension-updated-successfully'));
           setBundleDialog({ open: false, mode: 'add', editId: null });
           setBundleForm({ extension: '', description: '' });
           await loadBundleExtensions();
         } else {
-          toast.error(result.message || "操作失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "操作失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("Bundle扩展名操作失败:", error);
-      toast.error("操作失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -593,18 +596,18 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success("Bundle扩展名状态切换成功");
+          toast.success(t('SETTINGS.file-recognition.bundle-extension-status-switched-successfully'));
           await loadBundleExtensions();
         } else {
-          toast.error(result.message || "切换失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "切换失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("切换Bundle扩展名状态失败:", error);
-      toast.error("切换失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -617,18 +620,18 @@ export default function SettingsFileRecognition() {
       if (response.ok) {
         const result = await response.json();
         if (result.status === "success") {
-          toast.success("Bundle扩展名删除成功");
+          toast.success(t('SETTINGS.file-recognition.bundle-extension-deleted-successfully'));
           await loadBundleExtensions();
         } else {
-          toast.error(result.message || "删除失败");
+          toast.error(result.message || t('SETTINGS.file-recognition.operation-failed'));
         }
       } else {
         const error = await response.json();
-        toast.error(error.message || "删除失败");
+        toast.error(error.message || t('SETTINGS.file-recognition.operation-failed'));
       }
     } catch (error) {
       console.error("删除Bundle扩展名失败:", error);
-      toast.error("删除失败");
+      toast.error(t('SETTINGS.file-recognition.operation-failed'));
     }
   };
 
@@ -653,7 +656,7 @@ export default function SettingsFileRecognition() {
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4 mx-auto"></div>
-          <p className="text-lg text-gray-600">加载文件识别规则中...</p>
+          <p className="text-lg text-gray-600">{t('SETTINGS.file-recognition.loading-file-recognition-rules')}</p>
         </div>
       </div>
     );
@@ -662,12 +665,12 @@ export default function SettingsFileRecognition() {
   return (
     <div className="flex flex-col gap-6 w-full">
       <div className="mb-6 px-6">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+        {/* <h1 className="text-xl font-bold text-gray-900 flex items-center gap-3">
           <FileText className="h-8 w-8" />
-          文件识别规则管理
-        </h1>
+          {t('SETTINGS.file-recognition.file-recognition-rules-management')}
+        </h1> */}
         <p className="text-gray-600 mt-2">
-          配置文件分类、扩展名映射、过滤规则和Bundle识别规则，优化文件处理效率
+          {t('SETTINGS.file-recognition.file-recognition-rules-management-description')}
         </p>
       </div>
 
@@ -676,19 +679,19 @@ export default function SettingsFileRecognition() {
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="categories" className="flex items-center gap-2">
               <FileText className="h-4 w-4" />
-              文件分类
+              {t('SETTINGS.file-recognition.file-categories')}
             </TabsTrigger>
             <TabsTrigger value="extensions" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
-              扩展名映射
+              {t('SETTINGS.file-recognition.extension-mappings')}
             </TabsTrigger>
             <TabsTrigger value="filters" className="flex items-center gap-2">
               <Filter className="h-4 w-4" />
-              过滤规则
+              {t('SETTINGS.file-recognition.filter-rules')}
             </TabsTrigger>
             <TabsTrigger value="bundles" className="flex items-center gap-2">
               <Package className="h-4 w-4" />
-              Bundle扩展名
+              {t('SETTINGS.file-recognition.bundle-extensions')}
             </TabsTrigger>
           </TabsList>
 
@@ -698,14 +701,14 @@ export default function SettingsFileRecognition() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>文件分类管理</CardTitle>
+                    <CardTitle>{t('SETTINGS.file-recognition.file-categories-management')}</CardTitle>
                     <CardDescription>
-                      定义文件的分类类型，用于组织和管理不同类型的文件
+                      {t('SETTINGS.file-recognition.file-categories-management-description')}
                     </CardDescription>
                   </div>
                   <Button onClick={() => setCategoryDialog({ open: true, mode: 'add', editId: null })}>
                     <Plus className="h-4 w-4 mr-2" />
-                    添加分类
+                    {t('SETTINGS.file-recognition.add-category')}
                   </Button>
                 </div>
               </CardHeader>
@@ -720,10 +723,10 @@ export default function SettingsFileRecognition() {
                             <span className="font-medium">{category.name}</span>
                           </div>
                           <p className="text-sm text-gray-500 mb-2">
-                            {category.description || '无描述'}
+                            {category.description || t('SETTINGS.file-recognition.no-description')}
                           </p>
                           <Badge variant="secondary">
-                            {category.extension_count} 个扩展名
+                            {category.extension_count} {t('SETTINGS.file-recognition.extension-count')}
                           </Badge>
                         </div>
                         <div className="flex gap-1">
@@ -749,15 +752,15 @@ export default function SettingsFileRecognition() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>确认删除</AlertDialogTitle>
+                                <AlertDialogTitle>{t('SETTINGS.file-recognition.confirm-delete')}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  确定要删除分类 "{category.name}" 吗？这将同时删除所有关联的扩展名映射。
+                                  {t('SETTINGS.file-recognition.confirm-delete-category-description', { categoryName: category.name })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>取消</AlertDialogCancel>
+                                <AlertDialogCancel>{t('SETTINGS.file-recognition.cancel')}</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleCategoryDelete(category.id)}>
-                                  确认删除
+                                  {t('SETTINGS.file-recognition.confirm-delete')}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -770,7 +773,7 @@ export default function SettingsFileRecognition() {
 
                 {categories.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    还没有配置文件分类
+                    {t('SETTINGS.file-recognition.no-categories')}
                   </div>
                 )}
               </CardContent>
@@ -783,14 +786,14 @@ export default function SettingsFileRecognition() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>扩展名映射管理</CardTitle>
+                    <CardTitle>{t('SETTINGS.file-recognition.extension-mapping-management')}</CardTitle>
                     <CardDescription>
-                      将文件扩展名映射到对应的分类，用于自动识别文件类型
+                      {t('SETTINGS.file-recognition.extension-mapping-management-description')}
                     </CardDescription>
                   </div>
                   <Button onClick={() => setExtensionDialog({ open: true, mode: 'add', editId: null })}>
                     <Plus className="h-4 w-4 mr-2" />
-                    添加映射
+                    {t('SETTINGS.file-recognition.add-mapping')}
                   </Button>
                 </div>
               </CardHeader>
@@ -798,11 +801,11 @@ export default function SettingsFileRecognition() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>扩展名</TableHead>
-                      <TableHead>分类</TableHead>
-                      <TableHead>描述</TableHead>
-                      <TableHead>优先级</TableHead>
-                      <TableHead>操作</TableHead>
+                      <TableHead>{t('SETTINGS.file-recognition.extension')}</TableHead>
+                      <TableHead>{t('SETTINGS.file-recognition.category')}</TableHead>
+                      <TableHead>{t('SETTINGS.file-recognition.description2')}</TableHead>
+                      <TableHead>{t('SETTINGS.file-recognition.priority')}</TableHead>
+                      <TableHead>{t('SETTINGS.file-recognition.operation')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -843,15 +846,15 @@ export default function SettingsFileRecognition() {
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>确认删除</AlertDialogTitle>
+                                  <AlertDialogTitle>{t('SETTINGS.file-recognition.confirm-delete')}</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    确定要删除扩展名映射 ".{mapping.extension}" 吗？
+                                    {t('SETTINGS.file-recognition.confirm-delete-extension-mapping', { extension: mapping.extension })}
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>取消</AlertDialogCancel>
+                                  <AlertDialogCancel>{t('SETTINGS.file-recognition.cancel')}</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => handleExtensionDelete(mapping.id)}>
-                                    确认删除
+                                    {t('SETTINGS.file-recognition.confirm-delete')}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
@@ -865,7 +868,7 @@ export default function SettingsFileRecognition() {
 
                 {extensionMappings.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    还没有配置扩展名映射
+                    {t('SETTINGS.file-recognition.no-extension-mappings')}
                   </div>
                 )}
               </CardContent>
@@ -878,14 +881,14 @@ export default function SettingsFileRecognition() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>文件过滤规则管理</CardTitle>
+                    <CardTitle>{t('SETTINGS.file-recognition.file-filter-rules-management')}</CardTitle>
                     <CardDescription>
-                      定义文件过滤规则，控制哪些文件需要排除
+                      {t('SETTINGS.file-recognition.file-filter-rules-management-description')}
                     </CardDescription>
                   </div>
                   <Button onClick={() => setFilterDialog({ open: true, mode: 'add', editId: null })}>
                     <Plus className="h-4 w-4 mr-2" />
-                    添加规则
+                    {t('SETTINGS.file-recognition.add-filter-rule')}
                   </Button>
                 </div>
               </CardHeader>
@@ -903,12 +906,12 @@ export default function SettingsFileRecognition() {
                               />
                               <span className="font-medium">{rule.name}</span>
                               {rule.is_system && (
-                                <Badge variant="outline">系统</Badge>
+                                <Badge variant="outline">{t('SETTINGS.file-recognition.system')}</Badge>
                               )}
                             </div>
                           </div>
                           <p className="text-sm text-gray-500 mb-2">
-                            {rule.description || '无描述'}
+                            {rule.description || t('SETTINGS.file-recognition.no-description')}
                           </p>
                           <div className="flex gap-2 text-xs">
                             <Badge variant="secondary">{rule.rule_type}</Badge>
@@ -949,15 +952,15 @@ export default function SettingsFileRecognition() {
                               </AlertDialogTrigger>
                               <AlertDialogContent>
                                 <AlertDialogHeader>
-                                  <AlertDialogTitle>确认删除</AlertDialogTitle>
+                                  <AlertDialogTitle>{t('SETTINGS.file-recognition.confirm-delete')}</AlertDialogTitle>
                                   <AlertDialogDescription>
-                                    确定要删除过滤规则 "{rule.name}" 吗？
+                                    {t('SETTINGS.file-recognition.confirm-delete-filter-rule', { ruleName: rule.name })}
                                   </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                  <AlertDialogCancel>取消</AlertDialogCancel>
+                                  <AlertDialogCancel>{t('SETTINGS.file-recognition.cancel')}</AlertDialogCancel>
                                   <AlertDialogAction onClick={() => handleFilterDelete(rule.id)}>
-                                    确认删除
+                                    {t('SETTINGS.file-recognition.confirm-delete')}
                                   </AlertDialogAction>
                                 </AlertDialogFooter>
                               </AlertDialogContent>
@@ -971,7 +974,7 @@ export default function SettingsFileRecognition() {
 
                 {filterRules.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    还没有配置过滤规则
+                    {t('SETTINGS.file-recognition.no-filter-rules')}
                   </div>
                 )}
               </CardContent>
@@ -984,14 +987,14 @@ export default function SettingsFileRecognition() {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle>Bundle扩展名管理</CardTitle>
+                    <CardTitle>{t('SETTINGS.file-recognition.bundle-extension-management')}</CardTitle>
                     <CardDescription>
-                      配置macOS Bundle扩展名，这些看起来像文件的文件夹将被跳过扫描
+                      {t('SETTINGS.file-recognition.bundle-extension-management-description')}
                     </CardDescription>
                   </div>
                   <Button onClick={() => setBundleDialog({ open: true, mode: 'add', editId: null })}>
                     <Plus className="h-4 w-4 mr-2" />
-                    添加扩展名
+                    {t('SETTINGS.file-recognition.add-bundle-extension')}
                   </Button>
                 </div>
               </CardHeader>
@@ -1009,7 +1012,7 @@ export default function SettingsFileRecognition() {
                             <span className="font-medium">{bundle.extension}</span>
                           </div>
                           <p className="text-sm text-gray-500">
-                            {bundle.description || '无描述'}
+                            {bundle.description || t('SETTINGS.file-recognition.no-description')}
                           </p>
                         </div>
                         <div className="flex gap-1">
@@ -1034,15 +1037,15 @@ export default function SettingsFileRecognition() {
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
-                                <AlertDialogTitle>确认删除</AlertDialogTitle>
+                                <AlertDialogTitle>{t('SETTINGS.file-recognition.confirm-delete')}</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  确定要删除Bundle扩展名 "{bundle.extension}" 吗？
+                                  {t('SETTINGS.file-recognition.confirm-delete-bundle-extension', { extension: bundle.extension })}
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
-                                <AlertDialogCancel>取消</AlertDialogCancel>
+                                <AlertDialogCancel>{t('SETTINGS.file-recognition.cancel')}</AlertDialogCancel>
                                 <AlertDialogAction onClick={() => handleBundleDelete(bundle.id)}>
-                                  确认删除
+                                  {t('SETTINGS.file-recognition.confirm-delete')}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -1055,7 +1058,7 @@ export default function SettingsFileRecognition() {
 
                 {bundleExtensions.length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    还没有配置Bundle扩展名
+                    {t('SETTINGS.file-recognition.no-bundle-extensions')}
                   </div>
                 )}
               </CardContent>
@@ -1069,47 +1072,47 @@ export default function SettingsFileRecognition() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {categoryDialog.mode === 'add' ? '添加文件分类' : '编辑文件分类'}
+              {categoryDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-file-category') : t('SETTINGS.file-recognition.edit-file-category')}
             </DialogTitle>
             <DialogDescription>
-              配置文件分类的基本信息
+              {t('SETTINGS.file-recognition.file-category-description')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="category-name">分类名称</Label>
+              <Label htmlFor="category-name">{t('SETTINGS.file-recognition.category-name')}</Label>
               <Input
                 id="category-name"
                 value={categoryForm.name}
                 onChange={(e) => setCategoryForm(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="例如：document"
+                placeholder="example: document"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="category-description">描述</Label>
+              <Label htmlFor="category-description">{t('SETTINGS.file-recognition.description2')}</Label>
               <Input
                 id="category-description"
                 value={categoryForm.description}
                 onChange={(e) => setCategoryForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="例如：文档类文件"
+                placeholder="example: 文档类文件"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="category-icon">图标</Label>
+              <Label htmlFor="category-icon">{t('SETTINGS.file-recognition.icon')}</Label>
               <Input
                 id="category-icon"
                 value={categoryForm.icon}
                 onChange={(e) => setCategoryForm(prev => ({ ...prev, icon: e.target.value }))}
-                placeholder="例如：📄"
+                placeholder="example: 📄"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCategoryDialog(prev => ({ ...prev, open: false }))}>
-              取消
+              {t('SETTINGS.file-recognition.cancel')}
             </Button>
             <Button onClick={handleCategorySubmit}>
-              {categoryDialog.mode === 'add' ? '添加' : '保存'}
+              {categoryDialog.mode === 'add' ? t('SETTINGS.file-recognition.add') : t('SETTINGS.file-recognition.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1120,30 +1123,30 @@ export default function SettingsFileRecognition() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {extensionDialog.mode === 'add' ? '添加扩展名映射' : '编辑扩展名映射'}
+              {extensionDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-extension-mapping') : t('SETTINGS.file-recognition.edit-extension-mapping')}
             </DialogTitle>
             <DialogDescription>
-              配置文件扩展名到分类的映射关系
+              {t('SETTINGS.file-recognition.extension-mapping-description')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="extension-name">扩展名</Label>
+              <Label htmlFor="extension-name">{t('SETTINGS.file-recognition.extension')}</Label>
               <Input
                 id="extension-name"
                 value={extensionForm.extension}
                 onChange={(e) => setExtensionForm(prev => ({ ...prev, extension: e.target.value }))}
-                placeholder="例如：pdf（不含点）"
+                placeholder="example: pdf (dot not included)"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="extension-category">分类</Label>
+              <Label htmlFor="extension-category">{t('SETTINGS.file-recognition.category')}</Label>
               <Select 
                 value={extensionForm.category_id.toString()} 
                 onValueChange={(value) => setExtensionForm(prev => ({ ...prev, category_id: parseInt(value) }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="选择分类" />
+                  <SelectValue placeholder={t('SETTINGS.file-recognition.select-category')} />
                 </SelectTrigger>
                 <SelectContent>
                   {categories.map((category) => (
@@ -1155,16 +1158,16 @@ export default function SettingsFileRecognition() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="extension-description">描述</Label>
+              <Label htmlFor="extension-description">{t('SETTINGS.file-recognition.description2')}</Label>
               <Input
                 id="extension-description"
                 value={extensionForm.description}
                 onChange={(e) => setExtensionForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="例如：PDF文档文件"
+                placeholder="example: PDF document file"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="extension-priority">优先级</Label>
+              <Label htmlFor="extension-priority">{t('SETTINGS.file-recognition.priority')}</Label>
               <Select 
                 value={extensionForm.priority} 
                 onValueChange={(value) => setExtensionForm(prev => ({ ...prev, priority: value }))}
@@ -1173,19 +1176,19 @@ export default function SettingsFileRecognition() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="high">高</SelectItem>
-                  <SelectItem value="medium">中</SelectItem>
-                  <SelectItem value="low">低</SelectItem>
+                  <SelectItem value="high">high</SelectItem>
+                  <SelectItem value="medium">medium</SelectItem>
+                  <SelectItem value="low">low</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setExtensionDialog(prev => ({ ...prev, open: false }))}>
-              取消
+              {t('SETTINGS.file-recognition.cancel')}
             </Button>
             <Button onClick={handleExtensionSubmit}>
-              {extensionDialog.mode === 'add' ? '添加' : '保存'}
+              {extensionDialog.mode === 'add' ? t('SETTINGS.file-recognition.add') : t('SETTINGS.file-recognition.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1196,25 +1199,25 @@ export default function SettingsFileRecognition() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {filterDialog.mode === 'add' ? '添加过滤规则' : '编辑过滤规则'}
+              {filterDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-filter-rule') : t('SETTINGS.file-recognition.edit-filter-rule')}
             </DialogTitle>
             <DialogDescription>
-              配置文件过滤规则，控制文件的排除逻辑
+              {t('SETTINGS.file-recognition.filter-description')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="filter-name">规则名称</Label>
+                <Label htmlFor="filter-name">{t('SETTINGS.file-recognition.rule-name')}</Label>
                 <Input
                   id="filter-name"
                   value={filterForm.name}
                   onChange={(e) => setFilterForm(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="例如：排除隐藏文件"
+                  placeholder="example: exclude hidden files"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="filter-rule-type">规则类型</Label>
+                <Label htmlFor="filter-rule-type">{t('SETTINGS.file-recognition.rule-type')}</Label>
                 <Select 
                   value={filterForm.rule_type} 
                   onValueChange={(value) => setFilterForm(prev => ({ ...prev, rule_type: value }))}
@@ -1223,35 +1226,35 @@ export default function SettingsFileRecognition() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="extension">扩展名规则</SelectItem>
-                    <SelectItem value="filename">文件名规则</SelectItem>
-                    <SelectItem value="path">路径规则</SelectItem>
-                    <SelectItem value="size">文件大小规则</SelectItem>
+                    <SelectItem value="extension">{t('SETTINGS.file-recognition.extension-rule')}</SelectItem>
+                    <SelectItem value="filename">{t('SETTINGS.file-recognition.filename-rule')}</SelectItem>
+                    <SelectItem value="path">{t('SETTINGS.file-recognition.path-rule')}</SelectItem>
+                    <SelectItem value="size">{t('SETTINGS.file-recognition.filesize-rule')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="filter-description">描述</Label>
+              <Label htmlFor="filter-description">{t('SETTINGS.file-recognition.description2')}</Label>
               <Input
                 id="filter-description"
                 value={filterForm.description}
                 onChange={(e) => setFilterForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="规则的详细描述"
+                placeholder={t('SETTINGS.file-recognition.rule-description')}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="filter-pattern">匹配模式</Label>
+              <Label htmlFor="filter-pattern">{t('SETTINGS.file-recognition.match-pattern')}</Label>
               <Input
                 id="filter-pattern"
                 value={filterForm.pattern}
                 onChange={(e) => setFilterForm(prev => ({ ...prev, pattern: e.target.value }))}
-                placeholder="例如：^\..*（匹配以点开头的文件）"
+                placeholder="example: ^\..*（matches files starting with a dot）"
               />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="filter-action">动作</Label>
+                <Label htmlFor="filter-action">{t('SETTINGS.file-recognition.action')}</Label>
                 <Select 
                   value={filterForm.action} 
                   onValueChange={(value) => setFilterForm(prev => ({ ...prev, action: value }))}
@@ -1260,13 +1263,13 @@ export default function SettingsFileRecognition() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="include">包含</SelectItem>
-                    <SelectItem value="exclude">排除</SelectItem>
+                    <SelectItem value="include">{t('SETTINGS.file-recognition.include')}</SelectItem>
+                    <SelectItem value="exclude">{t('SETTINGS.file-recognition.exclude')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="filter-priority">优先级</Label>
+                <Label htmlFor="filter-priority">{t('SETTINGS.file-recognition.priority')}</Label>
                 <Select 
                   value={filterForm.priority} 
                   onValueChange={(value) => setFilterForm(prev => ({ ...prev, priority: value }))}
@@ -1275,14 +1278,14 @@ export default function SettingsFileRecognition() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="high">高</SelectItem>
-                    <SelectItem value="medium">中</SelectItem>
-                    <SelectItem value="low">低</SelectItem>
+                    <SelectItem value="high">high</SelectItem>
+                    <SelectItem value="medium">medium</SelectItem>
+                    <SelectItem value="low">low</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="filter-pattern-type">模式类型</Label>
+                <Label htmlFor="filter-pattern-type">{t('SETTINGS.file-recognition.pattern-type')}</Label>
                 <Select 
                   value={filterForm.pattern_type} 
                   onValueChange={(value) => setFilterForm(prev => ({ ...prev, pattern_type: value }))}
@@ -1291,24 +1294,24 @@ export default function SettingsFileRecognition() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="regex">正则表达式</SelectItem>
-                    <SelectItem value="glob">通配符</SelectItem>
-                    <SelectItem value="exact">精确匹配</SelectItem>
+                    <SelectItem value="regex">{t('SETTINGS.file-recognition.regex')}</SelectItem>
+                    <SelectItem value="glob">{t('SETTINGS.file-recognition.wildcard')}</SelectItem>
+                    <SelectItem value="exact">{t('SETTINGS.file-recognition.exact')}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="filter-category">关联分类（可选）</Label>
+              <Label htmlFor="filter-category">{t('SETTINGS.file-recognition.related-category-optional')}</Label>
               <Select 
                 value={filterForm.category_id.toString()} 
                 onValueChange={(value) => setFilterForm(prev => ({ ...prev, category_id: parseInt(value) }))}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="选择分类（可选）" />
+                  <SelectValue placeholder={t('SETTINGS.file-recognition.related-category-optional')} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="0">无关联分类</SelectItem>
+                  <SelectItem value="0">{t('SETTINGS.file-recognition.no-related-category')}</SelectItem>
                   {categories.map((category) => (
                     <SelectItem key={category.id} value={category.id.toString()}>
                       {category.icon} {category.name}
@@ -1320,10 +1323,10 @@ export default function SettingsFileRecognition() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFilterDialog(prev => ({ ...prev, open: false }))}>
-              取消
+              {t('SETTINGS.file-recognition.cancel')}
             </Button>
             <Button onClick={handleFilterSubmit}>
-              {filterDialog.mode === 'add' ? '添加' : '保存'}
+              {filterDialog.mode === 'add' ? t('SETTINGS.file-recognition.add') : t('SETTINGS.file-recognition.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1334,38 +1337,38 @@ export default function SettingsFileRecognition() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {bundleDialog.mode === 'add' ? '添加Bundle扩展名' : '编辑Bundle扩展名'}
+              {bundleDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-bundle-extension') : t('SETTINGS.file-recognition.edit-bundle-extension')}
             </DialogTitle>
             <DialogDescription>
-              配置macOS Bundle扩展名，这些扩展名的文件夹会被识别为Bundle
+              {t('SETTINGS.file-recognition.bundle-extension-description')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="bundle-extension">扩展名</Label>
+              <Label htmlFor="bundle-extension">{t('SETTINGS.file-recognition.extension')}</Label>
               <Input
                 id="bundle-extension"
                 value={bundleForm.extension}
                 onChange={(e) => setBundleForm(prev => ({ ...prev, extension: e.target.value }))}
-                placeholder="例如：.app"
+                placeholder="example: .app"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="bundle-description">描述</Label>
+              <Label htmlFor="bundle-description">{t('SETTINGS.file-recognition.description2')}</Label>
               <Input
                 id="bundle-description"
                 value={bundleForm.description}
                 onChange={(e) => setBundleForm(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="例如：应用程序Bundle"
+                placeholder="example: Application Bundle"
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBundleDialog(prev => ({ ...prev, open: false }))}>
-              取消
+              {t('SETTINGS.file-recognition.cancel')}
             </Button>
             <Button onClick={handleBundleSubmit}>
-              {bundleDialog.mode === 'add' ? '添加' : '保存'}
+              {bundleDialog.mode === 'add' ? t('SETTINGS.file-recognition.add') : t('SETTINGS.file-recognition.save')}
             </Button>
           </DialogFooter>
         </DialogContent>

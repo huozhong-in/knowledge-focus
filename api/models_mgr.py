@@ -280,7 +280,7 @@ Please create a concise and meaningful title for a chat session based on the use
 2. **Language:** Use the same language as the user's message (Chinese for Chinese input, English for English input)
 3. **Content:** Capture the main topic or intent of the user's question/request
 4. **Style:** Clear, descriptive, and professional
-5. **Special Cases:** For simple greetings like "你好", "hello", use generic titles like "新对话", "Chat Session"
+5. **Special Cases:** For simple greetings like "你好", "hello", use generic titles like "新对话", "New chat"
 
 **User's First Message:**
 ---

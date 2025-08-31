@@ -40,6 +40,7 @@ import SettingsFileRecognition from "./settings-file-recognition"
 import SettingsAIModels from "./settings-ai-models"
 import SettingsTheme from "./settings-theme-content"
 import SettingsAbout from "./settings-about"
+import { useTranslation } from "react-i18next"
 
 type SettingsPage =
   | "general"
@@ -56,6 +57,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ children }: SettingsDialogProps) {
   const { isSettingsOpen, setSettingsOpen, initialPage, setInitialPage } = useSettingsStore()
   const [currentPage, setCurrentPage] = useState<SettingsPage>("general")
+  const { t } = useTranslation()
 
   // 当对话框打开时，设置初始页面
   useEffect(() => {
@@ -91,54 +93,54 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
   const settingsPages = [
     {
       id: "general" as const,
-      label: "基本设置",
+      label: t('SETTINGS.general.name'),
       icon: Settings,
-      group: "应用设置",
+      group: t('APPSIDEBAR.settings'),
     },
     {
       id: "authorization" as const,
-      label: "授权管理",
+      label: t('SETTINGS.authorization.name'),
       icon: Shield,
-      group: "应用设置",
+      group: t('APPSIDEBAR.settings'),
     },
     {
       id: "file_recognition" as const,
-      label: "文件识别规则",
+      label: t('SETTINGS.file-recognition.name'),
       icon: ArrowUpNarrowWide,
-      group: "应用设置",
+      group: t('APPSIDEBAR.settings'),
     },
     {
       id: "aimodels" as const,
-      label: "AI模型和场景配置",
+      label: t('SETTINGS.aimodels.name'),
       icon: Cpu,
-      group: "应用设置",
+      group: t('APPSIDEBAR.settings'),
     },
     {
       id: "theme" as const,
-      label: "主题设置",
+      label: t('SETTINGS.theme.name'),
       icon: Palette,
-      group: "应用设置",
+      group: t('APPSIDEBAR.settings'),
     },
     {
       id: "about" as const,
-      label: "关于应用",
+      label: t('SETTINGS.about.name'),
       icon: Info,
-      group: "关于",
+      group: "about",
     },
   ]
 
   const externalLinks = [
     {
-      label: "在线文档",
+      label: t('SETTINGS.online-documents.name'),
       icon: Globe,
       url: "https://knowledge-focus.huozhong.in",
-      group: "帮助",
+      group: "help",
     },
     {
-      label: "反馈建议",
+      label: t('SETTINGS.feedback.name'),
       icon: Globe,
       url: "https://github.com/huozhong-in/knowledge-focus/issues",
-      group: "帮助",
+      group: "help",
     },
   ]
 
@@ -149,9 +151,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">通用设置</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.general.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  配置应用的基本选项
+                  {t('SETTINGS.general.description')}
                 </p>
               </div>
               <SettingsGeneral />
@@ -163,9 +165,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">授权管理</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.authorization.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  管理文件访问权限和授权设置
+                  {t('SETTINGS.authorization.description')}
                 </p>
               </div>
               <SettingsAuthorization />
@@ -177,9 +179,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">文件识别规则</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.file-recognition.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  配置识别携带有知识的文件的规则
+                  {t('SETTINGS.file-recognition.description')}
                 </p>
               </div>
               <SettingsFileRecognition />
@@ -191,9 +193,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">AI模型和角色配置</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.aimodels.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  配置AI 模型
+                  {t('SETTINGS.aimodels.description')}
                 </p>
               </div>
               <SettingsAIModels />
@@ -205,9 +207,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">主题设置</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.theme.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  自定义应用外观和主题
+                  {t('SETTINGS.theme.description')}
                 </p>
               </div>
               <SettingsTheme />
@@ -219,9 +221,9 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           <div className="p-6">
             <div className="space-y-6">
               <div>
-                <h3 className="text-lg font-medium">关于应用</h3>
+                <h3 className="text-lg font-medium">{t('SETTINGS.about.name')}</h3>
                 <p className="text-sm text-muted-foreground">
-                  应用信息和版本详情
+                  {t('SETTINGS.about.description')}
                 </p>
               </div>
               <SettingsAbout />
@@ -262,8 +264,8 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
           showCloseButton={true}
         >
           <DialogHeader className="sr-only">
-            <DialogTitle>应用设置</DialogTitle>
-            <DialogDescription>管理应用的各项配置设置</DialogDescription>
+            <DialogTitle>{t('SETTINGS.name')}</DialogTitle>
+            <DialogDescription>{t('SETTINGS.description')}</DialogDescription>
           </DialogHeader>
           <SidebarProvider className="items-start">
             {/* 左侧导航 */}

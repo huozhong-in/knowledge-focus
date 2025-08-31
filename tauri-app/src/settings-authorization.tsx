@@ -4,10 +4,7 @@ import { toast } from "sonner";
 import { open } from '@tauri-apps/plugin-dialog';
 import { fetch } from '@tauri-apps/plugin-http';
 import { basename } from '@tauri-apps/api/path';
-
-import {
-  info
-} from '@tauri-apps/plugin-log';
+import { info } from '@tauri-apps/plugin-log';
 import { FolderTreeSelector } from "@/folder-tree-selector";
 import { 
   Folder, 
@@ -16,14 +13,9 @@ import {
   PlusCircle, 
   Eye, 
   EyeOff, 
-  // X,
   Shield, 
-  // Settings,
  } from "lucide-react";
-// UI组件
-import { 
-  Button 
-} from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { 
@@ -53,6 +45,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useTranslation } from "react-i18next";
 
 // 定义文件夹类型接口
 interface Directory {
@@ -77,16 +70,6 @@ interface FolderHierarchy {
   created_at: string;
   updated_at: string;
 }
-
-// Bundle扩展名接口
-// interface BundleExtension {
-//   id: number;
-//   extension: string;
-//   description: string | null;
-//   is_active: boolean;
-//   created_at: string;
-//   updated_at: string;
-// }
 
 // 配置摘要接口
 interface ConfigurationSummary {
@@ -120,18 +103,9 @@ function SettingsAuthorization() {
   const [isBlacklistDialogOpen, setIsBlacklistDialogOpen] = useState(false);
   const [newBlacklistPath, setNewBlacklistPath] = useState("");
   const [newBlacklistAlias, setNewBlacklistAlias] = useState("");
-  
-  // Bundle扩展名相关状态
-  // const [bundleExtensions, setBundleExtensions] = useState<BundleExtension[]>([]);
-  // const [newBundleExtension, setNewBundleExtension] = useState("");
-  // const [newBundleDescription, setNewBundleDescription] = useState("");
-  // const [isBundleDialogOpen, setIsBundleDialogOpen] = useState(false);
-  
+    
   // 配置摘要状态
   const [configSummary, setConfigSummary] = useState<ConfigurationSummary | null>(null);
-  
-  // 界面控制状态
-  // const [showBundleSection, setShowBundleSection] = useState(false);
   
   // 新文件夹对话框相关状态
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -140,6 +114,8 @@ function SettingsAuthorization() {
   
   // 配置变更队列状态
   const [queueStatus, setQueueStatus] = useState<ConfigQueueStatus | null>(null);
+
+  const { t } = useTranslation();
   
   // 初始化日志系统
   useEffect(() => {
@@ -190,28 +166,6 @@ function SettingsAuthorization() {
       toast.error("加载文件夹层级结构失败");
     }
   };
-
-  // 加载Bundle扩展名
-  // const loadBundleExtensions = async () => {
-  //   try {
-  //     const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
-  //       method: "GET",
-  //       headers: { "Content-Type": "application/json" }
-  //     });
-      
-  //     if (response.ok) {
-  //       const apiResponse = await response.json();
-  //       if (apiResponse.status === "success" && apiResponse.data) {
-  //         setBundleExtensions(apiResponse.data);
-  //         info(`已加载Bundle扩展名: ${apiResponse.data.length} 个`);
-  //       }
-  //     } else {
-  //       console.error("加载Bundle扩展名失败: HTTP", response.status);
-  //     }
-  //   } catch (error) {
-  //     console.error("加载Bundle扩展名失败:", error);
-  //   }
-  // };
 
   // 加载配置摘要
   const loadConfigSummary = async () => {
@@ -449,63 +403,6 @@ function SettingsAuthorization() {
       toast.error("选择文件夹失败");
     }
   };
-
-  // 添加Bundle扩展名
-  // const handleAddBundleExtension = async () => {
-  //   if (!newBundleExtension.trim()) {
-  //     toast.error("请输入扩展名");
-  //     return;
-  //   }
-
-  //   try {
-  //     const response = await fetch("http://127.0.0.1:60315/bundle-extensions", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         extension: newBundleExtension,
-  //         description: newBundleDescription || null
-  //       })
-  //     });
-
-  //     if (response.ok) {
-  //       toast.success("Bundle扩展名添加成功");
-  //       setIsBundleDialogOpen(false);
-  //       setNewBundleExtension("");
-  //       setNewBundleDescription("");
-  //       await loadBundleExtensions();
-  //       // 注意：Bundle扩展名的更改需要重启应用才能生效
-  //       toast.info("Bundle扩展名已更新，重启应用后生效");
-  //     } else {
-  //       const errorData = await response.json();
-  //       toast.error(`添加失败: ${errorData.message || "未知错误"}`);
-  //     }
-  //   } catch (error) {
-  //     console.error("添加Bundle扩展名失败:", error);
-  //     toast.error("添加Bundle扩展名失败");
-  //   }
-  // };
-
-  // 删除Bundle扩展名
-  // const handleDeleteBundleExtension = async (id: number) => {
-  //   try {
-  //     const response = await fetch(`http://127.0.0.1:60315/bundle-extensions/${id}`, {
-  //       method: "DELETE"
-  //     });
-
-  //     if (response.ok) {
-  //       toast.success("Bundle扩展名删除成功");
-  //       await loadBundleExtensions();
-  //       // 注意：Bundle扩展名的更改需要重启应用才能生效
-  //       toast.info("Bundle扩展名已更新，重启应用后生效");
-  //     } else {
-  //       const errorData = await response.json();
-  //       toast.error(`删除失败: ${errorData.message || "未知错误"}`);
-  //     }
-  //   } catch (error) {
-  //     console.error("删除Bundle扩展名失败:", error);
-  //     toast.error("删除Bundle扩展名失败");
-  //   }
-  // };
 
   // 处理文件夹树选择器的路径选择
   const handleTreePathSelect = async (path: string) => {
@@ -748,7 +645,7 @@ function SettingsAuthorization() {
     if (whitelistFolders.length === 0) {
       return (
         <div className="text-center py-8 text-gray-500">
-          没有配置文件夹
+          no folders configured
         </div>
       );
     }
@@ -766,7 +663,7 @@ function SettingsAuthorization() {
                     <div className="font-medium">{folder.alias || folder.path}</div>
                     <div className="text-sm text-gray-500">{folder.path}</div>
                     <div className="text-xs text-gray-400">
-                      {folder.is_common_folder ? "常见文件夹" : "自定义"}
+                      {folder.is_common_folder ? t('common-folders') : t('custom-folders')}
                     </div>
                   </div>
                 </div>
@@ -779,7 +676,7 @@ function SettingsAuthorization() {
                       setSelectedParentId(folder.id);
                       setIsBlacklistDialogOpen(true);
                     }}
-                    title="添加黑名单子文件夹"
+                    title={t('SETTINGS.authorization.add-blacklist-subfolder')}
                   >
                     <PlusCircle className="h-4 w-4" />
                   </Button>
@@ -790,7 +687,7 @@ function SettingsAuthorization() {
                       size="sm"
                       variant="outline"
                       onClick={() => handleToggleFolderToBlacklist(folder.id, folder.is_blacklist)}
-                      title="转为黑名单"
+                      title={t('SETTINGS.authorization.convert-to-blacklist')}
                     >
                       <EyeOff className="h-4 w-4" />
                     </Button>
@@ -806,18 +703,17 @@ function SettingsAuthorization() {
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>确认删除</AlertDialogTitle>
+                          <AlertDialogTitle>{t('SETTINGS.authorization.confirm-delete')}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            确定要删除文件夹 "{folder.alias || folder.path}" 吗？
-                            删除后将停止监控此文件夹。
+                            {t('SETTINGS.authorization.confirm-delete-description', { folder: folder.alias || folder.path })}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>取消</AlertDialogCancel>
+                          <AlertDialogCancel>{t('SETTINGS.authorization.cancel')}</AlertDialogCancel>
                           <AlertDialogAction 
                             onClick={() => handleDeleteDirectory(folder.id)}
                           >
-                            确认删除
+                            {t('SETTINGS.authorization.confirm-delete')}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -841,7 +737,7 @@ function SettingsAuthorization() {
                         <div>
                           <div className="font-medium text-sm">{child.alias || child.path}</div>
                           <div className="text-xs text-gray-500">{child.path}</div>
-                          <div className="text-xs text-gray-400">黑名单子文件夹</div>
+                          <div className="text-xs text-gray-400">{t('SETTINGS.authorization.blacklist-subfolder')}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -853,18 +749,17 @@ function SettingsAuthorization() {
                           </AlertDialogTrigger>
                           <AlertDialogContent>
                             <AlertDialogHeader>
-                              <AlertDialogTitle>确认删除</AlertDialogTitle>
+                              <AlertDialogTitle>{t('SETTINGS.authorization.confirm-delete')}</AlertDialogTitle>
                               <AlertDialogDescription>
-                                确定要删除黑名单子文件夹 "{child.alias || child.path}" 吗？
-                                删除后将重新监控此文件夹。
+                                {t('SETTINGS.authorization.confirm-delete-blacklist-subfolder', { folder: child.alias || child.path })}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel>取消</AlertDialogCancel>
+                              <AlertDialogCancel>{t('SETTINGS.authorization.cancel')}</AlertDialogCancel>
                               <AlertDialogAction 
                                 onClick={() => handleDeleteDirectory(child.id)}
                               >
-                                确认删除
+                                {t('SETTINGS.authorization.confirm-delete')}
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -887,7 +782,7 @@ function SettingsAuthorization() {
                 <div>
                   <div className="font-medium">{folder.alias || folder.path}</div>
                   <div className="text-sm text-gray-500">{folder.path}</div>
-                  <div className="text-xs text-gray-400">已转为黑名单的常见文件夹</div>
+                  <div className="text-xs text-gray-400">{t('SETTINGS.authorization.converted-to-blacklist')}</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -895,7 +790,7 @@ function SettingsAuthorization() {
                   size="sm"
                   variant="outline"
                   onClick={() => handleToggleFolderToBlacklist(folder.id, true)}
-                  title="恢复为白名单"
+                  title={t('SETTINGS.authorization.restore-to-whitelist')}
                 >
                   <Eye className="h-4 w-4" />
                 </Button>
@@ -913,10 +808,10 @@ function SettingsAuthorization() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5" />
-          系统状态
+          {t('SETTINGS.authorization.system-status')}
         </CardTitle>
         <CardDescription>
-          文件夹监控和后台处理状态
+          {t('SETTINGS.authorization.folder-monitoring-status')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -930,18 +825,18 @@ function SettingsAuthorization() {
                     queueStatus.initial_scan_completed ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
                   }`} />
                   <span className="text-sm font-medium">
-                    {queueStatus.initial_scan_completed ? '✅ 初始扫描已完成' : '⏳ 初始扫描进行中'}
+                    {queueStatus.initial_scan_completed ? t('initial-scan-completed') : t('initial-scan-in-progress')}
                   </span>
                 </div>
                 {queueStatus.has_pending_changes && (
                   <div className="text-sm text-blue-600 font-medium">
-                    📋 队列中有 {queueStatus.pending_changes_count} 个待处理变更
+                    {t('SETTINGS.authorization.pending-changes', { count: queueStatus.pending_changes_count })}
                   </div>
                 )}
               </div>
               {!queueStatus.initial_scan_completed && (
                 <div className="mt-2 text-xs text-blue-600">
-                  扫描完成前的配置变更将自动排队处理
+                  {t('SETTINGS.authorization.config-changes-queued')}
                 </div>
               )}
             </div>
@@ -953,26 +848,14 @@ function SettingsAuthorization() {
                 <div className="text-2xl font-bold text-blue-600">
                   {configSummary.monitored_dirs_count}
                 </div>
-                <div className="text-gray-500">监控文件夹</div>
+                <div className="text-gray-500">{t('SETTINGS.authorization.monitored-folders')}</div>
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-red-600">
                   {configSummary.blacklist_dirs_count}
                 </div>
-                <div className="text-gray-500">黑名单文件夹</div>
+                <div className="text-gray-500">{t('SETTINGS.authorization.blacklist-folders')}</div>
               </div>
-              {/* <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {configSummary.config_categories_count}
-                </div>
-                <div className="text-gray-500">文件分类</div>
-              </div> */}
-              {/* <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
-                  {bundleExtensions.length}
-                </div>
-                <div className="text-gray-500">Bundle扩展名</div>
-              </div> */}
             </div>
           )}
         </div>
@@ -989,57 +872,57 @@ function SettingsAuthorization() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Folder className="h-5 w-5" />
-                文件夹管理
+                {t('SETTINGS.authorization.folder-management')}
               </CardTitle>
               <CardDescription>
-                管理白名单和黑名单文件夹，控制监控范围。只能添加白名单文件夹，黑名单在白名单下添加。
+                {t('SETTINGS.authorization.folder-management-description')}
               </CardDescription>
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="flex items-center gap-2">
                   <FolderPlus className="h-4 w-4" />
-                  添加白名单文件夹
+                  {t('SETTINGS.authorization.add-whitelist-folder')}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md">
                 <DialogHeader>
-                  <DialogTitle>添加白名单文件夹</DialogTitle>
+                  <DialogTitle>{t('SETTINGS.authorization.add-whitelist-folder')}</DialogTitle>
                   <DialogDescription>
-                    添加新的监控文件夹，只能添加为白名单。黑名单需要在白名单文件夹下添加。
+                    {t('SETTINGS.authorization.add-whitelist-folder-description')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 py-4">
                   <div className="space-y-2">
-                    <Label htmlFor="folder-path">文件夹路径</Label>
+                    <Label htmlFor="folder-path">{t('SETTINGS.authorization.folder-path')}</Label>
                     <div className="flex gap-2">
                       <Input
                         id="folder-path"
                         value={newDirPath}
                         onChange={(e) => setNewDirPath(e.target.value)}
-                        placeholder="选择文件夹路径..."
+                        placeholder={t('SETTINGS.authorization.folder-path-placeholder')}
                         readOnly
                       />
                       <Button onClick={handleSelectFolder} variant="outline">
-                        选择
+                        {t('SETTINGS.authorization.select')}
                       </Button>
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="folder-alias">别名 (可选)</Label>
+                    <Label htmlFor="folder-alias">{t('SETTINGS.authorization.folder-alias')}</Label>
                     <Input
                       id="folder-alias"
                       value={newDirAlias}
                       onChange={(e) => setNewDirAlias(e.target.value)}
-                      placeholder="为文件夹设置一个友好的名称..."
+                      placeholder={t('SETTINGS.authorization.folder-alias-placeholder')}
                     />
                   </div>
                 </div>
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                    取消
+                    {t('SETTINGS.authorization.cancel')}
                   </Button>
-                  <Button onClick={handleAddDirectory}>添加</Button>
+                  <Button onClick={handleAddDirectory}>{t('SETTINGS.authorization.add')}</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -1053,128 +936,6 @@ function SettingsAuthorization() {
     );
   };
 
-  // 渲染Bundle扩展名管理区域
-  // const renderBundleExtensionsSection = () => (
-  //   <Card className="w-full mb-6">
-  //     <CardHeader>
-  //       <div className="flex items-center justify-between">
-  //         <div>
-  //           <CardTitle className="flex items-center gap-2">
-  //             <Settings className="h-5 w-5" />
-  //             macOS Bundle 扩展名管理
-  //           </CardTitle>
-  //           <CardDescription>
-  //             macOS Bundle就是那些看起来是文件的文件夹，我们要跳过它们，提高扫描效率
-  //           </CardDescription>
-  //         </div>
-  //         <div className="flex items-center gap-2">
-  //           <Button
-  //             variant="outline"
-  //             size="sm"
-  //             onClick={() => setShowBundleSection(!showBundleSection)}
-  //           >
-  //             {showBundleSection ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-  //             {showBundleSection ? "隐藏" : "显示"}
-  //           </Button>
-  //           <Dialog open={isBundleDialogOpen} onOpenChange={setIsBundleDialogOpen}>
-  //             <DialogTrigger asChild>
-  //               <Button size="sm">
-  //                 <PlusCircle className="h-4 w-4 mr-2" />
-  //                 添加扩展名
-  //               </Button>
-  //             </DialogTrigger>
-  //             <DialogContent className="max-w-md">
-  //               <DialogHeader>
-  //                 <DialogTitle>添加 Bundle 扩展名</DialogTitle>
-  //                 <DialogDescription>
-  //                   添加需要跳过扫描的 Bundle 扩展名（如 .app, .bundle）
-  //                 </DialogDescription>
-  //               </DialogHeader>
-  //               <div className="space-y-4 py-4">
-  //                 <div className="space-y-2">
-  //                   <Label htmlFor="extension">扩展名</Label>
-  //                   <Input
-  //                     id="extension"
-  //                     value={newBundleExtension}
-  //                     onChange={(e) => setNewBundleExtension(e.target.value)}
-  //                     placeholder="例如：.app"
-  //                   />
-  //                 </div>
-  //                 <div className="space-y-2">
-  //                   <Label htmlFor="description">描述 (可选)</Label>
-  //                   <Input
-  //                     id="description"
-  //                     value={newBundleDescription}
-  //                     onChange={(e) => setNewBundleDescription(e.target.value)}
-  //                     placeholder="扩展名的用途描述..."
-  //                   />
-  //                 </div>
-  //               </div>
-  //               <DialogFooter>
-  //                 <Button variant="outline" onClick={() => setIsBundleDialogOpen(false)}>
-  //                   取消
-  //                 </Button>
-  //                 <Button onClick={handleAddBundleExtension}>添加</Button>
-  //               </DialogFooter>
-  //             </DialogContent>
-  //           </Dialog>
-  //         </div>
-  //       </div>
-  //     </CardHeader>
-  //     {showBundleSection && (
-  //       <CardContent>
-  //         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-  //           {bundleExtensions.map((ext) => (
-  //             <Card key={ext.id} className="p-3">
-  //               <div className="flex items-center justify-between">
-  //                 <div className="flex-1">
-  //                   <div className="font-medium">{ext.extension}</div>
-  //                   <div className="text-sm text-gray-500">
-  //                     {ext.description || "无描述"}
-  //                   </div>
-  //                 </div>
-  //                 <div className="flex items-center gap-2">
-  //                   <div className={`w-2 h-2 rounded-full ${ext.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
-  //                   <AlertDialog>
-  //                     <AlertDialogTrigger asChild>
-  //                       <Button size="sm" variant="outline">
-  //                         <X className="h-4 w-4" />
-  //                       </Button>
-  //                     </AlertDialogTrigger>
-  //                     <AlertDialogContent>
-  //                       <AlertDialogHeader>
-  //                         <AlertDialogTitle>确认删除</AlertDialogTitle>
-  //                         <AlertDialogDescription>
-  //                           确定要删除扩展名 "{ext.extension}" 吗？
-  //                           删除后将重新扫描此类型的文件。
-  //                         </AlertDialogDescription>
-  //                       </AlertDialogHeader>
-  //                       <AlertDialogFooter>
-  //                         <AlertDialogCancel>取消</AlertDialogCancel>
-  //                         <AlertDialogAction 
-  //                           onClick={() => handleDeleteBundleExtension(ext.id)}
-  //                         >
-  //                           确认删除
-  //                         </AlertDialogAction>
-  //                       </AlertDialogFooter>
-  //                     </AlertDialogContent>
-  //                   </AlertDialog>
-  //                 </div>
-  //               </div>
-  //             </Card>
-  //           ))}
-  //         </div>
-          
-  //         {bundleExtensions.length === 0 && (
-  //           <div className="text-center py-8 text-gray-500">
-  //             还没有配置 Bundle 扩展名
-  //           </div>
-  //         )}
-  //       </CardContent>
-  //     )}
-  //   </Card>
-  // );
-
   // 主渲染
   if (loading) {
     return (
@@ -1182,7 +943,7 @@ function SettingsAuthorization() {
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4 mx-auto"></div>
-            <p className="text-lg text-gray-600">加载授权配置中...</p>
+            <p className="text-lg text-gray-600">{t('SETTINGS.authorization.loading-authorization-config')}</p>
           </div>
         </div>
       </div>
@@ -1192,28 +953,27 @@ function SettingsAuthorization() {
   return (
     <div className="flex flex-col gap-6 w-full">
       <div className="mb-6 px-6">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
+        {/* <h1 className="text-xl font-bold text-gray-900 flex items-center gap-3">
           <Shield className="h-8 w-8" />
-          系统授权管理
-        </h1>
+          {t('SETTINGS.authorization.authorization-management')}
+        </h1> */}
         <p className="text-gray-600 mt-2">
-          管理文件夹访问权限，配置监控白名单和黑名单，优化扫描性能
+          {t('SETTINGS.authorization.authorization-management-description')}
         </p>
       </div>
 
       <div className="px-6 space-y-6">
         {renderPermissionStatusCard()}
         {renderFolderManagementTable()}
-        {/* {renderBundleExtensionsSection()} */}
       </div>
       
       {/* 黑名单子文件夹对话框 */}
       <Dialog open={isBlacklistDialogOpen} onOpenChange={setIsBlacklistDialogOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>添加黑名单子文件夹</DialogTitle>
+            <DialogTitle>{t('SETTINGS.authorization.add-blacklist-subfolder')}</DialogTitle>
             <DialogDescription>
-              在白名单文件夹下选择不需要监控的黑名单子文件夹
+              {t('SETTINGS.authorization.add-blacklist-subfolder-description')}
             </DialogDescription>
           </DialogHeader>
           
@@ -1233,7 +993,7 @@ function SettingsAuthorization() {
             />
           ) : (
             <div className="py-4">
-              <p className="text-gray-500">请先选择父文件夹</p>
+              <p className="text-gray-500">{t('SETTINGS.authorization.please-select-parent-folder')}</p>
             </div>
           )}
         </DialogContent>

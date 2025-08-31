@@ -7,41 +7,41 @@ export default function SettingsAbout() {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle>知识焦点</CardTitle>
-          <CardDescription>Knowledge Focus - 智能文档管理与知识发现工具</CardDescription>
+          <CardTitle>Knowledge Focus </CardTitle>
+          <CardDescription>A desktop intelligent agent platform that unlocks the knowledge value of local files</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">版本:</span>
+            <span className="text-sm font-medium">Version:</span>
             <Badge variant="secondary">{VERSION_INFO.version}</Badge>
           </div>
           
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">关于应用</h4>
+            <h4 className="text-sm font-medium">About</h4>
             <p className="text-sm text-muted-foreground">
-              知识焦点是一个帮助用户发现和利用电脑中各类文档知识的智能工具。
-              通过动态标签系统和多模态检索技术，让您的文档管理更加智能和高效。
+              Knowledge focus is an intelligent tool for managing and discovering knowledge in various documents on your computer.
             </p>
           </div>
           
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">核心功能</h4>
+            <h4 className="text-sm font-medium">Core Features</h4>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>• 智能文档扫描与分析</li>
-              <li>• 动态标签自动生成</li>
-              <li>• AI 驱动的内容理解</li>
-              <li>• 知识片段提取与管理</li>
+              <li>• Rapid Document Directory Scanning</li>
+              <li>• Generate Tags Based on File Content</li>
+              <li>• Document Content Understanding and Analysis</li>
+              <li>• Accumulate Knowledge Through Co-reading and Co-learning with AI</li>
             </ul>
           </div>
           
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">技术架构</h4>
+            <h4 className="text-sm font-medium">Architecture</h4>
             <div className="flex gap-2 flex-wrap">
-              <Badge variant="outline">Tauri</Badge>
-              <Badge variant="outline">React</Badge>
-              <Badge variant="outline">TypeScript</Badge>
-              <Badge variant="outline">Rust</Badge>
-              <Badge variant="outline">Python</Badge>
+              <Badge variant="outline">Tauri/Rust</Badge>
+              <Badge variant="outline">React/TypeScript/Vite/Bun</Badge>
+              <Badge variant="outline">Python/PydanticAI</Badge>
+              <Badge variant="outline">TailwindCSS</Badge>
+              <Badge variant="outline">Shadcn/Tweakcn</Badge>
+              <Badge variant="outline">Vercel AI SDK v5/AI Elements</Badge>
             </div>
           </div>
         </CardContent>

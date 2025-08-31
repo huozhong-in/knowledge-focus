@@ -33,7 +33,7 @@ class ChatSessionMgr:
             创建的会话对象
         """
         if not name:
-            name = f"新对话 {datetime.now().strftime('%m-%d %H:%M')}"
+            name = f"New chat {datetime.now().strftime('%m-%d %H:%M')}"
             
         session_obj = ChatSession(
             name=name,

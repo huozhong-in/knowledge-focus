@@ -406,19 +406,19 @@ function GlobalCapabilitySection({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Zap className="w-5 h-5" />
-          场景配置
+          {t("SETTINGS.aimodels.scene-config")}
         </CardTitle>
         <CardDescription>
-          为不同的业务场景分配AI模型。配置完成后，相应功能将自动解锁。
-          {!hasConfiguredProviders && " 请先配置模型提供商。"}
+          {t("SETTINGS.aimodels.scene-config-description")}
+          {!hasConfiguredProviders && t("SETTINGS.aimodels.please-configure-model-provider")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {!hasConfiguredProviders ? (
           <div className="text-center py-8 text-muted-foreground">
             <Settings className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>需要先配置模型提供商才能分配能力</p>
-            <p className="text-sm mt-1">请滚动到下方"模型提供商管理"部分开始配置</p>
+            <p>{t("SETTINGS.aimodels.please-configure-model-provider2")}</p>
+            <p className="text-sm mt-1">{t("SETTINGS.aimodels.please-configure-model-provider3")}</p>
           </div>
         ) : (
           BUSINESS_SCENES.map(scene => {
@@ -435,17 +435,17 @@ function GlobalCapabilitySection({
                         {completeness.percentage === 100 ? (
                           <Badge variant="default" className="text-xs">
                             <CheckCircle className="w-3 h-3 mr-1" />
-                            已配置
+                            {t("SETTINGS.aimodels.config-completed")}
                           </Badge>
                         ) : completeness.assigned > 0 ? (
                           <Badge variant="secondary" className="text-xs">
                             <AlertCircle className="w-3 h-3 mr-1" />
-                            {completeness.percentage}% 完成
+                            {completeness.percentage}% {t("SETTINGS.aimodels.config-completed-description")}
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-xs">
                             <XCircle className="w-3 h-3 mr-1" />
-                            未配置
+                            {t("SETTINGS.aimodels.config-not-completed")}
                           </Badge>
                         )}
                       </h3>
@@ -457,7 +457,7 @@ function GlobalCapabilitySection({
                       {completeness.total > 0 && (
                         <div className="mt-2">
                           <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                            <span>配置进度</span>
+                            <span>{t("SETTINGS.aimodels.config-progress")}</span>
                             <span>{completeness.assigned}/{completeness.total}</span>
                           </div>
                           <div className="w-full bg-muted rounded-full h-1.5">
@@ -479,7 +479,7 @@ function GlobalCapabilitySection({
                 </div>
                 
                 <div className="space-y-3">
-                  <div className="text-sm font-medium">所需能力配置：</div>
+                  <div className="text-sm font-medium">{t("SETTINGS.aimodels.required-capability-config")}：</div>
                   {scene.required_capabilities.map(capability => {
                     const assignment = getCapabilityAssignment(capability)
                     const availableModels = getAvailableModelsForCapability(capability)
@@ -489,7 +489,7 @@ function GlobalCapabilitySection({
                     return (
                       <div key={capability} className="flex items-center justify-between p-3 bg-muted/50 rounded">
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline">{t(`ModelCapability.${capability.toUpperCase()}`)}</Badge>
+                          <Badge variant="outline">{t(`SETTINGS.aimodels.ModelCapability.${capability.toUpperCase()}`)}</Badge>
                           {isAssigned && (
                             <CheckCircle className="w-4 h-4 text-green-500" />
                           )}
@@ -509,7 +509,7 @@ function GlobalCapabilitySection({
                             }}
                           >
                             <SelectTrigger className="w-md">
-                              <SelectValue placeholder="选择模型" />
+                              <SelectValue placeholder={t("SETTINGS.aimodels.select-model")} />
                             </SelectTrigger>
                             <SelectContent>
                               {availableModels.map(model => (
@@ -526,7 +526,7 @@ function GlobalCapabilitySection({
                           </Select>
                         ) : (
                           <div className="text-sm text-muted-foreground">
-                            需要先配置支持 {t(`ModelCapability.${capability.toUpperCase()}`)} 能力的模型
+                            {t("SETTINGS.aimodels.please-configure-model-provider4", {capability: t(`SETTINGS.aimodels.ModelCapability.${capability.toUpperCase()}`)})}
                           </div>
                         )}
                       </div>
@@ -545,6 +545,7 @@ function GlobalCapabilitySection({
 function ProviderConfigDisplay({ provider }: { provider: Provider }) {
   const [tempApiKey, setTempApiKey] = useState(provider.api_key || '')
   const [useProxy, setUseProxy] = useState(provider.use_proxy || false)
+  const { t } = useTranslation();
 
   const handleApiKeyChange = async (newApiKey: string) => {
     if (newApiKey !== provider.api_key) {
@@ -555,10 +556,10 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
           ...provider,
           api_key: newApiKey
         });
-        toast.success('API Key 更新成功');
+        toast.success('API Key updated successfully');
       } catch (error) {
         console.error('Failed to update API key:', error);
-        toast.error('API Key 更新失败');
+        toast.error('API Key update failed');
         setTempApiKey(provider.api_key || ''); // 恢复原值
       }
     }
@@ -572,10 +573,10 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
         use_proxy: checked
       });
       setUseProxy(checked);
-      toast.success(`已${checked ? '启用' : '禁用'}代理`);
+      toast.success(`Proxy ${checked ? 'enabled' : 'disabled'} successfully`);
     } catch (error) {
       console.error('Failed to update proxy setting:', error);
-      toast.error('代理设置更新失败');
+      toast.error('Proxy setting update failed');
       setUseProxy(!checked); // 恢复原状态
     }
   };
@@ -619,7 +620,7 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
       {/* Get Key URL - 跳转链接 */}
       {provider.get_key_url && (
         <div className="space-y-1">
-          <Label className="text-xs font-medium text-muted-foreground">获取密钥</Label>
+          <Label className="text-xs font-medium text-muted-foreground">{t('SETTINGS.aimodels.get-key')}</Label>
           <div>
             <Button
               variant="link"
@@ -627,7 +628,7 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
               className="h-auto p-0 text-xs text-primary hover:underline"
               onClick={() => provider.get_key_url && openUrl(provider.get_key_url)}
             >
-              前往获取 API Key →
+              {t('SETTINGS.aimodels.go-to-get-api-key')}
             </Button>
           </div>
         </div>
@@ -635,7 +636,7 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
 
       {/* 代理设置 */}
       <div className="flex items-center justify-between">
-        <Label className="text-xs font-medium text-muted-foreground">使用代理转发请求</Label>
+        <Label className="text-xs font-medium text-muted-foreground">{t('SETTINGS.aimodels.use-proxy')}</Label>
         <Switch
           checked={useProxy}
           onCheckedChange={handleProxyToggle}
@@ -657,10 +658,11 @@ function AddProviderEmptyState({
     description: "",
     config: {} as Record<string, any>
   })
+  const { t } = useTranslation();
 
   const handleAddProvider = () => {
     if (!newProvider.name.trim()) {
-      toast.error("请输入提供商名称")
+      toast.error(t('SETTINGS.aimodels.enter-provider-name'))
       return
     }
     
@@ -683,36 +685,36 @@ function AddProviderEmptyState({
         <DialogTrigger asChild>
           <Button>
             <Plus className="w-4 h-4 mr-2" />
-            添加提供商
+            {t('SETTINGS.aimodels.add-provider')}
           </Button>
         </DialogTrigger>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>添加模型提供商</DialogTitle>
+            <DialogTitle>{t('SETTINGS.aimodels.add-provider')}</DialogTitle>
             <DialogDescription>
-              配置新的AI模型提供商信息
+              {t('SETTINGS.aimodels.add-provider-description')}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
             <div>
-              <Label htmlFor="provider-name">提供商名称 *</Label>
+              <Label htmlFor="provider-name">{t('SETTINGS.aimodels.provider-name')} *</Label>
               <Input
                 id="provider-name"
                 value={newProvider.name}
                 onChange={(e) => setNewProvider(prev => ({ ...prev, name: e.target.value }))}
-                placeholder="例如：OpenAI、Claude等"
+                placeholder="exameple: OpenAI / Claude"
                 className="mt-1"
               />
             </div>
             
             <div>
-              <Label htmlFor="provider-desc">描述（可选）</Label>
+              <Label htmlFor="provider-desc">{t('SETTINGS.aimodels.provider-description-optional')}</Label>
               <Input
                 id="provider-desc"
                 value={newProvider.description}
                 onChange={(e) => setNewProvider(prev => ({ ...prev, description: e.target.value }))}
-                placeholder="简单描述该提供商"
+                placeholder={t('SETTINGS.aimodels.provider-description-optional')}
                 className="mt-1"
               />
             </div>
@@ -720,10 +722,10 @@ function AddProviderEmptyState({
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddDialog(false)}>
-              取消
+              {t('SETTINGS.aimodels.cancel')}
             </Button>
             <Button onClick={handleAddProvider} disabled={!newProvider.name.trim()}>
-              添加
+              {t('SETTINGS.aimodels.add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -760,7 +762,7 @@ function ProviderDetailSection({
 
   const handleConfirmDelete = () => {
     if (models.length > 0) {
-      toast.error(`无法删除提供商 ${provider.name}，因为还有 ${models.length} 个模型正在使用`)
+      toast.error(`Can't delete ${provider.name}， ${models.length} models are in use`)
       return
     }
     
@@ -782,12 +784,12 @@ function ProviderDetailSection({
                   disabled={isLoading}
                 />
                 <span className="text-sm text-muted-foreground">
-                  {provider.is_enabled ? "已启用" : "已禁用"}
+                  {provider.is_enabled ? "Enabled" : "Disabled"}
                 </span>
               </div>
               {models.length > 0 && (
                 <Badge variant="outline" className="text-xs">
-                  {availableModels.length}/{models.length} 可用
+                  {availableModels.length}/{models.length} Available
                 </Badge>
               )}
             </div>
@@ -803,7 +805,7 @@ function ProviderDetailSection({
                 size="sm"
                 onClick={() => setShowDeleteDialog(true)}
                 disabled={isLoading}
-                title="删除提供商"
+                title="Delete Provider"
               >
                 <Trash2 className="w-4 h-4" />
               </Button>
@@ -829,13 +831,13 @@ function ProviderDetailSection({
               ) : (
                 <RefreshCw className="w-4 h-4 mr-2" />
               )}
-              发现模型
+              {t('SETTINGS.aimodels.discover-models')}
             </Button>
         </div>
         {models.length > 0 && (
           <div className="mt-0 space-y-4">
             <div className="text-sm font-medium">
-              模型列表 ({availableModels.length}/{models.length} 可用)：
+              {t('SETTINGS.aimodels.models-list', {available: availableModels.length, total: models.length})}
             </div>
             <div className="space-y-2 h-full">
               {models.map(model => (
@@ -855,7 +857,7 @@ function ProviderDetailSection({
                             >
                               {/* <BadgeCheckIcon className={`${hasCapability ? '' : 'hidden'}`} /> */}
                               <BadgeCheckIcon />
-                              {t(`ModelCapability.${cap.toUpperCase()}`)}
+                              {t(`SETTINGS.aimodels.ModelCapability.${cap.toUpperCase()}`)}
                             </Badge>
                           )
                         })}
@@ -869,7 +871,7 @@ function ProviderDetailSection({
                       size="sm"
                       onClick={() => onConfirmModelCapability(model.id)}
                       disabled={isLoading}
-                      title="测试模型能力"
+                      title={t('SETTINGS.aimodels.test-model-capability')}
                     >
                       {isLoading ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -882,7 +884,7 @@ function ProviderDetailSection({
                       checked={model.is_available}
                       onCheckedChange={(checked) => onToggleModel(model.id, checked)}
                     />
-                    <Label htmlFor={model.id}>{model.is_available ? "已启用" : "未启用"}</Label>
+                    <Label htmlFor={model.id}>{model.is_available ? t('SETTINGS.aimodels.enabled') : t('SETTINGS.aimodels.disabled')}</Label>
                   </div>
                 </div>
               ))}
@@ -893,8 +895,8 @@ function ProviderDetailSection({
         {models.length === 0 && (
           <div className="text-center py-8 text-muted-foreground">
             <RefreshCw className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p>暂无模型</p>
-            <p className="text-sm mt-1">输入API Key后点击右侧"发现模型"来获取可用模型</p>
+            <p>{t('SETTINGS.aimodels.no-models')}</p>
+            <p className="text-sm mt-1">{t('SETTINGS.aimodels.no-models-details')}</p>
           </div>
         )}
       </CardContent>
@@ -903,22 +905,21 @@ function ProviderDetailSection({
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>删除提供商确认</DialogTitle>
+            <DialogTitle>{t('SETTINGS.aimodels.delete-provider-confirmation')}</DialogTitle>
             <DialogDescription>
-              确定要删除提供商 "{provider.name}" 吗？
-              这个操作无法撤销。
+              {t('SETTINGS.aimodels.delete-provider-confirmation-details', { providerName: provider.name })}
             </DialogDescription>
           </DialogHeader>
           
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-              取消
+              {t('SETTINGS.aimodels.cancel')}
             </Button>
             <Button 
               variant="destructive" 
               onClick={handleConfirmDelete}
             >
-              删除
+              {t('SETTINGS.aimodels.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -935,6 +936,7 @@ function SettingsAIModels() {
   const [availableCapabilities, setAvailableCapabilities] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const { t } = useTranslation();
 
   // 初始化数据
   useEffect(() => {
@@ -1038,10 +1040,10 @@ function SettingsAIModels() {
       
       setProviders(prev => prev.filter(p => p.key !== providerKey))
       setModels(prev => prev.filter(m => m.provider !== providerKey))
-      toast.success("提供商删除成功")
+      toast.success("Provider deleted successfully")
     } catch (error) {
       console.error("Failed to delete provider:", error)
-      toast.error(`删除提供商失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      toast.error(`Failed to delete provider: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
     }
@@ -1072,10 +1074,10 @@ function SettingsAIModels() {
         return [...filtered, ...allProviderModels]
       })
       
-      toast.success(`成功发现 ${discoveredModels.length} 个新模型，当前共有 ${allProviderModels.length} 个模型`)
+      toast.success(`${discoveredModels.length} discoverd，${allProviderModels.length} total`)
     } catch (error) {
       console.error('Failed to discover models:', error)
-      toast.error(`模型发现失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      toast.error(`Failed to discover models: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
     }
@@ -1105,10 +1107,11 @@ function SettingsAIModels() {
       
       // 计算能力数量
       const capabilityCount = Object.values(capabilities).filter(Boolean).length
-      toast.success(`模型能力测试完成，发现 ${capabilityCount} 项能力`)
+      toast.success(`model capability test completed, ${capabilityCount} capabilities found`)
+
     } catch (error) {
       console.error("Failed to test model capability:", error)
-      toast.error(`模型能力测试失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      toast.error(`Failed to test model capability: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
     }
@@ -1142,10 +1145,10 @@ function SettingsAIModels() {
       // 刷新提供商列表
       const updatedProviders = await ModelSettingsAPI.getProviders();
       setProviders(updatedProviders);
-      toast.success(`提供商 ${provider.name} ${enabled ? '已启用' : '已禁用'}`);
+      toast.success(`Provider ${provider.name} ${enabled ? 'enabled' : 'disabled'}`);
     } catch (error) {
       console.error('Failed to toggle provider:', error);
-      toast.error(`切换提供商状态失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(`Failed to toggle provider status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1175,7 +1178,7 @@ function SettingsAIModels() {
       toast.success(`${modelName} ${enabled ? '已启用' : '已禁用'}`);
     } catch (error) {
       console.error('Failed to toggle model:', error);
-      toast.error(`切换模型状态失败: ${error instanceof Error ? error.message : '未知错误'}`);
+      toast.error(`Failed to toggle model status: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1197,10 +1200,10 @@ function SettingsAIModels() {
         const filtered = prev.filter(gc => gc.capability !== capability)
         return [...filtered, { capability, provider_key, model_id }]
       })
-      toast.success(`${capability} 能力分配更新成功`)
+      toast.success(`${capability} capability assignment updated successfully`)
     } catch (error) {
       console.error("Failed to update global capability:", error)
-      toast.error(`能力分配更新失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      toast.error(`Failed to update capability assignment: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsLoading(false)
     }
@@ -1215,10 +1218,10 @@ function SettingsAIModels() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="container mx-auto px-6">
       <div>
         <p className="text-muted-foreground mt-1">
-          先到最下方配置服务商和模型，然后在上方分配给具体场景。
+          {t('SETTINGS.aimodels.description2')}
         </p>
       </div>
       <GlobalCapabilitySection
@@ -1230,7 +1233,7 @@ function SettingsAIModels() {
       <Separator />
       <div>
         <p className="text-muted-foreground mt-1">
-          在这里管理您的AI模型提供商，以及测试他们提供的模型各有什么能力。
+          {t('SETTINGS.aimodels.description3')}
         </p>
       </div>
       <Tabs defaultValue={providers.length > 0 ? providers[0].key : "empty"} orientation="vertical" className="flex flex-row gap-1">
@@ -1246,7 +1249,7 @@ function SettingsAIModels() {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{provider.name}</div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {provider.is_enabled ? "已启用" : "已禁用"}
+                      {provider.is_enabled ? t('SETTINGS.aimodels.enabled') : t('SETTINGS.aimodels.disabled')}
                     </div>
                   </div>
                 </div>

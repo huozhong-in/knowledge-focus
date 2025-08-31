@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Clock, FileText, Zap, AlertCircle, Search } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface RagSource {
   file_path: string;
@@ -30,6 +31,7 @@ export function RagLocal() {
   const [isAutoScroll, setIsAutoScroll] = useState(true);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
 
   // 监听RAG相关的桥接事件
   useBridgeEvents({
@@ -129,12 +131,12 @@ export function RagLocal() {
       <div className="border-b p-3 bg-gray-50/50">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-gray-900">知识观察窗</p>
-            <p className="text-xs text-gray-500">RAG检索过程与结果实时监控</p>
+            <p className="text-sm font-semibold text-gray-900">{t('RAGLOCAL.file-observation-window')}</p>
+            <p className="text-xs text-gray-500">{t('RAGLOCAL.rag-retrieval-monitoring')}</p>
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs">
-              {events.length} 条记录
+              {events.length} {t('RAGLOCAL.x-tensor-records')}
             </Badge>
             {!isAutoScroll && (
               <Badge 
@@ -142,7 +144,7 @@ export function RagLocal() {
                 className="text-xs cursor-pointer"
                 onClick={() => setIsAutoScroll(true)}
               >
-                点击回到底部
+                return to bottom
               </Badge>
             )}
           </div>
@@ -161,8 +163,8 @@ export function RagLocal() {
           {events.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">等待RAG检索活动...</p>
-              <p className="text-xs">当您发送消息时，相关知识片段将在这里显示</p>
+              <p className="text-sm">{t('RAGLOCAL.waiting-rag-retrieval')}</p>
+              <p className="text-xs">{t('RAGLOCAL.waiting-rag-retrieval-details')}</p>
             </div>
           ) : (
             events.map((event, index) => (
@@ -188,7 +190,7 @@ export function RagLocal() {
                       
                       {event.query && (
                         <div className="mb-2">
-                          <p className="text-xs text-gray-600 mb-1">查询:</p>
+                          <p className="text-xs text-gray-600 mb-1">Query:</p>
                           <p className="text-sm font-mono bg-white/60 px-2 py-1 rounded text-gray-800 border">
                             {event.query}
                           </p>
@@ -198,7 +200,7 @@ export function RagLocal() {
                       {event.type === 'retrieval' && event.sources && (
                         <div className="space-y-2">
                           <p className="text-xs text-gray-600">
-                            找到 {event.sources_count || event.sources.length} 个相关片段:
+                            {event.sources_count || event.sources.length} related chunk found:
                           </p>
                           {event.sources.slice(0, 3).map((source, idx) => (
                             <div key={idx} className="bg-white/80 p-2 rounded border">
@@ -217,7 +219,7 @@ export function RagLocal() {
                           ))}
                           {event.sources.length > 3 && (
                             <p className="text-xs text-gray-500 italic">
-                              还有 {event.sources.length - 3} 个片段...
+                              {event.sources.length - 3} more...
                             </p>
                           )}
                         </div>

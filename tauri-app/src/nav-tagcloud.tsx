@@ -139,7 +139,7 @@ export function NavTagCloud() {
     <SidebarGroup className=" bg-background rounded-md pr-0">
       <SidebarGroupLabel>
         <Tag className="mr-2 h-4 w-4" />
-        {t('file-tags')}
+        {t('APPSIDEBAR.file-tags')}
       </SidebarGroupLabel>
       
       <ScrollArea className="h-[calc(22vh)] p-0 m-0">

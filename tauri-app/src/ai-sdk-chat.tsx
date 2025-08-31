@@ -40,7 +40,8 @@ import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
-import { GlobeIcon, MicIcon, CopyIcon } from 'lucide-react';
+import { GlobeIcon, MicIcon, CopyIcon } from 'lucide-react'
+import { useTranslation } from "react-i18next"
 
 interface AiSdkChatProps {
   sessionId?: string
@@ -64,6 +65,8 @@ export function AiSdkChat({
   >(sessionId)
   const [isInitializing, setIsInitializing] = useState(true)
   const [input, setInput] = useState("")
+
+  const { t } = useTranslation()
 
   // 使用useChat hook集成AI SDK v5 - 使用DefaultChatTransport配置API
   const { messages, sendMessage, status, error, setMessages } = useChat({
@@ -239,10 +242,10 @@ export function AiSdkChat({
               <div className="flex items-center justify-center h-full">
                 <div className="text-center text-muted-foreground">
                   <h3 className="text-lg font-medium mb-2">
-                    欢迎使用AI数据助手！
+                    Knowledge Focus AI 助手，帮你释放本地文件知识价值
                   </h3>
                   <p>
-                    您可以在这里创建新的数据任务，我会帮您从文件中提取知识片段。
+                    开始和你的文档聊天吧
                   </p>
                 </div>
               </div>
@@ -312,7 +315,7 @@ export function AiSdkChat({
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="输入消息..."
+            placeholder={t("AISDKCHAT.input-message")}
           />
           <PromptInputToolbar>
             <PromptInputTools>

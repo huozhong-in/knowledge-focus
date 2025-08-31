@@ -10,11 +10,13 @@ import {
 } from "@/components/ui/sidebar";
 import { SettingsDialog } from "./settings-dialog";
 import { useSettingsStore } from "./App";
+import { useTranslation } from "react-i18next";
 
 export function UserProfileMenu() {
   const { state } = useSidebar();
   const { setSettingsOpen } = useSettingsStore();
   const isCollapsed = state === "collapsed";
+  const { t } = useTranslation();
 
   return (
     <SidebarMenu className="px-1">
@@ -30,8 +32,8 @@ export function UserProfileMenu() {
             </div>
             {!isCollapsed && (
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-medium">Settings</span>
-                <span className="truncate text-xs text-muted-foreground">应用设置</span>
+                <span className="truncate font-medium">{t('APPSIDEBAR.settings')}</span>
+                {/* <span className="truncate text-xs text-muted-foreground"></span> */}
               </div>
             )}
             {!isCollapsed && <ChevronsUpDown className="ml-auto size-4" />}

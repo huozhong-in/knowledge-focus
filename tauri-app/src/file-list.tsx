@@ -12,6 +12,7 @@ import { VectorizationProgress } from "@/components/VectorizationProgress";
 import { useVectorizationStore } from "@/stores/useVectorizationStore";
 import { toast } from "sonner";
 import { useSettingsStore } from "./App";
+import { useTranslation } from "react-i18next";
 
 interface FileItemProps {
   file: TaggedFile;
@@ -61,6 +62,8 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
       console.error('Failed to reveal item in directory:', error);
     }
   };
+
+  const { t } = useTranslation();
 
   return (
     <div className={`flex flex-1 border rounded-md p-2 mb-1.5 group relative min-w-0 @container ${file.pinned ? 'border-primary bg-primary/5' : 'border-border bg-background'} hover:bg-muted/50 transition-colors`}>
@@ -119,7 +122,7 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
           size="sm"
           onClick={handleRevealInDir}
           className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background border border-border/50"
-          title="在文件夹中显示"
+          title={t('FILELIST.show-in-folder')}
         >
           <FolderOpen className="h-2.5 w-2.5" />
         </Button>
@@ -134,7 +137,7 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
               ? 'opacity-100' 
               : 'opacity-0 group-hover:opacity-100 bg-background/80 hover:bg-background border border-border/50'
           }`}
-          title={file.pinned ? "取消固定" : "固定文件"}
+          title={file.pinned ? t('FILELIST.unpin-file') : t('FILELIST.pin-file')}
         >
           {file.pinned ? <Pin className="h-2.5 w-2.5" /> : <PinOff className="h-2.5 w-2.5" />}
         </Button>
@@ -157,6 +160,8 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
   
   // 搜索框状态
   const [searchKeyword, setSearchKeyword] = useState("");
+
+  const { t } = useTranslation();
 
   // Pin文件API调用
   const pinFileAPI = async (filePath: string): Promise<{ success: boolean; taskId?: number; error?: string }> => {
@@ -256,7 +261,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
 
   // 处理模型配置缺失的情况
   const handleModelMissingError = (response: any) => {
-    const confirmMessage = `${response.message}\n\n是否立即前往设置页面配置AI模型？`;
+    const confirmMessage = `${response.message}\n\njump to settings page to configure?`;
     
     // 使用原生confirm对话框
     if (confirm(confirmMessage)) {
@@ -306,13 +311,12 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         
         if (result.success) {
           togglePinnedFile(fileId);
-          toast.success(`文件 ${file.file_name} 已取消固定`);
+          toast.success(t('FILELIST.unpin-file-success', { file_name: file.file_name }));
         } else {
-          toast.error(`取消固定失败: ${result.error}`);
+          toast.error(`${t('FILELIST.unpin-file-failure')}: ${result.error}`);
         }
       } catch (error) {
-        console.error('Unpin file error:', error);
-        toast.error(`取消固定失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        toast.error(`${t('FILELIST.unpin-file-failure')}: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
       return;
     }
@@ -330,7 +334,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         togglePinnedFile(fileId);
         setFileStarted(filePath, result.taskId?.toString() || '');
 
-        toast.success(`文件 ${file.file_name} 已开始向量化处理`);
+        toast.success(t('FILELIST.vectorization-start', { file_name: file.file_name }));
       } else {
         // 检查是否是模型配置缺失的错误
         if ((result as any).error_type === 'model_missing') {
@@ -340,21 +344,21 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         } else {
           // API失败，设置错误状态
           setFileFailed(filePath, '', {
-            message: result.error || '向量化启动失败',
+            message: result.error || t('FILELIST.VectorizationFileState.failed'),
             helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
           });
 
-          toast.error(`向量化失败：${result.error}`);
+          toast.error(`${t('FILELIST.VectorizationFileState.failed')}: ${result.error}`);
         }
       }
     } catch (error) {
       // 网络或其他错误
       setFileFailed(filePath, '', {
-        message: error instanceof Error ? error.message : '网络连接失败',
+        message: error instanceof Error ? error.message : t('FILELIST.NetworkError'),
         helpLink: 'https://github.com/huozhong-in/knowledge-focus/wiki/troubleshooting'
       });
 
-      toast.error('向量化请求失败，请检查网络连接');
+      toast.error(t('FILELIST.NetworkError'));
     }
   };
 
@@ -370,7 +374,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
       console.log(`Found ${newFiles.length} files for tag: ${tagName}`);
     } catch (error) {
       console.error('Error searching files by tag:', error);
-      setError(error instanceof Error ? error.message : '搜索失败');
+      setError(error instanceof Error ? error.message : t('FILELIST.search-failure'));
     } finally {
       setLoading(false);
     }
@@ -393,7 +397,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
       console.log(`Found ${newFiles.length} files for path keyword: ${searchKeyword}`);
     } catch (error) {
       console.error('Error searching files by path:', error);
-      setError(error instanceof Error ? error.message : '搜索失败');
+      setError(error instanceof Error ? error.message : t('FILELIST.search-failure'));
     } finally {
       setLoading(false);
     }
@@ -410,8 +414,8 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 shrink-0">
-          <p className="text-sm">文件搜索结果</p>
-          <p className="text-xs text-muted-foreground">正在搜索...</p>
+          <p className="text-sm">{t('FILELIST.search-results')}</p>
+          <p className="text-xs text-muted-foreground">Searching...</p>
         </div>
         <div className="p-2 space-y-1.5">
           {[...Array(3)].map((_, i) => (
@@ -429,8 +433,8 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
     return (
       <div className="flex flex-col h-full">
         <div className="border-b p-2 shrink-0">
-          <p className="text-sm">文件搜索结果</p>
-          <p className="text-xs text-destructive">搜索出错</p>
+          <p className="text-sm">{t('FILELIST.search-results')}</p>
+          <p className="text-xs text-destructive">{t('FILELIST.search-failure')}</p>
         </div>
         <div className="p-2 text-center text-xs text-muted-foreground">
           {error}
@@ -442,9 +446,9 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
   return (
     <div className="flex flex-col w-full h-full overflow-auto">
       <div className="p-3 h-[50px]">
-        <div className="text-sm">固定文件以绑定对话</div>
+        <div className="text-sm">{t('FILELIST.pin-file-for-chat')}</div>
         <div className="text-xs text-muted-foreground">
-          点击标签或搜索文件名
+          {t('FILELIST.tap-tag-or-search-file-name')}
         </div>
       </div>
       <div className="h-[40px] flex flex-row w-full items-center justify-end p-2 gap-2 border-b border-border/50">
@@ -463,7 +467,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
           disabled={isLoading || !searchKeyword.trim()}
           className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50"
         >
-          搜索
+          {t('FILELIST.search')}
         </Button>
       </div>
       <ScrollArea className="flex-1 p-3 h-[calc(100%-90px)] @container">
@@ -471,7 +475,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
           <div className="text-center py-6">
             <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
             <p className="text-xs text-muted-foreground px-2 leading-relaxed">
-              请点击左侧标签云或在上方搜索文件
+              {t('tap-tag-or-search-file-name-detail')}
             </p>
           </div>
         ) : (
