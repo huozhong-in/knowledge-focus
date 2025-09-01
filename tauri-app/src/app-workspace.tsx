@@ -108,7 +108,7 @@ export function AppWorkspace({
           <div className={`flex flex-col flex-auto h-full overflow-hidden`}>
             <div className="border-b p-2 flex flex-row h-[50px] relative">
               <div className="text-md font-semibold text-muted-foreground">
-                {currentSession ? currentSession.name : t('new-chat')}
+                {currentSession ? currentSession.name : t('APPSIDEBAR.new-chat')}
               </div>
               <div className="absolute bottom-0 right-1 z-10">
                 <PanelRightIcon 

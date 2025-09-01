@@ -20,7 +20,7 @@ interface EventHandlers {
   'task-completed'?: (payload: BridgeEventPayload) => void;
   'file-processed'?: (payload: BridgeEventPayload) => void;
   'file-tagging-progress'?: (payload: BridgeEventPayload) => void;
-  'screening-progress'?: (payload: BridgeEventPayload) => void;
+  'screening-result-updated'?: (payload: BridgeEventPayload) => void;
   'model-status-changed'?: (payload: BridgeEventPayload) => void;
   'model-validation-failed'?: (payload: BridgeEventPayload) => void;
   'database-updated'?: (payload: BridgeEventPayload) => void;
@@ -263,7 +263,7 @@ export function useProgressEvents(
   onProgressRef.current = onProgress;
 
   useEffect(() => {
-    const progressEventTypes = ['file-tagging-progress', 'screening-progress'];
+    const progressEventTypes = ['file-tagging-progress'];
     const unlistenFunctions: UnlistenFn[] = [];
     let isMounted = true;
 
@@ -365,4 +365,15 @@ export function useTagsUpdateListenerWithApiCheck(
       console.log('收到tags-updated事件，但API尚未就绪，忽略');
     }
   }, options);
+}
+
+// 简化的监控screening-result-updated事件的Hook
+export function useScreeningResultUpdated(
+  onScreeningResultUpdated: () => void,
+){
+  useBridgeEvents({
+    'screening-result-updated': () => {
+      onScreeningResultUpdated();
+    }
+  }, { showToasts: false, logEvents: false });
 }

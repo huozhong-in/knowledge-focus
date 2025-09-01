@@ -1204,7 +1204,7 @@ impl FileMonitor {
                     match serde_json::from_str::<ApiResponse>(&response_text) {
                         Ok(api_resp) => {
                             //  println!("[TEST_DEBUG] send_batch_metadata_to_api: Successfully parsed API response: {:?}", api_resp);
-                             Ok(api_resp)
+                            Ok(api_resp)
                         }
                         Err(e) => {
                             eprintln!("[TEST_DEBUG] send_batch_metadata_to_api: Failed to parse successful response body: {}. Raw body snippet: {}", e, &response_text[..std::cmp::min(response_text.len(), 200)]);
@@ -1247,6 +1247,20 @@ impl FileMonitor {
                     let status = response.status();
                     if status.is_success() {
                         println!("[PROCESS_EVENT] 成功删除文件 {:?} 的粗筛记录", path);
+                        // 发射 screening-result-updated 事件
+                        if let Some(ref app_handle) = app_handle_clone {
+                            let payload = serde_json::json!({
+                                "message": "文件筛选成功",
+                                "file_path": metadata_clone.file_path,
+                                "timestamp": chrono::Utc::now().to_rfc3339()
+                            });
+                            
+                            if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
+                                eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
+                            } else {
+                                println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - {}", metadata_clone.file_path);
+                            }
+                        }
                     } else {
                         let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
                         eprintln!("[PROCESS_EVENT] 删除粗筛记录失败，状态码: {}. 错误信息: {}", status, &err_text[..std::cmp::min(err_text.len(), 200)]);

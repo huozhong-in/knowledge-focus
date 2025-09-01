@@ -356,7 +356,7 @@ export default function Page() {
     }
   }, [openSettingsPage])
 
-  // * 这是前端统一监听来自Rust的IPC事件的地方
+  // * 监听来自Rust的IPC事件
   useBridgeEvents(
     {
       'api-ready': (payload: any) => {
@@ -458,28 +458,28 @@ export default function Page() {
           )
         }
       },
-      // RAG相关事件处理
-      'rag-retrieval-result': (payload: any) => {
-        console.log("App.tsx: RAG检索结果:", payload)
-        // RAG数据将传递给RagLocal组件进行显示
-        // 这里可以做一些全局状态管理，比如记录最近的RAG活动
-      },
-      'rag-progress': (payload: any) => {
-        console.log("App.tsx: RAG处理进度:", payload)
-        // 可以在这里显示RAG处理的进度提示
-      },
-      'rag-error': (payload: any) => {
-        console.warn("App.tsx: RAG处理错误:", payload)
-        const { error_message, stage } = payload
+      // // RAG相关事件处理
+      // 'rag-retrieval-result': (payload: any) => {
+      //   console.log("App.tsx: RAG检索结果:", payload)
+      //   // RAG数据将传递给RagLocal组件进行显示
+      //   // 这里可以做一些全局状态管理，比如记录最近的RAG活动
+      // },
+      // 'rag-progress': (payload: any) => {
+      //   console.log("App.tsx: RAG处理进度:", payload)
+      //   // 可以在这里显示RAG处理的进度提示
+      // },
+      // 'rag-error': (payload: any) => {
+      //   console.warn("App.tsx: RAG处理错误:", payload)
+      //   const { error_message, stage } = payload
         
-        toast.error(
-          `知识检索失败`,
-          {
-            description: `${stage ? `[${stage}] ` : ''}${error_message}`,
-            duration: 5000
-          }
-        )
-      }
+      //   toast.error(
+      //     `知识检索失败`,
+      //     {
+      //       description: `${stage ? `[${stage}] ` : ''}${error_message}`,
+      //       duration: 5000
+      //     }
+      //   )
+      // }
     },
     { showToasts: false, logEvents: true }
   )

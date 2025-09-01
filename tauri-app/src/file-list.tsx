@@ -7,12 +7,13 @@ import { TaggedFile } from "@/types/file-types";
 import { FileService } from "@/api/file-service";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { fetch } from '@tauri-apps/plugin-http';
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { VectorizationProgress } from "@/components/VectorizationProgress";
 import { useVectorizationStore } from "@/stores/useVectorizationStore";
 import { toast } from "sonner";
 import { useSettingsStore } from "./App";
 import { useTranslation } from "react-i18next";
+import { useScreeningResultUpdated } from "@/hooks/useBridgeEvents";
 
 interface FileItemProps {
   file: TaggedFile;
@@ -162,6 +163,32 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
   const [searchKeyword, setSearchKeyword] = useState("");
 
   const { t } = useTranslation();
+
+  const [screeningResultCount, setScreeningResultCount] = useState<number>(0);
+  const fetchScreeningResultCount = async () => {
+    // 调用API获取筛选结果数量
+    const url = 'http://127.0.0.1:60315/file-screening/total';
+    const response = await fetch(url)
+    const result = await response.json()
+    if (result.success) {
+      setScreeningResultCount(result.total_count);
+    }
+  }
+  useEffect(() => {
+    fetchScreeningResultCount();
+    // return () => {
+      
+    // };
+  }, []);
+
+  // 监听筛选结果数量变化事件
+  useScreeningResultUpdated(() => {
+    try {
+      fetchScreeningResultCount();
+    } catch (error) {
+      console.error('处理筛选结果更新事件时出错:', error);
+    }
+  });
 
   // Pin文件API调用
   const pinFileAPI = async (filePath: string): Promise<{ success: boolean; taskId?: number; error?: string }> => {
@@ -451,31 +478,39 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
           {t('FILELIST.tap-tag-or-search-file-name')}
         </div>
       </div>
-      <div className="h-[40px] flex flex-row w-full items-center justify-end p-2 gap-2 border-b border-border/50">
-        <Input 
-          type="text" 
-          value={searchKeyword}
-          onChange={(e) => setSearchKeyword(e.target.value)}
-          onKeyDown={handleKeyPress}
-          className="h-6 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200" 
-        />
-        <Button 
-          type="submit" 
-          variant="secondary" 
-          size="sm"
-          onClick={handlePathSearch}
-          disabled={isLoading || !searchKeyword.trim()}
-          className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50"
-        >
-          {t('FILELIST.search')}
-        </Button>
+      <div className="h-[40px] flex flex-row w-full items-center justify-between p-2 gap-2 border-b border-border/50">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">{files.length}</span>
+          <span className="text-xs text-muted-foreground"> / </span>
+          <span className="text-xs text-muted-foreground">{screeningResultCount}</span>
+        </div>
+        <div className="flex flex-row items-center gap-2 justify-end">
+          <Input 
+            type="text" 
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            onKeyDown={handleKeyPress}
+            className="h-6 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200" 
+          />
+          <Button 
+            type="submit" 
+            variant="secondary" 
+            size="sm"
+            onClick={handlePathSearch}
+            disabled={isLoading || !searchKeyword.trim()}
+            className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50"
+          >
+            {t('FILELIST.search')}
+          </Button>
+
+        </div>
       </div>
       <ScrollArea className="flex-1 p-3 h-[calc(100%-90px)] @container">
         {files.length === 0 ? (
           <div className="text-center py-6">
             <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />
             <p className="text-xs text-muted-foreground px-2 leading-relaxed">
-              {t('tap-tag-or-search-file-name-detail')}
+              {t('FILELIST.tap-tag-or-search-file-name-detail')}
             </p>
           </div>
         ) : (

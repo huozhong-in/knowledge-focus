@@ -500,7 +500,7 @@ pub async fn start_backend_scanning(
                         println!("[扫描] 创建新的防抖动监控器");
                         // 创建新的防抖动监控器
                         let monitor_arc = std::sync::Arc::new(file_monitor_instance.clone());
-                        let new_monitor = crate::file_monitor_debounced::DebouncedFileMonitor::new(monitor_arc);
+                        let new_monitor = crate::file_monitor_debounced::DebouncedFileMonitor::new(monitor_arc, Some(app_handle_clone.clone()));
                         
                         // 保存到 AppState
                         {

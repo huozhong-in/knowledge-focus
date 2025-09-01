@@ -247,7 +247,7 @@ export function AppSidebar({
               size="icon"
               className="h-8 w-8"
               onClick={handleCreateSession}
-              title="{t('new-chat')}"
+              title="{t('APPSIDEBAR.new-chat')}"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -406,10 +406,10 @@ export function AppSidebar({
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              {t('cancel')}
+              {t('APPSIDEBAR.cancel')}
             </Button>
             <Button onClick={confirmRename} disabled={!newSessionName.trim()}>
-              {t('confirm')}
+              {t('APPSIDEBAR.confirm')}
             </Button>
           </div>
         </DialogContent>

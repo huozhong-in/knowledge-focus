@@ -228,6 +228,19 @@ class ScreeningManager:
             logger.error(traceback.format_exc())
             return []
 
+    def get_all_results_count(self) -> int:
+        """
+        获得粗筛表中所有记录数
+        """
+        try:
+            query = text('SELECT count(*) FROM t_file_screening_results')
+            query_result = self.session.exec(query)            
+            matching_rows = query_result.scalar_one()
+            return matching_rows if matching_rows else 0
+        except Exception as e:
+            logger.error(f"获取所有文件粗筛结果数失败: {str(e)}")
+            return 0
+
     def update_screening_result(self, result_id: int, data: Dict[str, Any]) -> FileScreeningResult | None:
         """更新粗筛结果
         
@@ -427,7 +440,6 @@ class ScreeningManager:
             
             # 直接使用SQL查询获取路径符合条件的记录ID列表
             # 这种方式比使用LIKE更可靠，因为我们直接比较字符串前缀
-            from sqlalchemy import text
             escaped_path = normalized_path.replace("%", "\\%").replace("_", "\\_")
             query = text("SELECT id, file_path FROM t_file_screening_results WHERE file_path LIKE :path_prefix || '%' ESCAPE '\\'")
             query_result = self.session.exec(query, params={"path_prefix": escaped_path})
@@ -853,12 +865,16 @@ if __name__ == "__main__":
     with Session(engine) as session:
         mgr = ScreeningManager(session)
         
-        # 测试get_files_by_category_id()
+        # # 测试get_files_by_category_id()
         # category_id = 1  # 假设我们要查询的分类ID
         # files = mgr.get_files_by_category_id(category_id)
         # print(f"分类ID {category_id} 下的文件: {files}")
 
-        # test search_files_by_path_substring()
-        substring = "大模型"  # 假设我们要查询的子字符串
-        files = mgr.search_files_by_path_substring(substring)
-        print(f"包含子字符串 '{substring}' 的文件: {files}")
+        # # test search_files_by_path_substring()
+        # substring = "大模型"  # 假设我们要查询的子字符串
+        # files = mgr.search_files_by_path_substring(substring)
+        # print(f"包含子字符串 '{substring}' 的文件: {files}")
+
+        # 测试取得所有记录数
+        total_count = mgr.get_all_results_count()
+        print(f"粗筛结果总数: {total_count}")

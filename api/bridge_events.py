@@ -44,9 +44,9 @@ class BridgeEventSender:
     class Events(str, Enum):
         TAGS_UPDATED = "tags-updated"
         TASK_COMPLETED = "task-completed"
+        
         FILE_PROCESSED = "file-processed"
         FILE_TAGGING_PROGRESS = "file-tagging-progress"
-        SCREENING_PROGRESS = "screening-progress"
         MODEL_STATUS_CHANGED = "model-status-changed"
         MODEL_VALIDATION_FAILED = "model-validation-failed"
         DATABASE_UPDATED = "database-updated"
@@ -71,6 +71,11 @@ class BridgeEventSender:
         TOOL_CALL_REQUEST = "tool-call-request"   # Python请求前端执行工具
         TOOL_CALL_RESPONSE = "tool-call-response" # 前端返回执行结果（通过HTTP API）
         TOOL_CALL_ERROR = "tool-call-error"       # 工具执行错误
+
+        # 模型下载事件
+        MODEL_DOWNLOAD_PROGRESS = "model-download-progress"
+        MODEL_DOWNLOAD_COMPLETED = "model-download-completed"
+        MODEL_DOWNLOAD_FAILED = "model-download-failed"
     
     def __init__(self, source: str = "python-backend"):
         """
@@ -192,7 +197,7 @@ class BridgeEventSender:
     def model_download_progress(self, model_name: str, current: int, total: int, 
                                message: str = "", stage: str = "downloading"):
         """通知模型下载进度"""
-        self.send_event("model-download-progress", {
+        self.send_event(self.Events.MODEL_DOWNLOAD_PROGRESS, {
             "model_name": model_name,
             "current": current,
             "total": total,
@@ -204,7 +209,7 @@ class BridgeEventSender:
 
     def model_download_completed(self, model_name: str, local_path: str, message: str = ""):
         """通知模型下载完成"""
-        self.send_event("model-download-completed", {
+        self.send_event(self.Events.MODEL_DOWNLOAD_COMPLETED, {
             "model_name": model_name,
             "local_path": local_path,
             "message": message or f"模型 {model_name} 下载完成",
@@ -213,7 +218,7 @@ class BridgeEventSender:
 
     def model_download_failed(self, model_name: str, error_message: str, details: Dict[str, Any] = None):
         """通知模型下载失败"""
-        self.send_event("model-download-failed", {
+        self.send_event(self.Events.MODEL_DOWNLOAD_FAILED, {
             "model_name": model_name,
             "error_message": error_message,
             "details": details or {},

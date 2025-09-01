@@ -74,15 +74,11 @@ interface FolderHierarchy {
 // 配置摘要接口
 interface ConfigurationSummary {
   has_config_cache: boolean;
-  // config_categories_count: number;
   config_filter_rules_count: number;
   config_extension_maps_count: number;
   full_disk_access: boolean;
   monitored_dirs_count: number;
   blacklist_dirs_count: number;
-  bundle_cache_count: number;
-  bundle_cache_expired: boolean;
-  bundle_cache_timestamp?: number;
 }
 
 // 配置变更队列状态接口
@@ -180,19 +176,13 @@ function SettingsAuthorization() {
         // 从配置数据中提取摘要信息
         const summary: ConfigurationSummary = {
           has_config_cache: true,
-          // config_categories_count: configData.file_categories?.length || 0,
           config_filter_rules_count: configData.file_filter_rules?.length || 0,
           config_extension_maps_count: configData.file_extension_maps?.length || 0,
           full_disk_access: configData.full_disk_access || false,
           monitored_dirs_count: configData.monitored_folders?.filter((f: Directory) => !f.is_blacklist).length || 0,
           blacklist_dirs_count: configData.monitored_folders?.filter((f: Directory) => f.is_blacklist).length || 0,
-          bundle_cache_count: 0, // 需要从bundle端点获取
-          bundle_cache_expired: false,
-          bundle_cache_timestamp: Date.now()
         };
         setConfigSummary(summary);
-        
-        // 注意：现在使用folderHierarchy，不再需要directories状态
       }
     } catch (error) {
       console.error("加载配置摘要失败:", error);
@@ -243,7 +233,6 @@ function SettingsAuthorization() {
         // 不再需要在此检查权限，因为进入该页面的先决条件是已获得权限
         await Promise.all([
           loadFolderHierarchy(),
-          // loadBundleExtensions(),
           loadConfigSummary(),
           checkQueueStatus(),
         ]);
@@ -825,7 +814,7 @@ function SettingsAuthorization() {
                     queueStatus.initial_scan_completed ? 'bg-green-500' : 'bg-yellow-500 animate-pulse'
                   }`} />
                   <span className="text-sm font-medium">
-                    {queueStatus.initial_scan_completed ? t('initial-scan-completed') : t('initial-scan-in-progress')}
+                    {queueStatus.initial_scan_completed ? t('SETTINGS.authorization.initial-scan-completed') : t('SETTINGS.authorization.initial-scan-in-progress')}
                   </span>
                 </div>
                 {queueStatus.has_pending_changes && (

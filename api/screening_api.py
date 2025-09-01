@@ -301,5 +301,23 @@ def get_router(external_get_session: callable) -> APIRouter:
                 "deleted_count": 0,
                 "message": f"删除失败: {str(e)}"
             }
+    
+    @router.get("/file-screening/total")
+    def get_total_screening_results_count(
+        screening_mgr: ScreeningManager = Depends(get_screening_manager)
+    ):
+        """获取文件粗筛结果总数"""
+        try:
+            total_count = screening_mgr.get_all_results_count()
+            return {
+                "success": True,
+                "total_count": total_count
+            }
+        except Exception as e:
+            logger.error(f"获取文件粗筛结果总数失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"获取失败: {str(e)}"
+            }
 
     return router

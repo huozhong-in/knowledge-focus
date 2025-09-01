@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use tokio::sync::Mutex;
 use std::sync::mpsc as std_mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Emitter;
 
 // 定义简化的文件事件类型
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,16 +32,19 @@ pub struct DebouncedFileMonitor {
     /// 保存监控路径到其停止发送器的映射，用于停止特定路径的监控 (仅保留用于扩展但当前未使用)
     #[allow(dead_code)]
     watch_stop_channels: Arc<Mutex<HashMap<String, std_mpsc::Sender<()>>>>,
+    /// Tauri应用程序句柄，用于发射事件到前端
+    app_handle: Option<tauri::AppHandle>,
 }
 
 impl DebouncedFileMonitor {
     /// 创建新的防抖动文件监控器
-    pub fn new(file_monitor: Arc<FileMonitor>) -> Self {
+    pub fn new(file_monitor: Arc<FileMonitor>, app_handle: Option<tauri::AppHandle>) -> Self {
         DebouncedFileMonitor {
             file_monitor,
             event_tx: None,
             debounce_buffer: Arc::new(Mutex::new(HashMap::new())),
             watch_stop_channels: Arc::new(Mutex::new(HashMap::new())),
+            app_handle,
         }
     }
 
@@ -312,6 +316,7 @@ impl DebouncedFileMonitor {
         }
         
         // 启动事件处理器
+        let app_handle_for_processor = self.app_handle.clone();
         let _processor_handle = tokio::spawn(async move {
             let fm_processor = file_monitor_for_processing; // Use the cloned Arc<FileMonitor>
             
@@ -378,7 +383,6 @@ impl DebouncedFileMonitor {
                         // 如果元数据发送通道未初始化，尝试手动发送元数据到API
                         // 这是一个临时的解决方案，防止文件被漏掉
                         eprintln!("[防抖处理器] 元数据发送通道未初始化，尝试直接调用API发送元数据: {}", metadata.file_path);
-                        
                         // 使用独立的HTTP客户端发送元数据到API
                         let api_host = fm_processor.get_api_host();
                         let api_port = fm_processor.get_api_port();
@@ -392,6 +396,7 @@ impl DebouncedFileMonitor {
                         if let Ok(client) = temp_client {
                             // 在新的异步任务中发送请求，避免阻塞主处理流程
                             let metadata_clone = metadata.clone();
+                            let app_handle_clone = app_handle_for_processor.clone();
                             tokio::spawn(async move {
                                 // 构建与批处理API兼容的请求格式
                                 let mut request_body = serde_json::Map::new();
@@ -408,6 +413,21 @@ impl DebouncedFileMonitor {
                                     .await {
                                     Ok(response) if response.status().is_success() => {
                                         println!("[防抖处理器] ✅ 成功通过直接API调用发送元数据: {}", metadata_clone.file_path);
+                                        // 发射 screening-result-updated 事件
+                                        if let Some(ref app_handle) = app_handle_clone {
+                                            let payload = serde_json::json!({
+                                                "message": "文件筛选成功",
+                                                "file_path": metadata_clone.file_path,
+                                                "timestamp": chrono::Utc::now().to_rfc3339()
+                                            });
+                                            
+                                            if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
+                                                eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
+                                            } else {
+                                                println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - {}", metadata_clone.file_path);
+                                            }
+                                        }
+                                        
                                     },
                                     Ok(response) => {
                                         let status = response.status();

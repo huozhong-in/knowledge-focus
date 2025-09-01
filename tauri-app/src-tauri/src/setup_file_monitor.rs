@@ -44,7 +44,7 @@ pub async fn setup_file_monitoring_infrastructure(
         
         // 创建但不启动防抖动监控器
         let base_monitor_arc = Arc::new(base_monitor.clone());
-        let debounced_monitor = DebouncedFileMonitor::new(Arc::clone(&base_monitor_arc));
+        let debounced_monitor = DebouncedFileMonitor::new(Arc::clone(&base_monitor_arc), Some(app_handle.clone()));
         {
             let mut debounced_monitor_guard = app_state.debounced_file_monitor.lock().unwrap();
             *debounced_monitor_guard = Some(debounced_monitor);

@@ -86,8 +86,8 @@ impl EventBuffer {
         // === 节流类（控制频率，适合进度更新） ===
         // 解析进度：避免UI更新过于频繁，最多每秒1次
         strategies.insert("file-tagging-progress".to_string(), Throttle(Duration::from_secs(1)));
-        // 筛选进度：同上
-        strategies.insert("screening-progress".to_string(), Throttle(Duration::from_secs(1)));
+        // 筛选结果更新：避免频繁通知，最多每5秒一次
+        strategies.insert("screening-result-updated".to_string(), Throttle(Duration::from_secs(5)));
         // 文件处理：批量处理时控制通知频率，每2秒最多一次
         strategies.insert("file-processed".to_string(), Throttle(Duration::from_secs(2)));
         // 多模态向量化进度：控制UI更新频率，最多每秒1次

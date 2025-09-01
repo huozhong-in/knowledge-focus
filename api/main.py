@@ -411,11 +411,11 @@ def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, 
         
         file_path = screening_result.file_path
         
-        # 检查文件是否在最近8小时内被pin过
+        # 检查文件是否在最近24小时内被pin过
         is_recently_pinned = _check_file_pin_status(file_path, session)
         
         if is_recently_pinned:
-            logger.info(f"文件 {file_path} 在最近8小时内被pin过，创建MULTIVECTOR任务")
+            logger.info(f"文件 {file_path} 在最近24小时内被pin过，创建MULTIVECTOR任务")
             task_mgr.add_task(
                 task_name=f"多模态向量化: {Path(file_path).name}",
                 task_type=TaskType.MULTIVECTOR,
@@ -431,18 +431,18 @@ def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, 
 
 def _check_file_pin_status(file_path: str, session: Session) -> bool:
     """
-    检查文件是否在最近8小时内被pin过（即有成功的MULTIVECTOR任务）
+    检查文件是否在最近24小时内被pin过（即有成功的MULTIVECTOR任务）
     
     Args:
         file_path: 文件路径
         session: 数据库会话
         
     Returns:
-        bool: 文件是否在最近8小时内被pin过
+        bool: 文件是否在最近24小时内被pin过
     """
     try:
         task_mgr = TaskManager(session)
-        return task_mgr.is_file_recently_pinned(file_path, hours=8)
+        return task_mgr.is_file_recently_pinned(file_path, hours=24)
     except Exception as e:
         logger.error(f"检查文件pin状态时发生错误: {e}", exc_info=True)
         return False
@@ -833,31 +833,19 @@ async def pin_file(
             }
 
         # 在创建任务前检查多模态向量化所需的模型配置
-        try:
-            # 创建必要的管理器实例来检查模型可用性
-            lancedb_mgr = LanceDBMgr(os.path.dirname(app.state.db_path))
-            models_mgr = ModelsMgr(session)
-            multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
-            
-            # 检查多模态向量化所需的模型是否已配置
-            if not multivector_mgr.check_multivector_model_availability():
-                logger.warning(f"Pin文件失败，多模态向量化所需的模型配置缺失: {file_path}")
-                return {
-                    "success": False,
-                    "task_id": None,
-                    "error_type": "model_missing",
-                    "message": "多模态向量化需要配置文本模型、向量模型和视觉模型，请前往设置页面进行配置",
-                    "missing_models": ["文本模型", "向量模型", "视觉模型"]
-                }
-        except Exception as e:
-            logger.error(f"检查模型可用性时发生错误: {e}", exc_info=True)
-            # 如果检查失败，返回错误给前端，强制用户配置模型
+        lancedb_mgr = LanceDBMgr(os.path.dirname(app.state.db_path))
+        models_mgr = ModelsMgr(session)
+        multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+        
+        # 检查多模态向量化所需的模型是否已配置
+        if not multivector_mgr.check_multivector_model_availability():
+            logger.warning(f"Pin文件失败，多模态向量化所需的模型配置缺失: {file_path}")
             return {
                 "success": False,
                 "task_id": None,
                 "error_type": "model_missing",
-                "message": "多模态向量化需要配置文本模型、向量模型和视觉模型，请前往设置页面进行配置",
-                "missing_models": ["文本模型", "向量模型", "视觉模型"]
+                "message": "多模态向量化需要配置文本模型、视觉模型，请前往设置页面进行配置",
+                "missing_models": ["文本模型", "视觉模型"]
             }
 
         # 创建HIGH优先级MULTIVECTOR任务
