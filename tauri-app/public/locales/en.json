@@ -35,8 +35,6 @@
         "cancel": "Cancel",
         "confirm": "Confirm",
         "search": "Search",
-        "search-failure": "Search failed",
-        "search-results": "File Search Results",
         "today": "Today",
         "yesterday": "Yesterday",
         "previous-7-days": "Previous 7 Days",
@@ -62,7 +60,9 @@
         "NetworkError": "Network connection failed. Please check your network and try again.",
         "retry": "Retry",
         "get-help": "Help",
-        "search": "Search"
+        "search": "Search",
+        "search-results": "File Search Results",
+        "search-failure": "Search failed"
     },
     "RAGLOCAL": {
         "file-observation-window": "Knowledge Observation Window",
@@ -247,7 +247,7 @@
             "please-configure-model-provider2": "A model provider needs to be configured before assigning capabilities.",
             "please-configure-model-provider3": "Please scroll down to the \"Model Provider Management\" section to start.",
             "config-completed": "Configured",
-            "config-not-configured": "Not Configured",
+            "config-not-completed": "Not Configured",
             "config-completed-description": "Completion",
             "config-progress": "Configuration Progress",
             "required-capability-config": "Required Capability Configuration",

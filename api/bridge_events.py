@@ -314,8 +314,8 @@ if __name__ == "__main__":
         sender.task_completed("test-task-123", {"result": "success", "data": [1, 2, 3]})
         time.sleep(1)
         
-        sender.file_processed("/test/path/file.txt", tags_count=5, status="completed")
-        time.sleep(1)
+        # sender.file_processed("/test/path/file.txt", tags_count=5, status="completed")
+        # time.sleep(1)
         
         sender.progress_update("parsing", 50, 100, "正在解析文件...")
         time.sleep(1)

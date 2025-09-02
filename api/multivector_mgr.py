@@ -1216,103 +1216,59 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             logger.error(f"Failed to vectorize and store: {e}")
             raise
 
-    # =============================================================================
-    # 📊 查询管理功能 - P0核心 (新增)
-    # =============================================================================
+    # # =============================================================================
+    # # 📊 查询管理功能 - P0核心 (新增)
+    # # =============================================================================
     
-    def search_documents(self, query: str, document_ids: Optional[List[int]] = None, 
-                        top_k: int = 10) -> dict:
-        """
-        多模态文档搜索 - P0核心功能
+    # def get_parent_chunks_by_ids(self, parent_chunk_ids: List[int]) -> List[dict]:
+    #     """
+    #     根据ID列表获取父块内容
         
-        Args:
-            query: 自然语言查询文本
-            document_ids: 可选的文档ID过滤列表，如果为None则搜索所有文档
-            top_k: 返回的最大结果数
+    #     Args:
+    #         parent_chunk_ids: 父块ID列表
             
-        Returns:
-            包含搜索结果的字典
-        """
-        try:
-            logger.info(f"[SEARCH] Starting document search for: '{query[:50]}...'")
+    #     Returns:
+    #         父块内容列表
+    #     """
+    #     try:
+    #         from search_mgr import ContextEnhancer
             
-            # 导入SearchManager（放在方法内避免循环导入）
-            from search_mgr import SearchManager
+    #         enhancer = ContextEnhancer(self.session)
+    #         chunks = enhancer.get_parent_chunks_by_ids(parent_chunk_ids)
             
-            # 初始化搜索管理器
-            search_mgr = SearchManager(
-                session=self.session,
-                lancedb_mgr=self.lancedb_mgr,
-                models_mgr=self.models_mgr
-            )
+    #         logger.info(f"[SEARCH] Retrieved {len(chunks)} parent chunks")
+    #         return chunks
             
-            # 执行搜索
-            search_result = search_mgr.search_documents(
-                query=query,
-                document_ids=document_ids,
-                top_k=top_k
-            )
-            
-            logger.info(f"[SEARCH] Search completed: {search_result.get('success', False)}")
-            return search_result
-            
-        except Exception as e:
-            logger.error(f"[SEARCH] Document search failed: {e}")
-            return {
-                "success": False,
-                "error": f"搜索失败: {str(e)}",
-                "results": None
-            }
+    #     except Exception as e:
+    #         logger.error(f"[SEARCH] Failed to get parent chunks: {e}")
+    #         return []
     
-    def get_parent_chunks_by_ids(self, parent_chunk_ids: List[int]) -> List[dict]:
-        """
-        根据ID列表获取父块内容
+    # def format_search_results(self, raw_results: List[dict]) -> dict:
+    #     """
+    #     格式化原始搜索结果为LLM友好格式
         
-        Args:
-            parent_chunk_ids: 父块ID列表
+    #     Args:
+    #         raw_results: LanceDB返回的原始结果
             
-        Returns:
-            父块内容列表
-        """
-        try:
-            from search_mgr import ContextEnhancer
+    #     Returns:
+    #         格式化的搜索结果
+    #     """
+    #     try:
+    #         from search_mgr import ResultFormatter
             
-            enhancer = ContextEnhancer(self.session)
-            chunks = enhancer.get_parent_chunks_by_ids(parent_chunk_ids)
+    #         formatter = ResultFormatter(self.session)
+    #         formatted = formatter.format_for_llm(raw_results)
             
-            logger.info(f"[SEARCH] Retrieved {len(chunks)} parent chunks")
-            return chunks
+    #         logger.info(f"[SEARCH] Formatted {len(raw_results)} search results")
+    #         return formatted
             
-        except Exception as e:
-            logger.error(f"[SEARCH] Failed to get parent chunks: {e}")
-            return []
-    
-    def format_search_results(self, raw_results: List[dict]) -> dict:
-        """
-        格式化原始搜索结果为LLM友好格式
-        
-        Args:
-            raw_results: LanceDB返回的原始结果
-            
-        Returns:
-            格式化的搜索结果
-        """
-        try:
-            from search_mgr import ResultFormatter
-            
-            formatter = ResultFormatter(self.session)
-            formatted = formatter.format_for_llm(raw_results)
-            
-            logger.info(f"[SEARCH] Formatted {len(raw_results)} search results")
-            return formatted
-            
-        except Exception as e:
-            logger.error(f"[SEARCH] Failed to format search results: {e}")
-            return {
-                "context": "格式化结果时发生错误",
-                "sources": [],
-                "total_chunks": 0
-            }
+    #     except Exception as e:
+    #         logger.error(f"[SEARCH] Failed to format search results: {e}")
+    #         return {
+    #             "context": "格式化结果时发生错误",
+    #             "sources": [],
+    #             "total_chunks": 0
+    #         }
 
 
 # 为了测试和调试使用

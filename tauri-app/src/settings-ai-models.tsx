@@ -101,15 +101,22 @@ const BUSINESS_SCENES: BusinessScene[] = [
   {
     key: "SCENE_FILE_TAGGING",
     name: "文件自动打标签",
-    description: "基于文件内容自动生成相关标签，帮助快速分类和检索文件",
+    description: "基于文件内容自动生成相关标签，帮助快速检索文件",
+    required_capabilities: ["structured_output"],
+    icon: <Settings className="w-4 h-4" />
+  },
+  {
+    key: "SCENE_TEXT_CHAT",
+    name: "文字对话",
+    description: "基于用户输入的文本进行对话和交互",
     required_capabilities: ["text"],
     icon: <Settings className="w-4 h-4" />
   },
   {
     key: "SCENE_MULTIVECTOR", 
-    name: "多模态检索",
+    name: "文件内容多模态检索、图像识别和问答",
     description: "支持文本、图像等多种模态内容的智能检索和对话关联",
-    required_capabilities: ["text", "vision"],
+    required_capabilities: ["vision"],
     icon: <Zap className="w-4 h-4" />
   }
 ]

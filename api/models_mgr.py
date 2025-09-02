@@ -28,16 +28,11 @@ from bridge_events import BridgeEventSender
 from huggingface_hub import snapshot_download
 from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model
+import mlx.core as mx
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-
-class SessionTitleResponse(BaseModel):
-    title: str = Field(description="Generated session title (max 20 characters)")
-
-class TagResponse(BaseModel):
-    tags: List[str] = Field(default_factory=list, description="List of generated tags")
 
 # 定义一个可以在运行时创建的 BridgeProgressReporter 类
 def create_bridge_progress_reporter(bridge_events, model_name):
@@ -135,39 +130,115 @@ class ModelsMgr:
         if model_path == "":
             model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
             self.model_config_mgr.set_embeddings_model_path(model_path)        
-        model, tokenizer = load_embedding_model(model_path)
-        input_ids = tokenizer.encode(text_str, return_tensors="mlx")
-        outputs = model(input_ids)
-        # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
-        text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
-        return text_embeds[0].tolist()
-    
-    def get_tags_from_llm(self, file_summary: str, candidate_tags: List[str]) -> List[str]:
+        try:
+            model, tokenizer = load_embedding_model(model_path)
+            input_ids = tokenizer.encode(text_str, return_tensors="mlx")
+            outputs = model(input_ids)
+            # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
+            text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
+            return text_embeds[0].tolist()
+        except Exception as e:
+            logger.error(f"Error on load embedding model or generating embeddings: {e}")
+            return []
+
+    def get_tags_from_llm(self, file_path: str, file_summary: str, candidate_tags: List[str]) -> List[str]:
         """
         Generates tags from the LLM using instructor and litellm.
         
         This is typically called by backend processes (file processing, tagging),
         so model validation failures will trigger IPC events to notify the frontend.
         """
+
+        class TagResponse(BaseModel):
+            tags: List[str] = Field(default_factory=list, description="List of generated tags")
+        
         try:
-            model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
+            model_interface: ModelUseInterface = self.model_config_mgr.get_structured_output_model_config()
         except Exception as e:
-            logger.error(f"Failed to get text model config: {e}")
+            logger.error(f"Failed to get structured output model config: {e}")
             return []
         model = self.model_config_mgr.model_adapter(model_interface)
-        messages = [
-            {"role": "system", "content": "You are a world-class librarian. Your task is to analyze the provided text and generate a list of relevant tags. Adhere strictly to the format required."},
-            {"role": "user", "content": self._build_tagging_prompt(file_summary, candidate_tags)}
-        ]
+        system_prompt = """
+You are an expert AI data curator for a desktop knowledge management app named "KnowledgeFocus". Your mission is to analyze file information and generate a refined, consistent, and structured set of tags that are optimized for future retrieval and organization.
+
+# CONTEXT PROVIDED
+
+You will be given three pieces of information to perform your task:
+1.  **File Path**: The full path to the file. This often contains invaluable context like project names, dates, or categories that may not be present in the content itself.
+2.  **Content Summary**: The first few thousand characters of the file's text content.
+3.  **Candidate Tags**: An AI-generated list of suggested tags based on vector similarity to other files. These are intelligent suggestions that require your expert review.
+
+# CORE INSTRUCTIONS: Your Cognitive Workflow
+
+You must follow this four-step cognitive process to arrive at the final, high-quality tags.
+
+---
+
+### Step 1: Holistic Analysis
+First, synthesize your understanding by thoroughly examining BOTH the `File Path` and the `Content Summary`. Form a comprehensive mental model of what the file is about, its purpose, and its context.
+
+---
+
+### Step 2: Candidate Curation & Refinement (Crucial Step)
+This is where your expertise shines. Scrutinize the `Candidate Tags` list not as a command, but as a draft needing an editor.
+
+* **EVALUATE & SELECT**: For each candidate tag, determine if it accurately and importantly represents a core concept of the file.
+* **MERGE & UNIFY**: If multiple candidates are semantically similar (e.g., synonyms, abbreviations, plural/singular forms like "Web Dev", "Web Development"), merge them into a single, most standard, and representative tag (e.g., `Web_Development`).
+* **REFINE**: If a candidate is relevant but imprecise, refine it to be more specific or accurate based on the file's context. For example, a candidate "API" might be refined to "API_Design" if the content is about specifications.
+* **DISCARD**: You MUST discard any candidate tags that are irrelevant, too generic, or redundant after merging.
+
+---
+
+### Step 3: Conceptual Creation
+After curating the candidates, identify any core conceptual gaps. If a major theme or category of the file is still not represented, create 1 to 3 new, high-level tags to fill these gaps. These new tags should represent a significant aspect that the curated candidates missed.
+
+---
+
+### Step 4: Finalization & Formatting
+Assemble the final list of tags from Step 2 and Step 3. Before outputting, ensure the list adheres to these strict final rules:
+
+* **Quantity**: The final list must contain between 3 and 7 tags.
+* **Language & Terminology**:
+    * The tag language MUST match the dominant language of the `Content Summary`.
+    * If Chinese characters are present, all tags MUST be in Chinese.
+    * Globally recognized technical acronyms (e.g., API, CPU, RAG, AI, LLM) MUST be preserved in their original English uppercase form, even within Chinese tags (e.g., `AI模型`, `RAG应用`).
+* **Formatting**:
+    * All multi-word English tags MUST use a single underscore `_` as a separator (e.g., `Project_Management`).
+    * Hyphens `-` that are part of a word must be preserved (e.g., `Man-in-the-Loop`).
+    * Absolutely NO generic tags like "File", "Document", "Text", "资料", "文档".
+    * Ensure there are no leading/trailing spaces or punctuation around the tags.
+
+# OUTPUT FORMAT
+
+You MUST ONLY respond with a single, valid JSON object that strictly adheres to the `TagResponse` model. Do not include any explanatory text, markdown code blocks, or any other content outside of the JSON object.
+
+**Example Input (User Prompt):**
+* File Path: `/Users/Admin/Work/Project_KF/specs/2025-09-02_后端API设计草案.md`
+* Content Summary: `# KF 后端 API 规范 (草案)... 主要实体是文件(Files), 标签(Tags)... 我们将使用 FastAPI...`
+* Candidate Tags: `["API", "Knowledge-Focus", "Database", "草稿"]`
+
+**Your Correct and ONLY Output:**
+```json
+{
+  "tags": [
+    "API设计",
+    "Knowledge-Focus",
+    "后端",
+    "草稿"
+  ]
+}
+```
+""".strip()
+        user_prompt = self._build_tagging_prompt(file_path, file_summary, candidate_tags)
         agent = Agent(
             model=model,
-            system_prompt=messages[0]['content'],
+            system_prompt=system_prompt,
             output_type=TagResponse,
         )
         try:
             response = agent.run_sync(
-                user_prompt=messages[1]['content'],
-                usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数
+                user_prompt=user_prompt,
+                usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数，主要考虑thinking占用token
             )
             # print(response.output)
         except UsageLimitExceeded as e:
@@ -196,6 +267,10 @@ class ModelsMgr:
         Returns:
             Generated session title (max 20 characters)
         """
+        
+        class SessionTitleResponse(BaseModel):
+            title: str = Field(description="Generated session title (max 20 characters)")
+        
         try:
             model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
     
@@ -253,27 +328,29 @@ Please create a concise and meaningful title for a chat session based on the use
 Generate a title that best represents what this conversation will be about. Avoid overly specific titles for vague or greeting-only messages.
         '''
 
-    def _build_tagging_prompt(self, summary: str, candidates: List[str]) -> str:
-        candidate_str = ", ".join(f'"{t}"' for t in candidates) if candidates else "None"
-        return f'''
-Please analyze the following file summary and context to generate between 0 and 3 relevant tags.
+    def _build_tagging_prompt(self, file_path: str, summary: str, candidates: List[str]) -> str:
+        """
+        Builds a clean and structured user prompt containing the raw data for the tagging task.
+        The Agent's system_prompt contains all the instructions.
+        """
+        # Format candidates for clear presentation
+        candidate_str = ", ".join(f'"{t}"' for t in candidates) if candidates else "None provided."
+        
+        # Use f-string with clear markers for the model to parse
+        return f"""
+    --- Contextual Information ---
+    File Path: {file_path}
 
-**Rules:**
-1.  **Language:** If any Chinese characters in summary, generate Chinese Tags as top priority. Use English only for globally recognized acronyms (e.g., `AI`, `API`, `RAG`).
-2.  **Format:** English tags must not contain spaces. Use a hyphen `_` to connect words (e.g., `project_management`), but keep hyphens `-` in compound words (e.g., `man-in-loop`).
-3.  **Quality:** Tags must be meaningful and concise. Avoid generic or redundant tags.
-4.  **Reuse First:** If any of the "Existing Candidate Tags" are highly relevant, reuse them.
+    --- Candidate Tags (Reuse these if possible) ---
+    [{candidate_str}]
 
-**Existing Candidate Tags:**
-[{candidate_str}]
+    --- File Content Summary to Analyze ---
+    {summary}
 
-**File Content Summary:**
----
-{summary}
----
+    ---
 
-Based on all information, provide the best tags for this file.
-        '''
+    Based on all the provided information and your system instructions, generate the tags for this file.
+    """
 
     def get_chat_completion(self, messages: List[Dict[str, Any]]) -> str:
         """
@@ -858,6 +935,40 @@ Based on all information, provide the best tags for this file.
         except Exception as e:
             logger.error(f"发送RAG观察数据失败: {e}", exc_info=True)
 
+    def cosine_similarity_list_input(self, a: List[float], b: List[float]) -> float:
+        """
+        计算两个List[float]（向量）之间的余弦相似度。
+
+        Args:
+            a: 第一个输入列表（表示向量）。
+            b: 第二个输入列表（表示向量）。
+
+        Returns:
+            一个浮点数，表示输入向量之间的余弦相似度。
+            如果任一向量为零向量，则返回 0.0。
+        """
+        # 将 List[float] 转换为 mlx.core.array
+        vec_a = mx.array(a)
+        vec_b = mx.array(b)
+
+        # 计算点积
+        # mlx.core.sum(vec_a * vec_b) 会将所有元素相乘后求和，等同于向量点积
+        dot_product = mx.sum(vec_a * vec_b)
+
+        # 计算L2范数（magnitude）
+        norm_a = mx.linalg.norm(vec_a)
+        norm_b = mx.linalg.norm(vec_b)
+
+        # 避免除以零：如果任一范数为零，则相似度为零
+        denominator = norm_a * norm_b
+        
+        # 使用mx.where处理除以零的情况。
+        # 如果denominator不为0，则执行 dot_product / denominator，否则返回0.0。
+        # 由于我们期望返回一个浮点数，这里直接取其item()。
+        # 注意：如果处理批量数据，通常不会用.item()。但对于两个单一向量，这是合适的。
+        similarity = mx.where(denominator != 0, dot_product / denominator, mx.array(0.0)).item()
+        
+        return float(similarity)
 
 # for testing
 if __name__ == "__main__":

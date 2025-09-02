@@ -35,8 +35,6 @@
         "cancel": "取消",
         "confirm": "确认",
         "search": "搜索",
-        "search-failure": "搜索失败",
-        "search-results": "文件搜索结果",
         "today": "今天",
         "yesterday": "昨天",
         "previous-7-days": "过去7天",
@@ -62,7 +60,9 @@
         "NetworkError": "网络链接失败，请检查网络后重试",
         "retry": "重试",
         "get-help": "帮助",
-        "search": "搜索"
+        "search": "搜索",
+        "search-results": "文件搜索结果",
+        "search-failure": "搜索失败"
     },
     "RAGLOCAL": {
         "file-observation-window": "知识观察窗",
@@ -247,7 +247,7 @@
             "please-configure-model-provider2": "需要先配置模型提供商才能分配能力",
             "please-configure-model-provider3": "请滚动到下方\"模型提供商管理\"部分开始配置",
             "config-completed": "已配置",
-            "config-not-configured": "未配置",
+            "config-not-completed": "未配置",
             "config-completed-description": "完成度",
             "config-progress": "配置进度",
             "required-capability-config": "所需能力配置",

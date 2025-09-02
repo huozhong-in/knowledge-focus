@@ -18,7 +18,7 @@ class Tags(LanceModel):
 # - 冗余元数据 (parent_chunk_id, document_id): 这是一个重要的性能优化。它允许我们在向量搜索时进行“元数据预过滤”(pre-filtering)。例如，当用户希望“只在文档A和文档B中搜索”时，我们可以告诉LanceDB：“请只在document_id为A或B的向量中进行相似度搜索”。这能极大地缩小搜索范围，提高效率。
 class VectorRecord(LanceModel):
     # 这是与SQLite中 t_child_chunks.vector_id 对应的值，我们用它来连接两个数据库
-    vector_id: str # 保存程序端生成的[nanoid](https://github.com/ai/nanoid)
+    vector_id: str
     vector: Vector(EMBEDDING_DIMENSIONS)  # type: ignore
     # 在向量库中冗余一些元数据，可以极大地加速“预过滤”
     parent_chunk_id: int
@@ -119,7 +119,7 @@ class LanceDBMgr:
         except Exception as e:
             logger.error(f"Failed to add vectors to LanceDB: {e}")
 
-    def search_tags(self, query_vector: List[float], limit: int = 50) -> List[dict]:
+    def search_tags(self, query_vector: List[float], limit: int = 10) -> List[dict]:
         """
         Searches for similar tags based on a query vector.
         

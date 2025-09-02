@@ -450,6 +450,10 @@ class ModelConfigMgr:
         """取得全局文本模型的model使用参数"""
         return self.get_spec_model_config(ModelCapability.TEXT)
 
+    def get_structured_output_model_config(self) -> ModelUseInterface:
+        """取得全局结构化输出模型的model使用参数"""
+        return self.get_spec_model_config(ModelCapability.STRUCTURED_OUTPUT)
+
     def toggle_model_enabled(self, model_id: int, is_enabled: bool) -> bool:
         """切换模型的启用/禁用状态"""
         try:
