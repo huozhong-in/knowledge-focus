@@ -491,6 +491,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
             onChange={(e) => setSearchKeyword(e.target.value)}
             onKeyDown={handleKeyPress}
             className="h-6 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200" 
+            placeholder="⌘ K"
           />
           <Button 
             type="submit" 

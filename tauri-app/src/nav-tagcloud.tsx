@@ -18,10 +18,12 @@ import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 
 import { useTagCloudStore } from "@/lib/tagCloudStore"; // 引入标签云全局状态
 import { useFileListStore } from "@/lib/fileListStore"; // 引入文件列表状态
 import { FileService } from "@/api/file-service"; // 引入文件服务
+import { useSettingsStore, SETTINGS_PAGES } from "./App"; // 引入设置相关常量和状态
 
 export function NavTagCloud() {
   const { t } = useTranslation();
   const appStore = useAppStore(); // 获取全局AppStore实例
+  const { openSettingsPage } = useSettingsStore(); // 获取设置页面打开函数
   
   // 使用全局标签云状态
   const { tags, loading, error, fetchTagCloud } = useTagCloudStore();
@@ -160,8 +162,14 @@ export function NavTagCloud() {
               <Skeleton className="h-6 w-15 rounded-full" />
             </>
           ) : error ? (
-            <div className="text-sm text-destructive text-center">
+            <div className="text-sm text-destructive text-center cursor-pointer hover:underline"
+                 onClick={() => openSettingsPage(SETTINGS_PAGES.AI_MODELS)}
+                 title="点击打开AI模型配置">
               数据获取失败: {error}
+              <br />
+              <span className="text-xs text-muted-foreground">
+                点击配置AI模型
+              </span>
             </div>
           ) : (
             tags.map(tag => (

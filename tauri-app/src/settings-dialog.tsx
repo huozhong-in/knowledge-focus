@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { useSettingsStore } from "./App"
+import { useSettingsStore, SETTINGS_PAGES } from "./App"
 import { 
   // openPath, 
   openUrl,
@@ -92,37 +92,37 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
 
   const settingsPages = [
     {
-      id: "general" as const,
+      id: SETTINGS_PAGES.GENERAL,
       label: t('SETTINGS.general.name'),
       icon: Settings,
       group: t('APPSIDEBAR.settings'),
     },
     {
-      id: "authorization" as const,
+      id: SETTINGS_PAGES.AUTHORIZATION,
       label: t('SETTINGS.authorization.name'),
       icon: Shield,
       group: t('APPSIDEBAR.settings'),
     },
     {
-      id: "file_recognition" as const,
+      id: SETTINGS_PAGES.FILE_RECOGNITION,
       label: t('SETTINGS.file-recognition.name'),
       icon: ArrowUpNarrowWide,
       group: t('APPSIDEBAR.settings'),
     },
     {
-      id: "aimodels" as const,
+      id: SETTINGS_PAGES.AI_MODELS,
       label: t('SETTINGS.aimodels.name'),
       icon: Cpu,
       group: t('APPSIDEBAR.settings'),
     },
     {
-      id: "theme" as const,
+      id: SETTINGS_PAGES.THEME,
       label: t('SETTINGS.theme.name'),
       icon: Palette,
       group: t('APPSIDEBAR.settings'),
     },
     {
-      id: "about" as const,
+      id: SETTINGS_PAGES.ABOUT,
       label: t('SETTINGS.about.name'),
       icon: Info,
       group: "about",

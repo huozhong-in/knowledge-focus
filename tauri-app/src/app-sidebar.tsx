@@ -62,6 +62,8 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onTitleAnimationComplete?: (sessionId: number) => void // 动画完成回调
   onRenameSession?: (sessionId: number, newName: string) => void // 重命名会话回调
   onDeleteSession?: (sessionId: number) => void // 删除会话回调
+  searchOpen?: boolean // 外部控制搜索对话框状态
+  onSearchOpenChange?: (open: boolean) => void // 外部搜索状态变化回调
 }
 
 export function AppSidebar({ 
@@ -72,7 +74,9 @@ export function AppSidebar({
   newlyGeneratedSessionId, 
   onTitleAnimationComplete, 
   onRenameSession, 
-  onDeleteSession, 
+  onDeleteSession,
+  searchOpen: externalSearchOpen,
+  onSearchOpenChange,
   ...props 
 }: AppSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -80,6 +84,21 @@ export function AppSidebar({
   const [searchQuery, setSearchQuery] = useState("")
   const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
+  
+  // 实际的搜索状态，优先使用外部传入的状态
+  const actualSearchOpen = externalSearchOpen !== undefined ? externalSearchOpen : searchOpen
+  
+  // 搜索状态变化处理
+  const handleSearchOpenChange = (open: boolean) => {
+    if (onSearchOpenChange) {
+      onSearchOpenChange(open)
+    } else {
+      setSearchOpen(open)
+    }
+    if (!open) {
+      setSearchQuery("")
+    }
+  }
   
   // Dialog 状态管理
   const [renameDialogOpen, setRenameDialogOpen] = useState(false)
@@ -266,8 +285,8 @@ export function AppSidebar({
               variant="ghost"
               size="icon"
               className="h-8 w-8"
-              title="{t('search')}"
-              onClick={() => setSearchOpen(true)}
+              title={`${t('APPSIDEBAR.search-chat')} (⌘P)`}
+              onClick={() => handleSearchOpenChange(true)}
             >
               <Search className="h-4 w-4" />
             </Button>
@@ -284,15 +303,20 @@ export function AppSidebar({
               <Plus className="h-4 w-4" />
               <span>{t('APPSIDEBAR.new-chat')}</span>
             </Button>
-            <Button
-              variant="ghost"
-              className="flex-1"
-              size="sm"
-              onClick={() => setSearchOpen(true)}
+            <div
+              className="flex-1 flex items-center rounded-md border border-input bg-background px-2 text-xs ring-offset-background hover:bg-accent hover:text-accent-foreground cursor-pointer transition-colors h-8"
+              onClick={() => handleSearchOpenChange(true)}
             >
-              <Search className="h-4 w-4" />
-              <span>{t('APPSIDEBAR.search-chat')}</span>
-            </Button>
+              <Search className="h-4 w-4 shrink-0" />
+              <div className="grid flex-1 text-left leading-tight">
+                <span className="truncate text-[9px]">{t('APPSIDEBAR.search-chat')}</span>
+                <span className="truncate text-[9px] text-muted-foreground justify-self-end">Press{" "}
+                  <kbd className="bg-muted text-muted-foreground pointer-events-none inline-flex h-4 items-center gap-1 rounded border px-1 font-mono text-[9px] font-medium opacity-100 select-none">
+                    <span className="text-[9px]">⌘ P</span>
+                  </kbd>
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </SidebarHeader>
@@ -373,13 +397,8 @@ export function AppSidebar({
 
       {/* Search Dialog */}
       <Dialog 
-        open={searchOpen} 
-        onOpenChange={(open: boolean) => {
-          setSearchOpen(open)
-          if (!open) {
-            setSearchQuery("")
-          }
-        }}
+        open={actualSearchOpen} 
+        onOpenChange={handleSearchOpenChange}
       >
         <DialogContent className="search-command-dialog max-w-2xl">
           <DialogHeader className="sr-only">
@@ -401,7 +420,7 @@ export function AppSidebar({
                       key={chat_session.id}
                       onSelect={() => {
                         handleSessionClick(chat_session.session)
-                        setSearchOpen(false)
+                        handleSearchOpenChange(false)
                         setSearchQuery("")
                       }}
                     >

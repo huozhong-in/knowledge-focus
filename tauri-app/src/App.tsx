@@ -17,18 +17,30 @@ import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
 
+// 设置页面名称枚举常量
+export const SETTINGS_PAGES = {
+  GENERAL: "general",
+  AUTHORIZATION: "authorization", 
+  FILE_RECOGNITION: "file_recognition",
+  AI_MODELS: "aimodels",
+  THEME: "theme",
+  ABOUT: "about"
+} as const
+
+export type SettingsPageId = typeof SETTINGS_PAGES[keyof typeof SETTINGS_PAGES]
+
 // 创建一个store来管理设置对话框状态
 interface SettingsState {
   isSettingsOpen: boolean
-  initialPage: string
+  initialPage: SettingsPageId
   setSettingsOpen: (open: boolean) => void
-  setInitialPage: (page: string) => void
-  openSettingsPage: (page: string) => void
+  setInitialPage: (page: SettingsPageId) => void
+  openSettingsPage: (page: SettingsPageId) => void
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
   isSettingsOpen: false,
-  initialPage: "general",
+  initialPage: SETTINGS_PAGES.GENERAL,
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   setInitialPage: (page) => set({ initialPage: page }),
   openSettingsPage: (page) => set({ isSettingsOpen: true, initialPage: page }),
@@ -100,6 +112,9 @@ export default function Page() {
   
   // Sidebar刷新触发器
   const [sidebarRefreshTrigger, setSidebarRefreshTrigger] = useState(0)
+  
+  // 搜索对话框状态
+  const [searchOpen, setSearchOpen] = useState(false)
 
   // 获取向量化store的actions
   const vectorizationStore = useVectorizationStore()
@@ -322,7 +337,12 @@ export default function Page() {
       // 检测 Cmd+, (macOS) 或 Ctrl+, (Windows/Linux)
       if ((event.metaKey || event.ctrlKey) && event.key === ',') {
         event.preventDefault()
-        openSettingsPage("general")
+        openSettingsPage(SETTINGS_PAGES.GENERAL)
+      }
+      // 检测 Cmd+P (macOS) 或 Ctrl+P (Windows/Linux)
+      else if ((event.metaKey || event.ctrlKey) && event.key === 'p') {
+        event.preventDefault()
+        setSearchOpen(true)
       }
     }
 
@@ -340,7 +360,7 @@ export default function Page() {
     listen("menu-settings", (event) => {
       const page = event.payload as string
       console.log("收到菜单设置事件，要打开的页面:", page)
-      openSettingsPage(page === "about" ? "about" : "general")
+      openSettingsPage(page === SETTINGS_PAGES.ABOUT ? SETTINGS_PAGES.ABOUT : SETTINGS_PAGES.GENERAL)
     })
       .then((fn) => {
         unlistenFn = fn
@@ -376,7 +396,7 @@ export default function Page() {
             duration: 8000,
             action: {
               label: "打开设置",
-              onClick: () => openSettingsPage("aimodels")
+              onClick: () => openSettingsPage(SETTINGS_PAGES.AI_MODELS)
             }
           }
         )
@@ -394,7 +414,7 @@ export default function Page() {
             duration: 8000,
             action: {
               label: "配置模型",
-              onClick: () => openSettingsPage("aimodels")
+              onClick: () => openSettingsPage(SETTINGS_PAGES.AI_MODELS)
             }
           }
         )
@@ -584,6 +604,8 @@ export default function Page() {
           onTitleAnimationComplete={handleTitleAnimationComplete}
           onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
+          searchOpen={searchOpen}
+          onSearchOpenChange={setSearchOpen}
         />
           {isApiReady ? (
             <AppWorkspace 
