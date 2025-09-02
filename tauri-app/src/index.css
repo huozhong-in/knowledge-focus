@@ -20,3 +20,27 @@
     margin-top: 1.75rem;
     height: calc(100vh - 1.75rem);
 }
+
+/* CommandDialog 样式自定义 - 使用自定义类名 */
+.search-command-dialog {
+    max-width: 640px !important; /* 最大宽度限制 */
+    width: 90vw !important; /* 响应式宽度，最大90%视口宽度 */
+    padding: 0 !important; /* 移除默认 padding */
+}
+
+/* CommandList 最大高度限制，避免内容过多时显示异常 */
+[data-slot="command-list"] {
+    max-height: 400px !important;
+    overflow-y: auto !important;
+}
+
+/* 确保 CommandDialog 在小屏幕上的适应性 */
+@media (max-width: 640px) {
+    .search-command-dialog {
+        width: 95vw !important;
+    }
+    
+    [data-slot="command-list"] {
+        max-height: 300px !important;
+    }
+}

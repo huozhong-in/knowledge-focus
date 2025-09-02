@@ -31,7 +31,7 @@ import {
   SidebarGroupLabel,
 } from "@/components/ui/sidebar"
 import {
-  CommandDialog,
+  Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -77,6 +77,7 @@ export function AppSidebar({
 }: AppSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
   const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
   
@@ -199,6 +200,16 @@ export function AppSidebar({
       isActive: item.session.id === currentSessionId
     }))
   }))
+
+  // 过滤搜索结果
+  const filteredSessionsByTime = searchQuery 
+    ? sessionsByTime.map(group => ({
+        ...group,
+        chat_sessions: group.chat_sessions.filter(session =>
+          session.title.toLowerCase().includes(searchQuery.toLowerCase())
+        )
+      })).filter(group => group.chat_sessions.length > 0)
+    : sessionsByTime
   return (
     <Sidebar variant="sidebar" collapsible="icon" {...props} className="h-full">
       <SidebarHeader>
@@ -361,27 +372,51 @@ export function AppSidebar({
       </SidebarFooter>
 
       {/* Search Dialog */}
-      <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput placeholder={t('APPSIDEBAR.search')} />
-        <CommandList>
-          <CommandEmpty>{t('APPSIDEBAR.chat-not-found')}</CommandEmpty>
-          <CommandGroup heading={t('APPSIDEBAR.chat-list')}>
-            {sessionsByTime.flatMap((timeGroup) =>
-              timeGroup.chat_sessions.map((chat_session) => (
-                <CommandItem
-                  key={chat_session.id}
-                  onSelect={() => setSearchOpen(false)}
-                >
-                  <chat_session.icon className="mr-2 h-4 w-4" />
-                  <div className="flex flex-col">
-                    <span className="font-medium">{chat_session.title}</span>
-                  </div>
-                </CommandItem>
-              ))
-            )}
-          </CommandGroup>
-        </CommandList>
-      </CommandDialog>
+      <Dialog 
+        open={searchOpen} 
+        onOpenChange={(open: boolean) => {
+          setSearchOpen(open)
+          if (!open) {
+            setSearchQuery("")
+          }
+        }}
+      >
+        <DialogContent className="search-command-dialog max-w-2xl">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{t('APPSIDEBAR.search-chat')}</DialogTitle>
+            <DialogDescription>{t('APPSIDEBAR.search')}</DialogDescription>
+          </DialogHeader>
+          <Command className="[&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+            <CommandInput 
+              placeholder={t('APPSIDEBAR.search')} 
+              value={searchQuery}
+              onValueChange={setSearchQuery}
+            />
+            <CommandList>
+              <CommandEmpty>{t('APPSIDEBAR.chat-not-found')}</CommandEmpty>
+              <CommandGroup heading={t('APPSIDEBAR.chat-list')}>
+                {filteredSessionsByTime.flatMap((timeGroup) =>
+                  timeGroup.chat_sessions.map((chat_session) => (
+                    <CommandItem
+                      key={chat_session.id}
+                      onSelect={() => {
+                        handleSessionClick(chat_session.session)
+                        setSearchOpen(false)
+                        setSearchQuery("")
+                      }}
+                    >
+                      <chat_session.icon className="mr-2 h-4 w-4" />
+                      <div className="flex flex-col">
+                        <span className="font-medium">{chat_session.title}</span>
+                      </div>
+                    </CommandItem>
+                  ))
+                )}
+              </CommandGroup>
+            </CommandList>
+          </Command>
+        </DialogContent>
+      </Dialog>
       
       {/* 重命名会话Dialog */}
       <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
