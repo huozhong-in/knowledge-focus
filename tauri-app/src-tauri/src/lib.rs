@@ -348,7 +348,7 @@ impl AppState {
                     Self::cleanup_screening_data_for_path(folder_path, monitor).await?;
                 } else {
                     // 转为白名单时执行增量扫描
-                    monitor.scan_single_directory(folder_path).await?;
+                    monitor.scan_single_directory(folder_path, None).await?;
                 }
                 println!("[CONFIG_QUEUE] 文件夹状态切换变更处理完成: {}", folder_path);
                 Ok(())
@@ -356,7 +356,7 @@ impl AppState {
             
             ConfigChangeRequest::AddWhitelist { folder_path, .. } => {
                 // 新增白名单文件夹时执行增量扫描
-                monitor.scan_single_directory(folder_path).await?;
+                monitor.scan_single_directory(folder_path, None).await?;
                 println!("[CONFIG_QUEUE] 白名单文件夹添加变更处理完成: {}", folder_path);
                 Ok(())
             }

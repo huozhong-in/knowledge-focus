@@ -456,7 +456,7 @@ pub async fn start_backend_scanning(
         }
         
         // 执行初始扫描（完整的监控设置和扫描）
-        match file_monitor_instance.start_monitoring_setup_and_initial_scan().await {
+        match file_monitor_instance.start_monitoring_setup_and_initial_scan(app_handle_clone.clone()).await {
             Ok(_) => {
                 println!("[扫描] 初始扫描和监控设置完成");
                 

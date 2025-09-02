@@ -19,6 +19,7 @@ use tokio::fs;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio::time::sleep;
 use walkdir::WalkDir;
+use tauri::Emitter;
 
 // --- Blacklist Trie for Hierarchical Blacklisting ---
 #[derive(Debug, Default, Clone)]
@@ -1225,7 +1226,7 @@ impl FileMonitor {
     }
 
     // 处理文件变化事件 - 公开给防抖动监控器使用
-    pub async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind) -> Option<FileMetadata> {
+    pub async fn process_file_event(&self, path: PathBuf, event_kind: notify::EventKind, app_handle: &tauri::AppHandle) -> Option<FileMetadata> {
         // println!("[PROCESS_EVENT] Processing event {:?} for path {:?}", event_kind, path);
 
         // 对于删除事件进行特殊处理 - 调用API删除相应的记录
@@ -1248,19 +1249,17 @@ impl FileMonitor {
                     if status.is_success() {
                         println!("[PROCESS_EVENT] 成功删除文件 {:?} 的粗筛记录", path);
                         // 发射 screening-result-updated 事件
-                        if let Some(ref app_handle) = app_handle_clone {
-                            let payload = serde_json::json!({
-                                "message": "文件筛选成功",
-                                "file_path": metadata_clone.file_path,
-                                "timestamp": chrono::Utc::now().to_rfc3339()
-                            });
-                            
-                            if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
-                                eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
-                            } else {
-                                println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - {}", metadata_clone.file_path);
-                            }
+                        let payload = serde_json::json!({
+                            "message": "文件筛选成功",
+                            "timestamp": chrono::Utc::now().to_rfc3339()
+                        });
+                        
+                        if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
+                            eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
+                        } else {
+                            println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - 删除文件");
                         }
+                        
                     } else {
                         let err_text = response.text().await.unwrap_or_else(|_| "Failed to read error response text".to_string());
                         eprintln!("[PROCESS_EVENT] 删除粗筛记录失败，状态码: {}. 错误信息: {}", status, &err_text[..std::cmp::min(err_text.len(), 200)]);
@@ -1278,11 +1277,43 @@ impl FileMonitor {
         let path_str = path.to_string_lossy().to_string();
         let belongs_to_monitored_dir = {
             let dirs = self.monitored_dirs.lock().unwrap();
-            dirs.iter().any(|dir| path_str.starts_with(&dir.path))
+            // println!("[DEBUG] 检查路径 {:?} 是否属于监控目录", path_str);
+            // println!("[DEBUG] 当前监控目录列表:");
+            // for (i, dir) in dirs.iter().enumerate() {
+            //     // 展开波浪号路径
+            //     let expanded_path = if dir.path.starts_with("~/") {
+            //         if let Some(home) = std::env::var("HOME").ok() {
+            //             dir.path.replace("~", &home)
+            //         } else {
+            //             dir.path.clone()
+            //         }
+            //     } else {
+            //         dir.path.clone()
+            //     };
+            //     println!("[DEBUG]   {}. 路径: {:?} (展开后: {:?}), 黑名单: {}", i+1, dir.path, expanded_path, dir.is_blacklist);
+            // }
+            let belongs = dirs.iter().any(|dir| {
+                if dir.is_blacklist {
+                    return false;
+                }
+                // 展开波浪号路径
+                let expanded_path = if dir.path.starts_with("~/") {
+                    if let Some(home) = std::env::var("HOME").ok() {
+                        dir.path.replace("~", &home)
+                    } else {
+                        dir.path.clone()
+                    }
+                } else {
+                    dir.path.clone()
+                };
+                path_str.starts_with(&expanded_path)
+            });
+            // println!("[DEBUG] 匹配结果: {}", belongs);
+            belongs
         };
         
         if !belongs_to_monitored_dir {
-            println!("[PROCESS_EVENT] Path {:?} 不属于任何当前监控的目录，忽略事件", path);
+            // println!("[PROCESS_EVENT] Path {:?} 不属于任何当前监控的目录，忽略事件", path);
             return None;
         }
 
@@ -1354,7 +1385,7 @@ impl FileMonitor {
             if !is_bundle {  // 如果是bundle内部文件，但自身不是bundle
                 println!("[PROCESS_EVENT] Path {:?} is inside bundle {:?}. Redirecting event to the bundle.", path, bundle_path);
                 // 使用 Box::pin 处理递归调用，避免无限大的 Future
-                return Box::pin(self.process_file_event(bundle_path, event_kind)).await;
+                return Box::pin(self.process_file_event(bundle_path, event_kind, app_handle)).await;
             }
         }
         
@@ -1651,7 +1682,7 @@ impl FileMonitor {
     }
 
     // 执行初始扫描
-    async fn perform_initial_scan(&self, tx_metadata: &Sender<FileMetadata>) -> Result<(), String> {
+    async fn perform_initial_scan(&self, tx_metadata: &Sender<FileMetadata>, app_handle: &tauri::AppHandle) -> Result<(), String> {
         // Guard to prevent multiple initial scans for the same FileMonitor instance
         // This flag indicates that the initial scan process has been started.
         {
@@ -1801,6 +1832,7 @@ impl FileMonitor {
                 if let Some(metadata) = self.process_file_event(
                     entry_path,
                     notify::EventKind::Create(notify::event::CreateKind::Any),
+                    app_handle,
                 ).await {
                     let _ = tx_metadata.send(metadata).await;
                     processed_files += 1;
@@ -1824,7 +1856,7 @@ impl FileMonitor {
     }
 
     // 启动文件夹监控
-    pub async fn start_monitoring_setup_and_initial_scan(&mut self) -> Result<(), String> {
+    pub async fn start_monitoring_setup_and_initial_scan(&mut self, app_handle: tauri::AppHandle) -> Result<(), String> {
         // 确保API就绪 - 重试机制
         println!("[START_MONITORING] 正在等待API服务就绪...");
 
@@ -1867,8 +1899,9 @@ impl FileMonitor {
         // 准备初始扫描
         let self_clone_for_scan = self.clone();
         let metadata_tx_for_scan = metadata_tx; // Pass ownership of this clone
+        let app_handle_for_scan = app_handle.clone();
         tokio::spawn(async move {
-            if let Err(e) = self_clone_for_scan.perform_initial_scan(&metadata_tx_for_scan).await {
+            if let Err(e) = self_clone_for_scan.perform_initial_scan(&metadata_tx_for_scan, &app_handle_for_scan).await {
                 eprintln!("[INITIAL_SCAN] Error: {}", e);
             }
             
@@ -1880,7 +1913,7 @@ impl FileMonitor {
     }
 
     // 扫描单个目录
-    pub async fn scan_single_directory(&self, path: &str) -> Result<(), String> {
+    pub async fn scan_single_directory(&self, path: &str, app_handle: Option<&tauri::AppHandle>) -> Result<(), String> {
         println!("[SINGLE_SCAN] 开始扫描单个目录: {}", path);
         
         // 检查配置缓存是否存在
@@ -1962,12 +1995,18 @@ impl FileMonitor {
                     }
                     
                     // 处理单个文件 - 复用现有的 process_file_event 方法
-                    if let Some(metadata) = self.process_file_event(entry.path().to_path_buf(), notify::EventKind::Create(notify::event::CreateKind::Any)).await {
-                        if metadata_tx.send(metadata).await.is_err() {
-                            eprintln!("[SINGLE_SCAN] 无法发送元数据到批处理器，通道可能已关闭");
+                    if let Some(app_handle) = app_handle {
+                        if let Some(metadata) = self.process_file_event(entry.path().to_path_buf(), notify::EventKind::Create(notify::event::CreateKind::Any), app_handle).await {
+                            if metadata_tx.send(metadata).await.is_err() {
+                                eprintln!("[SINGLE_SCAN] 无法发送元数据到批处理器，通道可能已关闭");
+                            }
+                            processed_files += 1;
+                        } else {
+                            skipped_files += 1;
                         }
-                        processed_files += 1;
                     } else {
+                        // 如果没有 app_handle，跳过此文件或使用备用处理逻辑
+                        eprintln!("[SINGLE_SCAN] 跳过文件，因为没有提供 app_handle: {:?}", entry.path());
                         skipped_files += 1;
                     }
                 }

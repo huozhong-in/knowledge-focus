@@ -369,82 +369,84 @@ impl DebouncedFileMonitor {
                 } else {
                     path.clone()
                 };
-                if let Some(metadata) = fm_processor.process_file_event(processed_path.clone(), simplified_kind).await {
-                    println!("[防抖处理器] 处理文件元数据: {:?}", metadata.file_path);
-                    
-                    // 获取元数据发送通道并发送元数据
-                    if let Some(sender) = fm_processor.get_metadata_sender() {
-                        if let Err(e) = sender.send(metadata.clone()).await {
-                            eprintln!("[防抖处理器] 发送元数据失败: {}", e);
+                if let Some(ref app_handle) = app_handle_for_processor {
+                    if let Some(metadata) = fm_processor.process_file_event(processed_path.clone(), simplified_kind, app_handle).await {
+                        println!("[防抖处理器] 处理文件元数据: {:?}", metadata.file_path);
+                        
+                        // 获取元数据发送通道并发送元数据
+                        if let Some(sender) = fm_processor.get_metadata_sender() {
+                            if let Err(e) = sender.send(metadata.clone()).await {
+                                eprintln!("[防抖处理器] 发送元数据失败: {}", e);
+                            } else {
+                                println!("[防抖处理器] ✅ 元数据已成功发送: {}", metadata.file_path);
+                            }
                         } else {
-                            println!("[防抖处理器] ✅ 元数据已成功发送: {}", metadata.file_path);
+                            // 如果元数据发送通道未初始化，尝试手动发送元数据到API
+                            // 这是一个临时的解决方案，防止文件被漏掉
+                            eprintln!("[防抖处理器] 元数据发送通道未初始化，尝试直接调用API发送元数据: {}", metadata.file_path);
+                            // 使用独立的HTTP客户端发送元数据到API
+                            let api_host = fm_processor.get_api_host();
+                            let api_port = fm_processor.get_api_port();
+                            let api_url = format!("http://{}:{}/file-screening/batch", api_host, api_port);
+                            
+                            // 创建临时客户端
+                            let temp_client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(10))
+                                .build();
+                                
+                            if let Ok(client) = temp_client {
+                                // 在新的异步任务中发送请求，避免阻塞主处理流程
+                                let metadata_clone = metadata.clone();
+                                let app_handle_clone = app_handle_for_processor.clone();
+                                tokio::spawn(async move {
+                                    // 构建与批处理API兼容的请求格式
+                                    let mut request_body = serde_json::Map::new();
+                                    let data_list = vec![metadata_clone.clone()];
+                                    request_body.insert(
+                                        "data_list".to_string(),
+                                        serde_json::to_value(&data_list).unwrap_or_default()
+                                    );
+                                    request_body.insert("auto_create_tasks".to_string(), serde_json::Value::Bool(true));
+                                    
+                                    match client.post(&api_url)
+                                        .json(&request_body)
+                                        .send()
+                                        .await {
+                                        Ok(response) if response.status().is_success() => {
+                                            println!("[防抖处理器] ✅ 成功通过直接API调用发送元数据: {}", metadata_clone.file_path);
+                                            // 发射 screening-result-updated 事件
+                                            if let Some(ref app_handle) = app_handle_clone {
+                                                let payload = serde_json::json!({
+                                                    "message": "文件筛选成功",
+                                                    "file_path": metadata_clone.file_path,
+                                                    "timestamp": chrono::Utc::now().to_rfc3339()
+                                                });
+                                                
+                                                if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
+                                                    eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
+                                                } else {
+                                                    println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - {}", metadata_clone.file_path);
+                                                }
+                                            }
+                                            
+                                        },
+                                        Ok(response) => {
+                                            let status = response.status();
+                                            let body = response.text().await.unwrap_or_default();
+                                            eprintln!("[防抖处理器] API返回错误: {} - {} - 响应: {}", status, metadata_clone.file_path, &body[..std::cmp::min(body.len(), 200)]);
+                                        },
+                                        Err(e) => {
+                                            eprintln!("[防抖处理器] 直接API调用失败: {} - {}", e, metadata_clone.file_path);
+                                        }
+                                    }
+                                });
+                            } else {
+                                eprintln!("[防抖处理器] 无法创建临时HTTP客户端");
+                            }
                         }
                     } else {
-                        // 如果元数据发送通道未初始化，尝试手动发送元数据到API
-                        // 这是一个临时的解决方案，防止文件被漏掉
-                        eprintln!("[防抖处理器] 元数据发送通道未初始化，尝试直接调用API发送元数据: {}", metadata.file_path);
-                        // 使用独立的HTTP客户端发送元数据到API
-                        let api_host = fm_processor.get_api_host();
-                        let api_port = fm_processor.get_api_port();
-                        let api_url = format!("http://{}:{}/file-screening/batch", api_host, api_port);
-                        
-                        // 创建临时客户端
-                        let temp_client = reqwest::Client::builder()
-                            .timeout(std::time::Duration::from_secs(10))
-                            .build();
-                            
-                        if let Ok(client) = temp_client {
-                            // 在新的异步任务中发送请求，避免阻塞主处理流程
-                            let metadata_clone = metadata.clone();
-                            let app_handle_clone = app_handle_for_processor.clone();
-                            tokio::spawn(async move {
-                                // 构建与批处理API兼容的请求格式
-                                let mut request_body = serde_json::Map::new();
-                                let data_list = vec![metadata_clone.clone()];
-                                request_body.insert(
-                                    "data_list".to_string(),
-                                    serde_json::to_value(&data_list).unwrap_or_default()
-                                );
-                                request_body.insert("auto_create_tasks".to_string(), serde_json::Value::Bool(true));
-                                
-                                match client.post(&api_url)
-                                    .json(&request_body)
-                                    .send()
-                                    .await {
-                                    Ok(response) if response.status().is_success() => {
-                                        println!("[防抖处理器] ✅ 成功通过直接API调用发送元数据: {}", metadata_clone.file_path);
-                                        // 发射 screening-result-updated 事件
-                                        if let Some(ref app_handle) = app_handle_clone {
-                                            let payload = serde_json::json!({
-                                                "message": "文件筛选成功",
-                                                "file_path": metadata_clone.file_path,
-                                                "timestamp": chrono::Utc::now().to_rfc3339()
-                                            });
-                                            
-                                            if let Err(e) = app_handle.emit("screening-result-updated", &payload) {
-                                                eprintln!("[防抖监控] 发射screening-result-updated事件失败: {}", e);
-                                            } else {
-                                                println!("[防抖监控] 发射screening-result-updated事件: 文件筛选成功 - {}", metadata_clone.file_path);
-                                            }
-                                        }
-                                        
-                                    },
-                                    Ok(response) => {
-                                        let status = response.status();
-                                        let body = response.text().await.unwrap_or_default();
-                                        eprintln!("[防抖处理器] API返回错误: {} - {} - 响应: {}", status, metadata_clone.file_path, &body[..std::cmp::min(body.len(), 200)]);
-                                    },
-                                    Err(e) => {
-                                        eprintln!("[防抖处理器] 直接API调用失败: {} - {}", e, metadata_clone.file_path);
-                                    }
-                                }
-                            });
-                        } else {
-                            eprintln!("[防抖处理器] 无法创建临时HTTP客户端");
-                        }
+                        println!("[防抖处理器] 文件 {:?} 未生成元数据", path);
                     }
-                } else {
-                    println!("[防抖处理器] 文件 {:?} 未生成元数据", path);
                 }
             }
             
