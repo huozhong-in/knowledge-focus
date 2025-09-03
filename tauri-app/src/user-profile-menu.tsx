@@ -11,6 +11,7 @@ import {
 import { SettingsDialog } from "./settings-dialog";
 import { useSettingsStore } from "./App";
 import { useTranslation } from "react-i18next";
+import { UpdateBadge } from "@/components/UpdateBadge";
 
 export function UserProfileMenu() {
   const { state } = useSidebar();
@@ -24,12 +25,14 @@ export function UserProfileMenu() {
         <SettingsDialog>
           <SidebarMenuButton
             size="lg"
-            className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground relative"
             onClick={() => setSettingsOpen(true)}
           >
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               <Settings className="h-4 w-4" />
             </div>
+            {/* 更新提示红点 */}
+            <UpdateBadge />
             {!isCollapsed && (
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{t('APPSIDEBAR.settings')}</span>

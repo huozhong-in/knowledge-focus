@@ -40,6 +40,8 @@ import SettingsFileRecognition from "./settings-file-recognition"
 import SettingsAIModels from "./settings-ai-models"
 import SettingsTheme from "./settings-theme-content"
 import SettingsAbout from "./settings-about"
+import { UpdateBadge } from "@/components/UpdateBadge"
+import { useAppStore } from "./main"
 import { useTranslation } from "react-i18next"
 
 type SettingsPage =
@@ -57,6 +59,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ children }: SettingsDialogProps) {
   const { isSettingsOpen, setSettingsOpen, initialPage, setInitialPage } = useSettingsStore()
   const [currentPage, setCurrentPage] = useState<SettingsPage>("general")
+  const { updateAvailable } = useAppStore()
   const { t } = useTranslation()
 
   // 当对话框打开时，设置初始页面
@@ -290,9 +293,14 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
                             <SidebarMenuButton
                               onClick={() => handlePageChange(page.id)}
                               isActive={currentPage === page.id}
+                              className={page.id === SETTINGS_PAGES.ABOUT ? "relative" : ""}
                             >
                               <page.icon className="h-4 w-4" />
                               <span>{page.label}</span>
+                              {/* 在about项上显示更新红点 */}
+                              {page.id === SETTINGS_PAGES.ABOUT && updateAvailable && (
+                                <UpdateBadge />
+                              )}
                             </SidebarMenuButton>
                           </SidebarMenuItem>
                         ))}
