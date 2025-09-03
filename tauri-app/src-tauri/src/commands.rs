@@ -383,7 +383,7 @@ pub async fn search_files_by_tags(
 pub async fn get_tag_cloud_data(
     limit: Option<u32>,
     app_handle: tauri::AppHandle
-) -> Result<Vec<serde_json::Value>, String> {
+) -> Result<serde_json::Value, String> {
     println!("[CMD] get_tag_cloud_data 被调用，limit: {:?}", limit);
     
     // 获取API信息
@@ -411,10 +411,10 @@ pub async fn get_tag_cloud_data(
     match client.get(&url).send().await {
         Ok(response) => {
             if response.status().is_success() {
-                match response.json::<Vec<serde_json::Value>>().await {
-                    Ok(tag_cloud) => {
-                        println!("[CMD] get_tag_cloud_data 成功获取标签云数据，共 {} 个标签", tag_cloud.len());
-                        Ok(tag_cloud)
+                match response.json::<serde_json::Value>().await {
+                    Ok(response_data) => {
+                        // println!("[CMD] get_tag_cloud_data 成功获取标签云响应: {:?}", response_data);
+                        Ok(response_data)
                     }
                     Err(e) => Err(format!("解析标签云数据失败: {}", e))
                 }

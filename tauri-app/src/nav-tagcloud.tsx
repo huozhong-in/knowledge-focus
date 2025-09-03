@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { 
   Tag,
+  BadgeCheckIcon,
 } from "lucide-react"
 import {
 } from "@/components/ui/dropdown-menu"
@@ -26,7 +27,7 @@ export function NavTagCloud() {
   const { openSettingsPage } = useSettingsStore(); // 获取设置页面打开函数
   
   // 使用全局标签云状态
-  const { tags, loading, error, fetchTagCloud } = useTagCloudStore();
+  const { tags, loading, error, errorType, fetchTagCloud } = useTagCloudStore();
   
   // 使用文件列表状态
   const { setFiles, setLoading, setError } = useFileListStore();
@@ -146,7 +147,8 @@ export function NavTagCloud() {
       
       <ScrollArea className="h-[calc(22vh)] p-0 m-0">
         <div className="flex flex-wrap gap-1 p-1 justify-start">
-          {loading || tags.length === 0 ? (
+          {loading ? (
+            // 状态1: 加载中 - 显示skeleton
             <>
               <Skeleton className="h-6 w-16 rounded-full" />
               <Skeleton className="h-6 w-24 rounded-full" />
@@ -161,17 +163,35 @@ export function NavTagCloud() {
               <Skeleton className="h-6 w-26 rounded-full" />
               <Skeleton className="h-6 w-15 rounded-full" />
             </>
-          ) : error ? (
+          ) : error && errorType === 'model_not_configured' ? (
+            // 状态4: 加载错误 - 模型未配置
             <div className="text-sm text-destructive text-center cursor-pointer hover:underline"
                  onClick={() => openSettingsPage(SETTINGS_PAGES.AI_MODELS)}
-                 title="点击打开AI模型配置">
-              数据获取失败: {error}
+                 title="Open AI Models Settings">
+              {error}
               <br />
               <span className="text-xs text-muted-foreground">
-                点击配置AI模型
+                {t('APPSIDEBAR.goto-config')}: 
+                <Badge 
+                  variant="default"
+                  className={`text-xs rounded-full px-2 py-0.5 font-semibold bg-primary text-primary-foreground`}
+                >
+                  <BadgeCheckIcon />
+                  {t(`SETTINGS.aimodels.ModelCapability.STRUCTURED_OUTPUT`)}
+                </Badge>
+              </span>
+            </div>
+          ) : tags.length === 0 ? (
+            // 状态3: 无标签 - 数据为空但模型已配置
+            <div className="text-sm text-muted-foreground text-center w-full">
+              暂无标签数据
+              <br />
+              <span className="text-xs">
+                请先进行文件扫描和标签生成
               </span>
             </div>
           ) : (
+            // 状态2: 有标签 - 显示标签云
             tags.map(tag => (
               <Badge
                 key={tag.id}

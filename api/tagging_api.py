@@ -6,6 +6,7 @@ import pathlib
 from tagging_mgr import TaggingMgr
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
+from file_tagging_mgr import FileTaggingMgr
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,13 @@ def get_router(external_get_session: callable) -> APIRouter:
         lancedb_mgr = LanceDBMgr(base_dir=pathlib.Path(db_path).parent)
         models_mgr = ModelsMgr(session=session)
         return TaggingMgr(session=session, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
+
+    def get_file_tagging_manager(session: Session = Depends(external_get_session)) -> FileTaggingMgr:
+        """FastAPI dependency to get a FileTaggingMgr instance."""
+        db_path = session.get_bind().url.database
+        lancedb_mgr = LanceDBMgr(base_dir=pathlib.Path(db_path).parent)
+        models_mgr = ModelsMgr(session=session)
+        return FileTaggingMgr(session=session, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
 
     @router.post("/tagging/search-files", response_model=List[Dict[str, Any]])
     async def search_files_by_tags(
@@ -49,25 +57,53 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"Error searching files by tags: {e}", exc_info=True)
             return []
 
-    @router.get("/tagging/tag-cloud", response_model=List[Dict[str, Any]])
+    @router.get("/tagging/tag-cloud", response_model=Dict[str, Any])
     async def get_tag_cloud(
         limit: int = 50,
         min_weight: int = 1,
-        tagging_mgr: TaggingMgr = Depends(get_tagging_manager)
+        tagging_mgr: TaggingMgr = Depends(get_tagging_manager),
+        file_tagging_mgr: FileTaggingMgr = Depends(get_file_tagging_manager)
     ):
         """
         获取标签云数据，包含标签ID、名称、权重和类型。
         权重表示使用该标签的文件数量。
         
-        - **limit**: 最多返回的标签数量 (默认: 100)
+        返回格式:
+        {
+            "success": bool,
+            "data": List[Dict], // 标签数据
+            "error_type": str | null, // 错误类型: "model_not_configured" 或 null
+            "message": str | null // 错误或成功消息
+        }
+        
+        - **limit**: 最多返回的标签数量 (默认: 50)
         - **min_weight**: 最小权重阈值，只返回权重大于此值的标签 (默认: 1)
         """
         try:
+            # 检查文件标签模型是否可用
+            if not file_tagging_mgr.check_file_tagging_model_availability():
+                return {
+                    "success": False,
+                    "data": [],
+                    "error_type": "model_not_configured",
+                    "message": "model for file tagging is not configured"
+                }
+
             logger.info(f"获取标签云数据，limit: {limit}, min_weight: {min_weight}")
             tag_cloud_data = tagging_mgr.get_tag_cloud_data(limit=limit, min_weight=min_weight)
-            return tag_cloud_data
+            return {
+                "success": True,
+                "data": tag_cloud_data,
+                "error_type": None,
+                "message": f"{len(tag_cloud_data)} tags found"
+            }
         except Exception as e:
             logger.error(f"获取标签云数据失败: {e}", exc_info=True)
-            return []
+            return {
+                "success": False,
+                "data": [],
+                "error_type": "server_error",
+                "message": f"服务器错误: {str(e)}"
+            }
 
     return router

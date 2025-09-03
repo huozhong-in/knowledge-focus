@@ -23,6 +23,7 @@
     },
     "APPSIDEBAR": {
         "file-tags": "File Tags",
+        "goto-config": "Go to configure the model that supports",
         "new-chat": "New Chat",
         "search-chat": "Search Chat",
         "rename-chat": "Rename Chat",

@@ -9,17 +9,26 @@ interface TagItem {
   type: string;
 }
 
+// API返回的标签云数据格式
+interface TagCloudResponse {
+  success: boolean;
+  data: TagItem[];
+  error_type: string | null;
+  message: string | null;
+}
+
 interface TagCloudState {
   tags: TagItem[];
   loading: boolean;
   error: string | null;
+  errorType: string | null; // 新增：错误类型
   lastFetchTime: number;
   isRequesting: boolean;
   
   // 方法
   fetchTagCloud: (force?: boolean) => Promise<void>;
   clearCache: () => void;
-  setError: (error: string | null) => void;
+  setError: (error: string | null, errorType?: string | null) => void;
 }
 
 const CACHE_DURATION = 30000; // 30秒缓存时间
@@ -28,6 +37,7 @@ export const useTagCloudStore = create<TagCloudState>((set, get) => ({
   tags: [],
   loading: false,
   error: null,
+  errorType: null,
   lastFetchTime: 0,
   isRequesting: false,
 
@@ -48,22 +58,45 @@ export const useTagCloudStore = create<TagCloudState>((set, get) => ({
     }
     
     try {
-      set({ isRequesting: true, loading: true, error: null });
+      set({ isRequesting: true, loading: true, error: null, errorType: null });
       
       console.log('📡 开始获取标签云数据 (全局存储)');
-      const tagData = await invoke<TagItem[]>('get_tag_cloud_data', { limit: 100 });
-      console.log('✅ 成功获取标签云数据 (全局存储):', tagData.length);
+      const response = await invoke<TagCloudResponse>('get_tag_cloud_data', { limit: 100 });
+      console.log('✅ 接收到标签云响应 (全局存储):', response);
       
-      set({ 
-        tags: tagData, 
-        lastFetchTime: now,
-        loading: false,
-        isRequesting: false 
-      });
+      if (response.success) {
+        set({ 
+          tags: response.data, 
+          lastFetchTime: now,
+          loading: false,
+          isRequesting: false,
+          error: null,
+          errorType: null
+        });
+        console.log('✅ 成功设置标签云数据:', response.data.length, '个标签');
+      } else {
+        // 处理不同类型的错误
+        let errorMessage = response.message || '获取标签云数据失败';
+        
+        if (response.error_type === 'model_not_configured') {
+          errorMessage = '未配置文件标签生成模型';
+        }
+        
+        set({ 
+          error: errorMessage,
+          errorType: response.error_type,
+          tags: [],
+          loading: false, 
+          isRequesting: false 
+        });
+        console.log('❌ 标签云数据获取失败:', errorMessage, '错误类型:', response.error_type);
+      }
     } catch (error) {
       console.error('❌ Error fetching tag cloud data (全局存储):', error);
       set({ 
-        error: '获取标签数据失败', 
+        error: '网络请求失败',
+        errorType: 'network_error',
+        tags: [],
         loading: false, 
         isRequesting: false 
       });
@@ -74,7 +107,7 @@ export const useTagCloudStore = create<TagCloudState>((set, get) => ({
     set({ lastFetchTime: 0 });
   },
 
-  setError: (error: string | null) => {
-    set({ error });
+  setError: (error: string | null, errorType: string | null = null) => {
+    set({ error, errorType });
   }
 }));

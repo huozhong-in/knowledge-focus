@@ -23,6 +23,7 @@
     },
     "APPSIDEBAR": {
         "file-tags": "文件标签",
+        "goto-config": "点击配置模型支持",
         "new-chat": "新会话",
         "search-chat": "搜索会话",
         "rename-chat": "重命名会话",

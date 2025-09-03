@@ -242,7 +242,7 @@ export function AiSdkChat({
               <div className="flex items-center justify-center h-full">
                 <div className="text-center text-muted-foreground">
                   <h3 className="text-lg font-medium mb-2">
-                    Knowledge Focus AI 助手，帮你释放本地文件知识价值
+                    Knowledge Focus AI 助手，帮你释放本机文件知识价值
                   </h3>
                   <p>
                     开始和你的文档聊天吧
