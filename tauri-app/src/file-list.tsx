@@ -1,4 +1,4 @@
-import { Pin, PinOff, FileText, File, FolderOpen } from "lucide-react";
+import { Pin, PinOff, FileText, File, FolderOpen, FileImageIcon, MessageCircle } from "lucide-react";
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,15 +24,19 @@ interface FileItemProps {
 function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
   const { getFileStatus } = useVectorizationStore();
   const vectorizationState = getFileStatus(file.path);
+  const textExtensions = ['txt', 'md', 'markdown', 'doc', 'docx', 'pdf', 'ppt', 'pptx'];
+  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
   const getFileIcon = (extension?: string) => {
-    if (!extension) return <File className="h-3 w-3" />;
+    if (!extension) return <File className="size-4" />;
     
-    const textExtensions = ['txt', 'md', 'doc', 'docx', 'pdf'];
     if (textExtensions.includes(extension.toLowerCase())) {
-      return <FileText className="h-3 w-3" />;
+      return <FileText className="size-4" />;
     }
-    
-    return <File className="h-3 w-3" />;
+    if (imageExtensions.includes(extension.toLowerCase())) {
+      return <FileImageIcon className="size-4" />;
+    }
+
+    return <File className="size-4" />;
   };
 
   // 生成随机颜色的标签样式
@@ -117,31 +121,44 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
       
       {/* 浮动按钮区域 - 绝对定位，不占用布局空间 */}
       <div className="absolute top-2 right-2 flex gap-1">
+        {/* 如果是图片文件，则多一个MessageCircle浮动按钮 */}
+        {imageExtensions.includes(file.path.split('.').pop() || '') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {}}
+            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-muted border border-border/50"
+          >
+            <MessageCircle className="h-2.5 w-2.5" />
+          </Button>
+        )}
         {/* Reveal in Dir 按钮 - hover时显示 */}
         <Button
           variant="ghost"
           size="sm"
           onClick={handleRevealInDir}
-          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-background border border-border/50"
+          className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-muted border border-border/50"
           title={t('FILELIST.show-in-folder')}
         >
           <FolderOpen className="h-2.5 w-2.5" />
         </Button>
         
         {/* Pin 按钮 - pinned时始终显示，未pinned时hover显示 */}
-        <Button
-          variant={file.pinned ? "default" : "ghost"}
-          size="sm"
-          onClick={() => onTogglePin(file.id, file.path)}
-          className={`h-5 w-5 p-0 transition-opacity ${
-            file.pinned 
-              ? 'opacity-100' 
-              : 'opacity-0 group-hover:opacity-100 bg-background/80 hover:bg-background border border-border/50'
-          }`}
-          title={file.pinned ? t('FILELIST.unpin-file') : t('FILELIST.pin-file')}
-        >
-          {file.pinned ? <Pin className="h-2.5 w-2.5" /> : <PinOff className="h-2.5 w-2.5" />}
-        </Button>
+        {textExtensions.includes(file.path.split('.').pop() || '') && (
+          <Button
+            variant={file.pinned ? "default" : "ghost"}
+            size="sm"
+            onClick={() => onTogglePin(file.id, file.path)}
+            className={`h-5 w-5 p-0 transition-opacity ${
+              file.pinned 
+                ? 'opacity-100' 
+                : 'opacity-0 group-hover:opacity-100 bg-background/80 hover:bg-muted border border-border/50'
+            }`}
+            title={file.pinned ? t('FILELIST.unpin-file') : t('FILELIST.pin-file')}
+          >
+            {file.pinned ? <Pin className="h-2.5 w-2.5" /> : <PinOff className="h-2.5 w-2.5" />}
+          </Button>
+        )}
       </div>
     </div>
   );

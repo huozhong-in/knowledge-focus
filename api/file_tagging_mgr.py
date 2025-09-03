@@ -37,7 +37,7 @@ def configure_parsing_warnings():
 # 可被markitdown解析的文件扩展名
 MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 # 其他可解析的纯文本类型文件扩展名
-OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt', 'json']
+OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt']  # json/xml/csv也能，但意义不大
 # 本业务场景所需模型能力的组合
 SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.STRUCTURED_OUTPUT]
 
