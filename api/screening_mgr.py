@@ -450,7 +450,7 @@ class ScreeningManager:
             if matching_count > 0:
                 # 记录前5个匹配的路径，帮助调试
                 sample_paths = [row[1] for row in matching_rows[:5]]
-                print(f"找到 {matching_count} 条匹配路径 '{normalized_path}' 的粗筛结果记录，样例: {sample_paths}")
+                logger.info(f"找到 {matching_count} 条匹配路径 '{normalized_path}' 的粗筛结果记录，样例: {sample_paths}")
                 
                 # 获取所有匹配的ID
                 ids_to_delete = [row[0] for row in matching_rows]
@@ -467,10 +467,10 @@ class ScreeningManager:
                     batch_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
                     total_deleted += batch_deleted
                     
-                print(f"成功删除了 {total_deleted} 条匹配路径 '{normalized_path}' 的粗筛结果记录")
+                logger.info(f"成功删除了 {total_deleted} 条匹配路径 '{normalized_path}' 的粗筛结果记录")
                 return total_deleted
             else:
-                print(f"未找到匹配路径 '{normalized_path}' 的粗筛结果记录")
+                logger.info(f"未找到匹配路径 '{normalized_path}' 的粗筛结果记录")
                 return 0
             
         except Exception as e:
@@ -858,7 +858,15 @@ class ScreeningManager:
             return 0
         
 if __name__ == "__main__":
-    # 仅用于测试，实际使用时请通过依赖注入获取Session实例
+    # 正确配置logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler()  # 输出到控制台
+        ]
+    )
+    
     from sqlmodel import create_engine, Session
     from config import TEST_DB_PATH
     engine = create_engine(f"sqlite:///{TEST_DB_PATH}")
@@ -868,13 +876,18 @@ if __name__ == "__main__":
         # # 测试get_files_by_category_id()
         # category_id = 1  # 假设我们要查询的分类ID
         # files = mgr.get_files_by_category_id(category_id)
-        # print(f"分类ID {category_id} 下的文件: {files}")
+        # logger.info(f"分类ID {category_id} 下的文件: {files}")
 
         # # test search_files_by_path_substring()
         # substring = "大模型"  # 假设我们要查询的子字符串
         # files = mgr.search_files_by_path_substring(substring)
-        # print(f"包含子字符串 '{substring}' 的文件: {files}")
+        # logger.info(f"包含子字符串 '{substring}' 的文件: {files}")
 
         # 测试取得所有记录数
         total_count = mgr.get_all_results_count()
-        print(f"粗筛结果总数: {total_count}")
+        logger.info(f"粗筛结果总数: {total_count}")
+
+        # test delete_screening_results_by_path_prefix()
+        folder_path = "/Users/dio/Downloads/CleanShot 2025-09-03 at 11.42.17@2x.png"
+        deleted_count = mgr.delete_screening_results_by_path_prefix(folder_path)
+        logger.info(f"删除文件夹 {folder_path} 下的粗筛结果: {deleted_count} 条")

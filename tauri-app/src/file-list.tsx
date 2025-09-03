@@ -498,11 +498,21 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
           {t('FILELIST.tap-tag-or-search-file-name')}
         </div>
       </div>
-      <div className="h-[40px] flex flex-row w-full items-center justify-between p-2 gap-2 border-b border-border/50">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">{files.length}</span>
-          <span className="text-xs text-muted-foreground"> / </span>
-          <span className="text-xs text-muted-foreground">{screeningResultCount}</span>
+      <div className="h-[45px] flex flex-row w-full items-center justify-between p-2 gap-2 border-b border-border/50 bg-gradient-to-r from-background to-muted/20">
+        <div className="flex items-center gap-2">
+          {/* 文件数量展示 - 简洁可爱的徽章样式 */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
+            <span className="text-xs font-medium text-primary">
+              {files.length}
+            </span>
+            <span className="text-xs text-muted-foreground/60">shown</span>
+            <span className="text-xs text-muted-foreground/60">·</span>
+            <span className="text-xs text-muted-foreground font-medium">
+              {screeningResultCount.toLocaleString()}
+            </span>
+            <span className="text-xs text-muted-foreground/80">total</span>
+          </div>
         </div>
         <div className="flex flex-row items-center gap-2 justify-end">
           <Input 
@@ -511,8 +521,8 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
             onKeyDown={handleKeyPress}
-            className="h-6 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200" 
-            placeholder="⌘ K"
+            className="h-7 text-xs max-w-36 border border-muted-foreground/30 bg-background/90 focus:border-primary/50 focus:bg-background transition-all duration-200 placeholder:text-muted-foreground/50" 
+            placeholder="⌘ K to search"
           />
           <Button 
             type="submit" 
@@ -520,14 +530,13 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
             size="sm"
             onClick={handlePathSearch}
             disabled={isLoading || !searchKeyword.trim()}
-            className="h-6 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50"
+            className="h-7 px-3 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/30 hover:border-primary/50 text-primary hover:text-primary transition-all duration-200 disabled:opacity-50 font-medium"
           >
             {t('FILELIST.search')}
           </Button>
-
         </div>
       </div>
-      <ScrollArea className="flex-1 p-3 h-[calc(100%-90px)] @container">
+      <ScrollArea className="flex-1 p-3 h-[calc(100%-95px)] @container">
         {files.length === 0 ? (
           <div className="text-center py-6">
             <FileText className="h-8 w-8 mx-auto text-muted-foreground/50 mb-2" />

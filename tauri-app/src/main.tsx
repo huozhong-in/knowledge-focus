@@ -27,6 +27,16 @@ interface AppGlobalState {
   // 语言设置
   language: string;
   
+  // 更新相关状态
+  updateAvailable: boolean;
+  updateVersion: string | null;
+  updateNotes: string | null;
+  downloadProgress: number; // 0-100
+  isDownloading: boolean;
+  isReadyToInstall: boolean;
+  lastUpdateCheck: number | null; // timestamp
+  updateError: string | null;
+  
   // Actions
   setFirstLaunch: (pending: boolean) => void;
   setIsInitializing: (initializing: boolean) => void;
@@ -35,6 +45,15 @@ interface AppGlobalState {
   
   // 语言相关操作
   setLanguage: (lang: string) => Promise<void>;
+  
+  // 更新相关操作
+  setUpdateAvailable: (available: boolean, version?: string, notes?: string) => void;
+  setDownloadProgress: (progress: number) => void;
+  setIsDownloading: (downloading: boolean) => void;
+  setIsReadyToInstall: (ready: boolean) => void;
+  setLastUpdateCheck: (timestamp: number) => Promise<void>;
+  setUpdateError: (error: string | null) => void;
+  resetUpdateState: () => void;
 }
 
 // 设置系统托盘图标
@@ -69,6 +88,16 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   initializationError: null,
   isApiReady: false, // Initialize API as not ready
   language: 'en', // 默认使用英文
+
+  // 更新相关状态初始值
+  updateAvailable: false,
+  updateVersion: null,
+  updateNotes: null,
+  downloadProgress: 0,
+  isDownloading: false,
+  isReadyToInstall: false,
+  lastUpdateCheck: null,
+  updateError: null,
 
   setShowWelcomeDialog: async (show: boolean) => {
     try {
@@ -114,7 +143,52 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
     } catch (error) {
       console.error('Failed to save language preference:', error);
     }
-  }
+  },
+
+  // 更新相关操作实现
+  setUpdateAvailable: (available: boolean, version?: string, notes?: string) => 
+    set({ 
+      updateAvailable: available, 
+      updateVersion: version || null, 
+      updateNotes: notes || null,
+      updateError: null // 清除之前的错误
+    }),
+  
+  setDownloadProgress: (progress: number) => set({ downloadProgress: progress }),
+  
+  setIsDownloading: (downloading: boolean) => set({ isDownloading: downloading }),
+  
+  setIsReadyToInstall: (ready: boolean) => set({ isReadyToInstall: ready }),
+  
+  setLastUpdateCheck: async (timestamp: number) => {
+    try {
+      set({ lastUpdateCheck: timestamp });
+      
+      // 保存到settings.json
+      const appDataPath = await appDataDir();
+      const storePath = await join(appDataPath, 'settings.json');
+      const store = await load(storePath, { autoSave: false });
+      
+      await store.set('lastUpdateCheck', timestamp);
+      await store.save();
+      console.log(`Last update check saved: ${new Date(timestamp).toISOString()}`);
+      
+    } catch (error) {
+      console.error('Failed to save last update check:', error);
+    }
+  },
+  
+  setUpdateError: (error: string | null) => set({ updateError: error }),
+  
+  resetUpdateState: () => set({
+    updateAvailable: false,
+    updateVersion: null,
+    updateNotes: null,
+    downloadProgress: 0,
+    isDownloading: false,
+    isReadyToInstall: false,
+    updateError: null
+  })
 }));
 
 // 初始化检查是否首次启动
@@ -133,8 +207,12 @@ const initializeApp = async () => {
     const savedLanguage = await store.get('language') as string | null;
     const language = savedLanguage || 'en'; // 如果没有保存语言设置，默认使用英文
 
+    // 获取上次更新检查时间
+    const savedLastUpdateCheck = await store.get('lastUpdateCheck') as number | null;
+
     console.log(`initializeApp: isFirstLaunchValue from store: ${isFirstLaunchValue}, isActuallyFirstLaunch: ${isActuallyFirstLaunch}`);
     console.log(`initializeApp: Loaded language preference: ${language}`);
+    console.log(`initializeApp: Last update check: ${savedLastUpdateCheck ? new Date(savedLastUpdateCheck).toISOString() : 'never'}`);
     
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
@@ -142,7 +220,8 @@ const initializeApp = async () => {
       isFirstLaunch: isActuallyFirstLaunch,
       isInitializing: false, // 不再使用单独的初始化状态，由 IntroDialog 处理
       isApiReady: false,     // API is not ready at this point
-      language: language     // 设置语言
+      language: language,    // 设置语言
+      lastUpdateCheck: savedLastUpdateCheck // 设置上次更新检查时间
     });
 
     // 设置 i18n 和 Zustand store 的集成

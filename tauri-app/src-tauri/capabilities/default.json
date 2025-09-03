@@ -80,6 +80,18 @@
       "allow": [
         {
           "url": "http://127.0.0.1:60315"
+        },
+        {
+          "url": "https://*.huozhong.in/*"
+        },
+        {
+          "url": "https://github.com/*"
+        },
+        {
+          "url": "https://*.githubusercontent.com/*"
+        },
+        {
+          "url": "https://api.github.com/*"
         }
       ]
     },
@@ -247,7 +259,7 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
-          "url": "https://*.huozhong.in"
+          "url": "https://*.huozhong.in/*"
         },
         {
           "url": "https://github.com/huozhong-in/*"

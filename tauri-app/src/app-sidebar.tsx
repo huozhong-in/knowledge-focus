@@ -49,6 +49,8 @@ import { UserProfileMenu } from "./user-profile-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { NavTagCloud } from "./nav-tagcloud"
 import { ChatSession, getSessions, groupSessionsByTime } from "./lib/chat-session-api"
+import { UpdateBadge } from "@/components/UpdateBadge"
+import { useUpdater } from "@/hooks/useUpdater"
 import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
 import { useTranslation } from "react-i18next"
@@ -84,6 +86,9 @@ export function AppSidebar({
   const [searchQuery, setSearchQuery] = useState("")
   const { state, toggleSidebar } = useSidebar()
   const isCollapsed = state === "collapsed"
+  
+  // 初始化更新检查器
+  useUpdater()
   
   // 实际的搜索状态，优先使用外部传入的状态
   const actualSearchOpen = externalSearchOpen !== undefined ? externalSearchOpen : searchOpen
@@ -241,6 +246,8 @@ export function AppSidebar({
                   isCollapsed ? "cursor-pointer hover:opacity-60" : ""
                 }`}
               />
+              {/* 更新提示红点 */}
+              <UpdateBadge />
               {isCollapsed && (
                 <div
                   className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 cursor-pointer bg-primary bg-opacity-0 hover:bg-opacity-90 rounded-md transition-all duration-200 backdrop-blur-sm"

@@ -55,6 +55,9 @@
       },
       "files": {
         "MacOS/venv": "../../api/.venv",
+        "Resources/api/tools/": "../../api/tools/",
+        "Resources/api/mlx_embeddings/": "../../api/mlx_embeddings/",
+        "Resources/api/backend_tool_caller.py": "../../api/backend_tool_caller.py",
         "Resources/api/bridge_events.py": "../../api/bridge_events.py",
         "Resources/api/chatsession_api.py": "../../api/chatsession_api.py",
         "Resources/api/chatsession_mgr.py": "../../api/chatsession_mgr.py",
@@ -64,6 +67,7 @@
         "Resources/api/file_tagging_mgr.py": "../../api/file_tagging_mgr.py",
         "Resources/api/lancedb_mgr.py": "../../api/lancedb_mgr.py",
         "Resources/api/main.py": "../../api/main.py",
+        "Resources/api/memory_mgr.py": "../../api/memory_mgr.py",
         "Resources/api/model_capability_confirm.py": "../../api/model_capability_confirm.py",
         "Resources/api/model_config_mgr.py": "../../api/model_config_mgr.py",
         "Resources/api/models_api.py": "../../api/models_api.py",
@@ -71,8 +75,6 @@
         "Resources/api/multivector_mgr.py": "../../api/multivector_mgr.py",
         "Resources/api/myfolders_api.py": "../../api/myfolders_api.py",
         "Resources/api/myfolders_mgr.py": "../../api/myfolders_mgr.py",
-        "Resources/api/refine_mgr.py": "../../api/refine_mgr.py",
-        "Resources/api/rules_mgr.py": "../../api/rules_mgr.py",
         "Resources/api/screening_api.py": "../../api/screening_api.py",
         "Resources/api/screening_mgr.py": "../../api/screening_mgr.py",
         "Resources/api/search_api.py": "../../api/search_api.py",
@@ -92,10 +94,9 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcyOEQ5NjBBMUIzMTUzMUUKUldRZVV6RWJDcGFOY2ovYlNaOVlZV0NlcTFKamNrSDYwOGVzYzZyQ0RKMzhVL1ErcXl6ZDg2cWoK",
       "endpoints": [
-        "https://releases.myapp.com/{{target}}/{{arch}}/{{current_version}}",
-        "https://github.com/user/repo/releases/latest/download/latest.json"
+        "https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json"
       ],
-      "dangerousInsecureTransportProtocols": true
+      "dangerousInsecureTransportProtocols": false
     }
   }
 }
