@@ -20,7 +20,7 @@ export function UserProfileMenu() {
   const { t } = useTranslation();
 
   return (
-    <SidebarMenu className="px-1">
+    <SidebarMenu>
       <SidebarMenuItem>
         <SettingsDialog>
           <SidebarMenuButton

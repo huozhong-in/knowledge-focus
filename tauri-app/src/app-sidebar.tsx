@@ -53,6 +53,7 @@ import { useUpdater } from "@/hooks/useUpdater"
 import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
 import { useTranslation } from "react-i18next"
+import { CollapsedQuickAccess } from "./collapsed-quick-access"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
@@ -237,16 +238,17 @@ export function AppSidebar({
     <Sidebar variant="sidebar" collapsible="icon" {...props} className="h-full">
       <SidebarHeader>
         <div className="flex items-center gap-2 mt-5">
-          <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
+          <div className="flex aspect-square size-8 items-center justify-center rounded-lg relative">
             <img
               src="/kf-logo.png"
               className={`w-8 h-8 object-contain transition-opacity duration-200 ${
                 isCollapsed ? "cursor-pointer hover:opacity-60" : ""
               }`}
+              onClick={isCollapsed ? toggleSidebar : undefined}
             />
             {isCollapsed && (
               <div
-                className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 cursor-pointer bg-primary bg-opacity-0 hover:bg-opacity-90 rounded-md transition-all duration-200 backdrop-blur-sm"
+                className="absolute top-0 left-0 w-8 h-8 flex items-center justify-center opacity-0 hover:opacity-100 cursor-pointer bg-primary bg-opacity-0 hover:bg-opacity-90 rounded-md transition-all duration-200 backdrop-blur-sm"
                 onClick={toggleSidebar}
               >
                 <PanelLeftOpenIcon className="h-6 w-6 text-primary-foreground drop-shadow-lg" />
@@ -279,7 +281,7 @@ export function AppSidebar({
               size="icon"
               className="h-8 w-8"
               onClick={handleCreateSession}
-              title="{t('APPSIDEBAR.new-chat')}"
+              title={t('APPSIDEBAR.new-chat')}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -324,7 +326,12 @@ export function AppSidebar({
       </SidebarHeader>
 
       <SidebarContent className="h-full">
-        {!isCollapsed && (
+        {isCollapsed ? (
+          <CollapsedQuickAccess 
+            sessions={sessions}
+            onSessionClick={handleSessionClick}
+          />
+        ) : (
           <ScrollArea className="h-full">
             <div className="space-y-1">
               {sessionsByTime.map((timeGroup) => (
