@@ -535,10 +535,11 @@ class TaggingMgr:
         """
         try:
             # 执行SQL查询，获取标签及其关联的文件数量
+            # 使用精确匹配避免部分匹配问题，在tags_display_ids两端加逗号后匹配完整的标签ID
             query = text("""
                 SELECT t.id, t.name, t.type, COUNT(DISTINCT fsr.id) as weight
                 FROM t_tags t
-                LEFT JOIN t_file_screening_results fsr ON fsr.tags_display_ids LIKE '%' || t.id || '%'
+                LEFT JOIN t_file_screening_results fsr ON (',' || fsr.tags_display_ids || ',') LIKE '%,' || t.id || ',%'
                 GROUP BY t.id, t.name, t.type
                 HAVING COUNT(DISTINCT fsr.id) >= :min_weight
                 ORDER BY weight DESC
@@ -612,13 +613,13 @@ if __name__ == '__main__':
         models_mgr=models_mgr
     )
 
-    # 重建FTS索引
+    # # 重建FTS索引
     # print("重建FTS索引...")
     # tagging_mgr.rebuild_fts_index()
     # print("FTS索引重建完成")
 
     # 测试根据标签搜索文件
-    test_tag_names = ["large_language_models"]
+    test_tag_names = ["AI驱动浏览器自动化"]
     print(f"搜索包含标签 {test_tag_names} 的文件...")
     search_results = tagging_mgr.search_files_by_tag_names(test_tag_names, operator="AND", offset=0, limit=10)
     print(f"搜索结果数量: {len(search_results)}")
@@ -639,7 +640,7 @@ if __name__ == '__main__':
     #     related_tags = tagging_mgr.recommend_related_tags(first_tags, limit=5)
     #     print(f"推荐标签: {[tag.name for tag in related_tags]}")
 
-    # 测试标签云
+    # # 测试标签云
     # print("\n获取标签云数据...")
     # tag_cloud = tagging_mgr.get_tag_cloud_data()
     # print(f"标签云数据: {tag_cloud}")

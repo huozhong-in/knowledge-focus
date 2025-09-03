@@ -7,7 +7,7 @@ import { TaggedFile } from "@/types/file-types";
 import { FileService } from "@/api/file-service";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { fetch } from '@tauri-apps/plugin-http';
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { VectorizationProgress } from "@/components/VectorizationProgress";
 import { useVectorizationStore } from "@/stores/useVectorizationStore";
 import { toast } from "sonner";
@@ -159,8 +159,9 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
   const { openSettingsPage } = useSettingsStore();
   const files = getFilteredFiles();
   
-  // 搜索框状态
+  // 搜索框状态和引用
   const [searchKeyword, setSearchKeyword] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { t } = useTranslation();
 
@@ -189,6 +190,25 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
       console.error('处理筛选结果更新事件时出错:', error);
     }
   });
+
+  // 添加键盘快捷键监听 - Cmd+K 聚焦搜索框
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // 检测 Cmd+K (macOS) 或 Ctrl+K (Windows/Linux)
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        // 聚焦到搜索输入框
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select(); // 同时选中现有文本
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   // Pin文件API调用
   const pinFileAPI = async (filePath: string): Promise<{ success: boolean; taskId?: number; error?: string }> => {
@@ -486,6 +506,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
         </div>
         <div className="flex flex-row items-center gap-2 justify-end">
           <Input 
+            ref={searchInputRef}
             type="text" 
             value={searchKeyword}
             onChange={(e) => setSearchKeyword(e.target.value)}
