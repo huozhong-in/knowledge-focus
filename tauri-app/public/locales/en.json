@@ -276,6 +276,20 @@
             "delete-provider-confirmation-details": "Are you sure you want to delete the provider \"{providerName}\"? This action cannot be undone.",
             "description2": "First, configure providers and models at the bottom, then assign them to specific scenes above.",
             "description3": "Manage your AI model providers here, and test the capabilities of the models they offer.",
+            "business-scene": {
+                "SCENE_FILE_TAGGING": {
+                    "name": "File Auto-Tagging",
+                    "description": "Automatically generate relevant tags based on file content to help with quick classification and retrieval."
+                },
+                "SCENE_TEXT_CHAT": {
+                    "name": "Text Chat",
+                    "description": "Engage in simple conversations based on user input text, but without access to local file knowledge."
+                },
+                "SCENE_MULTIVECTOR": {
+                    "name": "Multi-Modal Retrieval",
+                    "description": "Supports intelligent retrieval and conversational association for multiple content modalities such as text and images."
+                }
+            },
             "ModelCapability": {
                 "TEXT": "Text",
                 "REASONING": "Reasoning",

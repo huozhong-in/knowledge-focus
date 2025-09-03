@@ -1069,7 +1069,7 @@ export default function SettingsFileRecognition() {
 
       {/* 分类添加/编辑对话框 */}
       <Dialog open={categoryDialog.open} onOpenChange={(open) => setCategoryDialog(prev => ({ ...prev, open }))}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
               {categoryDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-file-category') : t('SETTINGS.file-recognition.edit-file-category')}
@@ -1120,7 +1120,7 @@ export default function SettingsFileRecognition() {
 
       {/* 扩展名映射添加/编辑对话框 */}
       <Dialog open={extensionDialog.open} onOpenChange={(open) => setExtensionDialog(prev => ({ ...prev, open }))}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
               {extensionDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-extension-mapping') : t('SETTINGS.file-recognition.edit-extension-mapping')}
@@ -1334,7 +1334,7 @@ export default function SettingsFileRecognition() {
 
       {/* Bundle扩展名添加/编辑对话框 */}
       <Dialog open={bundleDialog.open} onOpenChange={(open) => setBundleDialog(prev => ({ ...prev, open }))}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
               {bundleDialog.mode === 'add' ? t('SETTINGS.file-recognition.add-bundle-extension') : t('SETTINGS.file-recognition.edit-bundle-extension')}

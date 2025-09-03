@@ -276,6 +276,20 @@
             "delete-provider-confirmation-details": "确定要删除提供商 \"{providerName}\" 吗？这个操作无法撤销。",
             "description2": "先到最下方配置服务商和模型，然后在上方分配给具体场景。",
             "description3": "在这里管理您的AI模型提供商，以及测试他们提供的模型各有什么能力。",
+            "business-scene": {
+                "SCENE_FILE_TAGGING": {
+                    "name": "文件自动打标签",
+                    "description": "基于文件内容自动生成相关标签，帮助快速分类和检索文件"
+                },
+                "SCENE_TEXT_CHAT": {
+                    "name": "文本聊天",
+                    "description": "基于用户输入的文本进行简单对话，但无法使用本机文件知识库"
+                },
+                "SCENE_MULTIVECTOR": {
+                    "name": "多模态检索",
+                    "description": "支持本机文本、图像等多种模态文件内容的智能检索和关联对话"
+                }
+            },
             "ModelCapability": {
                 "TEXT": "文本处理",
                 "REASONING": "推理",

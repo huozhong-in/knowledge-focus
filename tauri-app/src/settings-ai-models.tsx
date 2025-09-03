@@ -100,22 +100,22 @@ interface BusinessScene {
 const BUSINESS_SCENES: BusinessScene[] = [
   {
     key: "SCENE_FILE_TAGGING",
-    name: "文件自动打标签",
-    description: "基于文件内容自动生成相关标签，帮助快速检索文件",
+    name: "",
+    description: "",
     required_capabilities: ["structured_output"],
     icon: <Settings className="w-4 h-4" />
   },
   {
     key: "SCENE_TEXT_CHAT",
-    name: "文字对话",
-    description: "基于用户输入的文本进行对话和交互",
+    name: "",
+    description: "",
     required_capabilities: ["text"],
     icon: <Settings className="w-4 h-4" />
   },
   {
     key: "SCENE_MULTIVECTOR", 
-    name: "文件内容多模态检索、图像识别和问答",
-    description: "支持文本、图像等多种模态内容的智能检索和对话关联",
+    name: "",
+    description: "",
     required_capabilities: ["vision"],
     icon: <Zap className="w-4 h-4" />
   }
@@ -430,7 +430,8 @@ function GlobalCapabilitySection({
         ) : (
           BUSINESS_SCENES.map(scene => {
             const completeness = getSceneCompleteness(scene)
-            
+            const sceneName = t(`SETTINGS.aimodels.business-scene.${scene.key}.name`)
+            const sceneDescription = t(`SETTINGS.aimodels.business-scene.${scene.key}.description`)
             return (
               <div key={scene.key} className="border rounded-lg p-4">
                 <div className="flex items-start justify-between mb-3">
@@ -438,7 +439,7 @@ function GlobalCapabilitySection({
                     {scene.icon}
                     <div className="flex-1">
                       <h3 className="font-medium flex items-center gap-2">
-                        {scene.name}
+                        {sceneName}
                         {completeness.percentage === 100 ? (
                           <Badge variant="default" className="text-xs">
                             <CheckCircle className="w-3 h-3 mr-1" />
@@ -457,7 +458,7 @@ function GlobalCapabilitySection({
                         )}
                       </h3>
                       <p className="text-sm text-muted-foreground mt-1">
-                        {scene.description}
+                        {sceneDescription}
                       </p>
                       
                       {/* 进度条 */}
@@ -690,12 +691,12 @@ function AddProviderEmptyState({
     <div className="text-center p-2 text-muted-foreground ml-auto">
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogTrigger asChild>
-          <Button>
+          <Button disabled={true}>
             <Plus className="w-4 h-4 mr-2" />
             {t('SETTINGS.aimodels.add-provider')}
           </Button>
         </DialogTrigger>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('SETTINGS.aimodels.add-provider')}</DialogTitle>
             <DialogDescription>
@@ -874,7 +875,7 @@ function ProviderDetailSection({
                   
                   <div className="flex items-center gap-2">
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       onClick={() => onConfirmModelCapability(model.id)}
                       disabled={isLoading}
@@ -885,6 +886,7 @@ function ProviderDetailSection({
                       ) : (
                         <SearchCheck className="w-3 h-3" />
                       )}
+                      {t('SETTINGS.aimodels.test-model-capability')}
                     </Button>
                     <Switch
                       id={model.id}
@@ -910,7 +912,7 @@ function ProviderDetailSection({
       
       {/* 删除确认对话框 */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('SETTINGS.aimodels.delete-provider-confirmation')}</DialogTitle>
             <DialogDescription>
