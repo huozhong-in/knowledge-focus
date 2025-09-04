@@ -229,6 +229,7 @@ def get_router(external_get_session: callable) -> APIRouter:
     @router.post("/chat/agent-stream", tags=["models"])
     async def agent_chat_stream(
         request: AgentChatRequest,
+        config_mgr: ModelConfigMgr = Depends(get_model_config_manager),
         models_mgr: ModelsMgr = Depends(get_models_manager),
         chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
     ):
@@ -363,6 +364,14 @@ def get_router(external_get_session: callable) -> APIRouter:
                     logger.info(f"Saved assistant message {assistant_message_id} with content length: {len(accumulated_text_content.strip())}")
                 else:
                     logger.warning(f"No content to save for assistant message {assistant_message_id}")
+
+        # * 检查必须有文本模型或视觉模型配置好了
+        if not (config_mgr.get_spec_model_config(ModelCapability.TEXT) or config_mgr.get_spec_model_config(ModelCapability.VISUAL)):
+            logger.error("No text or visual model configured")
+            # 发送标准错误事件
+            error_event = f'data: {json.dumps({"type": "error", "errorText": "No text or visual model configured"})}\n'
+            yield error_event
+            return
 
         return StreamingResponse(
             stream_generator(), 

@@ -152,7 +152,7 @@ export function RagLocal() {
       </div>
       
       <ScrollArea 
-        className="flex-1 h-[calc(100%-72px)]" 
+        className="flex-1 h-[calc(100%-100px)]" 
         ref={scrollAreaRef}
       >
         <div 

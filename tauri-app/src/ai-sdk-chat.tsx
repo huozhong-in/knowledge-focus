@@ -267,8 +267,8 @@ export function AiSdkChat({
   return (
     <div className="flex flex-col flex-auto h-full overflow-hidden">
       <Conversation>
-        <ConversationContent className="pr-1">
-          <ScrollArea className="flex-1 pr-4 rounded-md h-[calc(100vh-210px)]">
+        <ConversationContent className="p-1">
+          <ScrollArea className="flex-1 pr-4 rounded-md h-[calc(100vh-176px)]">
             {messages.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <div className="text-center text-muted-foreground">
@@ -373,7 +373,7 @@ export function AiSdkChat({
       )}
 
       {/* 输入区域 - 使用AI Elements */}
-      <div className="p-2 relative">
+      <div className="p-1 relative">
         {/* 图片预览区域 - 浮动在输入框上方 */}
         {selectedImage && (
           <div className="absolute bottom-full left-2 w-[300px] mb-2 p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg z-10">
