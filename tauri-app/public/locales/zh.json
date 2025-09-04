@@ -63,7 +63,8 @@
         "get-help": "帮助",
         "search": "搜索",
         "search-results": "文件搜索结果",
-        "search-failure": "搜索失败"
+        "search-failure": "搜索失败",
+        "send-to-chat": "发送到聊天"
     },
     "RAGLOCAL": {
         "file-observation-window": "知识观察窗",

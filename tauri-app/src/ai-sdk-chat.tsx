@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { Button } from "./components/ui/button";
 import {
   ChatSession,
   ChatMessage as ApiChatMessage,
@@ -40,7 +42,7 @@ import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
-import { GlobeIcon, MicIcon, CopyIcon } from 'lucide-react'
+import { GlobeIcon, MicIcon, CopyIcon, CircleXIcon } from 'lucide-react'
 import { useTranslation } from "react-i18next"
 
 interface AiSdkChatProps {
@@ -50,6 +52,7 @@ interface AiSdkChatProps {
   ) => Promise<ChatSession>
   resetTrigger?: number // 用于触发重置的数字，每次改变都会重置组件
   imagePath?: string // 用于接收从文件列表传来的图片路径
+  imageSelectionKey?: number // 用于强制触发图片选择更新的key
 }
 
 /**
@@ -61,6 +64,7 @@ export function AiSdkChat({
   onCreateSessionFromMessage,
   resetTrigger,
   imagePath,
+  imageSelectionKey,
 }: AiSdkChatProps) {
   const [effectiveSessionId, setEffectiveSessionId] = useState<
     string | undefined
@@ -72,16 +76,17 @@ export function AiSdkChat({
   const { t } = useTranslation()
 
   // 当imagePath改变时，设置选中的图片
+  // 使用imageSelectionKey来强制触发更新，解决取消后重新选择同一图片的bug
   useEffect(() => {
     if (imagePath) {
       setSelectedImage(imagePath)
     }
-  }, [imagePath])
+  }, [imagePath, imageSelectionKey])
 
   // 使用useChat hook集成AI SDK v5 - 使用DefaultChatTransport配置API
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({
-      api: "http://localhost:60315/chat/agent-stream",
+      api: "http://127.0.0.1:60315/chat/agent-stream",
     }),
     onFinish: async ({ message }) => {
       console.log("[AiSdkChat] Message finished:", message.id)
@@ -310,12 +315,12 @@ export function AiSdkChat({
                             return (
                               <div key={`${message.id}-${index}`} className="mt-2">
                                 <img 
-                                  src={`http://localhost:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
+                                  src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
                                   alt={part.filename || 'Attached image'}
                                   className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
                                   onClick={() => {
                                     // 点击时显示全尺寸图片
-                                    window.open(`http://localhost:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`, '_blank');
+                                    openUrl(`http://127.0.0.1:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`);
                                   }}
                                   onError={(e) => {
                                     console.error('Failed to load image:', actualPath);
@@ -324,9 +329,9 @@ export function AiSdkChat({
                                     target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
                                   }}
                                 />
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  {part.filename} (点击查看原图)
-                                </div>
+                                {/* <div className="text-xs text-muted-foreground mt-1">
+                                  {part.filename} (Click to view full image)
+                                </div> */}
                               </div>
                             )
                           }
@@ -363,27 +368,28 @@ export function AiSdkChat({
       {/* 错误状态显示 */}
       {error && (
         <div className="p-4 bg-red-50 border-t border-red-200">
-          <div className="text-red-800">抱歉，发生了错误。请稍后重试。</div>
+          <div className="text-red-800">Sorry, an error occurred. Please try again later.</div>
         </div>
       )}
 
       {/* 输入区域 - 使用AI Elements */}
-      <div className="border-t p-2">
-        {/* 图片预览区域 */}
+      <div className="p-2 relative">
+        {/* 图片预览区域 - 浮动在输入框上方 */}
         {selectedImage && (
-          <div className="mb-2 p-2 bg-muted/50 rounded-lg">
+          <div className="absolute bottom-full left-2 w-[300px] mb-2 p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg z-10">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-muted-foreground">选中的图片:</span>
-              <button
+              <Button
                 onClick={() => setSelectedImage(null)}
-                className="text-xs text-destructive hover:underline"
+                variant="ghost"
+                className="size-6 items-center"
               >
-                移除
-              </button>
+                <CircleXIcon className="inline size-4 m-1" />
+              </Button>
             </div>
             <div className="flex items-center gap-2">
               <img 
-                src={`http://localhost:60315/image/thumbnail?file_path=${encodeURIComponent(selectedImage)}&width=48&height=48`}
+                src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(selectedImage)}&width=48&height=48`}
                 alt="Preview"
                 className="w-12 h-12 object-cover rounded border"
                 onError={(e) => {

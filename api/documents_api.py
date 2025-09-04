@@ -17,7 +17,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 def get_router(external_get_session: callable) -> APIRouter:
-    router = APIRouter(tags=["documents"])
+    router = APIRouter()
 
     @router.get("/images/{image_filename}")
     def get_image(image_filename: str, session: Session = Depends(external_get_session)):
@@ -258,12 +258,21 @@ def get_router(external_get_session: callable) -> APIRouter:
                 img.save(img_io, format='JPEG', quality=85, optimize=True)
                 img_io.seek(0)
                 
+                # 安全处理文件名，避免中文字符编码问题
+                try:
+                    safe_filename = Path(file_path).stem.encode('ascii', 'ignore').decode('ascii')
+                    if not safe_filename:
+                        safe_filename = "thumbnail"
+                except Exception:
+                    safe_filename = "thumbnail"
+                
                 return StreamingResponse(
                     io.BytesIO(img_io.getvalue()),
                     media_type="image/jpeg",
                     headers={
                         "Cache-Control": "public, max-age=3600",  # 缓存1小时
-                        "Content-Disposition": f"inline; filename=\"{Path(file_path).stem}_thumb.jpg\""
+                        # 避免在Content-Disposition中使用中文字符
+                        "Content-Disposition": f"inline; filename=\"{safe_filename}_thumb.jpg\""
                     }
                 )
         
@@ -308,12 +317,21 @@ def get_router(external_get_session: callable) -> APIRouter:
             with open(file_path, 'rb') as f:
                 image_data = f.read()
             
+            # 安全处理文件名，避免中文字符编码问题
+            try:
+                safe_filename = Path(file_path).name.encode('ascii', 'ignore').decode('ascii')
+                if not safe_filename:
+                    safe_filename = f"image.{file_ext[1:]}"  # 使用扩展名作为默认名
+            except Exception:
+                safe_filename = f"image.{file_ext[1:]}"
+            
             return StreamingResponse(
                 io.BytesIO(image_data),
                 media_type=mime_type,
                 headers={
                     "Cache-Control": "public, max-age=3600",  # 缓存1小时
-                    "Content-Disposition": f"inline; filename=\"{Path(file_path).name}\""
+                    # 避免在Content-Disposition中使用中文字符
+                    "Content-Disposition": f"inline; filename=\"{safe_filename}\""
                 }
             )
         

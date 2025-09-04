@@ -63,7 +63,8 @@
         "get-help": "Help",
         "search": "Search",
         "search-results": "File Search Results",
-        "search-failure": "Search failed"
+        "search-failure": "Search failed",
+        "send-to-chat": "Send to Chat"
     },
     "RAGLOCAL": {
         "file-observation-window": "Knowledge Observation Window",

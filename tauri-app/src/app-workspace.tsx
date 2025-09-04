@@ -40,12 +40,19 @@ export function AppWorkspace({
   // 使用传入的sessionId，不生成临时ID
   const [sessionId, setSessionId] = useState<number | null>(currentSessionId || null)
   const [selectedImagePath, setSelectedImagePath] = useState<string | null>(null) // 新增图片路径状态
+  const [imageSelectionCounter, setImageSelectionCounter] = useState<number>(0) // 用于强制触发图片选择更新
   const { t } = useTranslation()
   
   useEffect(() => {
     // 直接使用传入的currentSessionId，可能为null
     setSessionId(currentSessionId || null)
   }, [currentSessionId])
+
+  // 处理图片选择的回调函数，每次选择都会增加计数器
+  const handleImageSelection = (imagePath: string) => {
+    setSelectedImagePath(imagePath)
+    setImageSelectionCounter(prev => prev + 1)
+  }
 
   // const [windowWidth, setWindowWidth] = useState(window.innerWidth)
   // const { state, setOpen } = useSidebar()
@@ -93,7 +100,7 @@ export function AppWorkspace({
                 currentSessionId={currentSessionId} 
                 onAddTempPinnedFile={onAddTempPinnedFile}
                 onRemoveTempPinnedFile={onRemoveTempPinnedFile}
-                onSelectImage={setSelectedImagePath} // 新增图片选择回调
+                onSelectImage={handleImageSelection} // 使用新的图片选择回调
               />
             </ResizablePanel>
             <ResizableHandle withHandle className="bg-primary" />
@@ -123,6 +130,7 @@ export function AppWorkspace({
               onCreateSessionFromMessage={onCreateSessionFromMessage}
               resetTrigger={chatResetTrigger}
               imagePath={selectedImagePath || undefined} // 传递选中的图片路径
+              imageSelectionKey={imageSelectionCounter} // 传递选择计数器以强制更新
             />
           </div>
         </ResizablePanel>

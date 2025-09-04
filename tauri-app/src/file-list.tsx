@@ -123,13 +123,13 @@ function FileItem({ file, onTogglePin, onTagClick, onSelectImage }: FileItemProp
       {/* 浮动按钮区域 - 绝对定位，不占用布局空间 */}
       <div className="absolute top-2 right-2 flex gap-1">
                 {/* 如果是图片文件，则多一个MessageCircle浮动按钮 */}
-        {imageExtensions.includes(file.path.split('.').pop() || '') && (
+        {imageExtensions.includes(file.path.split('.').pop()?.toLocaleLowerCase() || '') && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => onSelectImage?.(file.path)}
             className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-muted border border-border/50"
-            title="发送到聊天"
+            title={t('FILELIST.send-to-chat')}
           >
             <MessageCircle className="h-2.5 w-2.5" />
           </Button>
@@ -146,7 +146,7 @@ function FileItem({ file, onTogglePin, onTagClick, onSelectImage }: FileItemProp
         </Button>
         
         {/* Pin 按钮 - pinned时始终显示，未pinned时hover显示 */}
-        {textExtensions.includes(file.path.split('.').pop() || '') && (
+        {textExtensions.includes(file.path.split('.').pop()?.toLocaleLowerCase() || '') && (
           <Button
             variant={file.pinned ? "default" : "ghost"}
             size="sm"
