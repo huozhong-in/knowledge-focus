@@ -48,13 +48,13 @@
 2. Rust的“粗筛(screening)”工作
    1. 读取文件元数据(路径、大小、时间戳、计算基本哈希，注意这阶段并不读取文件内容)，进行初步规则匹配(如扩展名分类、简单文件名模式等等)。
    2. 将更结构化的任务信息(包含元数据和初步分类结果)通过Python API入库到粗筛结果表。
-3. Python的“打标签(tagging)”工作，此过程可认为是粗放的解析(Parsing)
+3. Python的“打标签(tagging)”工作，此过程使用的较少的资源和时间
    1. Rust向任务表插入记录，Python的worker从粗筛结果表拿到相关数据。
-   2. 使用markitdown对其支持的文件格式进行解析，虽然它会丢失图片信息，但单纯文本内容的解析和标签生成是可行的，结果不存库。
+   2. 使用markitdown对其支持的文件格式进行解析，虽然它会丢失图片信息，但单纯文本内容的解析和标签生成是可行的。
    3. 使用LLM利用粗筛数据和解析后的内容进行标签的生成，保存到标签库。考虑到执行效率和LLM上下文窗口限制，不用将完整内容给到LLM。
-4. “精炼(refine)”工作是人机交互过程的一部分。在用户“pin”文件之后再进行向量化，省去预先做大量无用工作的时间
+4. “多模态检索(multi-modal retrieval)”工作是人机交互过程的一部分。在用户“pin”文件之后再进行向量化，省去预先做大量无用工作的时间
    1. 用户在对话过程中使用来自pin在文件列表区的文件中的向量化知识。
-   2. 用户在前端界面上可以选择哪些对话内容是可以沉淀到知识库。
+   2. 用户在前端界面上可以选择哪些对话内容是可以进一步加工后沉淀到知识库。
    3. “共读”是针对某一文件的交互式精读(电子书/报告/PPT等)，在技术上跟“非共读”的对话比，上下文设置以及使用的工具均有所区别。
 5. Rust端作为前端TypeScript和后端Python FastAPI的“统一桥接器”
    1. 前端向后端发起的请求，经由Rust处理和中转，尤其对敏感的各类API key。
@@ -73,12 +73,20 @@
   - 使用shadcn(radix-ui+tailwindcss)
   - 使用tweakcn为多theme支持
 
+## 日常开发备忘
+
+- `tauri-app/dev.sh`: Start the development server
+- `tauri-app/build.sh`: Build the application (TypeScript compilation + Vite build)
+- `api/`: Python backend for file and database management. `api_standalone.sh` for standalone mode, need activate conda env first by `conda activate ./.venv`
+- `~/Library/Application\ Support/knowledge-focus.huozhong.in`: Default data directory on macOS, where the application stores its data files `knowledge-focus.db`, MCP tool 'SQLite' can be used to access it.
+- `~/Library/Application\ Support/knowledge-focus.huozhong.in/logs/*.log`: Log files for the Python API, useful for debugging and monitoring
+
 ## 总结
 
 这是一个从粗筛到精炼的三级质量体系。
 
 1. 最初通过文件全路径(主文件名，扩展名，路径内的语义信息)快速进行粗筛，圈定用户有明确感知的携带了知识的文件。
-2. 接着通过对文件内容的粗放解析，生成初步的标签，帮助用户快速定位和筛选文件。
+2. 接着通过对文件内容的粗放解析，生成语义覆盖大的标签，帮助用户快速定位和筛选文件。
 3. 最后，通过用户交互和LLM的智能处理，对文件内容进行深入解析和知识卡片的生成。
 
 用户通过共读和对话的方式将自身认知、LLM模型内知识、文件内知识和外部世界知识(调用搜索工具等)进行整合和精炼，形成了用户有感知、有印象的知识库的积累。

@@ -26,7 +26,7 @@ function FileItem({ file, onTogglePin, onTagClick, onSelectImage }: FileItemProp
   const { getFileStatus } = useVectorizationStore();
   const vectorizationState = getFileStatus(file.path);
   const textExtensions = ['txt', 'md', 'markdown', 'doc', 'docx', 'pdf', 'ppt', 'pptx'];
-  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'svg', 'webp'];
+  const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];  // bmp/svg不支持
   const getFileIcon = (extension?: string) => {
     if (!extension) return <File className="size-4" />;
     

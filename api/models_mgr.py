@@ -474,10 +474,10 @@ Generate a title that best represents what this conversation will be about. Avoi
                             if part.get("type") == "text":
                                 content_text += part.get("text", "")
                             elif part.get("type") == "file":
-                                # 处理图片文件
                                 media_type = part.get("mediaType", "")
                                 file_url = part.get("url", "")
                                 filename = part.get("filename", "")
+                                # 处理图片文件
                                 if media_type.startswith("image/") and file_url:
                                     # 处理file://协议的本地文件路径
                                     if file_url.startswith("file://"):
@@ -485,7 +485,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     else:
                                         file_path = file_url
                                     image_files.append(file_path)
-                                    logger.info(f'图片文件: {media_type} {filename} {file_path}')
+                                    # logger.info(f'图片文件: {media_type} {filename} {file_path}')
                                 else:
                                     logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
                             else:

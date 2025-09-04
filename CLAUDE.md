@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `tauri-app/`: Frontend and Tauri configuration
 - `tauri-app/src-tauri/`: Tauri backend and configuration
 - `api/`: Python backend for file and database management. `api_standalone.sh` for standalone mode,not launched by Tauri as sidecar
-- `api/logs/*.log`: Log files for the Python API, useful for debugging and monitoring
 - `~/Library/Application\ Support/knowledge-focus.huozhong.in`: Default data directory on macOS, where the application stores its data files `knowledge-focus.db`
+- `~/Library/Application\ Support/knowledge-focus.huozhong.in/logs/*.log`: Log files for the Python API, useful for debugging and monitoring
 
 Note: The project uses Bun as a package manager (evident from `beforeDevCommand` and `beforeBuildCommand` in Tauri config).

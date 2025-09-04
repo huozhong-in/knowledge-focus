@@ -74,7 +74,9 @@
         "waiting-rag-retrieval-details": "When you send a message, relevant knowledge snippets will be displayed here."
     },
     "AISDKCHAT":{
-        "input-message": "Input message..."
+        "input-message": "Input message...",
+        "conversation_placeholder": "AI Assistant, unleash the knowledge value of your local files",
+        "conversation_placeholder_2": "Start chatting with your documents"
     },
     "SETTINGS": {
         "name": "App Settings",

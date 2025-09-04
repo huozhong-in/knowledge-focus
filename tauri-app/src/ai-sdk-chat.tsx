@@ -259,7 +259,7 @@ export function AiSdkChat({
   if (isInitializing) {
     return (
       <div className="flex flex-col flex-auto h-full items-center justify-center">
-        <div className="text-muted-foreground">加载中...</div>
+        <div className="text-muted-foreground">Loading...</div>
       </div>
     )
   }
@@ -273,10 +273,10 @@ export function AiSdkChat({
               <div className="flex items-center justify-center h-full">
                 <div className="text-center text-muted-foreground">
                   <h3 className="text-lg font-medium mb-2">
-                    Knowledge Focus AI 助手，帮你释放本机文件知识价值
+                    Knowledge Focus {t("AISDKCHAT.conversation_placeholder")}
                   </h3>
                   <p>
-                    开始和你的文档聊天吧
+                    {t("AISDKCHAT.conversation_placeholder_2")}
                   </p>
                 </div>
               </div>
@@ -325,7 +325,7 @@ export function AiSdkChat({
                                   onError={(e) => {
                                     console.error('Failed to load image:', actualPath);
                                     const target = e.target as HTMLImageElement;
-                                    target.alt = '图片加载失败';
+                                    target.alt = 'image load failed';
                                     target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
                                   }}
                                 />

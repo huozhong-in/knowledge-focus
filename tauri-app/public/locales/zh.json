@@ -74,7 +74,9 @@
         "waiting-rag-retrieval-details": "当您发送消息时，相关知识片段将在这里显示"
     },
     "AISDKCHAT":{
-        "input-message": "输入消息..."
+        "input-message": "输入消息...",
+        "conversation_placeholder": "AI 助手，释放你本机文件的知识价值",
+        "conversation_placeholder_2": "开始和你的文档聊天吧"
     },
     "SETTINGS": {
         "name": "应用设置",

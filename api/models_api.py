@@ -238,6 +238,13 @@ def get_router(external_get_session: callable) -> APIRouter:
         Streams responses according to the Vercel AI SDK v5 protocol.
         """
         async def stream_generator():
+            # * 检查必须有文本模型或视觉模型配置好了
+            if not (config_mgr.get_spec_model_config(ModelCapability.TEXT) or config_mgr.get_spec_model_config(ModelCapability.VISUAL)):
+                logger.error("No text or visual model configured")
+                # 发送标准错误事件
+                error_event = f'data: {json.dumps({"type": "error", "errorText": "No text or visual model configured"})}\n'
+                yield error_event
+            
             try:
                 # 1. 保存用户消息
                 # Vercel AI SDK UI在每次请求时都会发送所有历史消息
@@ -365,13 +372,6 @@ def get_router(external_get_session: callable) -> APIRouter:
                 else:
                     logger.warning(f"No content to save for assistant message {assistant_message_id}")
 
-        # * 检查必须有文本模型或视觉模型配置好了
-        if not (config_mgr.get_spec_model_config(ModelCapability.TEXT) or config_mgr.get_spec_model_config(ModelCapability.VISUAL)):
-            logger.error("No text or visual model configured")
-            # 发送标准错误事件
-            error_event = f'data: {json.dumps({"type": "error", "errorText": "No text or visual model configured"})}\n'
-            yield error_event
-            return
 
         return StreamingResponse(
             stream_generator(), 
