@@ -19,9 +19,10 @@ interface FileItemProps {
   file: TaggedFile;
   onTogglePin: (fileId: number, filePath: string) => void;
   onTagClick: (tagName: string) => void;
+  onSelectImage?: (imagePath: string) => void; // 新增图片选择回调
 }
 
-function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
+function FileItem({ file, onTogglePin, onTagClick, onSelectImage }: FileItemProps) {
   const { getFileStatus } = useVectorizationStore();
   const vectorizationState = getFileStatus(file.path);
   const textExtensions = ['txt', 'md', 'markdown', 'doc', 'docx', 'pdf', 'ppt', 'pptx'];
@@ -121,13 +122,14 @@ function FileItem({ file, onTogglePin, onTagClick }: FileItemProps) {
       
       {/* 浮动按钮区域 - 绝对定位，不占用布局空间 */}
       <div className="absolute top-2 right-2 flex gap-1">
-        {/* 如果是图片文件，则多一个MessageCircle浮动按钮 */}
+                {/* 如果是图片文件，则多一个MessageCircle浮动按钮 */}
         {imageExtensions.includes(file.path.split('.').pop() || '') && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {}}
+            onClick={() => onSelectImage?.(file.path)}
             className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 hover:bg-muted border border-border/50"
+            title="发送到聊天"
           >
             <MessageCircle className="h-2.5 w-2.5" />
           </Button>
@@ -168,9 +170,10 @@ interface FileListProps {
   currentSessionId?: number | null;
   onAddTempPinnedFile?: (filePath: string, fileName: string, metadata?: Record<string, any>) => void;
   onRemoveTempPinnedFile?: (filePath: string) => void;
+  onSelectImage?: (imagePath: string) => void; // 新增图片选择回调
 }
 
-export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPinnedFile }: FileListProps) {
+export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPinnedFile, onSelectImage }: FileListProps) {
   const { getFilteredFiles, togglePinnedFile, isLoading, error, setFiles, setLoading, setError } = useFileListStore();
   const { setFileStatus, setFileStarted, setFileFailed } = useVectorizationStore();
   const { openSettingsPage } = useSettingsStore();
@@ -569,6 +572,7 @@ export function FileList({ currentSessionId, onAddTempPinnedFile, onRemoveTempPi
                 file={file} 
                 onTogglePin={handleTogglePin}
                 onTagClick={handleTagClick}
+                onSelectImage={onSelectImage}
               />
             ))}
           </div>

@@ -202,8 +202,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             # 使用通用tokenizer进行近似估算更稳定可靠，这里我们使用内置的中英文友好tokenizer作为chunk大小估算器
             model_path = self.model_config_mgr.get_embeddings_model_path()
             if model_path == "":
-                sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
-                db_path = sqlite_url.replace('sqlite:///', '')
+                db_path = self.session.get_bind().url.database
                 cache_directory = os.path.dirname(db_path)
                 model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
                 self.model_config_mgr.set_embeddings_model_path(model_path)  

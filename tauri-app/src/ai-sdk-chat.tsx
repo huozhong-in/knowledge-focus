@@ -49,6 +49,7 @@ interface AiSdkChatProps {
     firstMessageContent: string
   ) => Promise<ChatSession>
   resetTrigger?: number // 用于触发重置的数字，每次改变都会重置组件
+  imagePath?: string // 用于接收从文件列表传来的图片路径
 }
 
 /**
@@ -59,14 +60,23 @@ export function AiSdkChat({
   sessionId,
   onCreateSessionFromMessage,
   resetTrigger,
+  imagePath,
 }: AiSdkChatProps) {
   const [effectiveSessionId, setEffectiveSessionId] = useState<
     string | undefined
   >(sessionId)
   const [isInitializing, setIsInitializing] = useState(true)
   const [input, setInput] = useState("")
+  const [selectedImage, setSelectedImage] = useState<string | null>(null) // 存储选中的图片路径
 
   const { t } = useTranslation()
+
+  // 当imagePath改变时，设置选中的图片
+  useEffect(() => {
+    if (imagePath) {
+      setSelectedImage(imagePath)
+    }
+  }, [imagePath])
 
   // 使用useChat hook集成AI SDK v5 - 使用DefaultChatTransport配置API
   const { messages, sendMessage, status, error, setMessages } = useChat({
@@ -174,14 +184,29 @@ export function AiSdkChat({
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    if (!input.trim() || status !== "ready") return
+    if ((!input.trim() && !selectedImage) || status !== "ready") return
 
     const userMessage = input.trim()
+
+    // 构建消息内容，支持文本和图片
+    const messageContent: any = {
+      text: userMessage || "请分析这张图片", // 如果只有图片没有文本，提供默认文本
+    }
+
+    // 如果有选中的图片，添加到消息中
+    if (selectedImage) {
+      messageContent.files = [{
+        type: 'file',
+        filename: selectedImage.split('/').pop() || 'image',
+        mediaType: 'image/' + (selectedImage.split('.').pop()?.toLowerCase() || 'png'),
+        url: `file://${selectedImage}`, // 使用file://协议的本地文件路径
+      }]
+    }
 
     // 检查是否需要创建会话（延迟创建逻辑）
     let currentSessionId = effectiveSessionId
     if (!effectiveSessionId && onCreateSessionFromMessage) {
-      onCreateSessionFromMessage(userMessage)
+      onCreateSessionFromMessage(userMessage || "图片分析")
         .then((newSession) => {
           currentSessionId = String(newSession.id)
           setEffectiveSessionId(currentSessionId)
@@ -194,7 +219,7 @@ export function AiSdkChat({
 
           // 创建会话后发送消息
           sendMessage(
-            { text: userMessage },
+            messageContent,
             {
               body: {
                 session_id: currentSessionId
@@ -207,12 +232,12 @@ export function AiSdkChat({
         .catch((error) => {
           console.error("[AiSdkChat] Failed to create session:", error)
           // 如果会话创建失败，继续使用无会话ID的方式发送消息
-          sendMessage({ text: userMessage })
+          sendMessage(messageContent)
         })
     } else {
       // 直接发送消息
       sendMessage(
-        { text: userMessage },
+        messageContent,
         {
           body: {
             session_id: currentSessionId ? Number(currentSessionId) : undefined,
@@ -221,8 +246,9 @@ export function AiSdkChat({
       )
     }
 
-    // 清空输入框
+    // 清空输入框和选中的图片
     setInput("")
+    setSelectedImage(null)
   }
 
   if (isInitializing) {
@@ -273,6 +299,38 @@ export function AiSdkChat({
                           ) : (
                             <div key={index}>{part.text}</div>
                           )
+                        case "file":
+                          // 处理图片文件
+                          if (part.mediaType?.startsWith('image/')) {
+                            // 从file://或本地路径中提取实际路径
+                            const actualPath = part.url?.startsWith('file://') 
+                              ? part.url.replace('file://', '') 
+                              : part.url;
+                            
+                            return (
+                              <div key={`${message.id}-${index}`} className="mt-2">
+                                <img 
+                                  src={`http://localhost:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
+                                  alt={part.filename || 'Attached image'}
+                                  className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
+                                  onClick={() => {
+                                    // 点击时显示全尺寸图片
+                                    window.open(`http://localhost:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`, '_blank');
+                                  }}
+                                  onError={(e) => {
+                                    console.error('Failed to load image:', actualPath);
+                                    const target = e.target as HTMLImageElement;
+                                    target.alt = '图片加载失败';
+                                    target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
+                                  }}
+                                />
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {part.filename} (点击查看原图)
+                                </div>
+                              </div>
+                            )
+                          }
+                          return null
                         case "reasoning":
                           return (
                             <Reasoning
@@ -311,11 +369,47 @@ export function AiSdkChat({
 
       {/* 输入区域 - 使用AI Elements */}
       <div className="border-t p-2">
+        {/* 图片预览区域 */}
+        {selectedImage && (
+          <div className="mb-2 p-2 bg-muted/50 rounded-lg">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-muted-foreground">选中的图片:</span>
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="text-xs text-destructive hover:underline"
+              >
+                移除
+              </button>
+            </div>
+            <div className="flex items-center gap-2">
+              <img 
+                src={`http://localhost:60315/image/thumbnail?file_path=${encodeURIComponent(selectedImage)}&width=48&height=48`}
+                alt="Preview"
+                className="w-12 h-12 object-cover rounded border"
+                onError={(e) => {
+                  console.error('Failed to load thumbnail:', selectedImage);
+                  // 可以设置一个默认图标
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs truncate" title={selectedImage}>
+                  {selectedImage.split('/').pop()}
+                </div>
+                <div className="text-xs text-muted-foreground truncate" title={selectedImage}>
+                  {selectedImage}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
         <PromptInput onSubmit={handleFormSubmit} className="relative">
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={t("AISDKCHAT.input-message")}
+            placeholder={selectedImage ? "描述你想了解关于这张图片的什么..." : t("AISDKCHAT.input-message")}
           />
           <PromptInputToolbar>
             <PromptInputTools>
@@ -329,7 +423,7 @@ export function AiSdkChat({
             </PromptInputTools>
             <PromptInputSubmit
               className="absolute right-1 bottom-1"
-              disabled={!input.trim() || status !== "ready"}
+              disabled={(!input.trim() && !selectedImage) || status !== "ready"}
               status={status}
             />
           </PromptInputToolbar>

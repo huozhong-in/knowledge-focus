@@ -10,6 +10,7 @@ import { useUpdater } from "@/hooks/useUpdater";
 import { toast } from "sonner";
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { useState } from 'react';
+import { Response } from '@/components/ai-elements/response';
 
 export default function SettingsAbout() {
   const [proxyUrl, setProxyUrl] = useState('http://127.0.0.1:7890');
@@ -187,7 +188,7 @@ export default function SettingsAbout() {
                 </div>
                 {updateNotes && (
                   <p className="text-xs text-muted-foreground pl-6">
-                    {updateNotes}
+                    <Response key={updateVersion}>{updateNotes}</Response>
                   </p>
                 )}
               </div>

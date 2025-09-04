@@ -13,9 +13,8 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     def get_lancedb_manager(session: Session = Depends(external_get_session)) -> LanceDBMgr:
         """获取LanceDB管理器实例"""
-        sqlite_url = str(session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
-        if sqlite_url.startswith('sqlite:///'):
-            db_path = sqlite_url.replace('sqlite:///', '')
+        db_path = session.get_bind().url.database
+        if db_path != "":
             db_directory = os.path.dirname(db_path)
             return LanceDBMgr(base_dir=db_directory)
         else:

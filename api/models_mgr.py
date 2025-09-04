@@ -4,11 +4,12 @@ import re
 import json
 import uuid
 import time
+from pathlib import Path
 import logging
 from typing import List, Dict, Any
 from sqlmodel import Session
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai import Agent, Tool
+from pydantic_ai import Agent, Tool, BinaryContent
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -123,8 +124,8 @@ class ModelsMgr:
         This is typically called by backend processes (document parsing, vectorization),
         so model validation failures will trigger IPC events to notify the frontend.
         """
-        sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
-        db_path = sqlite_url.replace('sqlite:///', '')
+        # 从SQLite数据库路径推导出base_dir
+        db_path = self.session.get_bind().url.database
         cache_directory = os.path.dirname(db_path)
         model_path = self.model_config_mgr.get_embeddings_model_path()
         if model_path == "":
@@ -418,11 +419,29 @@ Generate a title that best represents what this conversation will be about. Avoi
         try:
             logger.info(f"Agent chat v5_compatible invoked for session_id: {session_id}")
 
-            # 获取模型配置
-            model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
+            # 先预检查消息中是否包含图片，以确定使用哪种模型配置
+            has_images = False
+            for msg in messages:
+                if msg['role'] == 'user' and "parts" in msg:
+                    for part in msg["parts"]:
+                        if part.get("type") == "file" and part.get("mediaType", "").startswith("image/"):
+                            has_images = True
+                            break
+                if has_images:
+                    break
+
+            # 根据是否包含图片选择合适的模型配置
+            if has_images:
+                # logger.info("检测到图片消息，使用视觉模型配置")
+                model_interface: ModelUseInterface = self.model_config_mgr.get_vision_model_config()
+            else:
+                # logger.info("纯文本消息，使用文本模型配置")
+                model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
+            
             if model_interface is None:
-                logger.error("Model interface is not configured.")
-                yield f'data: {json.dumps({"type": "error", "errorText": "Model interface is not configured."})}\n\n'
+                error_msg = "视觉模型配置未找到" if has_images else "文本模型配置未找到"
+                logger.error(error_msg)
+                yield f'data: {json.dumps({"type": "error", "errorText": error_msg})}\n\n'
                 return
             
             max_context_length = model_interface.max_context_length if model_interface.max_context_length != 0 else 4096
@@ -445,16 +464,30 @@ Generate a title that best represents what this conversation will be about. Avoi
             
             # 处理用户输入 - 兼容AI SDK v5的parts格式
             user_prompt: List[str] = []
+            image_files: List[str] = []  # 存储图片文件路径
             for msg in messages:
                 if msg['role'] == 'user':
-                    # 优先从parts中提取文本内容
+                    # 优先从parts中提取文本内容和图片文件
                     content_text = ""
                     if "parts" in msg:
                         for part in msg["parts"]:
                             if part.get("type") == "text":
                                 content_text += part.get("text", "")
-                            # elif part.get("type") == "file":
-                            #     logger.info(f'{part.get("mediaType")} {part.get("filename")} {part.get("url")}')
+                            elif part.get("type") == "file":
+                                # 处理图片文件
+                                media_type = part.get("mediaType", "")
+                                file_url = part.get("url", "")
+                                filename = part.get("filename", "")
+                                if media_type.startswith("image/") and file_url:
+                                    # 处理file://协议的本地文件路径
+                                    if file_url.startswith("file://"):
+                                        file_path = file_url[7:]  # 移除file://前缀
+                                    else:
+                                        file_path = file_url
+                                    image_files.append(file_path)
+                                    logger.info(f'图片文件: {media_type} {filename} {file_path}')
+                                else:
+                                    logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
                             else:
                                 logger.info(f'Unknown part type: {part}')
                     # 备用：检查传统的content字段
@@ -467,6 +500,86 @@ Generate a title that best represents what this conversation will be about. Avoi
             if user_prompt == []:
                 yield f'data: {"type": "error", "errorText": "User prompt is empty"}\n\n'
                 return
+
+            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
+            logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
+            
+            # 留给会话历史记录的token数
+            available_tokens = max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
+            logger.info(f"当前可用历史消息token数: {available_tokens}")
+            chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
+            
+            # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
+            user_query = "\n".join(user_prompt)  # 合并用户输入作为查询（不包含图片信息）
+            rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
+            if rag_context:
+                user_prompt = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt
+                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
+                
+                # 通过桥接器发送RAG数据到知识观察窗
+                self._send_rag_to_observation_window(rag_sources, user_query)
+            
+            # 将会话历史记录插到用户提示词上方
+            if chat_history != []:
+                user_prompt = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt
+            logger.info(f"当前用户提示词: {user_prompt}")
+
+            # 构建包含文本和图片的消息内容
+            if image_files:
+                # 如果有图片，需要构建多模态消息
+                logger.info(f"处理 {len(image_files)} 个图片文件: {image_files}")
+                
+                # 构建pydantic-ai格式的用户输入 - 使用List[Any]支持BinaryContent
+                user_prompt_multimodal: List[Any] = []
+                
+                # 添加文本内容
+                if user_prompt:
+                    user_prompt_multimodal.append("\n".join(user_prompt))
+                
+                # 添加图片内容
+                for image_path in image_files:
+                    try:
+                        if os.path.exists(image_path):
+                            # 获取文件扩展名来确定MIME类型
+                            file_ext = Path(image_path).suffix.lower()
+                            if file_ext in ['.jpg', '.jpeg']:
+                                mime_type = 'image/jpeg'
+                            elif file_ext == '.png':
+                                mime_type = 'image/png'
+                            elif file_ext == '.gif':
+                                mime_type = 'image/gif'
+                            elif file_ext == '.webp':
+                                mime_type = 'image/webp'
+                            else:
+                                mime_type = 'image/png'  # 默认
+                            
+                            # 读取图片数据并创建BinaryContent
+                            image_data = Path(image_path).read_bytes()
+                            binary_content = BinaryContent(
+                                data=image_data, 
+                                media_type=mime_type
+                            )
+                            user_prompt_multimodal.append(binary_content)
+                            logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
+                        else:
+                            logger.warning(f"图片文件不存在: {image_path}")
+                    except Exception as e:
+                        logger.error(f"读取图片文件失败: {image_path}, 错误: {e}")
+                
+                user_prompt_final = user_prompt_multimodal
+            else:
+                # 只有文本的情况
+                user_prompt_final = "\n".join(user_prompt)
+            
+            # 输出日志，处理多模态情况
+            if isinstance(user_prompt_final, list):
+                text_parts = [part for part in user_prompt_final if isinstance(part, str)]
+                binary_parts = [part for part in user_prompt_final if hasattr(part, 'data')]
+                logger.info(f"最终用户提示词: 文本部分({len(text_parts)})和图片部分({len(binary_parts)})")
+                if text_parts:
+                    logger.info(f"文本内容: {' '.join(text_parts)[:200]}...")
+            else:
+                logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
             
             count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
             logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
@@ -531,7 +644,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                 return None
 
             # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
-            async with agent.iter(user_prompt=user_prompt, deps=session_id) as run:
+            async with agent.iter(user_prompt=user_prompt_final, deps=session_id) as run:
                 async for node in run:
                     # logger.info(f"Processing node type: {type(node)}")
                     if Agent.is_user_prompt_node(node):
@@ -830,11 +943,9 @@ Generate a title that best represents what this conversation will be about. Avoi
             
             # 使用SearchManager进行检索
             from lancedb_mgr import LanceDBMgr
-            sqlite_url = str(self.session.get_bind().url)  # 从SQLite数据库路径推导出base_dir
-            if sqlite_url.startswith('sqlite:///'):
-                db_path = sqlite_url.replace('sqlite:///', '')
-                db_directory = os.path.dirname(db_path)
-                lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+            db_path = self.session.get_bind().url.database
+            db_directory = os.path.dirname(db_path)
+            lancedb_mgr = LanceDBMgr(base_dir=db_directory)
             from search_mgr import SearchManager
             search_mgr = SearchManager(
                 session=self.session, 
@@ -1070,8 +1181,7 @@ if __name__ == "__main__":
             from lancedb_mgr import LanceDBMgr
             from search_mgr import SearchManager
             
-            sqlite_url = str(session.get_bind().url)
-            db_path = sqlite_url.replace('sqlite:///', '')
+            db_path = session.get_bind().url.database
             db_directory = os.path.dirname(db_path)
             lancedb_mgr = LanceDBMgr(base_dir=db_directory)
             

@@ -39,6 +39,7 @@ export function AppWorkspace({
 }: AppWorkspaceProps) {
   // 使用传入的sessionId，不生成临时ID
   const [sessionId, setSessionId] = useState<number | null>(currentSessionId || null)
+  const [selectedImagePath, setSelectedImagePath] = useState<string | null>(null) // 新增图片路径状态
   const { t } = useTranslation()
   
   useEffect(() => {
@@ -92,6 +93,7 @@ export function AppWorkspace({
                 currentSessionId={currentSessionId} 
                 onAddTempPinnedFile={onAddTempPinnedFile}
                 onRemoveTempPinnedFile={onRemoveTempPinnedFile}
+                onSelectImage={setSelectedImagePath} // 新增图片选择回调
               />
             </ResizablePanel>
             <ResizableHandle withHandle className="bg-primary" />
@@ -120,6 +122,7 @@ export function AppWorkspace({
               sessionId={sessionId ? String(sessionId) : undefined}
               onCreateSessionFromMessage={onCreateSessionFromMessage}
               resetTrigger={chatResetTrigger}
+              imagePath={selectedImagePath || undefined} // 传递选中的图片路径
             />
           </div>
         </ResizablePanel>
