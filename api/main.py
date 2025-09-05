@@ -147,13 +147,22 @@ async def lifespan(app: FastAPI):
             logger.error(f"初始化后台任务处理线程失败: {e}", exc_info=True)
             raise
         
-        # 启动通知检查任务
-        # try:
-        #     logger.info("启动通知检查任务...")
-        #     asyncio.create_task(check_notifications())
-        # except Exception as notify_err:
-        #     logger.error(f"启动通知检查任务失败: {str(notify_err)}", exc_info=True)
-            
+        # 初始化高优先级任务处理线程
+        try:
+            logger.info("初始化高优先级任务处理线程...")
+            # 创建一个事件来优雅地停止线程
+            app.state.high_priority_task_processor_stop_event = threading.Event()
+            app.state.high_priority_task_processor_thread = threading.Thread(
+                target=high_priority_task_processor,
+                args=(app.state.db_path, app.state.high_priority_task_processor_stop_event),
+                daemon=True
+            )
+            app.state.high_priority_task_processor_thread.start()
+            logger.info("高优先级任务处理线程已启动")
+        except Exception as e:
+            logger.error(f"初始化高优先级任务处理线程失败: {e}", exc_info=True)
+            raise
+        
         # Start monitor can kill self process if parent process is dead or exit
         try:
             logger.info("启动父进程监控线程...")
@@ -193,6 +202,18 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"停止后台任务处理线程失败: {e}", exc_info=True)
         
+        try:
+            if hasattr(app.state, "high_priority_task_processor_thread") and app.state.high_priority_task_processor_thread.is_alive():
+                logger.info("正在停止高优先级任务处理线程...")
+                app.state.high_priority_task_processor_stop_event.set()
+                app.state.high_priority_task_processor_thread.join(timeout=5) # 等待5秒
+                if app.state.high_priority_task_processor_thread.is_alive():
+                    logger.warning("高优先级任务处理线程在5秒内未停止")
+                else:
+                    logger.info("高优先级任务处理线程已停止")
+        except Exception as e:
+            logger.error(f"停止高优先级任务处理线程失败: {e}", exc_info=True)
+        
         # 在应用关闭时执行清理操作
         try:
             if hasattr(app.state, "engine") and app.state.engine is not None:
@@ -218,13 +239,6 @@ app.add_middleware(
     allow_methods=["*"],    # Allows all methods (GET, POST, PUT, DELETE, etc.)
     allow_headers=["*"],    # Allows all headers
 )
-
-# 周期性检查新通知并广播
-# async def check_notifications():
-#     while True:
-#         # 广播消息
-#         # await manager.broadcast("New notification")
-#         await asyncio.sleep(8)
 
 def get_session():
     """FastAPI依赖函数，用于获取数据库会话"""
@@ -273,8 +287,163 @@ def get_task_manager(session: Session = Depends(get_session)):
     return TaskManager(session)
 
 # 任务处理者
+def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManager) -> None:
+    """通用任务处理逻辑"""
+    models_mgr = ModelsMgr(session)
+    file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
+    multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+
+    if task.task_type == TaskType.TAGGING.value:
+        # 检查模型可用性
+        if not file_tagging_mgr.check_file_tagging_model_availability():
+            logger.error("相关模型不可用，无法处理文件打标签任务")
+            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="模型不可用")
+            return
+        
+        # 高优先级任务: 单个文件处理
+        if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
+            logger.info(f"开始处理高优先级文件打标签任务 (Task ID: {task.id})")
+            success = file_tagging_mgr.process_single_file_task(task.extra_data['screening_result_id'])
+            if success:
+                task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
+                
+                # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
+                if multivector_mgr.check_multivector_model_availability():
+                    _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
+            else:
+                task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
+        # 中低优先级任务: 批量处理
+        else:
+            logger.info(f"开始批量文件打标签任务 (Task ID: {task.id})")
+            result_data = file_tagging_mgr.process_pending_batch(task_id=task.id)
+            
+            # 无论批量任务处理了多少文件，都将触发任务文件打标签为完成
+            task_mgr.update_task_status(
+                task.id, 
+                TaskStatus.COMPLETED, 
+                result=TaskResult.SUCCESS, 
+                message=f"批量处理完成: 处理了 {result_data.get('processed', 0)} 个文件。"
+            )
+    
+    elif task.task_type == TaskType.MULTIVECTOR.value:
+        if not multivector_mgr.check_multivector_model_availability():
+            logger.error("相关模型不可用，无法处理多模态向量化任务")
+            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="模型不可用")
+            return
+        
+        # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
+        if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
+            file_path = task.extra_data['file_path']
+            logger.info(f"开始处理高优先级多模态向量化任务 (Task ID: {task.id}): {file_path}")
+            
+            try:
+                # 传递task_id以便事件追踪
+                success = multivector_mgr.process_document(file_path, str(task.id))
+                if success:
+                    task_mgr.update_task_status(
+                        task.id, 
+                        TaskStatus.COMPLETED, 
+                        result=TaskResult.SUCCESS,
+                        message=f"多模态向量化完成: {file_path}"
+                    )
+                    logger.info(f"多模态向量化成功完成: {file_path}")
+                else:
+                    task_mgr.update_task_status(
+                        task.id, 
+                        TaskStatus.FAILED, 
+                        result=TaskResult.FAILURE,
+                        message=f"多模态向量化失败: {file_path}"
+                    )
+                    logger.error(f"多模态向量化失败: {file_path}")
+            except Exception as e:
+                error_msg = f"多模态向量化异常: {file_path} - {str(e)}"
+                task_mgr.update_task_status(
+                    task.id, 
+                    TaskStatus.FAILED, 
+                    result=TaskResult.FAILURE,
+                    message=error_msg
+                )
+                logger.error(error_msg, exc_info=True)
+        else:
+            # 中低优先级任务: 批量处理（未来支持）
+            logger.info(f"其他任务类型暂未实现 (Task ID: {task.id})")
+            task_mgr.update_task_status(
+                task.id, 
+                TaskStatus.COMPLETED, 
+                result=TaskResult.SUCCESS,
+                message="批量处理任务已跳过"
+            )
+    
+    else:
+        logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
+        task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
+
+
+def _generic_task_processor(db_path: str, stop_event: threading.Event, processor_name: str, task_getter_func: str, sleep_duration: int = 5):
+    """通用任务处理器
+    
+    Args:
+        db_path: 数据库路径
+        stop_event: 停止事件
+        processor_name: 处理器名称（用于日志）
+        task_getter_func: TaskManager中获取任务的方法名
+        sleep_duration: 没有任务时的等待时间（秒）
+    """
+    logger.info(f"{processor_name}已启动")
+    
+    sqlite_url = f"sqlite:///{db_path}"
+    engine = create_engine(
+        sqlite_url, 
+        echo=False, 
+        connect_args={"check_same_thread": False, "timeout": 30}
+    )
+    db_directory = os.path.dirname(db_path)
+    lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+
+    while not stop_event.is_set():
+        try:
+            with Session(engine) as session:
+                task_mgr = TaskManager(session)
+                # 动态调用指定的任务获取方法
+                task_getter = getattr(task_mgr, task_getter_func)
+                task: Task = task_getter()
+
+                if task is None:
+                    time.sleep(sleep_duration)
+                    continue
+
+                logger.info(f"{processor_name}接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}', Priority={task.priority}")
+                
+                # 调用通用任务处理逻辑
+                _process_task(task, session, lancedb_mgr, task_mgr)
+
+        except Exception as e:
+            logger.error(f"{processor_name}发生意外错误: {e}", exc_info=True)
+            time.sleep(30)
+
+    logger.info(f"{processor_name}已停止")
+
+
 def task_processor(db_path: str, stop_event: threading.Event):
-    """处理任务的后台工作线程"""
+    """普通任务处理线程工作函数（处理所有优先级任务）"""
+    _generic_task_processor(
+        db_path=db_path,
+        stop_event=stop_event,
+        processor_name="普通任务处理线程",
+        task_getter_func="get_and_lock_next_task",
+        sleep_duration=5
+    )
+
+
+def high_priority_task_processor(db_path: str, stop_event: threading.Event):
+    """高优先级任务处理线程工作函数（仅处理HIGH优先级任务）"""
+    _generic_task_processor(
+        db_path=db_path,
+        stop_event=stop_event,
+        processor_name="高优先级任务处理线程",
+        task_getter_func="get_and_lock_next_high_priority_task",
+        sleep_duration=2
+    )
     logger.info("任务处理线程已启动")
     
     sqlite_url = f"sqlite:///{db_path}"
@@ -290,14 +459,15 @@ def task_processor(db_path: str, stop_event: threading.Event):
         try:
             with Session(engine) as session:
                 task_mgr = TaskManager(session)
-                task: Task = task_mgr.get_next_task()
+                # 使用原子操作获取并锁定任务
+                task: Task = task_mgr.get_and_lock_next_task()
 
                 if task is None:
                     time.sleep(5) # 没有任务时，等待5秒
                     continue
 
                 logger.info(f"任务处理线程接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}', Priority={task.priority}")
-                task_mgr.update_task_status(task.id, TaskStatus.RUNNING)
+                # 注意：任务状态已经在get_and_lock_next_task中设置为RUNNING了
 
                 models_mgr = ModelsMgr(session)
                 file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
@@ -324,7 +494,7 @@ def task_processor(db_path: str, stop_event: threading.Event):
                     # 低优先级任务: 批量处理
                     else:
                         logger.info(f"开始批量文件打标签任务 (Task ID: {task.id})")
-                        result_data = file_tagging_mgr.process_pending_batch(task_id=task.id, batch_size=10) # 每次处理10个
+                        result_data = file_tagging_mgr.process_pending_batch(task_id=task.id)
                         
                         # 无论批量任务处理了多少文件，都将触发任务文件打标签为完成
                         task_mgr.update_task_status(
@@ -625,8 +795,8 @@ async def pin_file(
             }
         
         # 检查文件类型是否支持
-        supported_extensions = {'.pdf', '.docx', '.pptx', '.doc', '.ppt'}
-        file_ext = Path(file_path).suffix.lower()
+        supported_extensions = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown']
+        file_ext = Path(file_path).suffix.split('.')[-1].lower()
         if file_ext not in supported_extensions:
             logger.warning(f"Pin文件失败，不支持的文件类型: {file_ext}")
             return {

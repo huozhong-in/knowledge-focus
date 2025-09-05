@@ -489,7 +489,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                                 else:
                                     logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
                             else:
-                                logger.info(f'Unknown part type: {part}')
+                                logger.info(f'Unknown part type: {part.get("type", "unknown")}')
                     # 备用：检查传统的content字段
                     if not content_text:
                         content_text = msg.get("content", "")
@@ -560,7 +560,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                                 media_type=mime_type
                             )
                             user_prompt_multimodal.append(binary_content)
-                            logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
+                            # logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
                         else:
                             logger.warning(f"图片文件不存在: {image_path}")
                     except Exception as e:
@@ -571,15 +571,15 @@ Generate a title that best represents what this conversation will be about. Avoi
                 # 只有文本的情况
                 user_prompt_final = "\n".join(user_prompt)
             
-            # 输出日志，处理多模态情况
-            if isinstance(user_prompt_final, list):
-                text_parts = [part for part in user_prompt_final if isinstance(part, str)]
-                binary_parts = [part for part in user_prompt_final if hasattr(part, 'data')]
-                logger.info(f"最终用户提示词: 文本部分({len(text_parts)})和图片部分({len(binary_parts)})")
-                if text_parts:
-                    logger.info(f"文本内容: {' '.join(text_parts)[:200]}...")
-            else:
-                logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
+            # # 输出日志，处理多模态情况
+            # if isinstance(user_prompt_final, list):
+            #     text_parts = [part for part in user_prompt_final if isinstance(part, str)]
+            #     binary_parts = [part for part in user_prompt_final if hasattr(part, 'data')]
+            #     logger.info(f"最终用户提示词: 文本部分({len(text_parts)})和图片部分({len(binary_parts)})")
+            #     if text_parts:
+            #         logger.info(f"文本内容: {' '.join(text_parts)[:200]}...")
+            # else:
+            #     logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
             
             count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
             logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")

@@ -468,7 +468,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info) // 你可以设置一个全局的默认级别，例如 Info
                 .level_for("tao", log::LevelFilter::Warn) // 将 tao crate 的日志级别设为 Warn
                 .level_for("notify", log::LevelFilter::Info) // Revert to INFO or desired level
-                .level_for("notify_debouncer_full", log::LevelFilter::Info) // Revert to INFO or desired level
+                // .level_for("notify_debouncer_full", log::LevelFilter::Info) // Revert to INFO or desired level
                 .build()
         )
         .plugin(tauri_plugin_single_instance::init(|app, args, cwd| {

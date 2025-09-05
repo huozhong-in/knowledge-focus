@@ -11,6 +11,9 @@ from typing import List, Dict
 from pydantic_ai import Agent, BinaryContent, RunContext
 # from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr, ModelUseInterface
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ModelCapabilityConfirm:
     """每种能力都需要一段测试程序来确认模型是否具备"""
@@ -97,13 +100,17 @@ class ModelCapabilityConfirm:
             model=model,
         )
         try:
-            await agent.run(
+            result = await agent.run(
                 user_prompt="Hello, how are you?",
                 # usage_limits=UsageLimits(output_tokens_limit=100),
             )
-            return True
+            if isinstance(result.output, str) and len(result.output) > 0:
+                return True
+            else:
+                logger.warning(f"Unexpected output format for text capability: {result.output}")
+                return False
         except Exception as e:
-            print(f"Error testing text capability: {e}")
+            logger.error(f"Error testing text capability: {e}")
             return False
     
     async def confirm_vision_capability(self, config_id: int) -> bool:
@@ -115,9 +122,9 @@ class ModelCapabilityConfirm:
         image_path = script_dir / "dog.png"
         
         if not image_path.exists():
-            print(f"Warning: Test image not found at {image_path}")
-            print(f"Script directory: {script_dir}")
-            print(f"Current working directory: {Path.cwd()}")
+            logger.warning(f"Warning: Test image not found at {image_path}")
+            logger.info(f"Script directory: {script_dir}")
+            logger.info(f"Current working directory: {Path.cwd()}")
             return False
 
         model_interface = self._get_spec_model_config(config_id)
@@ -134,14 +141,14 @@ class ModelCapabilityConfirm:
                     BinaryContent(data=image_path.read_bytes(), media_type='image/png'),
                 ]
             )
-            # print(result.output)
+            # logger.info(result.output)
             if 'dog' in result.output.lower():
                 return True
             if 'puppy' in result.output.lower():
                 return True
             return False
         except Exception as e:
-            print(f"Error testing vision capability: {e}")
+            logger.error(f"Error testing vision capability: {e}")
             return False
 
     async def confirm_embedding_capability(self) -> bool:
@@ -151,11 +158,14 @@ class ModelCapabilityConfirm:
         try:
             from models_mgr import ModelsMgr
             model_mgr = ModelsMgr(self.session)
-            _text_embeds = model_mgr.get_embedding("I like reading")
-            # print(len(_text_embeds))
-            return True
+            text_embeds = model_mgr.get_embedding("I like reading")
+            # logger.info(len(text_embeds))
+            if text_embeds is not None and len(text_embeds) > 0:
+                return True
+            logger.warning(f"Unexpected embedding format: {text_embeds}")
+            return False
         except Exception as e:
-            print(f"Error confirming embedding capability: {e}")
+            logger.error(f"Error confirming embedding capability: {e}")
             return False
 
     async def confirm_tooluse_capability(self, config_id: int) -> bool:
@@ -182,7 +192,7 @@ class ModelCapabilityConfirm:
             await agent.run('What is the weather like in San Francisco?')
             return True
         except Exception as e:
-            print(f"Error testing tool use capability: {e}")
+            logger.error(f"Error testing tool use capability: {e}")
             return False
     
     async def confirm_structured_output_capability(self, config_id: int) -> bool:
@@ -201,10 +211,13 @@ class ModelCapabilityConfirm:
                 model=model,
                 output_type=CityLocation,
             )
-            await agent.run('Where were the olympics held in 2012?')
-            return True
+            result = await agent.run('Where were the olympics held in 2012?')
+            # logger.info(f"Structured output result: {result}")
+            if isinstance(result.output, CityLocation):
+                return True
+            return False
         except Exception as e:
-            print(f"Error testing structured output capability: {e}")
+            logger.error(f"Error testing structured output capability: {e}")
             return False
 
     def add_capability(self, config_id: int, capa: ModelCapability) -> bool:
@@ -224,7 +237,7 @@ class ModelCapabilityConfirm:
                     session.commit()
                 return True
             except Exception as e:
-                print(f"Error adding capability: {e}")
+                logger.error(f"Error adding capability: {e}")
                 return False
 
     def del_capability(self, config_id: int, capa: ModelCapability) -> bool:
@@ -244,11 +257,19 @@ class ModelCapabilityConfirm:
                     session.commit()
                     return True
             except Exception as e:
-                print(f"Error deleting capability: {e}")
+                logger.error(f"Error deleting capability: {e}")
                 return False
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler()  # 输出到控制台
+        ]
+    )
+    
     import asyncio
 
     from sqlmodel import create_engine
@@ -258,13 +279,13 @@ if __name__ == "__main__":
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
             mgr = ModelCapabilityConfirm(session)
-            # print(await mgr.confirm_text_capability(6))
-            # print(await mgr.confirm_tooluse_capability(6))
-            # print(await mgr.confirm_structured_output_capability(6))
-            # print(await mgr.confirm_vision_capability(6))
+            logger.info(await mgr.confirm_text_capability(9))
+            logger.info(await mgr.confirm_tooluse_capability(9))
+            logger.info(await mgr.confirm_structured_output_capability(9))
+            logger.info(await mgr.confirm_vision_capability(9))
 
-            print(await mgr.confirm_embedding_capability())
+            # logger.info(await mgr.confirm_embedding_capability())
 
-            # print(await mgr.confirm_model_capability_dict(2, save_config=False))
+            # logger.info(await mgr.confirm_model_capability_dict(2, save_config=False))
 
     asyncio.run(main())

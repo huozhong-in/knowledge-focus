@@ -25,7 +25,7 @@ interface FileItemProps {
 function FileItem({ file, onTogglePin, onTagClick, onSelectImage }: FileItemProps) {
   const { getFileStatus } = useVectorizationStore();
   const vectorizationState = getFileStatus(file.path);
-  const textExtensions = ['txt', 'md', 'markdown', 'doc', 'docx', 'pdf', 'ppt', 'pptx'];
+  const textExtensions = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown'];
   const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];  // bmp/svg不支持
   const getFileIcon = (extension?: string) => {
     if (!extension) return <File className="size-4" />;

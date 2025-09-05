@@ -26,17 +26,31 @@ class ScreeningManager:
             添加成功返回记录对象，失败返回None
         """
         try:
-            # 检查是否已存在相同路径和哈希值的记录
+            # 检查是否已存在相同路径的记录
             file_path = data.get("file_path", "")
             file_hash = data.get("file_hash")
             
-            existing_record = self.get_by_path_and_hash(file_path, file_hash)
-            if (existing_record):
-                # 如果已存在记录，则更新现有记录，同时确保状态为pending
-                update_data = data.copy()
-                update_data["status"] = FileScreenResult.PENDING.value  # 确保状态重置为pending
-                logger.info(f"找到现有记录 ID:{existing_record.id}，更新状态为pending并更新元数据")
-                return self.update_screening_result(existing_record.id, update_data)
+            # 先根据文件路径查找现有记录
+            existing_record = self.get_by_path(file_path)
+            if existing_record:
+                # 检查文件内容是否有变化
+                if existing_record.file_hash != file_hash:
+                    # 文件内容已变化，需要重新处理
+                    logger.info(f"文件内容已变化: {file_path}, 旧哈希: {existing_record.file_hash}, 新哈希: {file_hash}, 更新记录并重置为pending")
+                    update_data = data.copy()
+                    update_data["status"] = FileScreenResult.PENDING.value  # 重置为pending状态
+                    return self.update_screening_result(existing_record.id, update_data)
+                else:
+                    # 文件内容未变化，检查是否需要更新其他字段（如task_id）
+                    if data.get("task_id") and existing_record.task_id != data.get("task_id"):
+                        # 需要更新task_id但保持原有状态
+                        logger.info(f"文件内容未变化但需要更新task_id: {file_path}")
+                        update_data = {"task_id": data.get("task_id")}
+                        return self.update_screening_result(existing_record.id, update_data)
+                    else:
+                        # 完全无需更新
+                        logger.info(f"文件内容未变化且无需更新: {file_path}, 保持现有记录")
+                        return existing_record
             
             # 将字典转换为FileScreeningResult对象
             result = FileScreeningResult(

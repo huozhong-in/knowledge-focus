@@ -19,7 +19,7 @@ pub enum SimpleFileEvent {
     Removed(PathBuf),  // 文件删除（包括删除和移出）
 }
 
-/// 防抖动文件监控器，基于 `notify_debouncer_full` 库实现
+/// 防抖动文件监控器
 #[derive(Clone)]
 pub struct DebouncedFileMonitor {
     /// 指向基础FileMonitor的引用，用于处理文件元数据和规则

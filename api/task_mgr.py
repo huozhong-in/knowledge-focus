@@ -90,6 +90,63 @@ class TaskManager:
             .order_by(Task.priority, Task.created_at)
         ).first()
     
+    def get_and_lock_next_high_priority_task(self) -> Task | None:
+        """原子地获取并锁定下一个高优先级任务"""
+        try:
+            # 查找第一个HIGH优先级的PENDING任务
+            task = self.session.exec(
+                select(Task)
+                .where(Task.status == TaskStatus.PENDING.value)
+                .where(Task.priority == TaskPriority.HIGH.value)
+                .order_by(Task.created_at)
+                .limit(1)
+            ).first()
+            
+            if task:
+                # 原子地将状态改为RUNNING，避免其他处理器获取到同一任务
+                task.status = TaskStatus.RUNNING.value
+                task.start_time = datetime.now()
+                task.updated_at = datetime.now()
+                self.session.add(task)
+                self.session.commit()
+                logger.info(f"高优先级任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
+                return task
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取并锁定高优先级任务失败: {e}")
+            self.session.rollback()
+            return None
+    
+    def get_and_lock_next_task(self) -> Task | None:
+        """原子地获取并锁定下一个待处理的任务（排除已被锁定的任务）"""
+        try:
+            # 查找第一个PENDING状态的任务
+            task = self.session.exec(
+                select(Task)
+                .where(Task.status == TaskStatus.PENDING.value)
+                .order_by(Task.priority, Task.created_at)
+                .limit(1)
+            ).first()
+            
+            if task:
+                # 原子地将状态改为RUNNING，避免其他处理器获取到同一任务
+                task.status = TaskStatus.RUNNING.value
+                task.start_time = datetime.now()
+                task.updated_at = datetime.now()
+                self.session.add(task)
+                self.session.commit()
+                logger.info(f"普通任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
+                return task
+            else:
+                return None
+                
+        except Exception as e:
+            logger.error(f"获取并锁定任务失败: {e}")
+            self.session.rollback()
+            return None
+    
     def update_task_status(self, task_id: int, status: TaskStatus, 
                           result: TaskResult = None, message: str = None) -> bool:
         """更新任务状态
@@ -228,49 +285,6 @@ class TaskManager:
                 
         return pool.apply_async(monitored_func, args=args, callback=callback)
     
-    def cancel_old_tasks(self, task_type: str, created_before=None) -> int:
-        """取消特定类型的旧任务
-        
-        当提交新任务时，可以用此方法取消同类型的旧任务，避免处理过时的数据
-        
-        Args:
-            task_type: 要取消的任务类型
-            created_before: 取消在此时间之前创建的任务，默认为当前时间
-            
-        Returns:
-            取消的任务数量
-        """
-        logger.info(f"取消类型为 {task_type} 的旧任务")
-        
-        if created_before is None:
-            created_before = datetime.now()
-            
-        # 查询待取消的任务
-        statement = (
-            select(Task)
-            .where(
-                Task.task_type == task_type,
-                Task.status == TaskStatus.PENDING.value,
-                Task.created_at < created_before
-            )
-        )
-        
-        tasks = self.session.exec(statement).all()
-        canceled_count = 0
-        
-        for task in tasks:
-            task.status = TaskStatus.CANCELED.value
-            task.result = TaskResult.CANCELLED.value  # 设置任务结果为被取消
-            task.updated_at = datetime.now()
-            task.error_message = "被更新的任务取代"
-            self.session.add(task)
-            canceled_count += 1
-            
-        if canceled_count > 0:
-            self.session.commit()
-            logger.info(f"已取消 {canceled_count} 个类型为 {task_type} 的旧任务")
-            
-        return canceled_count
     
     def get_latest_completed_task(self, task_type: str) -> Task | None:
         """获取最新的已完成任务

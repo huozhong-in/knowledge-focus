@@ -127,12 +127,12 @@ class FileTaggingMgr:
             screening_result.tagged_time = datetime.now()
             self.session.add(screening_result)
     
-    def process_pending_batch(self, task_id: int, batch_size: int = 10) -> Dict[str, Any]:
+    def process_pending_batch(self, task_id: int) -> Dict[str, Any]:
         """
         Processes a batch of pending file screening results.
         """        
 
-        logger.info(f"[FILE_TAGGING_BATCH] Checking for a batch of {batch_size} pending files...")
+        logger.info("[FILE_TAGGING_BATCH] Checking for a batch of pending files...")
         start_time = time.time()
 
         results = self.session.exec(
@@ -141,7 +141,6 @@ class FileTaggingMgr:
                 FileScreeningResult.status == FileScreenResult.PENDING.value,
                 FileScreeningResult.task_id == task_id
             ))
-            .limit(batch_size)
         ).all()
 
         if not results:

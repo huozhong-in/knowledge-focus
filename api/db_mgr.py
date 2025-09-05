@@ -22,6 +22,7 @@ import os
     
 # 任务状态枚举
 class TaskStatus(str, PyEnum):
+    RESERVED = "reserved"  # 预留/占位状态，等待数据填充
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -470,10 +471,10 @@ class DBManager:
                 SQLModel.metadata.create_all(engine, tables=[Task.__table__])
                 # if not any([col['name'] == 'idx_task_type' for col in inspector.get_indexes(Task.__tablename__)]):
                 #     conn.execute(text(f'CREATE INDEX idx_task_type ON {Task.__tablename__} (task_type);'))
-                # * 删除表中已经完成的48小时之前的任务
+                # * 删除表中已经完成的24小时之前的任务
                 conn.execute(text(f'''
                     DELETE FROM {Task.__tablename__}
-                    WHERE status = 'completed' AND updated_at < datetime('now', '-48 hours');
+                    WHERE status = 'completed' AND updated_at < datetime('now', '-24 hours');
                 '''))
 
             # 创建通知表
