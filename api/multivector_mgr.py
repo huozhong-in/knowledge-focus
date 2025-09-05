@@ -204,7 +204,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             if model_path == "":
                 db_path = self.session.get_bind().url.database
                 cache_directory = os.path.dirname(db_path)
-                model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+                model_path = self.models_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
                 self.model_config_mgr.set_embeddings_model_path(model_path)  
             tokenizer = HuggingFaceTokenizer(
                 tokenizer=AutoTokenizer.from_pretrained(model_path),
