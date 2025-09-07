@@ -661,7 +661,7 @@ pub fn run() {
             {
                 // 创建菜单项
                 let settings_item = MenuItem::with_id(app, "settings", "Settings", true, Some("cmd+,"))?;
-                let about_item = PredefinedMenuItem::about(app, Some("About Knowledge Focus"), None)?;
+                let about_item = MenuItem::with_id(app, "about", "About Knowledge Focus", true, None::<&str>)?;
                 let separator = PredefinedMenuItem::separator(app)?;
                 let quit_item = PredefinedMenuItem::quit(app, Some("Quit Knowledge Focus"))?;
                 
@@ -814,7 +814,7 @@ pub fn run() {
                         app.exit(0);
                     }
                     _ => {
-                        println!("menu item {:?} not handled", event.id);
+                        // println!("menu item {:?} not handled", event.id);
                     }
                 })
                 .on_tray_icon_event(|tray, event| match event {
