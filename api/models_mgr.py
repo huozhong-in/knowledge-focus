@@ -21,7 +21,7 @@ from pydantic_ai.messages import (
     FinalResultEvent,
 )
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.usage import UsageLimits
+# from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
@@ -239,7 +239,7 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
         try:
             response = agent.run_sync(
                 user_prompt=user_prompt,
-                usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数，主要考虑thinking占用token
+                # usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数，主要考虑thinking占用token
             )
             # print(response.output)
         except UsageLimitExceeded as e:
@@ -291,7 +291,7 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
         try:
             response = agent.run_sync(
                 user_prompt=messages[1]['content'],
-                usage_limits=UsageLimits(output_tokens_limit=50),  # 限制生成的最大token数，确保简洁
+                # usage_limits=UsageLimits(output_tokens_limit=50),  # 限制生成的最大token数，确保简洁
             )
             title = response.output.title.strip()
             
@@ -402,7 +402,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             if user_prompt_texts == []:
                 raise ValueError("User prompt is empty")
             response = agent.run_sync(
-                user_prompt=user_prompt_texts[0]
+                user_prompt=user_prompt_texts[0],
                 # usage_limits=UsageLimits(output_tokens_limit=50),
             )
             return response.output

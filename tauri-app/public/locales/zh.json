@@ -44,8 +44,8 @@
     },
     "FILELIST": {
         "pin-file-for-chat": "固定文件以供聊天",
-        "tap-tag-or-search-file-name": "点击标签或搜索文件名",
-        "tap-tag-or-search-file-name-detail": "请点击左侧标签云或在上方搜索文件",
+        "tap-tag-or-search-file-name": "点击标签或搜索文件路径",
+        "tap-tag-or-search-file-name-detail": "这里是你的文件列表",
         "show-in-folder": "在文件夹中显示",
         "pin-file": "固定文件",
         "unpin-file": "取消固定",

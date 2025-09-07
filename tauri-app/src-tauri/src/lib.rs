@@ -548,7 +548,7 @@ pub fn run() {
                 
                 // 使用reqwest客户端检查API健康状态
                 let client = reqwest::Client::new();
-                let max_retries = 50; // 最多尝试50次
+                let max_retries = 150; // 最多尝试150次
                 let retry_interval = std::time::Duration::from_millis(500); // 每500ms检查一次
                 let mut api_ready = false;
                 
@@ -748,12 +748,15 @@ pub fn run() {
                                         let screen_position = monitor.position();
                                         
                                         let window_width = screen_size.width / 2;
-                                        let window_height = screen_size.height;
-                                        
+                                        // 窗口高度保持不变
+                                        let window_height = window.outer_size().unwrap_or_default().height;
+                                        // 窗口y值不变
+                                        let window_y = window.outer_position().unwrap_or_default().y;
+
                                         // 设置窗口位置和大小
                                         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                                             x: screen_position.x,
-                                            y: screen_position.y,
+                                            y: window_y,
                                         }));
                                         let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                                             width: window_width,
@@ -773,12 +776,15 @@ pub fn run() {
                                         let screen_position = monitor.position();
                                         
                                         let window_width = screen_size.width / 2;
-                                        let window_height = screen_size.height;
+                                        // 窗口高度保持不变
+                                        let window_height = window.outer_size().unwrap_or_default().height;
+                                        // 窗口y值不变
+                                        let window_y = window.outer_position().unwrap_or_default().y;
                                         
                                         // 设置窗口位置和大小
                                         let _ = window.set_position(tauri::Position::Physical(tauri::PhysicalPosition {
                                             x: screen_position.x + (screen_size.width / 2) as i32,
-                                            y: screen_position.y,
+                                            y: window_y,
                                         }));
                                         let _ = window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
                                             width: window_width,

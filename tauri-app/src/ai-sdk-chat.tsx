@@ -281,29 +281,30 @@ export function AiSdkChat({
                 </div>
               </div>
             ) : (
-              messages.map((message) => (
-                <Message key={message.id} from={message.role}>
-                  <MessageContent>
-                    {message.parts.map((part: any, index: number) => {
-                      switch (part.type) {
-                        case "text":
-                          return message.role === "assistant" ? (
-                            <div key={`${message.id}-${index}`}>
-                              <Response key={index} className="pl-2">{part.text}</Response>
-                              <Actions className="mt-2">
-                                <Action
-                                  onClick={() =>
-                                    navigator.clipboard.writeText(part.text)
-                                  }
-                                  label="Copy"
-                                >
-                                  <CopyIcon className="size-4" />
-                                </Action>
-                              </Actions>
-                            </div>                            
-                          ) : (
-                            <div key={index}>{part.text}</div>
-                          )
+              <>
+                {messages.map((message) => (
+                  <Message key={message.id} from={message.role}>
+                    <MessageContent>
+                      {message.parts.map((part: any, index: number) => {
+                        switch (part.type) {
+                          case "text":
+                            return message.role === "assistant" ? (
+                              <div key={`${message.id}-${index}`}>
+                                <Response key={index} className="pl-2">{part.text}</Response>
+                                <Actions className="mt-2">
+                                  <Action
+                                    onClick={() =>
+                                      navigator.clipboard.writeText(part.text)
+                                    }
+                                    label="Copy"
+                                  >
+                                    <CopyIcon className="size-4" />
+                                  </Action>
+                                </Actions>
+                              </div>                            
+                            ) : (
+                              <div key={index}>{part.text}</div>
+                            )
                         case "file":
                           // 处理图片文件
                           if (part.mediaType?.startsWith('image/')) {
@@ -358,7 +359,31 @@ export function AiSdkChat({
                     className="size-6"
                   />
                 </Message>
-              ))
+              ))}
+              
+              {/* AI回复占位符 - 当正在等待AI回复时显示 */}
+              {status === "streaming" && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
+                <Message from="assistant">
+                  <MessageContent>
+                    <div className="pl-2">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                          <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                        </div>
+                        <span className="text-sm">AI 正在思考...</span>
+                      </div>
+                    </div>
+                  </MessageContent>
+                  <MessageAvatar 
+                    src="/bot.png"
+                    name="Assistant"
+                    className="size-6"
+                  />
+                </Message>
+              )}
+              </>
             )}
           </ScrollArea>
         </ConversationContent>

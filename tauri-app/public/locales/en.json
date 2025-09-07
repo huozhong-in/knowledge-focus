@@ -44,8 +44,8 @@
     },
     "FILELIST": {
         "pin-file-for-chat": "Pin file for chat",
-        "tap-tag-or-search-file-name": "Tap a tag or search for a file name",
-        "tap-tag-or-search-file-name-detail": "Please click a tag on the left or search for a file above",
+        "tap-tag-or-search-file-name": "Tap a tag or search file",
+        "tap-tag-or-search-file-name-detail": "Your file list here",
         "show-in-folder": "Show in Folder",
         "pin-file": "Pin File",
         "unpin-file": "Unpin File",
