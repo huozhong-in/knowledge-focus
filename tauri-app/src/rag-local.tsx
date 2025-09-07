@@ -128,10 +128,10 @@ export function RagLocal() {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      <div className="border-b p-3 bg-gray-50/50">
+      <div className="border-b p-1 bg-gray-50/50">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-semibold text-gray-900">{t('RAGLOCAL.file-observation-window')}</p>
+            <p className="text-xs font-semibold text-gray-900">{t('RAGLOCAL.file-observation-window')}</p>
             <p className="text-xs text-gray-500">{t('RAGLOCAL.rag-retrieval-monitoring')}</p>
           </div>
           <div className="flex items-center gap-2">

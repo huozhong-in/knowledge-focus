@@ -101,9 +101,9 @@
   ```
 
 ### 2.2 修改现有API端点
-- [ ] 保留`/config/all`端点功能
-- [ ] 删除复杂语义规则相关的API响应
-- [ ] 确保Bundle配置的API支持
+- [x] 保留`/config/all`端点功能
+- [x] 删除复杂语义规则相关的API响应
+- [x] 确保Bundle配置的API支持
 
 ### 2.3 API实现
 - [x] 在`myfolders_api.py`中实现新端点`/file-scanning-config`

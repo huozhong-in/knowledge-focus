@@ -372,7 +372,7 @@ export function AiSdkChat({
                           <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
                           <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
                         </div>
-                        <span className="text-sm">AI 正在思考...</span>
+                        <span className="text-sm">AI is thinking...</span>
                       </div>
                     </div>
                   </MessageContent>

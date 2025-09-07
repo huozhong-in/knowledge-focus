@@ -610,12 +610,10 @@ export function FileList({
             <span className="text-xs font-medium text-primary">
               {files.length}
             </span>
-            <span className="text-xs text-muted-foreground/60">shown</span>
-            <span className="text-xs text-muted-foreground/60">·</span>
+            <span className="text-xs text-muted-foreground/60">of</span>
             <span className="text-xs text-muted-foreground font-medium">
               {screeningResultCount.toLocaleString()}
             </span>
-            <span className="text-xs text-muted-foreground/80">total</span>
           </div>
         </div>
         <div className="flex flex-row items-center gap-2 justify-end">

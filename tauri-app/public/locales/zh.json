@@ -68,7 +68,7 @@
     },
     "RAGLOCAL": {
         "file-observation-window": "知识观察窗",
-        "rag-retrieval-monitoring": "RAG检索过程与结果实时监控",
+        "rag-retrieval-monitoring": "RAG检索实时监控",
         "x-tensor-records": "条向量记录",
         "waiting-rag-retrieval": "等待RAG检索活动...",
         "waiting-rag-retrieval-details": "当您发送消息时，相关知识片段将在这里显示"

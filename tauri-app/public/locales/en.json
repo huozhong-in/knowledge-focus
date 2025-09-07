@@ -68,7 +68,7 @@
     },
     "RAGLOCAL": {
         "file-observation-window": "Knowledge Observation Window",
-        "rag-retrieval-monitoring": "Real-time monitoring of RAG retrieval process and results",
+        "rag-retrieval-monitoring": "Real-time RAG monitoring",
         "x-tensor-records": " vector records",
         "waiting-rag-retrieval": "Waiting for RAG retrieval activity...",
         "waiting-rag-retrieval-details": "When you send a message, relevant knowledge snippets will be displayed here."
