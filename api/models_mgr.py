@@ -32,8 +32,6 @@ from mlx_embeddings.utils import load as load_embedding_model
 import mlx.core as mx
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 # 定义一个可以在运行时创建的 BridgeProgressReporter 类
 def create_bridge_progress_reporter(bridge_events, model_name):
@@ -439,7 +437,8 @@ Generate a title that best represents what this conversation will be about. Avoi
                 model_interface: ModelUseInterface = self.model_config_mgr.get_text_model_config()
             
             if model_interface is None:
-                error_msg = "视觉模型配置未找到" if has_images else "文本模型配置未找到"
+                error_msg = "can't use vision model" if has_images else "can't use text model"
+                error_msg = f"{error_msg}, please check model configuration"
                 logger.error(error_msg)
                 yield f'data: {json.dumps({"type": "error", "errorText": error_msg})}\n\n'
                 return
@@ -452,9 +451,9 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 准备工具
             tools = [Tool(tool, takes_ctx=True) for tool in self.tool_provider.get_tools_for_session(session_id)]
             count_tokens_tools = self.memory_mgr.calculate_tools_tokens(tools)
-            logger.info(f"当前工具数: {len(tools)}, 当前token数: {count_tokens_tools}")
+            logger.info(f"当前工具数: {len(tools)}, tools token数: {count_tokens_tools}")
             
-            # 构建系统prompt
+            # 构建系统prompt(要描述可选工具)
             system_prompt = ["You are a helpful assistant."]
             scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
             if scenario_system_prompt:
@@ -501,29 +500,6 @@ Generate a title that best represents what this conversation will be about. Avoi
                 yield f'data: {"type": "error", "errorText": "User prompt is empty"}\n\n'
                 return
 
-            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
-            logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
-            
-            # 留给会话历史记录的token数
-            available_tokens = max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
-            logger.info(f"当前可用历史消息token数: {available_tokens}")
-            chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
-            
-            # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
-            user_query = "\n".join(user_prompt)  # 合并用户输入作为查询（不包含图片信息）
-            rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
-            if rag_context:
-                user_prompt = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt
-                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
-                
-                # 通过桥接器发送RAG数据到知识观察窗
-                self._send_rag_to_observation_window(rag_sources, user_query)
-            
-            # 将会话历史记录插到用户提示词上方
-            if chat_history != []:
-                user_prompt = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt
-            logger.info(f"当前用户提示词: {user_prompt}")
-
             # 构建包含文本和图片的消息内容
             if image_files:
                 # 如果有图片，需要构建多模态消息
@@ -568,9 +544,9 @@ Generate a title that best represents what this conversation will be about. Avoi
                 
                 user_prompt_final = user_prompt_multimodal
             else:
-                # 只有文本的情况
-                user_prompt_final = "\n".join(user_prompt)
-            
+                # 只有文本的情况，也用list保持一致
+                user_prompt_final = user_prompt
+
             # # 输出日志，处理多模态情况
             # if isinstance(user_prompt_final, list):
             #     text_parts = [part for part in user_prompt_final if isinstance(part, str)]
@@ -581,7 +557,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # else:
             #     logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
             
-            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt))
+            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt_final))
             logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
             
             # 留给会话历史记录的token数
@@ -590,10 +566,10 @@ Generate a title that best represents what this conversation will be about. Avoi
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
             
             # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
-            user_query = "\n".join(user_prompt)  # 合并用户输入作为查询
+            user_query = "\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)])  # 合并用户输入作为查询
             rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
             if rag_context:
-                user_prompt = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt
+                user_prompt_final = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
                 logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
                 
                 # 通过桥接器发送RAG数据到知识观察窗
@@ -601,8 +577,8 @@ Generate a title that best represents what this conversation will be about. Avoi
             
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
-                user_prompt = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt
-            logger.info(f"当前用户提示词: {user_prompt}")
+                user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
+            logger.info(f"当前用户提示词: {user_prompt_final}")
             
             # 创建agent
             agent = Agent(
@@ -1083,6 +1059,13 @@ Generate a title that best represents what this conversation will be about. Avoi
 
 # for testing
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        # format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
+
     from config import TEST_DB_PATH
     from sqlmodel import create_engine
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
@@ -1092,7 +1075,7 @@ if __name__ == "__main__":
     # model_interface = mgr.model_config_mgr.get_text_model_config()
     # print(model_interface.model_dump())
     
-    # import asyncio
+    import asyncio
 
     # # Test embedding generation
     # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
@@ -1115,19 +1098,19 @@ if __name__ == "__main__":
     # except Exception as e:
     #     print("Chat Error:", e)
 
-    # # test stream
-    # async def test_stream():
-    #     messages = [
-    #         {'role': 'user', 'content': 'What is the weather in Beijing?'}
-    #     ]
+    # test stream
+    async def test_stream():
+        messages = [
+            {'role': 'user', 'content': '拜占庭将军问题是什么？'}
+        ]
         
-    #     print('Testing Vercel AI SDK compatible stream protocol:')
-    #     print('=' * 50)
+        print('Testing Vercel AI SDK compatible stream protocol:')
+        print('=' * 50)
         
-    #     async for chunk in mgr.stream_agent_chat(messages, session_id=1):
-    #         print(chunk, end='')
+        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
+            print(chunk, end='')
     
-    # asyncio.run(test_stream())
+    asyncio.run(test_stream())
 
     # # 下载MLX优化的Qwen3 Embedding模型
     # import os
@@ -1135,90 +1118,90 @@ if __name__ == "__main__":
     # path = mgr.download_embedding_model(EMBEDDING_MODEL, cache_dir)
     # print(path)
     
-    # === RAG测试代码 ===
-    print("\n" + "="*50)
-    print("测试RAG检索结果和相似度计算")
-    print("="*50)
+    # # === RAG测试代码 ===
+    # print("\n" + "="*50)
+    # print("测试RAG检索结果和相似度计算")
+    # print("="*50)
     
-    # 测试会话ID=18的RAG检索
-    session_id = 18
-    user_query = "Manus项目有哪些经验教训？"
-    available_tokens = 2000
+    # # 测试会话ID=18的RAG检索
+    # session_id = 18
+    # user_query = "Manus项目有哪些经验教训？"
+    # available_tokens = 2000
     
-    print(f"测试查询: {user_query}")
-    print(f"会话ID: {session_id}")
+    # print(f"测试查询: {user_query}")
+    # print(f"会话ID: {session_id}")
     
-    try:
-        rag_context, rag_sources = mgr._get_rag_context(session_id, user_query, available_tokens)
+    # try:
+    #     rag_context, rag_sources = mgr._get_rag_context(session_id, user_query, available_tokens)
         
-        print("\n检索结果:")
-        print(f"- 上下文长度: {len(rag_context)} 字符")
-        print(f"- 来源数量: {len(rag_sources)}")
+    #     print("\n检索结果:")
+    #     print(f"- 上下文长度: {len(rag_context)} 字符")
+    #     print(f"- 来源数量: {len(rag_sources)}")
         
-        if rag_sources:
-            print("\n详细来源信息:")
-            for i, source in enumerate(rag_sources):
-                print(f"\n[来源 {i+1}]")
-                print(f"  文件: {source.get('file_path', 'Unknown')}")
-                print(f"  相似度分数: {source.get('similarity_score', 0.0)}")
-                print(f"  内容长度: {len(source.get('content', ''))}")
-                print(f"  内容预览: {source.get('content', '')[:200]}...")
+    #     if rag_sources:
+    #         print("\n详细来源信息:")
+    #         for i, source in enumerate(rag_sources):
+    #             print(f"\n[来源 {i+1}]")
+    #             print(f"  文件: {source.get('file_path', 'Unknown')}")
+    #             print(f"  相似度分数: {source.get('similarity_score', 0.0)}")
+    #             print(f"  内容长度: {len(source.get('content', ''))}")
+    #             print(f"  内容预览: {source.get('content', '')[:200]}...")
                 
-                # 如果有原始distance数据，也显示出来
-                if 'raw_distance' in source:
-                    print(f"  原始距离: {source.get('raw_distance')}")
+    #             # 如果有原始distance数据，也显示出来
+    #             if 'raw_distance' in source:
+    #                 print(f"  原始距离: {source.get('raw_distance')}")
         
-        # 同时测试SearchManager的原始返回
-        print("\n" + "-"*30)
-        print("原始SearchManager返回数据:")
+    #     # 同时测试SearchManager的原始返回
+    #     print("\n" + "-"*30)
+    #     print("原始SearchManager返回数据:")
         
-        from chatsession_mgr import ChatSessionMgr
-        chat_mgr = ChatSessionMgr(session)
-        document_ids = chat_mgr.get_pinned_document_ids(session_id)
-        print(f"Pin的文档ID: {document_ids}")
+    #     from chatsession_mgr import ChatSessionMgr
+    #     chat_mgr = ChatSessionMgr(session)
+    #     document_ids = chat_mgr.get_pinned_document_ids(session_id)
+    #     print(f"Pin的文档ID: {document_ids}")
         
-        if document_ids:
-            from lancedb_mgr import LanceDBMgr
-            from search_mgr import SearchManager
+    #     if document_ids:
+    #         from lancedb_mgr import LanceDBMgr
+    #         from search_mgr import SearchManager
             
-            db_path = session.get_bind().url.database
-            db_directory = os.path.dirname(db_path)
-            lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+    #         db_path = session.get_bind().url.database
+    #         db_directory = os.path.dirname(db_path)
+    #         lancedb_mgr = LanceDBMgr(base_dir=db_directory)
             
-            search_mgr = SearchManager(
-                session=session, 
-                lancedb_mgr=lancedb_mgr, 
-                models_mgr=mgr
-            )
+    #         search_mgr = SearchManager(
+    #             session=session, 
+    #             lancedb_mgr=lancedb_mgr, 
+    #             models_mgr=mgr
+    #         )
             
-            search_response = search_mgr.search_documents(
-                query=user_query,
-                top_k=5,
-                document_ids=document_ids
-            )
+    #         search_response = search_mgr.search_documents(
+    #             query=user_query,
+    #             top_k=5,
+    #             document_ids=document_ids
+    #         )
             
-            if search_response and search_response.get('success'):
-                raw_results = search_response.get('raw_results', [])
-                print(f"原始结果数量: {len(raw_results)}")
+    #         if search_response and search_response.get('success'):
+    #             raw_results = search_response.get('raw_results', [])
+    #             print(f"原始结果数量: {len(raw_results)}")
                 
-                if raw_results:
-                    print(f"\n首个原始结果字段: {list(raw_results[0].keys())}")
+    #             if raw_results:
+    #                 print(f"\n首个原始结果字段: {list(raw_results[0].keys())}")
                     
-                    for i, result in enumerate(raw_results[:3]):  # 只显示前3个
-                        print(f"\n[原始结果 {i+1}]")
-                        print(f"  所有字段: {result}")
+    #                 for i, result in enumerate(raw_results[:3]):  # 只显示前3个
+    #                     print(f"\n[原始结果 {i+1}]")
+    #                     print(f"  所有字段: {result}")
                         
-                        distance = result.get('distance', 'N/A')
-                        print(f"  原始distance: {distance}")
+    #                     distance = result.get('distance', 'N/A')
+    #                     print(f"  原始distance: {distance}")
                         
-                        # 使用相同的转换公式
-                        if isinstance(distance, (int, float)):
-                            similarity_score = max(0.0, min(1.0, 1.0 - (distance / 2.0)))
-                            print(f"  转换后相似度: {similarity_score} ({similarity_score*100:.1f}%)")
-            else:
-                print(f"搜索失败: {search_response.get('error', '未知错误') if search_response else '无响应'}")
+    #                     # 使用相同的转换公式
+    #                     if isinstance(distance, (int, float)):
+    #                         similarity_score = max(0.0, min(1.0, 1.0 - (distance / 2.0)))
+    #                         print(f"  转换后相似度: {similarity_score} ({similarity_score*100:.1f}%)")
+    #         else:
+    #             print(f"搜索失败: {search_response.get('error', '未知错误') if search_response else '无响应'}")
                 
-    except Exception as e:
-        print(f"RAG测试失败: {e}")
-        import traceback
-        traceback.print_exc()
+    # except Exception as e:
+    #     print(f"RAG测试失败: {e}")
+    #     import traceback
+    #     traceback.print_exc()

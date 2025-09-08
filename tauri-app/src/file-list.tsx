@@ -8,6 +8,7 @@ import {
   MessageCircle,
   ArrowDownLeftIcon,
   ArrowDownRightIcon,
+  DramaIcon,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -155,6 +156,20 @@ function FileItem({
             title={t("FILELIST.send-to-chat")}
           >
             <MessageCircle className="h-2.5 w-2.5" />
+          </Button>
+        )}
+        {/* 如果是PDF文件，则多一个DramaIcon浮动按钮 */}
+        {(
+          file.path.split(".").pop()?.toLocaleLowerCase() === "pdf"
+        ) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {}}
+            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 group-hover:animate-bounce transition-opacity bg-background/80 hover:bg-muted border border-border/50"
+            title={t("FILELIST.co-reading")}
+          >
+            <DramaIcon className="h-2.5 w-2.5" />
           </Button>
         )}
         {/* Reveal in Dir 按钮 - hover时显示 */}

@@ -64,7 +64,8 @@
         "search": "搜索",
         "search-results": "文件搜索结果",
         "search-failure": "搜索失败",
-        "send-to-chat": "发送到聊天"
+        "send-to-chat": "发送到聊天",
+        "co-reading": "AI和你一起读书、看文档"
     },
     "RAGLOCAL": {
         "file-observation-window": "知识观察窗",

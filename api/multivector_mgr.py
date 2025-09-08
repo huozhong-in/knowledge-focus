@@ -58,6 +58,8 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 不同业务场景所需模型能力的组合
 SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.VISION]
 
+SUPPORTED_FORMATS = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown']
+
 @singleton
 class MultiVectorMgr:
     """多模态分块管理器"""
@@ -131,7 +133,7 @@ class MultiVectorMgr:
             self.docling_cache_dir.mkdir(exist_ok=True)
     
     def _init_docling_converter(self):
-        """初始化docling文档转换器，参考test_docling_01.py的配置"""
+        """初始化docling文档转换器"""
 
         try:
             # 获取当前视觉模型配置
@@ -235,6 +237,19 @@ Give a concise summary of the image that is well optimized for retrieval.
         Returns:
             bool: 处理是否成功
         """
+        
+        # 判断文件格式是否支持
+        file_ext = Path(file_path).suffix.split('.')[-1].lower()
+        if file_ext not in SUPPORTED_FORMATS:
+            logger.warning(f"[MULTIVECTOR] Unsupported file type: {file_ext}")
+            if task_id:
+                self.bridge_events.multivector_failed(
+                    file_path, task_id, 
+                    f"不支持的文件类型: {file_ext}，支持的类型: {SUPPORTED_FORMATS}", 
+                    "unsupported_format"
+                )
+            return False
+
         try:
             logger.info(f"[MULTIVECTOR] Starting document processing: {file_path}")
             

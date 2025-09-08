@@ -1,3 +1,4 @@
+from config import singleton
 from sqlmodel import Session, create_engine
 from datetime import datetime
 from typing import Dict, Any, List
@@ -41,6 +42,7 @@ OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt']  # json/xml/csv也能，�
 # 本业务场景所需模型能力的组合
 SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.STRUCTURED_OUTPUT]
 
+@singleton
 class FileTaggingMgr:
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
         self.session = session

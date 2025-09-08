@@ -49,13 +49,13 @@ def get_router(external_get_session: callable) -> APIRouter:
             # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
             bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
             logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-            from file_tagging_mgr import MARKITDOWN_EXTENSIONS, OTHER_PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
+            # from file_tagging_mgr import MARKITDOWN_EXTENSIONS, OTHER_PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
             return {
                 "file_categories": file_categories,
                 "file_filter_rules": file_filter_rules,
                 "file_extension_maps": file_extension_maps,
                 "monitored_folders": monitored_folders,
-                "parsable_extensions": list(set(MARKITDOWN_EXTENSIONS + OTHER_PARSEABLE_EXTENSIONS)),  # 去重
+                # "parsable_extensions": list(set(MARKITDOWN_EXTENSIONS + OTHER_PARSEABLE_EXTENSIONS)),  # 去重
                 "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
                 "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
             }

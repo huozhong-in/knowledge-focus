@@ -64,7 +64,8 @@
         "search": "Search",
         "search-results": "File Search Results",
         "search-failure": "Search failed",
-        "send-to-chat": "Send to Chat"
+        "send-to-chat": "Send to Chat",
+        "co-reading": "AI Co-Reading with You"
     },
     "RAGLOCAL": {
         "file-observation-window": "Knowledge Observation Window",

@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { Tag, MessageCircle } from "lucide-react"
+import { Tags, MessageCircle } from "lucide-react"
 import { useTagCloudStore } from "@/lib/tagCloudStore"
 import { ChatSession } from "./lib/chat-session-api"
 import { useFileListStore } from "@/lib/fileListStore"
@@ -56,7 +56,7 @@ export function CollapsedQuickAccess({
             <div className="space-y-1">
               {/* 分组标题 */}
               <div className="flex items-center justify-center">
-                <Tag className="size-4" />
+                <Tags className="size-4" />
               </div>
               
               {/* 标签按钮列表 */}

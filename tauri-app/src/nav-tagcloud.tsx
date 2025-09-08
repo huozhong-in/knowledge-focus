@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { 
-  Tag,
+  Tags,
   BadgeCheckIcon,
 } from "lucide-react"
 import {
@@ -141,7 +141,7 @@ export function NavTagCloud() {
   return (
     <SidebarGroup className=" bg-background rounded-md pr-0">
       <SidebarGroupLabel>
-        <Tag className="mr-2 h-4 w-4" />
+        <Tags className="mr-2 h-4 w-4" />
         {t('APPSIDEBAR.file-tags')}
       </SidebarGroupLabel>
       

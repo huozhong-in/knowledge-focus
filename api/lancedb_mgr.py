@@ -1,4 +1,4 @@
-from config import EMBEDDING_DIMENSIONS
+from config import singleton, EMBEDDING_DIMENSIONS
 import lancedb
 from lancedb.pydantic import LanceModel, Vector
 from typing import List
@@ -26,6 +26,7 @@ class VectorRecord(LanceModel):
     # 冗余用于检索的文本，便于调试和某些场景下的直接使用
     retrieval_content: str
 
+@singleton
 class LanceDBMgr:
     def __init__(self, base_dir: str):
         self.uri = os.path.join(base_dir, "lancedb")

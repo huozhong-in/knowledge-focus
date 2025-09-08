@@ -795,14 +795,14 @@ async def pin_file(
             }
         
         # 检查文件类型是否支持
-        supported_extensions = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown']
+        from multivector_mgr import SUPPORTED_FORMATS
         file_ext = Path(file_path).suffix.split('.')[-1].lower()
-        if file_ext not in supported_extensions:
+        if file_ext not in SUPPORTED_FORMATS:
             logger.warning(f"Pin文件失败，不支持的文件类型: {file_ext}")
             return {
                 "success": False,
                 "task_id": None,
-                "message": f"不支持的文件类型: {file_ext}，支持的类型: {supported_extensions}"
+                "message": f"不支持的文件类型: {file_ext}，支持的类型: {SUPPORTED_FORMATS}"
             }
 
         # 在创建任务前检查多模态向量化所需的模型配置
