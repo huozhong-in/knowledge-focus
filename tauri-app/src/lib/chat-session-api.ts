@@ -11,6 +11,7 @@ export interface ChatSession {
   updated_at: string
   metadata: Record<string, any>
   is_active: boolean
+  scenario_id?: number | null
   stats?: {
     message_count: number
     pinned_file_count: number
@@ -308,6 +309,79 @@ export async function unpinFile(sessionId: number, filePath: string): Promise<vo
   if (!result.success) {
     throw new Error(result.message || 'Failed to unpin file')
   }
+}
+
+// ==================== 会话场景管理 ====================
+
+/**
+ * 重新激活PDF阅读器窗口
+ * 直接调用前端的 handleActivatePdfReader 来激活PDF窗口并使其可见
+ */
+export async function reactivatePdfWindow(pdfPath: string): Promise<boolean> {
+  try {
+    // 直接调用前端的PDF激活工具
+    const { handleActivatePdfReader } = await import('../lib/pdfCoReadingTools')
+    
+    const result = await handleActivatePdfReader({ pdfPath })
+    
+    if (result) {
+      console.log('PDF窗口激活成功:', result)
+      return true
+    } else {
+      console.warn('PDF窗口激活失败，可能窗口不存在或已关闭')
+      return false
+    }
+  } catch (error) {
+    console.error('重新激活PDF窗口失败:', error)
+    return false
+  }
+}
+
+export async function enterCoReadingMode(sessionId: number, pdfPath: string): Promise<ChatSession> {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/scenario`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'enter_co_reading',
+      pdf_path: pdfPath
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to enter co-reading mode: ${response.statusText}`)
+  }
+
+  const result: ApiResponse<ChatSession> = await response.json()
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to enter co-reading mode')
+  }
+
+  return result.data
+}
+
+export async function exitCoReadingMode(sessionId: number): Promise<ChatSession> {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/scenario`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      action: 'exit_co_reading'
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to exit co-reading mode: ${response.statusText}`)
+  }
+
+  const result: ApiResponse<ChatSession> = await response.json()
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to exit co-reading mode')
+  }
+
+  return result.data
 }
 
 // ==================== 工具函数 ====================

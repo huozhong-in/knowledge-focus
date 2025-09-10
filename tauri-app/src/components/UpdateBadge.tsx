@@ -22,12 +22,12 @@ export const UpdateBadge: React.FC<UpdateBadgeProps> = ({ className = '' }) => {
             variant="destructive" 
             className="h-2 w-2 p-0 absolute -top-1 -right-1 rounded-full animate-pulse border-2 border-background"
           >
-            <span className="sr-only">新版本可用</span>
+            <span className="sr-only">New version available</span>
           </Badge>
         </div>
       </TooltipTrigger>
       <TooltipContent>
-        <p>新版本 {updateVersion} 可用</p>
+        <p>New version {updateVersion} available</p>
       </TooltipContent>
     </Tooltip>
   );

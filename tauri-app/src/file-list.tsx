@@ -25,12 +25,24 @@ import { toast } from "sonner"
 import { useSettingsStore } from "./App"
 import { useTranslation } from "react-i18next"
 import { useScreeningResultUpdated } from "@/hooks/useBridgeEvents"
+import { enterCoReadingMode } from "@/lib/chat-session-api"
+import { handlePdfReading } from "@/lib/pdfCoReadingTools"
+import { useSidebar } from "@/components/ui/sidebar"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 interface FileItemProps {
   file: TaggedFile
   onTogglePin: (fileId: number, filePath: string) => void
   onTagClick: (tagName: string) => void
   onSelectImage?: (imagePath: string) => void // 新增图片选择回调
+  onDramaIconClick?: (filePath: string) => void // 新增DramaIcon点击回调
 }
 
 function FileItem({
@@ -38,6 +50,7 @@ function FileItem({
   onTogglePin,
   onTagClick,
   onSelectImage,
+  onDramaIconClick,
 }: FileItemProps) {
   const { getFileStatus } = useVectorizationStore()
   const vectorizationState = getFileStatus(file.path)
@@ -161,17 +174,52 @@ function FileItem({
         {/* 如果是PDF文件，则多一个DramaIcon浮动按钮 */}
         {(
           file.path.split(".").pop()?.toLocaleLowerCase() === "pdf"
-        ) && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {}}
-            className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 group-hover:animate-bounce transition-opacity bg-background/80 hover:bg-muted border border-border/50"
-            title={t("FILELIST.co-reading")}
-          >
-            <DramaIcon className="h-2.5 w-2.5" />
-          </Button>
-        )}
+        ) && (() => {
+          const pdfVectorizationState = getFileStatus(file.path)
+          const isVectorized = pdfVectorizationState?.status === 'completed'
+          const isProcessing = pdfVectorizationState?.status === 'processing' || pdfVectorizationState?.status === 'queued'
+          
+          // 构建title文本
+          let titleText = t("FILELIST.co-reading")
+          if (!pdfVectorizationState) {
+            titleText += " (需要先Pin文件进行向量化)"
+          } else if (isProcessing) {
+            titleText += " (向量化处理中...)"
+          } else if (pdfVectorizationState.status === 'failed') {
+            titleText += " (向量化失败，请重试)"
+          } else if (isVectorized) {
+            titleText += " (已准备好共读)"
+          }
+          
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDramaIconClick?.(file.path)
+              }}
+              className={`h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-border/50 ${
+                isVectorized 
+                  ? "bg-green-50/90 hover:bg-green-100 text-green-600 group-hover:animate-bounce" 
+                  : isProcessing
+                  ? "bg-yellow-50/90 hover:bg-yellow-100 text-yellow-600 animate-pulse"
+                  : "bg-background/80 hover:bg-muted"
+              }`}
+              title={titleText}
+            >
+              <DramaIcon className="h-2.5 w-2.5" />
+              {/* 向量化完成状态指示器 */}
+              {isVectorized && (
+                <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full border border-white" />
+              )}
+              {/* 处理中状态指示器 */}
+              {isProcessing && (
+                <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-yellow-500 rounded-full border border-white animate-pulse" />
+              )}
+            </Button>
+          )
+        })()}
         {/* Reveal in Dir 按钮 - hover时显示 */}
         <Button
           variant="ghost"
@@ -221,6 +269,7 @@ interface FileListProps {
   ) => void
   onRemoveTempPinnedFile?: (filePath: string) => void
   onSelectImage?: (imagePath: string) => void // 新增图片选择回调
+  onSessionUpdate?: (updatedSession: any) => void // 新增会话更新回调
 }
 
 export function FileList({
@@ -228,6 +277,7 @@ export function FileList({
   onAddTempPinnedFile,
   onRemoveTempPinnedFile,
   onSelectImage,
+  onSessionUpdate,
 }: FileListProps) {
   const {
     getFilteredFiles,
@@ -238,7 +288,7 @@ export function FileList({
     setLoading,
     setError,
   } = useFileListStore()
-  const { setFileStatus, setFileStarted, setFileFailed } =
+  const { setFileStatus, setFileStarted, setFileFailed, getFileStatus } =
     useVectorizationStore()
   const { openSettingsPage } = useSettingsStore()
   const files = getFilteredFiles()
@@ -246,6 +296,13 @@ export function FileList({
   // 搜索框状态和引用
   const [searchKeyword, setSearchKeyword] = useState("")
   const searchInputRef = useRef<HTMLInputElement>(null)
+
+  // 共读模式确认对话框状态
+  const [coReadingDialogOpen, setCoReadingDialogOpen] = useState(false)
+  const [selectedPdfPath, setSelectedPdfPath] = useState<string | null>(null)
+
+  // 获取侧边栏控制函数
+  const { setOpen } = useSidebar()
 
   const { t } = useTranslation()
 
@@ -538,6 +595,87 @@ export function FileList({
     }
   }
 
+  // 处理DramaIcon点击 - 打开确认对话框
+  const handleDramaIconClick = (filePath: string) => {
+    if (!currentSessionId) {
+      toast.error("请先选择一个会话")
+      return
+    }
+
+    // 检查多模态向量化状态 - 只有完成向量化的PDF文件才能进入共读模式
+    const vectorizationState = getFileStatus(filePath)
+    if (!vectorizationState || vectorizationState.status !== 'completed') {
+      if (!vectorizationState) {
+        toast.error("该文件尚未进行多模态向量化处理，请先Pin该文件完成向量化后再尝试共读")
+      } else if (vectorizationState.status === 'processing') {
+        toast.error("该文件正在进行多模态向量化处理中，请等待处理完成后再尝试共读")
+      } else if (vectorizationState.status === 'queued') {
+        toast.error("该文件多模态向量化任务已排队，请等待处理完成后再尝试共读")
+      } else if (vectorizationState.status === 'failed') {
+        toast.error("该文件多模态向量化处理失败，请重新Pin该文件或检查文件格式")
+      }
+      return
+    }
+
+    setSelectedPdfPath(filePath)
+    setCoReadingDialogOpen(true)
+  }
+
+  // 处理进入共读模式（确认后执行）
+  const handleEnterCoReading = async () => {
+    if (!selectedPdfPath || !currentSessionId) {
+      return
+    }
+
+    try {
+      setCoReadingDialogOpen(false) // 先关闭对话框
+      
+      // 调用进入共读模式API
+      const updatedSession = await enterCoReadingMode(currentSessionId, selectedPdfPath)
+      
+      // console.log('🎯 [DEBUG] FileList收到API返回的updatedSession:', {
+      //   id: updatedSession.id,
+      //   scenario_id: updatedSession.scenario_id,
+      //   metadata: updatedSession.metadata,
+      //   'metadata.pdf_path': updatedSession.metadata?.pdf_path,
+      //   '是否有metadata': !!updatedSession.metadata,
+      //   '是否有pdf_path': !!updatedSession.metadata?.pdf_path,
+      //   'pdf_path值': updatedSession.metadata?.pdf_path,
+      //   'selectedPdfPath': selectedPdfPath,
+      //   '路径是否一致': updatedSession.metadata?.pdf_path === selectedPdfPath,
+      //   '完整会话数据': JSON.stringify(updatedSession, null, 2)
+      // })
+      
+      // 通知父组件会话已更新
+      onSessionUpdate?.(updatedSession)
+      // console.log('🔄 [DEBUG] FileList调用onSessionUpdate，传递会话:', updatedSession.id)
+      
+      toast.success(`已进入PDF共读模式：${selectedPdfPath.split('/').pop()}`)
+      // console.log('进入共读模式成功:', updatedSession)
+      
+      // 调用PDF阅读器工具，打开PDF并设置分屏布局
+      // console.log('开始调用handlePdfReading打开PDF阅读器...')
+      const pdfCenterPoint = await handlePdfReading({ pdfPath: selectedPdfPath })
+      
+      if (pdfCenterPoint) {
+        // console.log('PDF阅读器已成功打开并设置分屏布局:', pdfCenterPoint)
+        toast.success('PDF阅读器已打开并设置分屏布局')
+      } else {
+        console.warn('PDF阅读器打开失败或未能设置分屏布局')
+        toast.warning('PDF阅读器可能未能正确设置分屏布局')
+      }
+      
+      // 🎯 开启共读模式后自动收起侧边栏，为PDF阅读提供更大空间
+      // console.log('📱 [共读优化] 自动收起侧边栏以优化阅读布局...')
+      setOpen(false)
+    } catch (error) {
+      console.error('进入共读模式失败:', error)
+      toast.error(`进入共读模式失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setSelectedPdfPath(null)
+    }
+  }
+
   // 处理路径搜索
   const handlePathSearch = async () => {
     if (!searchKeyword.trim()) {
@@ -670,11 +808,45 @@ export function FileList({
                 onTogglePin={handleTogglePin}
                 onTagClick={handleTagClick}
                 onSelectImage={onSelectImage}
+                onDramaIconClick={handleDramaIconClick}
               />
             ))}
           </div>
         )}
       </ScrollArea>
+
+      {/* PDF共读模式确认对话框 */}
+      <Dialog open={coReadingDialogOpen} onOpenChange={setCoReadingDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>📖 进入PDF共读模式</DialogTitle>
+            <DialogDescription>
+              将使用系统默认PDF阅读器打开以下文件，并设置分屏布局：
+              <br />
+              <span className="font-mono text-sm mt-2 block truncate" title={selectedPdfPath || ""}>
+                {selectedPdfPath?.split('/').pop()}
+              </span>
+              <span className="text-xs text-muted-foreground block mt-1">
+                应用将自动调整为左侧显示，PDF阅读器显示在右侧
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCoReadingDialogOpen(false)
+                setSelectedPdfPath(null)
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={handleEnterCoReading}>
+              确定开始共读
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

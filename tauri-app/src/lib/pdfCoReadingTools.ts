@@ -53,6 +53,7 @@ export async function ensureAccessibilityPermission(args: Record<string, any>): 
   success: boolean
   message?: string
 }> {
+  /* 确保应用有辅助功能权限，如果没有则请求权限 */
   try {
     console.log(args)
     console.log("检查辅助功能权限...")
@@ -88,6 +89,7 @@ export async function ensureAccessibilityPermission(args: Record<string, any>): 
 }
 
 export const handlePdfReading = async (args: Record<string, any>): Promise<PdfReaderCenterPoint | undefined> => {
+  /* 用系统默认阅读器打开指定PDF，并控制阅读器窗口，实现左右平均分屏布局 */
   try {
     // 支持两种参数格式：pdfPath (前端期望) 和 pdf_path (Python函数参数)
     const { pdfPath, pdf_path } = args as { pdfPath?: string; pdf_path?: string };
@@ -228,6 +230,125 @@ if (app.windows.length > 0) {
     return undefined
   }
 }
+
+interface WindowStatus {
+  exists: boolean
+  isFrontmost: boolean
+  isOccluded: boolean
+  isMiniaturized: boolean
+  message: string
+}
+
+export async function isPdfReaderFocused(pdfPath: string): Promise<WindowStatus> {
+  /*
+  判断PDF阅读器的特定窗口是否存在、是否最小化、是否是前台焦点、是否被遮挡。
+  */
+  const defaultPDFReaderName = await getPdfReaderName(pdfPath)
+  const appleScript = `
+'use strict';
+
+/**
+ * 获取并分析指定窗口的状态。
+ * @param {string} appName - 目标应用程序的名称 (例如, 'Preview', 'Notes', 'Google Chrome')。
+ * @param {string} windowTitle - 目标窗口的标题。支持部分匹配。
+ * @returns {object} - 返回一个包含窗口状态的对象。
+ */
+function getWindowStatus(appName, windowTitle) {
+    try {
+        // 将所有与 app 对象的交互都放入 try...catch 块中 ---
+        const app = Application(appName);
+
+        // --- 1. 判断是否存在 ---
+        if (!app.running()) {
+            return { exists: false, isFrontmost: false, isOccluded: false, isMiniaturized: false, message: "应用 '" + appName + "' 未运行。" };
+        }
+
+        const targetWindow = app.windows().find(win => win.name().includes(windowTitle));
+
+        if (!targetWindow) {
+            return { exists: false, isFrontmost: false, isOccluded: false, isMiniaturized: false, message: "在 '" + appName + "' 中未找到标题包含 '" + windowTitle + "' 的窗口。" };
+        }
+
+        // --- 2. 判断是否最小化 ---
+        const isMiniaturized = targetWindow.miniaturized();
+
+        if (isMiniaturized) {
+            return {
+                exists: true,
+                isFrontmost: false,
+                isOccluded: false,
+                isMiniaturized: true,
+                message: "窗口存在，但已被最小化。"
+            };
+        }
+        
+        // --- 3. 判断是否是前台焦点窗口 ---
+        const isAppFrontmost = app.frontmost();
+        const isWindowFrontmostInApp = app.windows[0].name() === targetWindow.name();
+        const isFrontmost = isAppFrontmost && isWindowFrontmostInApp;
+
+        if (isFrontmost) {
+            return {
+                exists: true,
+                isFrontmost: true,
+                isOccluded: false,
+                isMiniaturized: false,
+                message: "窗口存在且是当前焦点窗口。"
+            };
+        }
+
+        // --- 4. 推断是否被遮挡 ---
+        const isOccluded = true;
+        let message = "窗口存在但可能被其他应用遮挡。";
+        if (isAppFrontmost && !isWindowFrontmostInApp) {
+            message = "窗口存在，但可能被 "+ appName +" 的其他窗口遮挡。";
+        }
+
+        return {
+            exists: true,
+            isFrontmost: false,
+            isOccluded: isOccluded,
+            isMiniaturized: false,
+            message: message
+        };
+
+    } catch (e) {
+        // 如果在 try 块中的任何地方发生错误（特别是与无效应用交互时），
+        // catch 块会捕获错误并返回一个友好的信息。
+        return { 
+            exists: false, 
+            isFrontmost: false, 
+            isOccluded: false,
+            isMiniaturized: false,
+            message: "无法与应用 '" + appName + "' 通信。它可能未安装或无权访问。错误详情: " + e.message
+        };
+    }
+}
+
+(function() {
+    const notesStatus = getWindowStatus('${defaultPDFReaderName}', '${pdfPath.split("/").pop() || ""}');
+    return JSON.stringify(notesStatus);
+})();
+`
+  const command = Command.create("run-applescript", [
+    "-l",
+    "JavaScript",
+    "-e",
+    appleScript,
+  ])
+  const output = await command.execute()
+  console.log("isPdfReaderFocused() 执行结果:", output)
+  if (output.code !== 0) {
+    console.error("isPdfReaderFocused() 执行失败:", output.stderr)
+    return { exists: false, isFrontmost: false, isOccluded: false, isMiniaturized: false, message: "执行AppleScript失败: " + output.stderr }
+  }
+  const result = output.stdout.trim()
+  console.log("isPdfReaderFocused() 输出:", result)
+  // 解析输出的JSON字符串
+  const status = JSON.parse(result)
+  return status
+}
+
 
 export const handleActivatePdfReader = async (args: Record<string, any>): Promise<PdfReaderCenterPoint | undefined> => {
   // 激活PDF阅读器窗口

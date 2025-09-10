@@ -83,7 +83,6 @@
         "Resources/api/tagging_api.py": "../../api/tagging_api.py",
         "Resources/api/tagging_mgr.py": "../../api/tagging_mgr.py",
         "Resources/api/task_mgr.py": "../../api/task_mgr.py",
-        "Resources/api/tool_channel_api.py": "../../api/tool_channel_api.py",
         "Resources/api/tool_provider.py": "../../api/tool_provider.py",
         "Resources/api/unified_tools_api.py": "../../api/unified_tools_api.py",
         "Resources/api/utils.py": "../../api/utils.py",

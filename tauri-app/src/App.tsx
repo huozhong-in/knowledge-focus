@@ -274,6 +274,13 @@ export default function Page() {
     }
   }
   
+  // 处理会话更新（例如进入/退出共读模式）
+  const handleSessionUpdate = (updatedSession: ChatSession) => {
+    setCurrentSession(updatedSession)
+    // 会话ID不变，无需更新currentSessionId
+    console.log('会话已更新:', updatedSession)
+  }
+
   // 实际创建会话（在用户发送第一条消息时调用）
   const createSessionFromMessage = async (firstMessageContent: string): Promise<ChatSession> => {
     try {
@@ -616,6 +623,7 @@ export default function Page() {
               onAddTempPinnedFile={addTempPinnedFile}
               onRemoveTempPinnedFile={removeTempPinnedFile}
               chatResetTrigger={chatResetTrigger}
+              onSessionUpdate={handleSessionUpdate}
             />
           ) : (
             <div className="flex flex-1 items-center justify-center">

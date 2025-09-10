@@ -619,7 +619,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                     return f'data: {json.dumps(data)}\n\n'
                 return None
 
-            # 使用 agent.iter() 方法来逐个迭代 agent 的图节点
+            # 使用 agent.iter() 方法来逐个输出流中每个节点
             async with agent.iter(user_prompt=user_prompt_final, deps=session_id) as run:
                 async for node in run:
                     # logger.info(f"Processing node type: {type(node)}")

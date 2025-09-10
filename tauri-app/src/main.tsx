@@ -9,8 +9,8 @@ import { setupI18nWithStore } from './i18n';
 import { ThemeProvider } from "./tweakcn/components/theme-provider";
 import { TooltipProvider } from "./tweakcn/components/ui/tooltip";
 
-// 导入工具初始化模块
-import './lib/initializeTools';
+// // 导入工具初始化模块
+// import './lib/initializeTools';
 
 interface AppGlobalState {
   showWelcomeDialog: boolean;

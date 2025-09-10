@@ -8,14 +8,13 @@
 # https://ai.google.dev/gemini-api/docs/tokens?lang=python
 
 from sqlmodel import Session, select
-import json
 from typing import List
 from utils import num_tokens_from_string, num_tokens_from_messages
 from db_mgr import ChatMessage
 # from chatsession_mgr import ChatSessionMgr
 # from model_config_mgr import ModelConfigMgr, ModelUseInterface
 # from pydantic import BaseModel
-from pydantic_ai import Tool
+from pydantic_ai import Tool, format_as_xml
 import logging
 
 logger = logging.getLogger(__name__)
@@ -70,8 +69,13 @@ class MemoryMgr:
     def calculate_tools_tokens(self, tools: List[Tool]) -> int:
         result = 0
         for tool in tools:
-            # logger.info(f"工具: {tool.name}, 描述: {tool.description}, 参数: {tool.function_schema}")
-            result += num_tokens_from_string(tool.description + json.dumps(tool.function_schema.json_schema))
+            log = format_as_xml({
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": tool.function_schema.json_schema
+            })
+            logger.info(log)
+            result += num_tokens_from_string(log)
         return result
 
     # 计算字符串的token数

@@ -774,36 +774,36 @@ class DBManager:
                         "tool_type": "direct",
                         "metadata_json": {"model_path": "tools.calculator:calculator_bmi"}
                     },
-                    {
-                        "name": "scroll_pdf_reader",
-                        "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
-                        "tool_type": "direct",  # 直接调用
-                        "metadata_json": {"model_path": "tools.co_reading:scroll_pdf_reader"}
-                    },
-                    {
-                        "name": "handle_pdf_reading",
-                        "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
-                        "tool_type": "channel",  # 通过工具通道调用
-                        "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reading"}
-                    },
-                    {
-                        "name": "ensure_accessibility_permission",
-                        "description": "确保应用具有辅助功能权限",
-                        "tool_type": "channel",
-                        "metadata_json": {"model_path": "tools.co_reading:ensure_accessibility_permission"}
-                    },
-                    {
-                        "name": "handle_activate_pdf_reader",
-                        "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
-                        "tool_type": "channel",
-                        "metadata_json": {"model_path": "tools.co_reading:handle_activate_pdf_reader"}
-                    },
-                    {
-                        "name": "handle_pdf_reader_screenshot",
-                        "description": "对当前PDF页面截图，并查看其内容",
-                        "tool_type": "channel",
-                        "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reader_screenshot"}
-                    }
+                    # {
+                    #     "name": "scroll_pdf_reader",
+                    #     "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
+                    #     "tool_type": "direct",  # 直接调用
+                    #     "metadata_json": {"model_path": "tools.co_reading:scroll_pdf_reader"}
+                    # },
+                    # {
+                    #     "name": "handle_pdf_reading",
+                    #     "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
+                    #     "tool_type": "channel",  # 通过工具通道调用
+                    #     "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reading"}
+                    # },
+                    # {
+                    #     "name": "ensure_accessibility_permission",
+                    #     "description": "确保应用具有辅助功能权限",
+                    #     "tool_type": "channel",
+                    #     "metadata_json": {"model_path": "tools.co_reading:ensure_accessibility_permission"}
+                    # },
+                    # {
+                    #     "name": "handle_activate_pdf_reader",
+                    #     "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
+                    #     "tool_type": "channel",
+                    #     "metadata_json": {"model_path": "tools.co_reading:handle_activate_pdf_reader"}
+                    # },
+                    # {
+                    #     "name": "handle_pdf_reader_screenshot",
+                    #     "description": "对当前PDF页面截图，并查看其内容",
+                    #     "tool_type": "channel",
+                    #     "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reader_screenshot"}
+                    # }
                 ]
                 self.session.add_all([Tool(**tool) for tool in data])
                 self.session.commit()
@@ -817,7 +817,7 @@ class DBManager:
                         "description": "AI跟你一起阅读电子书", 
                         "display_name": "共读电子书",
                         "system_prompt": "你是一个具有视觉能力的AI助手。",
-                        "preset_tool_ids": [4,5,6,7,8],
+                        "preset_tool_ids": [],
                         "metadata_json": []
                     },
                 ]

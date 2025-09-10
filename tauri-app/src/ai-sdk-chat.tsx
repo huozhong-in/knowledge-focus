@@ -6,7 +6,11 @@ import {
   ChatSession,
   ChatMessage as ApiChatMessage,
   getSessionMessages,
+  getSession,
 } from "./lib/chat-session-api"
+import { useCoReadingTimer } from "./hooks/useCoReadingTimer"
+import { CoReadingPauseWidget } from "./components/ui/co-reading-pause-widget"
+import { exitCoReadingMode } from "./lib/chat-session-api"
 import {
   Conversation,
   ConversationContent,
@@ -42,17 +46,20 @@ import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
-import { GlobeIcon, MicIcon, CopyIcon, CircleXIcon } from 'lucide-react'
+import { GlobeIcon, MicIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
 import { useTranslation } from "react-i18next"
+
 
 interface AiSdkChatProps {
   sessionId?: string
+  currentSession?: ChatSession | null // 外部传入的当前会话数据
   onCreateSessionFromMessage?: (
     firstMessageContent: string
   ) => Promise<ChatSession>
   resetTrigger?: number // 用于触发重置的数字，每次改变都会重置组件
   imagePath?: string // 用于接收从文件列表传来的图片路径
   imageSelectionKey?: number // 用于强制触发图片选择更新的key
+  onSessionUpdate?: (updatedSession: ChatSession) => void // 会话更新回调
 }
 
 /**
@@ -61,19 +68,150 @@ interface AiSdkChatProps {
  */
 export function AiSdkChat({
   sessionId,
+  currentSession: externalCurrentSession,
   onCreateSessionFromMessage,
   resetTrigger,
   imagePath,
   imageSelectionKey,
+  onSessionUpdate,
 }: AiSdkChatProps) {
   const [effectiveSessionId, setEffectiveSessionId] = useState<
     string | undefined
   >(sessionId)
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
   const [input, setInput] = useState("")
   const [selectedImage, setSelectedImage] = useState<string | null>(null) // 存储选中的图片路径
 
   const { t } = useTranslation()
+
+  // PDF共读模式定时器
+  const coReadingTimer = useCoReadingTimer({
+    session: currentSession,
+    onPdfWindowLost: () => {
+      console.log('🔴 PDF窗口失去可见性，显示暂停Widget')
+    },
+    onPdfWindowRegained: () => {
+      console.log('🟢 PDF窗口重新可见，隐藏暂停Widget')
+    },
+    checkInterval: 3000 // 每3秒检查一次
+  })
+
+  // // 调试日志：追踪状态变化
+  // useEffect(() => {
+  //   console.log('🔍 [DEBUG] AiSdkChat状态更新:', {
+  //     sessionId: currentSession?.id,
+  //     scenarioId: currentSession?.scenario_id,
+  //     pdfPath: currentSession?.metadata?.pdf_path,
+  //     timerActive: coReadingTimer.isActive,
+  //     pdfFocused: coReadingTimer.isPdfFocused,
+  //     pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
+  //     windowStatus: coReadingTimer.windowStatus
+  //   })
+  // }, [
+  //   currentSession?.id,
+  //   currentSession?.scenario_id, 
+  //   currentSession?.metadata?.pdf_path,
+  //   coReadingTimer.isActive,
+  //   coReadingTimer.isPdfFocused,
+  //   coReadingTimer.isPdfTrulyInvisible
+  // ])
+
+  // 判断是否应该显示暂停Widget (只在PDF真正不可见时显示)
+  const shouldShowPauseWidget = currentSession?.scenario_id && 
+                               coReadingTimer.isActive && 
+                               coReadingTimer.isPdfTrulyInvisible === true
+
+  // 调试日志：追踪Widget显示条件
+  useEffect(() => {
+    console.log('🎯 [DEBUG] Widget显示条件检查:', {
+      hasScenarioId: !!currentSession?.scenario_id,
+      timerActive: coReadingTimer.isActive,
+      pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
+      shouldShowPauseWidget,
+      '条件1-有scenarioId': !!currentSession?.scenario_id,
+      '条件2-定时器激活': coReadingTimer.isActive,
+      '条件3-PDF不可见': coReadingTimer.isPdfTrulyInvisible === true
+    })
+  }, [currentSession?.scenario_id, coReadingTimer.isActive, coReadingTimer.isPdfTrulyInvisible, shouldShowPauseWidget])
+
+  // 调试日志：追踪PDF状态指示器显示条件
+  const shouldShowPdfIndicator = currentSession?.scenario_id && currentSession?.metadata?.pdf_path
+  useEffect(() => {
+    console.log('📱 [DEBUG] PDF状态指示器显示条件:', {
+      hasScenarioId: !!currentSession?.scenario_id,
+      hasPdfPath: !!currentSession?.metadata?.pdf_path,
+      shouldShowPdfIndicator,
+      pdfPath: currentSession?.metadata?.pdf_path
+    })
+  }, [currentSession?.scenario_id, currentSession?.metadata?.pdf_path, shouldShowPdfIndicator])
+
+  // 定时日志：让用户感受到定时器的存在
+  useEffect(() => {
+    if (coReadingTimer.isActive) {
+      const logInterval = setInterval(() => {
+        console.log('⏰ [定时心跳] PDF共读监控运行中...', {
+          活跃状态: coReadingTimer.isActive,
+          PDF聚焦: coReadingTimer.isPdfFocused,
+          PDF隐藏: coReadingTimer.isPdfTrulyInvisible,
+          时间戳: new Date().toLocaleTimeString()
+        })
+      }, 5000) // 每5秒打印一次心跳日志
+
+      return () => {
+        clearInterval(logInterval)
+      }
+    }
+  }, [coReadingTimer.isActive, coReadingTimer.isPdfFocused, coReadingTimer.isPdfTrulyInvisible])
+
+  // Widget操作处理函数
+  const handleContinueReading = async () => {
+    try {
+      console.log('🔄 用户点击继续阅读，尝试恢复PDF窗口...')
+      const success = await coReadingTimer.restorePdfWindow()
+      if (success) {
+        console.log('✅ PDF窗口已成功恢复')
+      } else {
+        console.warn('⚠️ PDF窗口恢复失败，请手动打开PDF文件')
+      }
+    } catch (error) {
+      console.error('❌ 处理继续阅读操作失败:', error)
+    }
+  }
+
+  const handleExitCoReading = async () => {
+    if (currentSession) {
+      try {
+        const updatedSession = await exitCoReadingMode(currentSession.id)
+        setCurrentSession(updatedSession)
+        console.log('已退出共读模式')
+      } catch (error) {
+        console.error('退出共读模式失败:', error)
+      }
+    }
+  }
+
+
+
+  // 处理外部传入的会话数据更新
+  useEffect(() => {
+    if (externalCurrentSession && externalCurrentSession.id === parseInt(sessionId || '0')) {
+      console.log('📥 [DEBUG] 接收到外部会话更新, 更新内部状态:', externalCurrentSession)
+      console.log('📥 [DEBUG] 会话详细信息:', {
+        id: externalCurrentSession.id,
+        scenario_id: externalCurrentSession.scenario_id,
+        metadata: externalCurrentSession.metadata,
+        'metadata.pdf_path': externalCurrentSession.metadata?.pdf_path,
+        'metadata全部内容': JSON.stringify(externalCurrentSession.metadata, null, 2)
+      })
+      setCurrentSession(externalCurrentSession)
+    }
+  }, [externalCurrentSession, sessionId])
+
+  // 处理外部会话更新（比如从FileList组件进入共读模式）
+  useEffect(() => {
+    console.log('🔗 [DEBUG] 会话更新回调已准备就绪, 当前会话:', currentSession?.id)
+  }, [onSessionUpdate, currentSession?.id])
 
   // 当imagePath改变时，设置选中的图片
   // 使用imageSelectionKey来强制触发更新，解决取消后重新选择同一图片的bug
@@ -103,6 +241,7 @@ export function AiSdkChat({
       setMessages([])
       setInput("")
       setEffectiveSessionId(undefined)
+      setCurrentSession(null)
     }
   }, [resetTrigger, setMessages])
 
@@ -115,6 +254,7 @@ export function AiSdkChat({
         // 没有sessionId时清空消息，显示欢迎状态
         setMessages([])
         setEffectiveSessionId(undefined)
+        setCurrentSession(null)
         setIsInitializing(false)
         return
       }
@@ -128,6 +268,12 @@ export function AiSdkChat({
         }
 
         console.log("🔄 加载会话聊天记录, sessionId:", sessionIdNum)
+        
+        // 加载会话信息（包含scenario_id等元数据）
+        const session = await getSession(sessionIdNum)
+        setCurrentSession(session)
+        console.log("📋 会话信息加载完成:", session)
+        
         const result = await getSessionMessages(sessionIdNum, 1, 50, false) // 获取前50条消息，时间升序
 
         // 将ChatMessage转换为useChat的UIMessage格式
@@ -173,6 +319,13 @@ export function AiSdkChat({
         setMessages(convertedMessages)
         setEffectiveSessionId(sessionId)
         console.log("✅ 聊天记录加载完成，消息数量:", convertedMessages.length)
+        
+        // 🎯 加载新会话后自动滚动到底部
+        // 使用setTimeout确保DOM已更新
+        setTimeout(() => {
+          // 通过事件通知内部组件执行滚动
+          window.dispatchEvent(new CustomEvent('scrollToBottomAfterLoad'))
+        }, 100)
       } catch (error) {
         console.error("Failed to load session messages:", error)
         // 加载失败时清空消息
@@ -195,7 +348,7 @@ export function AiSdkChat({
 
     // 构建消息内容，支持文本和图片
     const messageContent: any = {
-      text: userMessage || "请分析这张图片", // 如果只有图片没有文本，提供默认文本
+      text: userMessage || "Please analyze this image", // 如果只有图片没有文本，提供默认文本
     }
 
     // 如果有选中的图片，添加到消息中
@@ -265,7 +418,47 @@ export function AiSdkChat({
   }
 
   return (
-    <div className="flex flex-col flex-auto h-full overflow-hidden">
+    <div className="flex flex-col flex-auto h-full overflow-hidden relative">
+      {/* PDF共读状态指示器 */}
+      {/* {currentSession?.scenario_id && coReadingTimer.isActive && (
+        <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 text-blue-800 text-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span>📖 PDF共读模式已激活</span>
+              <span className="text-xs">
+                PDF可见: {coReadingTimer.isPdfFocused === null ? "检测中..." : coReadingTimer.isPdfFocused ? "✅" : "❌"}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {!coReadingTimer.isPdfFocused && (
+                <button
+                  onClick={handleContinueReading}
+                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 transition-colors"
+                  title="恢复PDF窗口"
+                >
+                  恢复PDF
+                </button>
+              )}
+              <button
+                onClick={handleExitCoReading}
+                className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-300 transition-colors"
+                title="退出共读模式"
+              >
+                退出
+              </button>
+            </div>
+          </div>
+        </div>
+      )} */}
+
+      {/* PDF暂停状态Widget */}
+      {shouldShowPauseWidget && currentSession && (
+        <CoReadingPauseWidget
+          session={currentSession}
+          onContinueReading={handleContinueReading}
+          onExitCoReading={handleExitCoReading}
+        />
+      )}
       <Conversation>
         <ConversationContent className="p-1">
           <ScrollArea className="flex-1 pr-4 rounded-md h-[calc(100vh-176px)]">
@@ -430,6 +623,49 @@ export function AiSdkChat({
                 </div>
                 <div className="text-xs text-muted-foreground truncate" title={selectedImage}>
                   {selectedImage}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* PDF共读状态指示器 - 浮动在输入框上方 */}
+        {currentSession?.scenario_id && currentSession?.metadata?.pdf_path && (
+          <div className="absolute bottom-full right-2 w-[300px] mb-2 p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg z-10">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs text-primary font-bold">📖 AI在与你共读PDF:</span>
+              <div className="flex items-center gap-2">
+                {!coReadingTimer.isPdfFocused && (
+                  <Button
+                    onClick={handleContinueReading}
+                    variant="ghost"
+                    className="size-6 items-center"
+                    title="寻找PDF窗口"
+                    disabled={coReadingTimer.isPdfFocused === null} // 检测中时禁用按钮
+                  >
+                    <SearchIcon className="inline size-4 m-1" />
+                  </Button>
+                )}
+                <Button
+                onClick={() => handleExitCoReading()}
+                variant="ghost"
+                className="size-6 items-center"
+                title="退出共读模式"
+                >
+                  <CircleXIcon className="inline size-4 m-1" />
+                </Button>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-12 h-12 bg-muted-100 rounded border border-muted-200 flex items-center justify-center">
+                <span className="text-muted-600 text-lg">📄</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-muted-800 truncate" title={currentSession.metadata.pdf_path}>
+                  {currentSession.metadata.pdf_path.split('/').pop()}
+                </div>
+                <div className="text-xs text-muted-600 truncate" title={currentSession.metadata.pdf_path}>
+                  {currentSession.metadata.pdf_path}
                 </div>
               </div>
             </div>

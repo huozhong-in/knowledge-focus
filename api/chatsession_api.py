@@ -34,16 +34,17 @@ def get_router(external_get_session: callable) -> APIRouter:
             session = chat_mgr.create_session(name=name, metadata=metadata)
             
             return {
-                "success": True,
-                "data": {
-                    "id": session.id,
-                    "name": session.name,
-                    "created_at": session.created_at.isoformat(),
-                    "updated_at": session.updated_at.isoformat(),
-                    "metadata": session.metadata_json or {},
-                    "is_active": session.is_active
+                    "success": True,
+                    "data": {
+                        "id": session.id,
+                        "name": session.name,
+                        "created_at": session.created_at.isoformat(),
+                        "updated_at": session.updated_at.isoformat(),
+                        "metadata": session.metadata_json or {},
+                        "is_active": session.is_active,
+                        "scenario_id": session.scenario_id
+                    }
                 }
-            }
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -112,6 +113,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "updated_at": session.updated_at.isoformat(),
                     "metadata": session.metadata_json or {},
                     "is_active": session.is_active,
+                    "scenario_id": session.scenario_id,
                     "stats": stats
                 })
             
@@ -152,6 +154,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "updated_at": session.updated_at.isoformat(),
                     "metadata": session.metadata_json or {},
                     "is_active": session.is_active,
+                    "scenario_id": session.scenario_id,
                     "stats": stats
                 }
             }
@@ -188,7 +191,8 @@ def get_router(external_get_session: callable) -> APIRouter:
                     "created_at": session.created_at.isoformat(),
                     "updated_at": session.updated_at.isoformat(),
                     "metadata": session.metadata_json or {},
-                    "is_active": session.is_active
+                    "is_active": session.is_active,
+                    "scenario_id": session.scenario_id
                 }
             }
         except HTTPException:

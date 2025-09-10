@@ -37,7 +37,7 @@ class ChatSessionMgr:
             
         session_obj = ChatSession(
             name=name,
-            metadata_json=json.dumps(metadata or {}),
+            metadata_json=metadata or {},
             is_active=True
         )
         
@@ -103,7 +103,7 @@ class ChatSessionMgr:
         if name is not None:
             session_obj.name = name
         if metadata is not None:
-            session_obj.metadata_json = json.dumps(metadata)
+            session_obj.metadata_json = metadata
             
         session_obj.updated_at = datetime.now()
         
@@ -134,6 +134,74 @@ class ChatSessionMgr:
         self.session.commit()
         
         return True
+
+    # ==================== 场景管理 ====================
+    
+    def get_scenario_id_by_name(self, name: str) -> Optional[int]:
+        """
+        根据场景名称获取场景ID
+        
+        Args:
+            name: 场景名称（如"co_reading"）
+            
+        Returns:
+            场景ID，如果未找到则返回None
+        """
+        from db_mgr import Scenario
+        stmt = select(Scenario).where(Scenario.name == name)
+        scenario = self.session.exec(stmt).first()
+        return scenario.id if scenario else None
+    
+    def update_session_scenario(
+        self, 
+        session_id: int, 
+        scenario_id: Optional[int], 
+        metadata: Dict[str, Any] = None
+    ) -> Optional[ChatSession]:
+        """
+        更新会话的场景配置
+        
+        Args:
+            session_id: 会话ID
+            scenario_id: 场景ID，None表示清除场景
+            metadata: 额外的元数据（如PDF路径等）
+            
+        Returns:
+            更新后的会话对象
+        """
+        session_obj = self.session.get(ChatSession, session_id)
+        if not session_obj or not session_obj.is_active:
+            return None
+        
+        # 更新scenario_id
+        session_obj.scenario_id = scenario_id
+        
+        # 合并元数据
+        if metadata is not None:
+            current_metadata = {}
+            if session_obj.metadata_json:
+                # metadata_json是JSON列，已经自动反序列化为dict，无需手动json.loads
+                if isinstance(session_obj.metadata_json, dict):
+                    current_metadata = session_obj.metadata_json
+                else:
+                    # 兼容旧数据：如果是字符串则尝试解析
+                    try:
+                        current_metadata = json.loads(session_obj.metadata_json)
+                    except (json.JSONDecodeError, TypeError):
+                        current_metadata = {}
+            
+            # 合并新的元数据
+            current_metadata.update(metadata)
+            # 直接赋值dict对象，SQLAlchemy的JSON列会自动序列化
+            session_obj.metadata_json = current_metadata
+        
+        session_obj.updated_at = datetime.now()
+        
+        self.session.add(session_obj)
+        self.session.commit()
+        self.session.refresh(session_obj)
+        
+        return session_obj
 
     # ==================== 消息管理 ====================
     
@@ -268,7 +336,7 @@ class ChatSessionMgr:
             session_id=session_id,
             file_path=file_path,
             file_name=file_name,
-            metadata_json=json.dumps(metadata or {})
+            metadata_json=metadata or {}
         )
         
         self.session.add(pin_file)

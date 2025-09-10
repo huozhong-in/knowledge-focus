@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
+from pathlib import Path
 from sqlmodel import Session
 from typing import List, Dict, Any
 import json
 import uuid
 import logging
+from datetime import datetime
 from chatsession_mgr import ChatSessionMgr
-from db_mgr import ModelCapability
+from db_mgr import ModelCapability, Scenario
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
@@ -208,6 +210,7 @@ def get_router(external_get_session: callable) -> APIRouter:
     class AgentChatRequest(BaseModel):
         messages: List[Dict[str, Any]]
         session_id: int = None  # 使session_id可选，以防前端没有发送
+        scenario_id: int = 0  # 场景即状态图的一个大的分支，前端要明确感知并有效配合
 
         @classmethod
         def model_validate(cls, data):
@@ -307,7 +310,42 @@ def get_router(external_get_session: callable) -> APIRouter:
                 sources=last_user_message.get("sources")
             )
 
-            # 2. 流式生成并保存助手消息
+            # 2. 检查是否为共读场景
+            chat_session = chat_mgr.get_session(request.session_id)
+            if chat_session and chat_session.scenario_id:
+                logger.info(f"检测到场景模式，scenario_id: {chat_session.scenario_id}")
+                
+                # 获取场景信息  
+                scenario = chat_mgr.session.get(Scenario, chat_session.scenario_id)
+                if scenario and scenario.name == "co_reading":
+                    logger.info("启动PDF共读模式")
+                    
+                    # 从会话元数据获取PDF路径
+                    pdf_path = None
+                    if chat_session.metadata_json and "pdf_path" in chat_session.metadata_json:
+                        pdf_path = chat_session.metadata_json["pdf_path"]
+                    
+                    if not pdf_path:
+                        yield f"data: {json.dumps({'type': 'error', 'errorText': 'PDF path not found in session metadata'})}\n\n"
+                        return
+                    
+                    # 获取持久化目录
+                    db_path = chat_mgr.session.get_bind().url.database
+                    persistence_dir = Path(db_path).parent / "graph_persistence"
+                    persistence_dir.mkdir(exist_ok=True)
+                    
+                    # 调用共读流协议处理函数
+                    from tools.co_reading import stream_co_reading_chat_v5_compatible
+                    async for sse_chunk in stream_co_reading_chat_v5_compatible(
+                        messages=[last_user_message],
+                        session_id=request.session_id,
+                        pdf_path=pdf_path,
+                        persistence_dir=persistence_dir
+                    ):
+                        yield sse_chunk
+                    return  # 共读模式处理完毕，直接返回
+
+            # 3. 普通Agent模式 - 流式生成并保存助手消息
             assistant_message_id = f"asst_{uuid.uuid4().hex}"
             accumulated_text_content = ""  # 保存纯文本内容，便于搜索和摘要等文本处理
             accumulated_parts = []  # 用于累积不同类型的parts内容，保存到数据库，以便用户切换会话时能“恢复现场”
@@ -359,7 +397,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                 yield error_event
             
             finally:
-                # 3. 在流结束后，将完整的助手消息持久化到数据库
+                # 4. 在流结束后，将完整的助手消息持久化到数据库
                 if accumulated_text_content.strip():
                     chat_mgr.save_message(
                         session_id=request.session_id,
@@ -385,5 +423,83 @@ def get_router(external_get_session: callable) -> APIRouter:
                 "x-vercel-ai-ui-message-stream": "v1"
             }
         )
+
+    @router.post("/chat/sessions/{session_id}/scenario", tags=["chat"])
+    async def manage_session_scenario(
+        session_id: int,
+        data: Dict[str, Any] = Body(...),
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+    ):
+        """
+        管理会话场景模式
+        
+        Args:
+            session_id: 会话ID
+            action: 操作类型 - "enter_co_reading" 进入共读模式, "exit_co_reading" 退出共读模式
+            pdf_path: PDF文件路径（进入共读模式时必需）
+        
+        Returns:
+            {"success": True, "scenario_id": int/None}
+        """
+        try:
+            # 从JSON body中提取参数
+            action = data.get("action")
+            pdf_path = data.get("pdf_path")
+            
+            if not action:
+                return {"success": False, "message": "Action is required"}
+            
+            if action == "enter_co_reading":
+                if not pdf_path:
+                    return {"success": False, "message": "PDF path is required for co_reading mode"}
+                
+                # 获取co_reading场景ID
+                scenario_id = chat_mgr.get_scenario_id_by_name("co_reading")
+                if not scenario_id:
+                    return {"success": False, "message": "co_reading scenario not found in database"}
+                
+                # 更新会话场景配置
+                updated_session = chat_mgr.update_session_scenario(
+                    session_id=session_id,
+                    scenario_id=scenario_id,
+                    metadata={"pdf_path": pdf_path, "entered_at": str(datetime.now())}
+                )
+                
+                if updated_session:
+                    logger.info(f"会话 {session_id} 已切换到共读模式，PDF: {pdf_path}")
+                    # 手动处理metadata字段映射，确保返回解析后的对象而不是JSON字符串
+                    session_data = updated_session.model_dump()
+                    # metadata_json已经是Dict对象，直接赋值
+                    session_data["metadata"] = updated_session.metadata_json
+                    return {"success": True, "data": session_data}
+                else:
+                    return {"success": False, "message": "Failed to update session or session not found"}
+            
+            elif action == "exit_co_reading":
+                # 退出共读模式，清除scenario_id
+                updated_session = chat_mgr.update_session_scenario(
+                    session_id=session_id,
+                    scenario_id=None,
+                    metadata={"exited_at": str(datetime.now())}
+                )
+                
+                if updated_session:
+                    logger.info(f"会话 {session_id} 已退出共读模式")
+                    # 手动处理metadata字段映射，确保返回解析后的对象而不是JSON字符串
+                    session_data = updated_session.model_dump()
+                    # metadata_json已经是Dict对象，直接赋值
+                    session_data["metadata"] = updated_session.metadata_json
+                    return {"success": True, "data": session_data}
+                else:
+                    return {"success": False, "message": "Failed to update session or session not found"}
+            
+            else:
+                return {"success": False, "message": f"Unknown action: {action}"}
+        
+        except Exception as e:
+            logger.error(f"管理会话场景失败: {e}")
+            return {"success": False, "message": str(e)}
+
+
 
     return router
