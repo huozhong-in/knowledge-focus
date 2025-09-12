@@ -127,7 +127,7 @@ export function RagLocal() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-accent/10">
       <div className="border-b p-1 bg-gray-50/50">
         <div className="flex items-center justify-between">
           <div>

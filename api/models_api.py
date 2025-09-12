@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 from sqlmodel import Session
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import json
 import uuid
 import logging
@@ -240,6 +240,39 @@ def get_router(external_get_session: callable) -> APIRouter:
         Handles agentic chat sessions that require tools and session context.
         Streams responses according to the Vercel AI SDK v5 protocol.
         """
+        def _accumulate_parts(sse_chunk: Any) -> Tuple[str, List[Dict[str, Any]]]:
+            accumulated_text_content = ""
+            accumulated_parts = [] 
+            if sse_chunk.startswith('data: ') and not sse_chunk.strip().endswith('[DONE]'):
+                try:
+                    sse_data = sse_chunk[6:].strip()  # 移除 'data: ' 前缀
+                    if sse_data:
+                        parsed_data = json.loads(sse_data)
+                        # 记录各种类型的parts，参考 https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
+                        if parsed_data.get('type') == 'text-delta':
+                            # 只累积text-delta事件来构建单独保存的文本内容
+                            accumulated_text_content += parsed_data.get('delta', '')
+                        if parsed_data.get('type') in [
+                                'start',
+                                'text-start',
+                                'text-delta', 
+                                'text-end',
+                                'reasoning-start',
+                                'reasoning-delta',
+                                'reasoning-end',
+                                'tool-input-available', 
+                                'tool-output-available',
+                                'finish',
+                                ]:
+                            accumulated_parts.append(parsed_data)
+                        else:
+                            # data: {"type":"error","errorText":"error message"}
+                            pass  # 忽略其他类型
+                except json.JSONDecodeError:
+                    # 忽略无法解析的数据行
+                    pass
+            return accumulated_text_content, accumulated_parts
+        
         async def stream_generator():
             # * 检查必须有文本模型或视觉模型配置好了
             if not (config_mgr.get_spec_model_config(ModelCapability.TEXT) or config_mgr.get_spec_model_config(ModelCapability.VISUAL)):
@@ -249,7 +282,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                 yield error_event
             
             try:
-                # 1. 保存用户消息
+                # 保存用户消息
                 # Vercel AI SDK UI在每次请求时都会发送所有历史消息
                 # 我们只保存最后一条用户消息
                 last_user_message = None
@@ -310,85 +343,45 @@ def get_router(external_get_session: callable) -> APIRouter:
                 sources=last_user_message.get("sources")
             )
 
-            # 2. 检查是否为共读场景
-            chat_session = chat_mgr.get_session(request.session_id)
-            if chat_session and chat_session.scenario_id:
-                logger.info(f"检测到场景模式，scenario_id: {chat_session.scenario_id}")
-                
-                # 获取场景信息  
-                scenario = chat_mgr.session.get(Scenario, chat_session.scenario_id)
-                if scenario and scenario.name == "co_reading":
-                    logger.info("启动PDF共读模式")
-                    
-                    # 从会话元数据获取PDF路径
-                    pdf_path = None
-                    if chat_session.metadata_json and "pdf_path" in chat_session.metadata_json:
-                        pdf_path = chat_session.metadata_json["pdf_path"]
-                    
-                    if not pdf_path:
-                        yield f"data: {json.dumps({'type': 'error', 'errorText': 'PDF path not found in session metadata'})}\n\n"
-                        return
-                    
-                    # 获取持久化目录
-                    db_path = chat_mgr.session.get_bind().url.database
-                    persistence_dir = Path(db_path).parent / "graph_persistence"
-                    persistence_dir.mkdir(exist_ok=True)
-                    
-                    # 调用共读流协议处理函数
-                    from tools.co_reading import stream_co_reading_chat_v5_compatible
-                    async for sse_chunk in stream_co_reading_chat_v5_compatible(
-                        messages=[last_user_message],
-                        session_id=request.session_id,
-                        pdf_path=pdf_path,
-                        persistence_dir=persistence_dir
-                    ):
-                        yield sse_chunk
-                    return  # 共读模式处理完毕，直接返回
-
-            # 3. 普通Agent模式 - 流式生成并保存助手消息
+            # 流式生成并保存助手消息
             assistant_message_id = f"asst_{uuid.uuid4().hex}"
             accumulated_text_content = ""  # 保存纯文本内容，便于搜索和摘要等文本处理
             accumulated_parts = []  # 用于累积不同类型的parts内容，保存到数据库，以便用户切换会话时能“恢复现场”
 
             try:
-                chunk_count = 0
-                async for sse_chunk in models_mgr.stream_agent_chat_v5_compatible(
-                    messages=[last_user_message],  # 传递包含最后一条用户消息的列表
-                    session_id=request.session_id
-                ):
-                    chunk_count += 1
-                    # 直接传递给前端，无需额外转换
-                    yield sse_chunk
-                    
-                    # 解析SSE数据以便累积保存（用于持久化）
-                    if sse_chunk.startswith('data: ') and not sse_chunk.strip().endswith('[DONE]'):
-                        try:
-                            sse_data = sse_chunk[6:].strip()  # 移除 'data: ' 前缀
-                            if sse_data:
-                                parsed_data = json.loads(sse_data)
-                                # 记录各种类型的parts，参考 https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
-                                if parsed_data.get('type') == 'text-delta':
-                                    # 只累积text-delta事件来构建单独保存的文本内容
-                                    accumulated_text_content += parsed_data.get('delta', '')
-                                if parsed_data.get('type') in [
-                                        'start',
-                                        'text-start',
-                                        'text-delta', 
-                                        'text-end',
-                                        'reasoning-start',
-                                        'reasoning-delta',
-                                        'reasoning-end',
-                                        'tool-input-available', 
-                                        'tool-output-available',
-                                        'finish',
-                                        ]:
-                                    accumulated_parts.append(parsed_data)
-                                else:
-                                    # data: {"type":"error","errorText":"error message"}
-                                    pass  # 忽略其他类型
-                        except json.JSONDecodeError:
-                            # 忽略无法解析的数据行
-                            pass
+                # 检查是否为共读场景
+                chat_session = chat_mgr.get_session(request.session_id)
+                if chat_session and chat_session.scenario_id:
+                    logger.info(f"检测到场景模式，scenario_id: {chat_session.scenario_id}")
+                    # 获取场景信息  
+                    scenario = chat_mgr.session.get(Scenario, chat_session.scenario_id)
+                    if scenario and scenario.name == "co_reading":
+                        logger.info("启动PDF共读模式")
+                        # 调用共读流协议处理函数
+                        async for sse_chunk in models_mgr.coreading_v5_compatible(
+                            messages=[last_user_message],
+                            session_id=request.session_id,
+                        ):
+                            yield sse_chunk
+                            # 解析SSE数据以便累积保存（用于持久化）
+                            accumulated_text_content_delta, accumulated_parts_delta = _accumulate_parts(sse_chunk)
+                            accumulated_text_content += accumulated_text_content_delta
+                            accumulated_parts.extend(accumulated_parts_delta)
+                else:
+                    chunk_count = 0
+                    async for sse_chunk in models_mgr.stream_agent_chat_v5_compatible(
+                        messages=[last_user_message],  # 传递包含最后一条用户消息的列表
+                        session_id=request.session_id
+                    ):
+                        chunk_count += 1
+                        # 直接传递给前端，无需额外转换
+                        yield sse_chunk
+                        
+                        # 解析SSE数据以便累积保存（用于持久化）
+                        accumulated_text_content_delta, accumulated_parts_delta = _accumulate_parts(sse_chunk)
+                        accumulated_text_content += accumulated_text_content_delta
+                        accumulated_parts.extend(accumulated_parts_delta)
+
 
             except Exception as e:
                 logger.error(f"Error in agent_chat_stream: {e}")
@@ -397,7 +390,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                 yield error_event
             
             finally:
-                # 4. 在流结束后，将完整的助手消息持久化到数据库
+                # 在流结束后，将完整的助手消息持久化到数据库
                 if accumulated_text_content.strip():
                     chat_mgr.save_message(
                         session_id=request.session_id,
@@ -409,7 +402,12 @@ def get_router(external_get_session: callable) -> APIRouter:
                     logger.info(f"Saved assistant message {assistant_message_id} with content length: {len(accumulated_text_content.strip())}")
                 else:
                     logger.warning(f"No content to save for assistant message {assistant_message_id}")
-
+                # 清理截图文件
+                screenshots_dir = Path(models_mgr.session.get_bind().url.database).parent / "tauri-plugin-screenshots"
+                for image_path in screenshots_dir.glob("*.png"):
+                    # 清理24小时以上的旧文件
+                    if (datetime.now() - datetime.fromtimestamp(image_path.stat().st_mtime)).days >= 1:
+                        image_path.unlink(missing_ok=True)
 
         return StreamingResponse(
             stream_generator(), 

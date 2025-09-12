@@ -90,25 +90,6 @@ export function NavTagCloud() {
     { showToasts: false } // 不显示toast，避免过多通知
   );
   
-  // 根据标签权重计算字体大小
-  // const getFontSize = (weight: number) => {
-  //   const minSize = 10;
-  //   const maxSize = 16;
-    
-  //   if (!tags || tags.length <= 1) return minSize;
-    
-  //   // 找出最大和最小权重
-  //   const weights = tags.map(tag => tag.weight);
-  //   const maxWeight = Math.max(...weights);
-  //   const minWeight = Math.min(...weights);
-    
-  //   if (maxWeight === minWeight) return minSize;
-    
-  //   // 计算权重对应的字体大小
-  //   const size = minSize + ((weight - minWeight) / (maxWeight - minWeight)) * (maxSize - minSize);
-  //   return Math.round(size);
-  // };
-  
   // 处理标签点击
   const handleTagClick = async (tagId: number) => {
     console.log('Tag clicked:', tagId);
@@ -131,7 +112,7 @@ export function NavTagCloud() {
       console.log(`Found ${files.length} files for tag: ${tag.name}`);
     } catch (error) {
       console.error('Error searching files by tag:', error);
-      setError(error instanceof Error ? error.message : '搜索失败');
+      setError(error instanceof Error ? error.message : 'search error');
     } finally {
       setLoading(false);
     }
@@ -184,10 +165,10 @@ export function NavTagCloud() {
           ) : tags.length === 0 ? (
             // 状态3: 无标签 - 数据为空但模型已配置
             <div className="text-sm text-muted-foreground text-center w-full">
-              暂无标签数据
+              no tags available
               <br />
               <span className="text-xs">
-                请先进行文件扫描和标签生成
+                Please perform file scanning and tag generation first.
               </span>
             </div>
           ) : (

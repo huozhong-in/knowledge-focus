@@ -10,6 +10,7 @@ import {
   ArrowDownRightIcon,
   DramaIcon,
 } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -25,7 +26,7 @@ import { toast } from "sonner"
 import { useSettingsStore } from "./App"
 import { useTranslation } from "react-i18next"
 import { useScreeningResultUpdated } from "@/hooks/useBridgeEvents"
-import { enterCoReadingMode } from "@/lib/chat-session-api"
+import { enterCoReadingMode, type ChatSession } from "@/lib/chat-session-api"
 import { handlePdfReading } from "@/lib/pdfCoReadingTools"
 import { useSidebar } from "@/components/ui/sidebar"
 import {
@@ -102,7 +103,10 @@ function FileItem({
 
   return (
     <div
-      className={`flex flex-1 border rounded-md p-2 mb-1.5 group relative min-w-0 @container ${file.pinned ? "border-primary bg-primary/5" : "border-border bg-background"} hover:bg-muted/50 transition-colors`}
+      className={cn(
+        "flex flex-1 border rounded-md p-2 mb-1.5 group relative min-w-0 @container hover:bg-muted/50 transition-colors",
+        file.pinned ? "border-primary bg-primary/5" : "border-border bg-background"
+      )}
     >
       <div className="flex items-start gap-1.5 min-w-0 flex-1">
         <div className="mt-0.5 shrink-0">{getFileIcon(file.extension)}</div>
@@ -178,17 +182,25 @@ function FileItem({
           const pdfVectorizationState = getFileStatus(file.path)
           const isVectorized = pdfVectorizationState?.status === 'completed'
           const isProcessing = pdfVectorizationState?.status === 'processing' || pdfVectorizationState?.status === 'queued'
+          const isPinned = file.pinned
+          
+          // 只有同时满足已向量化且已Pin的条件才能点击共读
+          const canCoRead = isVectorized && isPinned
           
           // 构建title文本
           let titleText = t("FILELIST.co-reading")
-          if (!pdfVectorizationState) {
-            titleText += " (需要先Pin文件进行向量化)"
+          if (!isPinned) {
+            titleText += " (需要先Pin文件到当前会话)"
+          } else if (!pdfVectorizationState) {
+            titleText += " (需要先进行向量化处理)"
           } else if (isProcessing) {
             titleText += " (向量化处理中...)"
           } else if (pdfVectorizationState.status === 'failed') {
-            titleText += " (向量化失败，请重试)"
-          } else if (isVectorized) {
+            titleText += " (向量化失败，请重试Pin)"
+          } else if (canCoRead) {
             titleText += " (已准备好共读)"
+          } else {
+            titleText += " (无法共读)"
           }
           
           return (
@@ -197,24 +209,28 @@ function FileItem({
               size="sm"
               onClick={(e) => {
                 e.stopPropagation()
-                onDramaIconClick?.(file.path)
+                if (canCoRead) {
+                  onDramaIconClick?.(file.path)
+                }
               }}
-              className={`h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity border border-border/50 ${
-                isVectorized 
-                  ? "bg-green-50/90 hover:bg-green-100 text-green-600 group-hover:animate-bounce" 
-                  : isProcessing
-                  ? "bg-yellow-50/90 hover:bg-yellow-100 text-yellow-600 animate-pulse"
-                  : "bg-background/80 hover:bg-muted"
-              }`}
+              className={cn(
+                "h-5 w-5 p-0 !opacity-0 group-hover:!opacity-100 transition-opacity border border-border/50",
+                {
+                  "bg-green-50/90 hover:bg-green-100 text-green-600 group-hover:animate-bounce cursor-pointer": canCoRead,
+                  "bg-yellow-50/90 hover:bg-yellow-100 text-yellow-600 animate-pulse cursor-wait": isProcessing && isPinned && !canCoRead,
+                  "bg-muted/50 hover:bg-muted text-muted-foreground cursor-not-allowed": !canCoRead && !(isProcessing && isPinned)
+                }
+              )}
               title={titleText}
+              disabled={!canCoRead}
             >
               <DramaIcon className="h-2.5 w-2.5" />
-              {/* 向量化完成状态指示器 */}
-              {isVectorized && (
+              {/* 向量化完成且已Pin状态指示器 */}
+              {canCoRead && (
                 <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-green-500 rounded-full border border-white" />
               )}
-              {/* 处理中状态指示器 */}
-              {isProcessing && (
+              {/* 处理中状态指示器（仅当已Pin时显示） */}
+              {isProcessing && isPinned && (
                 <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 bg-yellow-500 rounded-full border border-white animate-pulse" />
               )}
             </Button>
@@ -270,6 +286,7 @@ interface FileListProps {
   onRemoveTempPinnedFile?: (filePath: string) => void
   onSelectImage?: (imagePath: string) => void // 新增图片选择回调
   onSessionUpdate?: (updatedSession: any) => void // 新增会话更新回调
+  onCreateSessionFromMessage?: (firstMessageContent: string) => Promise<ChatSession> // 新增创建会话回调
 }
 
 export function FileList({
@@ -278,6 +295,7 @@ export function FileList({
   onRemoveTempPinnedFile,
   onSelectImage,
   onSessionUpdate,
+  onCreateSessionFromMessage,
 }: FileListProps) {
   const {
     getFilteredFiles,
@@ -300,6 +318,7 @@ export function FileList({
   // 共读模式确认对话框状态
   const [coReadingDialogOpen, setCoReadingDialogOpen] = useState(false)
   const [selectedPdfPath, setSelectedPdfPath] = useState<string | null>(null)
+  const [coReadingSessionId, setCoReadingSessionId] = useState<number | null>(null)
 
   // 获取侧边栏控制函数
   const { setOpen } = useSidebar()
@@ -450,7 +469,7 @@ export function FileList({
       console.error("Pin file API error:", error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : "未知错误",
+        error: error instanceof Error ? error.message : "Unknown error",
       }
     }
   }
@@ -496,7 +515,7 @@ export function FileList({
       console.error("Unpin file API error:", error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : "未知错误",
+        error: error instanceof Error ? error.message : "Unknown error",
       }
     }
   }
@@ -596,23 +615,56 @@ export function FileList({
   }
 
   // 处理DramaIcon点击 - 打开确认对话框
-  const handleDramaIconClick = (filePath: string) => {
-    if (!currentSessionId) {
-      toast.error("请先选择一个会话")
+  const handleDramaIconClick = async (filePath: string) => {
+    // 如果没有当前会话ID，自动创建一个新会话
+    let sessionId = currentSessionId
+    if (!sessionId && onCreateSessionFromMessage) {
+      try {
+        const fileName = filePath.split('/').pop() || 'unknown'
+        const newSession = await onCreateSessionFromMessage(`PDF共读: ${fileName}`)
+        sessionId = newSession.id
+        
+        // 通知父组件会话已创建
+        onSessionUpdate?.(newSession)
+        
+        toast.success("已自动创建新会话用于PDF共读")
+      } catch (error) {
+        console.error("创建会话失败:", error)
+        toast.error("Failed to create session. Unable to enter co-reading mode.")
+        return
+      }
+    } else if (!sessionId) {
+      toast.error("Unable to create session. Please select a session first.")
       return
     }
+
+    // 确保PDF文件被pin到会话中
+    try {
+      const fileName = filePath.split('/').pop() || 'unknown'
+      // 检查文件是否已经被pin，如果没有则pin它
+      const file = getFilteredFiles().find(f => f.path === filePath)
+      if (file && !file.pinned) {
+        onAddTempPinnedFile?.(filePath, fileName, { type: 'pdf', auto_pinned_for_co_reading: true })
+      }
+    } catch (error) {
+      console.warn("Pin PDF文件失败:", error)
+      // 不阻止共读流程，继续执行
+    }
+
+    // 保存会话ID供后续使用
+    setCoReadingSessionId(sessionId)
 
     // 检查多模态向量化状态 - 只有完成向量化的PDF文件才能进入共读模式
     const vectorizationState = getFileStatus(filePath)
     if (!vectorizationState || vectorizationState.status !== 'completed') {
       if (!vectorizationState) {
-        toast.error("该文件尚未进行多模态向量化处理，请先Pin该文件完成向量化后再尝试共读")
+        toast.error("The file has not undergone multimodal vectorization yet. Please pin the file to complete vectorization before trying to co-read.")
       } else if (vectorizationState.status === 'processing') {
-        toast.error("该文件正在进行多模态向量化处理中，请等待处理完成后再尝试共读")
+        toast.error("The file is currently being processed for multimodal vectorization. Please wait for it to complete before trying to co-read.")
       } else if (vectorizationState.status === 'queued') {
-        toast.error("该文件多模态向量化任务已排队，请等待处理完成后再尝试共读")
+        toast.error("The file's multimodal vectorization task is queued. Please wait for it to complete before trying to co-read.")
       } else if (vectorizationState.status === 'failed') {
-        toast.error("该文件多模态向量化处理失败，请重新Pin该文件或检查文件格式")
+        toast.error("The file's multimodal vectorization failed. Please re-pin the file or check the file format.")
       }
       return
     }
@@ -623,7 +675,11 @@ export function FileList({
 
   // 处理进入共读模式（确认后执行）
   const handleEnterCoReading = async () => {
-    if (!selectedPdfPath || !currentSessionId) {
+    // 使用保存的会话ID，如果没有则使用当前会话ID
+    const sessionIdToUse = coReadingSessionId || currentSessionId
+    
+    if (!selectedPdfPath || !sessionIdToUse) {
+      console.error("缺少必要参数:", { selectedPdfPath, sessionIdToUse, coReadingSessionId, currentSessionId })
       return
     }
 
@@ -631,7 +687,7 @@ export function FileList({
       setCoReadingDialogOpen(false) // 先关闭对话框
       
       // 调用进入共读模式API
-      const updatedSession = await enterCoReadingMode(currentSessionId, selectedPdfPath)
+      const updatedSession = await enterCoReadingMode(sessionIdToUse, selectedPdfPath)
       
       // console.log('🎯 [DEBUG] FileList收到API返回的updatedSession:', {
       //   id: updatedSession.id,
@@ -649,8 +705,8 @@ export function FileList({
       // 通知父组件会话已更新
       onSessionUpdate?.(updatedSession)
       // console.log('🔄 [DEBUG] FileList调用onSessionUpdate，传递会话:', updatedSession.id)
-      
-      toast.success(`已进入PDF共读模式：${selectedPdfPath.split('/').pop()}`)
+
+      toast.success(`Entered PDF Co-Reading Mode: ${selectedPdfPath.split('/').pop()}`)
       // console.log('进入共读模式成功:', updatedSession)
       
       // 调用PDF阅读器工具，打开PDF并设置分屏布局
@@ -659,10 +715,10 @@ export function FileList({
       
       if (pdfCenterPoint) {
         // console.log('PDF阅读器已成功打开并设置分屏布局:', pdfCenterPoint)
-        toast.success('PDF阅读器已打开并设置分屏布局')
+        toast.success('PDF reader opened and split layout set')
       } else {
         console.warn('PDF阅读器打开失败或未能设置分屏布局')
-        toast.warning('PDF阅读器可能未能正确设置分屏布局')
+        toast.warning('PDF reader may not have been correctly set up for split layout')
       }
       
       // 🎯 开启共读模式后自动收起侧边栏，为PDF阅读提供更大空间
@@ -670,9 +726,10 @@ export function FileList({
       setOpen(false)
     } catch (error) {
       console.error('进入共读模式失败:', error)
-      toast.error(`进入共读模式失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      toast.error(`Enter Co-Reading Mode Failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setSelectedPdfPath(null)
+      setCoReadingSessionId(null)
     }
   }
 
@@ -819,15 +876,15 @@ export function FileList({
       <Dialog open={coReadingDialogOpen} onOpenChange={setCoReadingDialogOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>📖 进入PDF共读模式</DialogTitle>
+            <DialogTitle>📖 Enter PDF Co-Reading Mode</DialogTitle>
             <DialogDescription>
-              将使用系统默认PDF阅读器打开以下文件，并设置分屏布局：
+              The default PDF reader will be used to open the following file, and a split-screen layout will be set:
               <br />
               <span className="font-mono text-sm mt-2 block truncate" title={selectedPdfPath || ""}>
                 {selectedPdfPath?.split('/').pop()}
               </span>
               <span className="text-xs text-muted-foreground block mt-1">
-                应用将自动调整为左侧显示，PDF阅读器显示在右侧
+                The application will automatically adjust to display on the left, with the PDF reader on the right.
               </span>
             </DialogDescription>
           </DialogHeader>
@@ -837,12 +894,13 @@ export function FileList({
               onClick={() => {
                 setCoReadingDialogOpen(false)
                 setSelectedPdfPath(null)
+                setCoReadingSessionId(null)
               }}
             >
-              取消
+              Cancel
             </Button>
             <Button onClick={handleEnterCoReading}>
-              确定开始共读
+              Confirm Start Co-Reading
             </Button>
           </DialogFooter>
         </DialogContent>

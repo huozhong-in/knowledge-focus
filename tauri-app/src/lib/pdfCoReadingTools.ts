@@ -56,19 +56,19 @@ export async function ensureAccessibilityPermission(args: Record<string, any>): 
   /* 确保应用有辅助功能权限，如果没有则请求权限 */
   try {
     console.log(args)
-    console.log("检查辅助功能权限...")
+    // console.log("检查辅助功能权限...")
     let hasPermission = await checkAccessibilityPermission()
-    console.log("当前权限状态:", hasPermission)
+    // console.log("当前权限状态:", hasPermission)
 
     if (!hasPermission) {
-      console.log("权限不足，请求权限...")
+      // console.log("权限不足，请求权限...")
       // 如果没有权限，发起请求
       const permissionGranted = await requestAccessibilityPermission()
-      console.log("权限请求结果:", permissionGranted)
+      // console.log("权限请求结果:", permissionGranted)
 
       if (!permissionGranted) {
         // 用户在弹窗中选择了"拒绝"，或者没有完成授权
-        console.log("用户拒绝或未完成权限授权")
+        // console.log("用户拒绝或未完成权限授权")
         alert(
           "未能获取辅助功能权限，无法控制其他应用。请在系统设置中手动开启。"
         )
@@ -76,7 +76,7 @@ export async function ensureAccessibilityPermission(args: Record<string, any>): 
       }
       // 更新权限状态
       hasPermission = await checkAccessibilityPermission()
-      console.log("权限更新后状态:", hasPermission)
+      // console.log("权限更新后状态:", hasPermission)
     }
 
     return { success: hasPermission }
@@ -102,7 +102,7 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
     
     // 检查辅助功能权限
     const hasPermission = await ensureAccessibilityPermission({})
-    console.log("权限检查结果:", hasPermission)
+    // console.log("权限检查结果:", hasPermission)
 
     if (hasPermission.success) {
       // --- 第1步：打开PDF并抢回焦点 ---
@@ -115,8 +115,8 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
         }
       }
       const appWindow = Window.getCurrent()
-      const windowFactor = await getCurrentWindow().scaleFactor()
-      console.log("窗口缩放因子:", windowFactor)
+      // const windowFactor = await getCurrentWindow().scaleFactor()
+      // console.log("窗口缩放因子:", windowFactor)
       // 取得当前窗口高度
       const windowSize = await getCurrentWindow().innerSize()
       const windowHeight = windowSize.height
@@ -138,14 +138,14 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
       console.log("当前显示器宽度的一半:", halfWidth)
 
       // --- 第3步：将Tauri应用窗口置于左侧 ---
-      console.log("正在将本应用窗口移动到左侧...")
+      // console.log("正在将本应用窗口移动到左侧...")
       await appWindow.setSize(new PhysicalSize(halfWidth, windowHeight))  // 窗口宽度变化，但高度保持不变
       // 使用 monitor.position 来处理多显示器情况更佳
       await appWindow.setPosition(
         new PhysicalPosition(monitor.position.x, monitor.position.y)
       )
       // --- 第4步：通过AppleScript将“预览”窗口置于右侧 ---
-      console.log("正在将“预览”窗口移动到右侧...")
+      // console.log("正在将“预览”窗口移动到右侧...")
       // 设置窗口的边界 {x1, y1, x2, y2}
       // x1 = 左上角x, y1 = 左上角y
       // x2 = 右下角x, y2 = 右下角y
@@ -157,9 +157,9 @@ export const handlePdfReading = async (args: Record<string, any>): Promise<PdfRe
       const scaledMonitorHeight = Math.floor(
         monitorSize.height / monitor.scaleFactor
       )
-      console.log(
-        `AppleScript将设置“预览”窗口位置为: {左上角x:${scaledHalfWidth}, 左上角y:0, 右下角x:${scaledMonitorWidth}, 右下角y:${scaledMonitorHeight}}`
-      )
+      // console.log(
+      //   `AppleScript将设置“预览”窗口位置为: {左上角x:${scaledHalfWidth}, 左上角y:0, 右下角x:${scaledMonitorWidth}, 右下角y:${scaledMonitorHeight}}`
+      // )
       // 计算PDF阅读器的逻辑中心点坐标
       const pdf_center_point: PdfReaderCenterPoint = { x: 0, y: 0 }
       pdf_center_point.x = scaledHalfWidth + Math.floor((scaledMonitorWidth - scaledHalfWidth) / 2)
@@ -209,17 +209,17 @@ if (app.windows.length > 0) {
         appleScript,
       ])
       const output = await command.execute()
-      console.log("handleControlPdfReader() 执行结果:", output)
+      // console.log("handleControlPdfReader() 执行结果:", output)
       // 抢回焦点
       await Window.getCurrent().setFocus()
       if (output.code !== 0) {
         console.error("handleControlPdfReader() 执行失败:", output.stderr)
       } else {
-        console.log("分屏布局设置成功！")
+        // console.log("分屏布局设置成功！")
         return pdf_center_point
       }
     } else {
-      console.log("权限不足，打开系统设置...")
+      // console.log("权限不足，打开系统设置...")
       await open(
         "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
       )
@@ -337,13 +337,13 @@ function getWindowStatus(appName, windowTitle) {
     appleScript,
   ])
   const output = await command.execute()
-  console.log("isPdfReaderFocused() 执行结果:", output)
+  // console.log("isPdfReaderFocused() 执行结果:", output)
   if (output.code !== 0) {
     console.error("isPdfReaderFocused() 执行失败:", output.stderr)
     return { exists: false, isFrontmost: false, isOccluded: false, isMiniaturized: false, message: "执行AppleScript失败: " + output.stderr }
   }
   const result = output.stdout.trim()
-  console.log("isPdfReaderFocused() 输出:", result)
+  // console.log("isPdfReaderFocused() 输出:", result)
   // 解析输出的JSON字符串
   const status = JSON.parse(result)
   return status
@@ -436,7 +436,7 @@ handlePdfWindow();
     appleScript,
   ])
   const output = await command.execute()
-  console.log("handleActivePdfReader() 执行结果:", output)
+  // console.log("handleActivePdfReader() 执行结果:", output)
   if (output.code !== 0) {
     console.error("handleActivePdfReader() 执行失败:", output.stderr)
     return undefined
@@ -466,10 +466,10 @@ handlePdfWindow();
         if (part.startsWith("bounds:")) window_info.bounds = part.substring(7)
       })
 
-      console.log("pdfreader窗口信息:", window_info)
-      console.log(`窗口位置: (${window_info.x}, ${window_info.y})`)
-      console.log(`窗口大小: ${window_info.width} x ${window_info.height}`)
-      console.log(`窗口边界: ${window_info.bounds}`)
+      // console.log("pdfreader窗口信息:", window_info)
+      // console.log(`窗口位置: (${window_info.x}, ${window_info.y})`)
+      // console.log(`窗口大小: ${window_info.width} x ${window_info.height}`)
+      // console.log(`窗口边界: ${window_info.bounds}`)
 
       // 计算PDF阅读器的逻辑中心点坐标
       const pdf_center_point: PdfReaderCenterPoint = { x: 0, y: 0 }
@@ -478,7 +478,7 @@ handlePdfWindow();
 
       return pdf_center_point
     } else {
-      console.log("PDF阅读器应用没有窗口")
+      // console.log("PDF阅读器应用没有窗口")
       return undefined
     }
   } else {
@@ -488,7 +488,7 @@ handlePdfWindow();
 
 const handleOpenPDF = async (pdfPath: string): Promise<boolean> => {
   try {
-    console.log("尝试打开PDF文件:", pdfPath)
+    // console.log("尝试打开PDF文件:", pdfPath)
     await openPath(pdfPath)
     return true
 
@@ -513,9 +513,9 @@ export async function handlePdfReaderScreenshot(args: Record<string, any>): Prom
     // 如果没有屏幕录制权限，尝试请求权限
     const permissionGranted = await requestScreenRecordingPermission()
     if (!permissionGranted) {
-      console.log(
-        "未能获取屏幕录制权限，无法截图。请在系统设置中手动开启。"
-      )
+      // console.log(
+      //   "未能获取屏幕录制权限，无法截图。请在系统设置中手动开启。"
+      // )
       return ''
     }
   }
@@ -539,7 +539,7 @@ export async function handlePdfReaderScreenshot(args: Record<string, any>): Prom
   }
   let window_id = -1
   windows.forEach((win) => {
-    console.log(`APPNAME: ${win.appName}, TITLE: ${win.title}，窗口ID: ${win.id}`)
+    // console.log(`APPNAME: ${win.appName}, TITLE: ${win.title}，窗口ID: ${win.id}`)
     if (win.title.includes(pdfFileName)) {
       window_id = win.id
     }
@@ -560,7 +560,7 @@ const getPdfReaderName = async (pdfPath:string): Promise<string> => {
   const appleScript = `tell application "System Events" to get name of (get default application of file "${pdfPath}")`
   const command = Command.create("run-applescript", ["-e", appleScript])
   const output = await command.execute()
-  console.log("getPdfReaderName() 执行结果:", output)
+  // console.log("getPdfReaderName() 执行结果:", output)
   if (output.code !== 0) {
     console.error("getPdfReaderName()执行失败:", output.stderr)
     return ""

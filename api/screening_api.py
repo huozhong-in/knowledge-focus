@@ -320,4 +320,40 @@ def get_router(external_get_session: callable) -> APIRouter:
                 "message": f"获取失败: {str(e)}"
             }
 
+    @router.get("/file-screening/by-path-hash")
+    def get_screening_by_path_and_hash(
+        file_path: str,
+        file_hash: str = None,
+        screening_mgr: ScreeningManager = Depends(get_screening_manager)
+    ):
+        """根据文件路径和哈希值获取粗筛结果
+        
+        参数:
+        - file_path: 文件路径
+        - file_hash: 文件哈希值（可选）
+        
+        返回:
+        - 匹配的文件粗筛结果记录
+        """
+        try:
+            result = screening_mgr.get_by_path_and_hash(file_path, file_hash)
+            
+            if result:
+                return {
+                    "success": True,
+                    "data": result.model_dump()
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "未找到匹配的文件记录"
+                }
+                
+        except Exception as e:
+            logger.error(f"根据路径和哈希获取粗筛结果失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"查询失败: {str(e)}"
+            }
+
     return router

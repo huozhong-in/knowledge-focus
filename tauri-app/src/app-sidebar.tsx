@@ -54,6 +54,7 @@ import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
 import { useTranslation } from "react-i18next"
 import { CollapsedQuickAccess } from "./collapsed-quick-access"
+import { cn } from "@/lib/utils"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
@@ -339,7 +340,7 @@ export function AppSidebar({
                   <SidebarGroupLabel>{timeGroup.period}</SidebarGroupLabel>
                   <SidebarMenu>
                     {timeGroup.chat_sessions.map((chat_session) => (
-                      <SidebarMenuItem key={chat_session.id} className={`group`}>
+                      <SidebarMenuItem key={chat_session.id} className={`group/chat_session`}>
                         <SidebarMenuButton 
                           asChild
                           isActive={chat_session.isActive}
@@ -357,10 +358,10 @@ export function AppSidebar({
                             </div>
                         </SidebarMenuButton>
                         {/* 浮动工具条 - hover时显示 */}
-                        <div key={chat_session.id} className={`absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex gap-0.5`}>
+                        <div key={chat_session.id} className={`absolute top-2 right-1 opacity-0 group-hover/chat_session:opacity-100 transition-opacity duration-200 flex gap-0.5 items-center`}>
                           <DropdownMenu key={chat_session.id}>
                             <DropdownMenuTrigger>
-                              <EllipsisVertical className="h-4 w-4 hover:bg-accent" />
+                              <EllipsisVertical className="size-4 hover:bg-accent" />
                             </DropdownMenuTrigger>
                             <DropdownMenuContent>
                               <DropdownMenuItem
@@ -370,7 +371,7 @@ export function AppSidebar({
                                 }}
                                 className="flex items-center"
                               >
-                                <Edit3 className="mr-1 h-4 w-4" />
+                                <Edit3 className="mr-1 size-4" />
                                 <span className="text-xs">{t('APPSIDEBAR.rename-chat')}</span>
                               </DropdownMenuItem>
                               <DropdownMenuItem
@@ -380,7 +381,7 @@ export function AppSidebar({
                                 }}
                                 className="flex items-center"
                               >
-                                <Trash2 className="mr-1 h-4 w-4" />
+                                <Trash2 className="mr-1 size-4" />
                                 <span className="text-xs">{t('APPSIDEBAR.delete-chat')}</span>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -391,7 +392,7 @@ export function AppSidebar({
                   </SidebarMenu>
                 </SidebarGroup>
               ))}
-              <Button variant="ghost" className="w-full justify-center mb-2" size="sm">
+              <Button variant="ghost" className={cn("w-full justify-center mb-2", {"hidden": sessionsByTime.length === 0})} size="sm">
                 <span className="text-xs">{t('APPSIDEBAR.more')}</span>
                 <MoreHorizontal className="h-4 w-4" />
               </Button>

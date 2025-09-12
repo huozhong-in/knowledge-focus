@@ -121,6 +121,7 @@ export function AppWorkspace({
                 onRemoveTempPinnedFile={onRemoveTempPinnedFile}
                 onSelectImage={handleImageSelection} // 使用新的图片选择回调
                 onSessionUpdate={handleInternalSessionUpdate} // 使用内部会话更新回调
+                onCreateSessionFromMessage={onCreateSessionFromMessage} // 传递创建会话回调
               />
             </ResizablePanel>
             <ResizableHandle withHandle className="bg-primary" />

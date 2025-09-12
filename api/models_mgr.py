@@ -1057,6 +1057,376 @@ Generate a title that best represents what this conversation will be about. Avoi
         
         return float(similarity)
 
+    async def coreading_v5_compatible(self, messages: List[Dict], session_id: int):
+        """
+        [临时方案] 提供给“共读”模型的stream接口，兼容AI SDK v5协议。
+        """
+        try:
+            model_interface: ModelUseInterface = self.model_config_mgr.get_vision_model_config()
+            if model_interface is None:
+                error_msg = "can't use vision model"
+                logger.error(error_msg)
+                yield f'data: {json.dumps({"type": "error", "errorText": error_msg})}\n\n'
+                return
+            
+            max_context_length = model_interface.max_context_length if model_interface.max_context_length != 0 else 4096
+            max_output_tokens = model_interface.max_output_tokens if model_interface.max_output_tokens != 0 else 1024
+            
+            model = self.model_config_mgr.model_adapter(model_interface)
+            
+            # 构建系统prompt
+            system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
+            count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
+            logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
+            
+            # 处理用户输入 - 兼容AI SDK v5的parts格式
+            user_prompt: List[str] = []
+            image_files: List[str] = []  # 存储图片文件路径
+            for msg in messages:
+                if msg['role'] == 'user':
+                    # 优先从parts中提取文本内容和图片文件
+                    content_text = ""
+                    if "parts" in msg:
+                        for part in msg["parts"]:
+                            if part.get("type") == "text":
+                                content_text += part.get("text", "")
+                            elif part.get("type") == "file":
+                                media_type = part.get("mediaType", "")
+                                file_url = part.get("url", "")
+                                filename = part.get("filename", "")
+                                # 处理图片文件
+                                if media_type.startswith("image/") and file_url:
+                                    # 处理file://协议的本地文件路径
+                                    if file_url.startswith("file://"):
+                                        file_path = file_url[7:]  # 移除file://前缀
+                                    else:
+                                        file_path = file_url
+                                    image_files.append(file_path)
+                                    logger.info(f'图片文件: {media_type} {filename} {file_path}')
+                                else:
+                                    logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
+                            else:
+                                logger.info(f'Unknown part type: {part.get("type", "unknown")}')
+                    # 备用：检查传统的content字段
+                    if not content_text:
+                        content_text = msg.get("content", "")
+                    
+                    if content_text.strip():
+                        user_prompt.append(content_text.strip())
+            
+            if user_prompt == []:
+                yield f'data: {"type": "error", "errorText": "User prompt is empty"}\n\n'
+                return
+
+            # 共读模式有一至两张图片，构建多模态消息            
+            # 构建pydantic-ai格式的用户输入 - 使用List[Any]支持BinaryContent
+            user_prompt_multimodal: List[Any] = []
+            
+            # 添加文本内容
+            if user_prompt:
+                user_prompt_multimodal.append("\n".join(user_prompt))
+            
+            # 添加图片内容
+            for image_path in image_files:
+                try:
+                    if os.path.exists(image_path):
+                        # 获取文件扩展名来确定MIME类型
+                        file_ext = Path(image_path).suffix.lower()
+                        if file_ext in ['.jpg', '.jpeg']:
+                            mime_type = 'image/jpeg'
+                        elif file_ext == '.png':
+                            mime_type = 'image/png'
+                        elif file_ext == '.gif':
+                            mime_type = 'image/gif'
+                        elif file_ext == '.webp':
+                            mime_type = 'image/webp'
+                        else:
+                            mime_type = 'image/png'  # 默认
+                        
+                        # 读取图片数据并创建BinaryContent
+                        image_data = Path(image_path).read_bytes()
+                        binary_content = BinaryContent(
+                            identifier=os.path.basename(image_path),
+                            data=image_data, 
+                            media_type=mime_type
+                        )
+                        user_prompt_multimodal.append(binary_content)
+                        # logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
+                    else:
+                        logger.warning(f"图片文件不存在: {image_path}")
+                except Exception as e:
+                    logger.error(f"读取图片文件失败: {image_path}, 错误: {e}")
+            
+            user_prompt_final = user_prompt_multimodal
+            
+            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt_final))
+            logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
+            
+            # 留给会话历史记录的token数
+            available_tokens = max_context_length - max_output_tokens - count_tokens_system_prompt - count_tokens_user_prompt
+            logger.info(f"当前可用历史消息token数: {available_tokens}")
+            chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
+            
+            # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
+            user_query = "\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)])  # 合并用户输入作为查询
+            rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
+            if rag_context:
+                user_prompt_final = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
+                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
+                
+                # 通过桥接器发送RAG数据到知识观察窗
+                self._send_rag_to_observation_window(rag_sources, user_query)
+            
+            # 将会话历史记录插到用户提示词上方
+            if chat_history != []:
+                user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
+            logger.info(f"当前用户提示词: {user_prompt_final}")
+            
+            # 创建agent
+            agent = Agent(
+                model=model,
+                system_prompt=system_prompt,
+            )
+
+            # 状态跟踪变量 
+            current_part_type = None  # 当前部分类型 ('text', 'reasoning', 'tool')
+            current_part_id = None    # 当前部分的 ID
+            active_tool_calls = {}    # 跟踪活跃的工具调用
+
+            def end_current_part():
+                """结束当前部分并发送 end 事件"""
+                nonlocal current_part_type, current_part_id
+                if current_part_type and current_part_id:
+                    if current_part_type == 'text':
+                        data = {"type": "text-end", "id": current_part_id}
+                        return f'data: {json.dumps(data)}\n\n'
+                    elif current_part_type == 'reasoning':
+                        data = {"type": "reasoning-end", "id": current_part_id}
+                        return f'data: {json.dumps(data)}\n\n'
+                current_part_type = None
+                current_part_id = None
+                return None
+
+            def start_new_part(part_type: str, part_id: str):
+                """开始新部分并发送 start 事件"""
+                nonlocal current_part_type, current_part_id
+                current_part_type = part_type
+                current_part_id = part_id
+                if part_type == 'text':
+                    data = {"type": "text-start", "id": part_id}
+                    return f'data: {json.dumps(data)}\n\n'
+                elif part_type == 'reasoning':
+                    data = {"type": "reasoning-start", "id": part_id}
+                    return f'data: {json.dumps(data)}\n\n'
+                return None
+
+            # 使用 agent.iter() 方法来逐个输出流中每个节点
+            async with agent.iter(user_prompt=user_prompt_final, deps=session_id) as run:
+                async for node in run:
+                    # logger.info(f"Processing node type: {type(node)}")
+                    if Agent.is_user_prompt_node(node):
+                        # 用户输入节点 - 在v5协议中我们不需要发送user-prompt事件
+                        # AI SDK v5协议中用户消息由前端直接处理，我们只处理AI响应
+                        logger.info(f"Processing user prompt node: {node.user_prompt}")
+                        # 跳过，不发送事件
+                    elif Agent.is_model_request_node(node):
+                        # 模型请求节点 - 可以流式获取模型的响应
+                        async with node.stream(run.ctx) as request_stream:
+                            final_result_found = False
+                            # logger.info("Starting model request stream processing")
+                            async for event in request_stream:
+                                # logger.info(f"Received event type: {type(event)}")
+                                if isinstance(event, PartStartEvent):
+                                    logger.info("Processing PartStartEvent")
+                                    # 在AI SDK v5中，我们不需要发送通用的start事件
+                                    # 文本部分会在TextPartDelta事件中自动开始
+                                    # logger.info("Skipping PartStartEvent - will start parts when content arrives")
+                                    continue
+                                elif isinstance(event, PartDeltaEvent):
+                                    # logger.info(f"Processing PartDeltaEvent with delta type: {type(event.delta)}")
+                                    if isinstance(event.delta, TextPartDelta):
+                                        # logger.info(f"Processing TextPartDelta: {event.delta.content_delta}")
+                                        # 检查是否需要切换到文本类型
+                                        if current_part_type != 'text':
+                                            # 结束之前的部分
+                                            end_event = end_current_part()
+                                            if end_event:
+                                                yield end_event
+                                            # 开始新的文本部分
+                                            part_id = f"msg_{uuid.uuid4().hex}"
+                                            start_event = start_new_part('text', part_id)
+                                            if start_event:
+                                                yield start_event
+                                        
+                                        # 文本增量事件
+                                        data = {
+                                            "type": "text-delta",
+                                            "id": current_part_id,
+                                            "delta": event.delta.content_delta
+                                        }
+                                        # logger.info(f"Yielding text-delta: {data}")
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    elif isinstance(event.delta, ThinkingPartDelta):
+                                        # 检查是否需要切换到思考类型
+                                        if current_part_type != 'reasoning':
+                                            # 结束之前的部分
+                                            end_event = end_current_part()
+                                            if end_event:
+                                                yield end_event
+                                            # 开始新的思考部分
+                                            part_id = f"reasoning_{uuid.uuid4().hex}"
+                                            start_event = start_new_part('reasoning', part_id)
+                                            if start_event:
+                                                yield start_event
+                                        
+                                        # 思考过程增量事件
+                                        data = {
+                                            "type": "reasoning-delta",
+                                            "id": current_part_id,
+                                            "delta": event.delta.content_delta
+                                        }
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    elif isinstance(event.delta, ToolCallPartDelta):
+                                        # 结束当前文本/思考部分（如果有的话）
+                                        if current_part_type in ['text', 'reasoning']:
+                                            end_event = end_current_part()
+                                            if end_event:
+                                                yield end_event
+                                        
+                                        tool_call_id = event.delta.tool_call_id
+                                        if tool_call_id:
+                                            # 如果是新的工具调用，发送 tool-input-start
+                                            if tool_call_id not in active_tool_calls:
+                                                active_tool_calls[tool_call_id] = {
+                                                    'id': tool_call_id,
+                                                    'started': True
+                                                }
+                                                # 发送 tool-input-start 事件
+                                                data = {
+                                                    "type": "tool-input-start",
+                                                    "toolCallId": tool_call_id,
+                                                    "toolName": event.delta.tool_name_delta or ""
+                                                }
+                                                yield f'data: {json.dumps(data)}\n\n'
+                                            
+                                            # 工具调用参数增量事件
+                                            data = {
+                                                "type": "tool-input-delta",
+                                                "toolCallId": tool_call_id,
+                                                "inputTextDelta": event.delta.args_delta
+                                            }
+                                            yield f'data: {json.dumps(data)}\n\n'
+                                elif isinstance(event, FinalResultEvent):
+                                    # logger.info("Processing FinalResultEvent")
+                                    # 结束当前部分
+                                    end_event = end_current_part()
+                                    if end_event:
+                                        yield end_event
+                                    
+                                    # FinalResultEvent 标志工具调用完成，准备输出最终文本
+                                    final_result_found = True
+                                    break
+
+                            # 如果找到了最终结果，开始流式输出文本
+                            if final_result_found:
+                                # logger.info("Starting final result text streaming")
+                                # 重置当前部分状态，因为这是一个新的文本流
+                                current_part_type = None
+                                current_part_id = None
+                                
+                                try:
+                                    # logger.info("About to call request_stream.stream_text(delta=True)")
+                                    async for output in request_stream.stream_text(delta=True):
+                                        # logger.info(f"Streaming text output: {output}")
+                                        # 检查是否需要开始新的文本部分
+                                        if current_part_type != 'text':
+                                            # 开始新的文本部分
+                                            part_id = f"msg_{uuid.uuid4().hex}"
+                                            start_event = start_new_part('text', part_id)
+                                            if start_event:
+                                                yield start_event
+                                        
+                                        data = {
+                                            "type": "text-delta",
+                                            "id": current_part_id,
+                                            "delta": output
+                                        }
+                                        # logger.info(f"Yielding final text-delta: {data}")
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                    # logger.info("Finished streaming text from request_stream")
+                                except Exception as e:
+                                    logger.error(f"Error in final result text streaming: {e}")
+                            else:
+                                logger.info("final_result_found is False, skipping text streaming")
+                    elif Agent.is_call_tools_node(node):
+                        # 工具调用节点 - 处理工具的调用和响应
+                        async with node.stream(run.ctx) as handle_stream:
+                            async for event in handle_stream:
+                                if isinstance(event, FunctionToolCallEvent):
+                                    tool_call_id = event.part.tool_call_id
+                                    
+                                    # 确保发送了 start 和 delta 事件
+                                    if tool_call_id not in active_tool_calls:
+                                        # 发送 tool-input-start
+                                        data = {
+                                            "type": "tool-input-start",
+                                            "toolCallId": tool_call_id,
+                                            "toolName": event.part.tool_name
+                                        }
+                                        yield f'data: {json.dumps(data)}\n\n'
+                                        
+                                        # 发送 tool-input-delta（如果有参数）
+                                        if event.part.args:
+                                            args_str = event.part.args_as_json_str()
+                                            data = {
+                                                "type": "tool-input-delta",
+                                                "toolCallId": tool_call_id,
+                                                "inputTextDelta": args_str
+                                            }
+                                            yield f'data: {json.dumps(data)}\n\n'
+                                        
+                                        active_tool_calls[tool_call_id] = {
+                                            'id': tool_call_id,
+                                            'started': True
+                                        }
+                                    
+                                    # 工具调用完整参数可用事件
+                                    data = {
+                                        "type": "tool-input-available",
+                                        "toolCallId": tool_call_id,
+                                        "toolName": event.part.tool_name,
+                                        "input": event.part.args
+                                    }
+                                    yield f'data: {json.dumps(data)}\n\n'
+                                elif isinstance(event, FunctionToolResultEvent):
+                                    # 工具结果事件
+                                    data = {
+                                        "type": "tool-output-available",
+                                        "toolCallId": event.tool_call_id,
+                                        "output": event.result.content
+                                    }
+                                    yield f'data: {json.dumps(data)}\n\n'
+                    elif Agent.is_end_node(node):
+                        # 结束最后的部分（如果有的话）
+                        end_event = end_current_part()
+                        if end_event:
+                            yield end_event
+                        
+                        # 结束节点 - agent 运行完成
+                        data = {
+                            "type": "finish"
+                        }
+                        yield f'data: {json.dumps(data)}\n\n'
+                        yield 'data: [DONE]\n\n'
+                        break
+                    else:
+                        # 其他未处理的节点类型
+                        logging.warning(f"Unhandled node type: {type(node)}")
+            
+        except Exception as e:
+            logger.error(f"Error in coreading_v5_compatible: {e}")
+            yield f'data: {json.dumps({"type": "error", "errorText": str(e)})}\n\n'
+
 # for testing
 if __name__ == "__main__":
     logging.basicConfig(

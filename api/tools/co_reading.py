@@ -38,6 +38,8 @@ from backend_tool_caller import g_backend_tool_caller
 #     CGWindowListCopyWindowInfo,
 #     kCGNullWindowID,
 # )
+from sqlmodel import Session
+from models_mgr import ModelsMgr
 import logging
 logger = logging.getLogger(__name__)
 
@@ -366,6 +368,10 @@ co_reading_graph = Graph(
 # =============================================================================
 # 共读流协议处理函数
 # =============================================================================
+# # 从db_session中获取持久化目录
+# db_path = chat_mgr.session.get_bind().url.database
+# persistence_dir = Path(db_path).parent / "graph_persistence"
+# persistence_dir.mkdir(exist_ok=True)
 
 async def stream_co_reading_chat_v5_compatible(
     messages: List[Dict], 
@@ -414,19 +420,7 @@ async def stream_co_reading_chat_v5_compatible(
             async for node in run:
                 logger.info(f"执行Graph节点: {type(node).__name__}")
                 
-                # 根据节点类型生成对应的流协议事件
-                if isinstance(node, CoReadingNode):
-                    # 发送共读状态开始事件
-                    yield f'data: {json.dumps({"type": "co-reading-start", "pdf_path": pdf_path})}\n\n'
                 
-                elif isinstance(node, PausedNode):
-                    # 发送暂停状态事件  
-                    yield f'data: {json.dumps({"type": "co-reading-paused", "reason": node.reason})}\n\n'
-                
-                elif isinstance(node, End):
-                    # 发送结束事件
-                    yield f'data: {json.dumps({"type": "co-reading-end", "result": node.data})}\n\n'
-                    break
         
         # 发送完成标志
         yield f'data: {json.dumps({"type": "finish"})}\n\n'

@@ -11,6 +11,7 @@ import {
 import { useCoReadingTimer } from "./hooks/useCoReadingTimer"
 import { CoReadingPauseWidget } from "./components/ui/co-reading-pause-widget"
 import { exitCoReadingMode } from "./lib/chat-session-api"
+import { handlePdfReaderScreenshot } from "./lib/pdfCoReadingTools"
 import {
   Conversation,
   ConversationContent,
@@ -82,6 +83,7 @@ export function AiSdkChat({
   const [isInitializing, setIsInitializing] = useState(true)
   const [input, setInput] = useState("")
   const [selectedImage, setSelectedImage] = useState<string | null>(null) // 存储选中的图片路径
+  const [screenshotPreview, setScreenshotPreview] = useState<{path: string, metadata?: any} | null>(null) // 存储截图预览信息
 
   const { t } = useTranslation()
 
@@ -123,46 +125,46 @@ export function AiSdkChat({
                                coReadingTimer.isPdfTrulyInvisible === true
 
   // 调试日志：追踪Widget显示条件
-  useEffect(() => {
-    console.log('🎯 [DEBUG] Widget显示条件检查:', {
-      hasScenarioId: !!currentSession?.scenario_id,
-      timerActive: coReadingTimer.isActive,
-      pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
-      shouldShowPauseWidget,
-      '条件1-有scenarioId': !!currentSession?.scenario_id,
-      '条件2-定时器激活': coReadingTimer.isActive,
-      '条件3-PDF不可见': coReadingTimer.isPdfTrulyInvisible === true
-    })
-  }, [currentSession?.scenario_id, coReadingTimer.isActive, coReadingTimer.isPdfTrulyInvisible, shouldShowPauseWidget])
+  // useEffect(() => {
+  //   console.log('🎯 [DEBUG] Widget显示条件检查:', {
+  //     hasScenarioId: !!currentSession?.scenario_id,
+  //     timerActive: coReadingTimer.isActive,
+  //     pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
+  //     shouldShowPauseWidget,
+  //     '条件1-有scenarioId': !!currentSession?.scenario_id,
+  //     '条件2-定时器激活': coReadingTimer.isActive,
+  //     '条件3-PDF不可见': coReadingTimer.isPdfTrulyInvisible === true
+  //   })
+  // }, [currentSession?.scenario_id, coReadingTimer.isActive, coReadingTimer.isPdfTrulyInvisible, shouldShowPauseWidget])
 
   // 调试日志：追踪PDF状态指示器显示条件
-  const shouldShowPdfIndicator = currentSession?.scenario_id && currentSession?.metadata?.pdf_path
-  useEffect(() => {
-    console.log('📱 [DEBUG] PDF状态指示器显示条件:', {
-      hasScenarioId: !!currentSession?.scenario_id,
-      hasPdfPath: !!currentSession?.metadata?.pdf_path,
-      shouldShowPdfIndicator,
-      pdfPath: currentSession?.metadata?.pdf_path
-    })
-  }, [currentSession?.scenario_id, currentSession?.metadata?.pdf_path, shouldShowPdfIndicator])
+  // const shouldShowPdfIndicator = currentSession?.scenario_id && currentSession?.metadata?.pdf_path
+  // useEffect(() => {
+  //   console.log('📱 [DEBUG] PDF状态指示器显示条件:', {
+  //     hasScenarioId: !!currentSession?.scenario_id,
+  //     hasPdfPath: !!currentSession?.metadata?.pdf_path,
+  //     shouldShowPdfIndicator,
+  //     pdfPath: currentSession?.metadata?.pdf_path
+  //   })
+  // }, [currentSession?.scenario_id, currentSession?.metadata?.pdf_path, shouldShowPdfIndicator])
 
-  // 定时日志：让用户感受到定时器的存在
-  useEffect(() => {
-    if (coReadingTimer.isActive) {
-      const logInterval = setInterval(() => {
-        console.log('⏰ [定时心跳] PDF共读监控运行中...', {
-          活跃状态: coReadingTimer.isActive,
-          PDF聚焦: coReadingTimer.isPdfFocused,
-          PDF隐藏: coReadingTimer.isPdfTrulyInvisible,
-          时间戳: new Date().toLocaleTimeString()
-        })
-      }, 5000) // 每5秒打印一次心跳日志
+  // // 定时日志：让用户感受到定时器的存在
+  // useEffect(() => {
+  //   if (coReadingTimer.isActive) {
+  //     const logInterval = setInterval(() => {
+  //       console.log('⏰ [定时心跳] PDF共读监控运行中...', {
+  //         活跃状态: coReadingTimer.isActive,
+  //         PDF聚焦: coReadingTimer.isPdfFocused,
+  //         PDF隐藏: coReadingTimer.isPdfTrulyInvisible,
+  //         时间戳: new Date().toLocaleTimeString()
+  //       })
+  //     }, 5000) // 每5秒打印一次心跳日志
 
-      return () => {
-        clearInterval(logInterval)
-      }
-    }
-  }, [coReadingTimer.isActive, coReadingTimer.isPdfFocused, coReadingTimer.isPdfTrulyInvisible])
+  //     return () => {
+  //       clearInterval(logInterval)
+  //     }
+  //   }
+  // }, [coReadingTimer.isActive, coReadingTimer.isPdfFocused, coReadingTimer.isPdfTrulyInvisible])
 
   // Widget操作处理函数
   const handleContinueReading = async () => {
@@ -339,32 +341,72 @@ export function AiSdkChat({
   }, [sessionId, setMessages])
 
   // 根据官方文档，需要手动管理输入状态
-  const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
-    if ((!input.trim() && !selectedImage) || status !== "ready") return
+    if ((!input.trim() && !selectedImage && !screenshotPreview) || status !== "ready") return
 
     const userMessage = input.trim()
 
-    // 构建消息内容，支持文本和图片
-    const messageContent: any = {
-      text: userMessage || "Please analyze this image", // 如果只有图片没有文本，提供默认文本
+    // 如果是co-reading模式且没有截图预览，先进行截图
+    if (currentSession?.scenario_id && !screenshotPreview && !selectedImage) {
+      try {
+        // 从当前会话获取PDF路径
+        const pdfPath = currentSession?.metadata?.pdf_path
+        if (!pdfPath) {
+          console.error('当前会话中没有PDF路径信息，无法进行截图')
+          return
+        }
+        
+        const screenshotPath = await handlePdfReaderScreenshot({ pdfPath })
+        if (screenshotPath) {
+          // 获取文件元数据
+          let fileMetadata = null
+          try {
+            const response = await fetch(`http://127.0.0.1:60315/file-screening/by-path-hash?file_path=${encodeURIComponent(screenshotPath)}`)
+            if (response.ok) {
+              fileMetadata = await response.json()
+            }
+          } catch (error) {
+            console.warn('获取截图文件元数据失败:', error)
+          }
+          
+          // 设置截图预览
+          setScreenshotPreview({ path: screenshotPath, metadata: fileMetadata })
+          // 不返回，继续发送消息
+        } else {
+          // 截图失败，阻止发送并提示用户
+          console.error('截图失败，无法在co-reading模式下发送消息')
+          // 这里可以添加用户提示逻辑
+          return
+        }
+      } catch (error) {
+        console.error('截图过程出错:', error)
+        // 截图失败，阻止发送并提示用户
+        return
+      }
     }
 
-    // 如果有选中的图片，添加到消息中
-    if (selectedImage) {
+    // 构建消息内容，支持文本和图片
+    const messageContent: any = {
+      text: userMessage || (selectedImage || screenshotPreview ? "Please analyze this image" : ""), // 如果只有图片没有文本，提供默认文本
+    }
+
+    // 处理图片文件（选中的图片或截图）
+    const imageToUse = screenshotPreview?.path || selectedImage
+    if (imageToUse) {
       messageContent.files = [{
         type: 'file',
-        filename: selectedImage.split('/').pop() || 'image',
-        mediaType: 'image/' + (selectedImage.split('.').pop()?.toLowerCase() || 'png'),
-        url: `file://${selectedImage}`, // 使用file://协议的本地文件路径
+        filename: imageToUse.split('/').pop() || 'image',
+        mediaType: 'image/' + (imageToUse.split('.').pop()?.toLowerCase() || 'png'),
+        url: `file://${imageToUse}`, // 使用file://协议的本地文件路径
       }]
     }
 
     // 检查是否需要创建会话（延迟创建逻辑）
     let currentSessionId = effectiveSessionId
     if (!effectiveSessionId && onCreateSessionFromMessage) {
-      onCreateSessionFromMessage(userMessage || "图片分析")
+      onCreateSessionFromMessage(userMessage || "Image Analysis Request")
         .then((newSession) => {
           currentSessionId = String(newSession.id)
           setEffectiveSessionId(currentSessionId)
@@ -404,9 +446,10 @@ export function AiSdkChat({
       )
     }
 
-    // 清空输入框和选中的图片
+    // 清空输入框和选中的图片/截图
     setInput("")
     setSelectedImage(null)
+    setScreenshotPreview(null)
   }
 
   if (isInitializing) {
@@ -419,38 +462,6 @@ export function AiSdkChat({
 
   return (
     <div className="flex flex-col flex-auto h-full overflow-hidden relative">
-      {/* PDF共读状态指示器 */}
-      {/* {currentSession?.scenario_id && coReadingTimer.isActive && (
-        <div className="px-3 py-2 bg-blue-50 border-b border-blue-200 text-blue-800 text-sm">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span>📖 PDF共读模式已激活</span>
-              <span className="text-xs">
-                PDF可见: {coReadingTimer.isPdfFocused === null ? "检测中..." : coReadingTimer.isPdfFocused ? "✅" : "❌"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              {!coReadingTimer.isPdfFocused && (
-                <button
-                  onClick={handleContinueReading}
-                  className="text-xs px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded border border-blue-300 transition-colors"
-                  title="恢复PDF窗口"
-                >
-                  恢复PDF
-                </button>
-              )}
-              <button
-                onClick={handleExitCoReading}
-                className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded border border-gray-300 transition-colors"
-                title="退出共读模式"
-              >
-                退出
-              </button>
-            </div>
-          </div>
-        </div>
-      )} */}
-
       {/* PDF暂停状态Widget */}
       {shouldShowPauseWidget && currentSession && (
         <CoReadingPauseWidget
@@ -592,39 +603,82 @@ export function AiSdkChat({
 
       {/* 输入区域 - 使用AI Elements */}
       <div className="p-1 relative">
-        {/* 图片预览区域 - 浮动在输入框上方 */}
-        {selectedImage && (
-          <div className="absolute bottom-full left-2 w-[300px] mb-2 p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg z-10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-muted-foreground">选中的图片:</span>
-              <Button
-                onClick={() => setSelectedImage(null)}
-                variant="ghost"
-                className="size-6 items-center"
-              >
-                <CircleXIcon className="inline size-4 m-1" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <img 
-                src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(selectedImage)}&width=48&height=48`}
-                alt="Preview"
-                className="w-12 h-12 object-cover rounded border"
-                onError={(e) => {
-                  console.error('Failed to load thumbnail:', selectedImage);
-                  // 可以设置一个默认图标
-                  const target = e.target as HTMLImageElement;
-                  target.style.display = 'none';
-                }}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="text-xs truncate" title={selectedImage}>
-                  {selectedImage.split('/').pop()}
+        {/* 预览区域容器 - 浮动在输入框上方 */}
+        {(selectedImage || screenshotPreview) && (
+          <div className="absolute bottom-full left-2 right-2 mb-2 z-10">
+            <div className="flex gap-2">
+              {/* 图片预览区域 - 第一位 */}
+              {selectedImage && (
+                <div className="w-[300px] p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-muted-foreground">Selected Image:</span>
+                    <Button
+                      onClick={() => setSelectedImage(null)}
+                      variant="ghost"
+                      className="size-6 items-center"
+                    >
+                      <CircleXIcon className="inline size-4 m-1" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <img 
+                      src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(selectedImage)}&width=48&height=48`}
+                      alt="Preview"
+                      className="w-12 h-12 object-cover rounded border"
+                      onError={(e) => {
+                        console.error('Failed to load thumbnail:', selectedImage);
+                        // 可以设置一个默认图标
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs truncate" title={selectedImage}>
+                        {selectedImage.split('/').pop()}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate" title={selectedImage}>
+                        {selectedImage}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-xs text-muted-foreground truncate" title={selectedImage}>
-                  {selectedImage}
+              )}
+              
+              {/* 截图预览区域 - 第二位（无图片时左边预留空位） */}
+              {screenshotPreview && (
+                <div className={`w-[300px] p-2 bg-blue-50/80 backdrop-blur-sm rounded-lg border border-blue-200 shadow-lg ${!selectedImage ? 'ml-[316px]' : ''}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-blue-700">PDF screenshot:</span>
+                    <Button
+                      onClick={() => setScreenshotPreview(null)}
+                      variant="ghost"
+                      className="size-6 items-center"
+                    >
+                      <CircleXIcon className="inline size-4 m-1" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <img 
+                      src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(screenshotPreview.path)}&width=48&height=48`}
+                      alt="Screenshot Preview"
+                      className="w-12 h-12 object-cover rounded border"
+                      onError={(e) => {
+                        console.error('Failed to load screenshot thumbnail:', screenshotPreview.path);
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs truncate" title={screenshotPreview.path}>
+                        {screenshotPreview.path.split('/').pop()}
+                      </div>
+                      <div className="text-xs text-blue-600 truncate">
+                        PDF screenshot
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}
@@ -633,14 +687,14 @@ export function AiSdkChat({
         {currentSession?.scenario_id && currentSession?.metadata?.pdf_path && (
           <div className="absolute bottom-full right-2 w-[300px] mb-2 p-2 bg-muted/50 backdrop-blur-sm rounded-lg border shadow-lg z-10">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-primary font-bold">📖 AI在与你共读PDF:</span>
+              <span className="text-xs text-primary font-bold">📖 AI is co-reading PDF with you:</span>
               <div className="flex items-center gap-2">
                 {!coReadingTimer.isPdfFocused && (
                   <Button
                     onClick={handleContinueReading}
                     variant="ghost"
                     className="size-6 items-center"
-                    title="寻找PDF窗口"
+                    title="Find PDF window"
                     disabled={coReadingTimer.isPdfFocused === null} // 检测中时禁用按钮
                   >
                     <SearchIcon className="inline size-4 m-1" />
@@ -650,7 +704,7 @@ export function AiSdkChat({
                 onClick={() => handleExitCoReading()}
                 variant="ghost"
                 className="size-6 items-center"
-                title="退出共读模式"
+                title="quit co-reading mode"
                 >
                   <CircleXIcon className="inline size-4 m-1" />
                 </Button>
@@ -676,13 +730,13 @@ export function AiSdkChat({
           <PromptInputTextarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={selectedImage ? "描述你想了解关于这张图片的什么..." : t("AISDKCHAT.input-message")}
+            placeholder={selectedImage ? "Describe what you want to know about this image..." : t("AISDKCHAT.input-message")}
           />
           <PromptInputToolbar>
             <PromptInputTools>
-              <PromptInputButton>
+              {/* <PromptInputButton>
                 <MicIcon size={16} />
-              </PromptInputButton>
+              </PromptInputButton> */}
               <PromptInputButton>
                 <GlobeIcon size={16} />
                 <span>Search</span>

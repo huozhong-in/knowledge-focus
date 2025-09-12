@@ -6,67 +6,60 @@
 
 ### 核心组件
 
-- **后端Graph状态机**: 使用PydanticAI Graph管理共读状态流转
-- **前端Widget控制**: 根据状态显示/隐藏输入控制组件
-- **桥接事件系统**: 实现后端状态→前端UI的实时同步
-- **持久化机制**: 支持会话切换时的状态恢复
+- **后端Agent处理**: 使用单个Agent处理共读场景的多模态输入（文本+PDF截图）
+- **前端Widget控制**: 根据PDF窗口状态显示/隐藏暂停控制组件
+- **场景模式切换**: 基于会话scenario_id实现普通对话↔共读模式的切换
+- **自动截图集成**: 共读模式下用户发消息时自动截图PDF当前页面
 
-### 状态流转设计
+### 模式切换设计
 
 ```mermaid
-stateDiagram-v2
-    [*] --> 普通对话
-    普通对话 --> 共读状态 : 选择PDF文件(A)
-    共读状态 --> 暂停状态 : PDF窗口关闭/最小化(B,C)
-    暂停状态 --> 共读状态 : 重新打开PDF(D)
-    暂停状态 --> 普通对话 : 停止共读(E)
-    共读状态 --> 普通对话 : 用户切换会话
+flowchart TD
+    A[普通对话模式] --> B{用户选择PDF共读}
+    B --> C[设置scenario_id=co_reading]
+    C --> D[共读模式激活]
+    D --> E[用户发消息]
+    E --> F[自动截图PDF]
+    F --> G[发送文本+截图到AI]
+    G --> H[AI分析并回复]
+    H --> E
+    D --> I{PDF窗口不可见}
+    I --> J[显示暂停Widget]
+    J --> K{用户操作}
+    K --> L[重新打开PDF] 
+    K --> M[退出共读模式]
+    L --> D
+    M --> A
 ```
 
-## 🚀 Phase 1: 基础Graph模式切换
+## 🚀 Phase 1: 基础模式切换机制
 
-### ✅ 1.1 创建共读状态机基础结构
+### ✅ 1.1 会话场景管理系统
 
-- [x] **CoReadingState数据类**: PDF路径、会话ID、坐标缓存等
-- [x] **CoReadingNode**: 主要交互状态节点
-- [x] **PausedNode**: 暂停状态节点  
-- [x] **co_reading_graph**: Graph实例定义
-- [x] **基础导入和类型定义**: 添加必要的import
+- [x] **场景数据库设计**: Scenario表存储co_reading场景配置
+- [x] **scenario_id机制**: 基于会话的scenario_id实现模式切换
+- [x] **元数据管理**: session.metadata_json存储PDF路径等信息
+- [x] **API端点设计**: 进入/退出共读模式的RESTful接口
 
-**已完成文件**: `/api/tools/co_reading.py`
+**已完成文件**: `/api/models_api.py`, `/api/chatsession_mgr.py`, `/api/db_mgr.py`
 
-```python
-# 关键数据结构
-@dataclass 
-class CoReadingState:
-    pdf_path: str
-    session_id: int
-    pdf_center_point: Dict[str, int] | None = None
-    last_user_message: str | None = None
-    screenshot_count: int = 0
-    created_at: str = field(default_factory=lambda: str(datetime.now()))
+### ✅ 1.2 后端Agent处理机制
 
-# 状态机Graph
-co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReadingState)
-```
+- [x] **coreading_v5_compatible()**: 专门处理共读场景的Agent函数
+- [x] **多模态支持**: 支持文本+图片的混合输入处理
+- [x] **RAG集成**: 知识检索和会话历史管理
+- [x] **流协议兼容**: 完整的AI SDK v5协议支持
 
-### 🔄 1.2 实现独立的流协议处理函数
+**已完成文件**: `/api/models_mgr.py`
 
-- [x] **stream_co_reading_chat_v5_compatible()**: 基础框架已创建
-- [ ] **完善Graph迭代逻辑**: 处理不同节点类型的流协议输出
-- [ ] **错误处理机制**: 异常情况的友好处理
-- [ ] **测试基础流程**: 验证Graph能正常运行
+### ✅ 1.3 前端模式识别
 
-**当前状态**: 基础函数已创建，需要完善内部逻辑
+- [x] **scenario_id检测**: 前端通过currentSession.scenario_id判断模式
+- [x] **共读状态管理**: useCoReadingTimer hook监控PDF窗口状态
+- [x] **API集成**: enterCoReadingMode/exitCoReadingMode函数
+- [x] **类型安全**: ChatSession接口扩展支持scenario_id
 
-### ⏳ 1.3 在models_api.py中添加scenario_id判断
-
-- [x] **获取会话场景信息**: 检查session.scenario_id
-- [x] **PDF路径提取**: 从session.metadata_json获取
-- [x] **持久化目录创建**: graph_persistence/目录
-- [x] **调用共读流处理**: 分支到co_reading模式
-
-### ✅ 1.4 在/api/models_api.py中增加新的端点
+**已完成文件**: `/tauri-app/src/lib/chat-session-api.ts`, `/tauri-app/src/hooks/useCoReadingTimer.ts`
 
 - [x] **会话场景管理端点**: `/chat/sessions/{session_id}/scenario`
   - [x] **进入共读**: `POST action=enter_co_reading, pdf_path=xxx` → 设置scenario_id + metadata_json
@@ -80,35 +73,37 @@ co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReading
 - **场景管理**: 动态获取co_reading场景ID并设置到会话中
 - **元数据管理**: 自动保存PDF路径和时间戳到session.metadata_json
 
-## 🏗️ Phase 2: 被动回复模式实现
+## 🏗️ Phase 2: 截图集成与消息流程
 
-### ✅ 2.1 前端定时器与PDF窗口状态检测
+### ✅ 2.1 PDF窗口监控系统
 
-- [x] **前端定时器实现**: 创建useCoReadingTimer hook，监听会话状态变化
-- [x] **PDF窗口状态检查**: 集成isPdfReaderFocused前端功能，定时检查窗口状态
-- [x] **"真正不可见"逻辑**: 基于exists=false或isMiniaturized=true的精确判断
-- [x] **Widget显示触发**: isPdfTrulyInvisible状态实时同步，避免误报
-- [x] **会话切换联动**: 确保定时器跟随currentSession自动启停
+- [x] **前端定时器实现**: useCoReadingTimer hook监控PDF窗口状态变化
+- [x] **窗口状态检测**: isPdfReaderFocused功能检查窗口可见性
+- [x] **智能暂停逻辑**: 基于exists=false或isMiniaturized=true触发Widget
+- [x] **Widget控制系统**: CoReadingPauseWidget提供继续/退出操作
+- [x] **会话联动**: 定时器跟随currentSession自动启停
 
-### ⏳ 2.2 用户问答交互逻辑  
+### 🎯 2.2 自动截图与消息发送 **[当前阶段]**
 
-- [ ] **截图→RAG召回→答案合成**: 完整的问答流程
-- [ ] **集成现有前端功能**: handle_pdf_reader_screenshot等
-- [ ] **保持Graph上下文**: 确保问答后回到正确状态
+- [ ] **截图触发逻辑**: 共读模式下用户发消息时自动调用handlePdfReaderScreenshot
+- [ ] **消息格式处理**: 将截图路径添加到消息files数组，构建多模态消息
+- [ ] **错误处理机制**: 截图失败时的降级处理和用户提示
+- [ ] **system_prompt优化**: 针对PDF共读场景优化AI提示词
 
-## 🎛️ Phase 3: 前端Widget控制
+## ✅ Phase 3: 用户体验优化 **[已完成]**
 
-### ✅ 3.1 暂停状态Widget设计
+### ✅ 3.1 智能Widget控制系统
 
-- [x] **智能Widget显示**: 基于"真正不可见"条件触发（exists=false 或 isMiniaturized=true）
-- [x] **简化按钮设计**: 两按钮设计 - "继续阅读"（智能处理）+ "退出共读模式"
-- [x] **智能继续阅读逻辑**:
-  - 检测不到窗口 → `handlePdfReading`（打开文件）
-  - 窗口最小化/被遮挡 → `handleActivatePdfReader`（激活窗口）
-- [x] **前端Widget组件**: `CoReadingPauseWidget.tsx` 完整实现
-- [x] **状态联动**: Widget显示与isPdfTrulyInvisible状态实时同步
+- [x] **CoReadingPauseWidget组件**: 简洁的两按钮设计（继续阅读 + 退出共读）
+- [x] **智能恢复逻辑**: 根据PDF窗口状态自动选择打开或激活操作
+- [x] **精确触发条件**: 基于"真正不可见"逻辑避免误报
+- [x] **实时状态同步**: Widget显示与isPdfTrulyInvisible状态联动
 
-### ⏳ 3.2 前端定时器生命周期管理 (已合并到2.1)
+### ✅ 3.2 界面布局优化
+
+- [x] **侧边栏自动管理**: 进入共读时自动收起，为PDF阅读腾出空间
+- [x] **会话加载优化**: 自动滚动到最新对话位置
+- [x] **用户控制感**: 移除自动PDF打开，让用户主导操作节奏
 
 **Phase 2.1 详细实现计划**：
 
@@ -156,27 +151,33 @@ co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReading
 - [ ] **问题上下文保持**: 前端携带用户消息重新发送
 - [ ] **无缝衔接**: 用户体验优化
 
-## 🔄 Phase 4: 持久化与会话管理
+## 🔄 Phase 4: 功能完善与优化 **[未来计划]**
 
-### ⏳ 4.1 Graph生命周期管理  
+### ⏳ 4.1 会话管理优化
 
-- [ ] **持久化文件管理**: `co_reading_{session_id}.json`
-- [ ] **会话切换清理**: 优雅停止当前Graph
-- [ ] **状态恢复机制**: 从FileStatePersistence恢复运行
+- [ ] **多PDF支持**: 支持同一会话中切换不同PDF文件
+- [ ] **会话恢复**: 重新打开应用时恢复共读状态
+- [ ] **历史管理**: 共读会话的特殊标记和搜索
 
-### ⏳ 4.2 错误恢复与边界处理
+### ⏳ 4.2 性能与体验优化
 
-- [ ] **异常状态处理**: Graph运行异常时的恢复
-- [ ] **文件清理策略**: 何时删除持久化文件
-- [ ] **并发控制**: 防止同一会话多个Graph实例
+- [ ] **截图缓存**: 避免重复截图相同页面
+- [ ] **预加载机制**: 预测用户可能询问的内容
+- [ ] **响应速度**: 优化大图片处理和传输
 
-## 🎯 Phase 5: 主动交互 (后期)
+## 🎯 Phase 5: 高级功能扩展 **[长期规划]**
 
-### ⏳ 5.1 定时器机制
+### ⏳ 5.1 智能状态机升级
 
-- [ ] **异步定时器**: 在CoReadingNode中使用asyncio.sleep
-- [ ] **智能判断**: 基于截图内容决定是否主动说话
-- [ ] **用户控制**: 前端频率调节滑块
+- [ ] **Graph状态机**: 升级到PydanticAI Graph实现复杂状态管理
+- [ ] **持久化机制**: Graph状态的保存和恢复
+- [ ] **主动交互**: AI基于阅读进度主动提问和建议
+
+### ⏳ 5.2 高级AI能力
+
+- [ ] **阅读理解**: 跟踪用户阅读进度和理解程度
+- [ ] **知识图谱**: 构建PDF内容的知识关联
+- [ ] **个性化**: 基于用户阅读习惯的智能推荐
 
 ## 📝 开发备注
 
@@ -186,7 +187,24 @@ co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReading
 2. **问题上下文处理**: 前端方案 - Widget携带消息，PDF可用后重发
 3. **状态事件**: 只需监听co_reading_active和co_reading_paused两种
 
-### 🎯 重要架构决策 (2025-09-09)
+### 🎯 重要架构决策
+
+#### 架构简化决策 (2025-09-11)
+
+- **✅ 单Agent模式**: 使用`models_mgr.coreading_v5_compatible()`处理共读场景，避免复杂状态机
+- **✅ 前端驱动**: 截图、消息发送等逻辑由前端`ai-sdk-chat.tsx`控制，后端专注AI处理
+- **✅ 场景切换**: 基于`session.scenario_id`实现模式判断，简化状态管理
+- **✅ 渐进式实现**: 先验证核心流程（截图→多模态消息→AI回复），再考虑高级功能
+- **🔮 未来升级**: 保留Graph状态机设计作为Phase 5扩展，待基础功能稳定后实施
+
+#### 技术选型理由 (2025-09-11)
+
+- **降低复杂性**: Graph状态机适合复杂场景，但当前需求相对简单
+- **快速验证**: 单Agent模式能更快验证用户体验和核心价值
+- **易于调试**: 单一入口便于问题定位和性能优化
+- **平滑升级**: 现有架构为未来Graph升级预留了接口
+
+#### 早期架构决策 (2025-09-09)
 
 - **定时器位置**：
   - ✅ **前端定时器**: 每3秒检查PDF窗口状态，避免后端无限循环
@@ -248,14 +266,48 @@ co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReading
 
 ### 下一步行动
 
-1. **✅ 完成Phase 1.3**: scenario_id判断分支已添加到models_api.py
-2. **✅ 完成Phase 1.4**: 会话场景管理API端点已实现
-3. **🎯 实现Phase 2.1**: 前端定时器与PDF窗口状态检测集成
-   - 创建useCoReadingTimer hook
-   - 集成到ai-sdk-chat.tsx
-   - 优化CoReadingNode逻辑
-4. **⏳ Phase 2.2**: 用户问答交互逻辑（截图→RAG召回→答案合成）
-5. **🎛️ Phase 2.3**: 桥接事件系统扩展
+1. **✅ 完成Phase 1**: 基础模式切换机制 - scenario_id判断、会话场景管理API
+2. **✅ 完成Phase 2.1**: PDF窗口监控系统 - 定时器、Widget控制
+3. **✅ 完成Phase 3**: 用户体验优化 - 界面布局、智能Widget
+4. **✅ 完成Phase 2.2**: 自动截图与消息发送
+   - ✅ 前端截图触发逻辑：共读模式下自动调用`handlePdfReaderScreenshot`，从会话metadata获取PDF路径
+   - ✅ 消息格式处理：构建包含截图的多模态消息，支持图片预览+截图预览同时存在
+   - ✅ 错误处理机制：截图失败时阻止消息发送，避免纯文本降级影响回复质量
+   - ✅ UI布局优化：截图预览区固定在第二位，左边预留空位避免CSS覆盖问题
+   - ⚠️ **修复的Bug**:
+     - PDF路径参数传递错误 - 需要从`currentSession.metadata.pdf_path`获取路径参数
+     - 后端API缺失 - 添加`/api/screening/by-path-hash`端点用于获取截图文件元数据
+     - 新会话共读问题 - 用户在新会话中直接点击共读时自动创建会话并正确设置状态
+     - 会话状态丢失 - 确保创建会话时正确设置scenario_id、metadata、pin文件关联
+### 🔧 **关键修复详解**
+
+#### **问题: 新会话共读状态丢失**
+- **现象**: 新建会话→搜索PDF→点击共读，PDF打开但状态指示器不显示，切换会话后pin状态消失
+- **根因**: 直接调用`createSession`缺少完整的会话初始化流程
+- **解决**: 
+  ```tsx
+  // 修复前：直接创建简单会话
+  const newSession = await createSession(`PDF共读: ${fileName}`)
+  
+  // 修复后：使用完整的创建流程
+  const newSession = await onCreateSessionFromMessage(`PDF共读: ${fileName}`)
+  // 自动处理: 智能命名、pin文件绑定、状态同步、sidebar刷新
+  ```
+
+#### **问题: 会话创建流程不完整**
+- **缺失步骤**: 
+  1. ❌ 智能会话命名(通过LLM生成)
+  2. ❌ 临时Pin文件绑定到新会话  
+  3. ❌ 设置当前会话状态
+  4. ❌ 触发sidebar刷新
+  5. ❌ PDF文件自动pin
+- **解决方案**: 通过`onCreateSessionFromMessage`回调复用App.tsx中的完整创建逻辑
+
+5. **🎯 下一步计划Phase 3**: System Prompt优化
+   - PDF共读场景专用提示词设计
+   - 结合文件元数据信息的上下文增强
+   - 多模态内容理解的指令优化
+6. **⏳ 后续计划**: Phase 4功能完善、Phase 5高级扩展
 
 ### ⚠️ 开发注意事项
 
@@ -405,6 +457,7 @@ co_reading_graph = Graph(nodes=[CoReadingNode, PausedNode], state_type=CoReading
 **Phase 4.1**: 实现Graph持久化文件管理和会话切换时的状态恢复机制
 
 ---
-**最后更新**: 2025年9月10日  
-**当前阶段**: ✅ Phase 3.2 用户体验优化已完成 → Phase 4.1 持久化与会话管理开发  
-**下个里程碑**: 实现Graph生命周期管理，支持会话切换时的状态恢复和文件清理
+**最后更新**: 2025年9月11日  
+**当前阶段**: ✅ Phase 1-3 已完成（模式切换、窗口监控、用户体验） → 🎯 Phase 2.2 自动截图与消息发送开发  
+**技术选型**: 单Agent模式，基于scenario_id的简化状态管理  
+**下个里程碑**: 实现共读模式下的自动截图集成，完成截图→AI回复的完整流程
