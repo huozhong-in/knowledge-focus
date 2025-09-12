@@ -402,12 +402,12 @@ def get_router(external_get_session: callable) -> APIRouter:
                     logger.info(f"Saved assistant message {assistant_message_id} with content length: {len(accumulated_text_content.strip())}")
                 else:
                     logger.warning(f"No content to save for assistant message {assistant_message_id}")
-                # 清理截图文件
-                screenshots_dir = Path(models_mgr.session.get_bind().url.database).parent / "tauri-plugin-screenshots"
-                for image_path in screenshots_dir.glob("*.png"):
-                    # 清理24小时以上的旧文件
-                    if (datetime.now() - datetime.fromtimestamp(image_path.stat().st_mtime)).days >= 1:
-                        image_path.unlink(missing_ok=True)
+                # # 清理截图文件
+                # screenshots_dir = Path(models_mgr.session.get_bind().url.database).parent / "tauri-plugin-screenshots"
+                # for image_path in screenshots_dir.glob("*.png"):
+                #     # 清理24小时以上的旧文件
+                #     if (datetime.now() - datetime.fromtimestamp(image_path.stat().st_mtime)).days >= 1:
+                #         image_path.unlink(missing_ok=True)
 
         return StreamingResponse(
             stream_generator(), 

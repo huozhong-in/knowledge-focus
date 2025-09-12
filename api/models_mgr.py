@@ -509,7 +509,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                 user_prompt_multimodal: List[Any] = []
                 
                 # 添加文本内容
-                if user_prompt:
+                if user_prompt != []:
                     user_prompt_multimodal.append("\n".join(user_prompt))
                 
                 # 添加图片内容
@@ -531,6 +531,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                             
                             # 读取图片数据并创建BinaryContent
                             image_data = Path(image_path).read_bytes()
+                            # TODO : 考虑图片大小限制
                             binary_content = BinaryContent(
                                 data=image_data, 
                                 media_type=mime_type
@@ -556,8 +557,8 @@ Generate a title that best represents what this conversation will be about. Avoi
             #         logger.info(f"文本内容: {' '.join(text_parts)[:200]}...")
             # else:
             #     logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
-            
-            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt_final))
+
+            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)]))
             logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
             
             # 留给会话历史记录的token数
@@ -578,7 +579,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
                 user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
-            logger.info(f"当前用户提示词: {user_prompt_final}")
+            logger.info(f"当前用户提示词: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
             
             # 创建agent
             agent = Agent(
@@ -1145,6 +1146,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                         
                         # 读取图片数据并创建BinaryContent
                         image_data = Path(image_path).read_bytes()
+                        # TODO : 考虑图片大小限制
                         binary_content = BinaryContent(
                             identifier=os.path.basename(image_path),
                             data=image_data, 
@@ -1159,7 +1161,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             
             user_prompt_final = user_prompt_multimodal
             
-            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join(user_prompt_final))
+            count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)]))
             logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
             
             # 留给会话历史记录的token数
@@ -1180,7 +1182,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
                 user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
-            logger.info(f"当前用户提示词: {user_prompt_final}")
+            logger.info(f"当前用户提示词: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
             
             # 创建agent
             agent = Agent(

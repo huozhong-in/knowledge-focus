@@ -348,8 +348,11 @@ export function AiSdkChat({
 
     const userMessage = input.trim()
 
+    // 用于在本次消息发送中临时存储截图信息
+    let currentScreenshotForMessage = screenshotPreview
+
     // 如果是co-reading模式且没有截图预览，先进行截图
-    if (currentSession?.scenario_id && !screenshotPreview && !selectedImage) {
+    if (currentSession?.scenario_id && !screenshotPreview) {
       try {
         // 从当前会话获取PDF路径
         const pdfPath = currentSession?.metadata?.pdf_path
@@ -371,8 +374,12 @@ export function AiSdkChat({
             console.warn('获取截图文件元数据失败:', error)
           }
           
-          // 设置截图预览
-          setScreenshotPreview({ path: screenshotPath, metadata: fileMetadata })
+          // 创建临时截图对象，用于本次消息发送
+          currentScreenshotForMessage = { path: screenshotPath, metadata: fileMetadata }
+          console.log('🔍 [DEBUG] 新截图生成:', currentScreenshotForMessage)
+          
+          // 设置截图预览状态（用于UI显示）
+          setScreenshotPreview(currentScreenshotForMessage)
           // 不返回，继续发送消息
         } else {
           // 截图失败，阻止发送并提示用户
@@ -387,21 +394,61 @@ export function AiSdkChat({
       }
     }
 
-    // 构建消息内容，支持文本和图片
+    // 构建消息内容，使用AI SDK v5的parts格式支持文本和多张图片
+    const parts: any[] = []
+    
+    // 添加文本部分
+    if (userMessage.trim()) {
+      parts.push({
+        type: 'text',
+        text: userMessage.trim()
+      })
+    } else if (selectedImage || currentScreenshotForMessage) {
+      // 如果只有图片没有文本，提供默认文本
+      parts.push({
+        type: 'text', 
+        text: 'Please analyze these images'
+      })
+    }
+    
+    // 添加用户选择的图片
+    if (selectedImage) {
+      parts.push({
+        type: 'file',
+        filename: selectedImage.split('/').pop() || 'selected-image',
+        mediaType: 'image/' + (selectedImage.split('.').pop()?.toLowerCase() || 'png'),
+        url: `file://${selectedImage}`, // 使用file://协议的本地文件路径
+      })
+    }
+    
+    // 添加PDF截图
+    if (currentScreenshotForMessage?.path) {
+      parts.push({
+        type: 'file',
+        filename: currentScreenshotForMessage.path.split('/').pop() || 'pdf-screenshot',
+        mediaType: 'image/' + (currentScreenshotForMessage.path.split('.').pop()?.toLowerCase() || 'png'),
+        url: `file://${currentScreenshotForMessage.path}`, // 使用file://协议的本地文件路径
+      })
+    }
+    
+    // 构建AI SDK v5兼容的消息格式
     const messageContent: any = {
-      text: userMessage || (selectedImage || screenshotPreview ? "Please analyze this image" : ""), // 如果只有图片没有文本，提供默认文本
+      parts: parts
     }
 
-    // 处理图片文件（选中的图片或截图）
-    const imageToUse = screenshotPreview?.path || selectedImage
-    if (imageToUse) {
-      messageContent.files = [{
-        type: 'file',
-        filename: imageToUse.split('/').pop() || 'image',
-        mediaType: 'image/' + (imageToUse.split('.').pop()?.toLowerCase() || 'png'),
-        url: `file://${imageToUse}`, // 使用file://协议的本地文件路径
-      }]
-    }
+    // 调试日志：输出消息内容
+    console.log('🔍 [DEBUG] 构建的消息内容:', JSON.stringify(messageContent, null, 2))
+    console.log('🔍 [DEBUG] parts数组:', JSON.stringify(parts, null, 2))
+    console.log('🔍 [DEBUG] selectedImage:', selectedImage)
+    console.log('🔍 [DEBUG] screenshotPreview:', screenshotPreview)
+    console.log('🔍 [DEBUG] currentScreenshotForMessage:', currentScreenshotForMessage)
+    console.log('🔍 [DEBUG] userMessage:', userMessage)
+    console.log('🔍 [DEBUG] 共读模式检查:', {
+      hasScenarioId: !!currentSession?.scenario_id,
+      screenshotPreviewExists: !!screenshotPreview,
+      currentScreenshotExists: !!currentScreenshotForMessage,
+      selectedImageExists: !!selectedImage
+    })
 
     // 检查是否需要创建会话（延迟创建逻辑）
     let currentSessionId = effectiveSessionId
@@ -645,7 +692,7 @@ export function AiSdkChat({
               )}
               
               {/* 截图预览区域 - 第二位（无图片时左边预留空位） */}
-              {screenshotPreview && (
+              {/* {screenshotPreview && (
                 <div className={`w-[300px] p-2 bg-blue-50/80 backdrop-blur-sm rounded-lg border border-blue-200 shadow-lg ${!selectedImage ? 'ml-[316px]' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs text-blue-700">PDF screenshot:</span>
@@ -678,7 +725,7 @@ export function AiSdkChat({
                     </div>
                   </div>
                 </div>
-              )}
+              )} */}
             </div>
           </div>
         )}
