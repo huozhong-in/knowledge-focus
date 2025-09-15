@@ -24,7 +24,7 @@ export function CoReadingPauseWidget({
   className = ''
 }: CoReadingPauseWidgetProps) {
   const pdfPath = session.metadata?.pdf_path
-  const pdfFileName = pdfPath ? pdfPath.split('/').pop() : '未知文件'
+  const pdfFileName = pdfPath ? pdfPath.split('/').pop() : 'Unknown PDF'
 
   return (
     <div className={`fixed bottom-20 left-4 right-4 z-50 ${className}`}>
@@ -32,10 +32,10 @@ export function CoReadingPauseWidget({
         <CardHeader className="pb-3">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-orange-600" />
-            <CardTitle className="text-orange-800">PDF阅读已暂停</CardTitle>
+            <CardTitle className="text-orange-800">PDF reading paused</CardTitle>
           </div>
           <CardDescription className="text-orange-700">
-            PDF窗口当前不可见或已最小化，共读功能已暂停
+            PDF window is currently not visible or minimized, co-reading feature is paused
           </CardDescription>
         </CardHeader>
 
@@ -56,7 +56,7 @@ export function CoReadingPauseWidget({
               size="sm"
             >
               <BookOpen className="h-4 w-4 mr-2" />
-              继续阅读
+              Continue Reading
             </Button>
             
             <Button 
@@ -66,13 +66,13 @@ export function CoReadingPauseWidget({
               size="sm"
             >
               <X className="h-4 w-4 mr-1" />
-              退出共读模式
+              Exit Co-Reading Mode
             </Button>
           </div>
 
           {/* 提示信息 */}
           <p className="text-xs text-orange-600 text-center">
-            💡 你也可以手动打开PDF窗口，系统会自动检测并恢复共读模式
+            💡 You can also manually open the PDF window, and the system will automatically detect it and resume co-reading mode.
           </p>
         </CardContent>
       </Card>

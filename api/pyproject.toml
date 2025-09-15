@@ -1,0 +1,28 @@
+[project]
+name = "knowledge-focus-python-api"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "docling>=2.52.0",
+    "fastapi>=0.116.1",
+    "httpx[socks]>=0.28.1",
+    "lancedb>=0.25.0",
+    "markitdown[docx,pdf,pptx,xls,xlsx]>=0.1.3",
+    "mlx>=0.29.1",
+    "mlx-vlm>=0.3.3",
+    "pydantic-ai>=1.0.6",
+    "pydantic-ai-slim[anthropic,google,groq,openai]>=1.0.6",
+    "sqlmodel>=0.0.24",
+    "tiktoken>=0.11.0",
+    "torch>=2.10.0.dev20250913",
+    "torchvision",
+    "uvicorn>=0.35.0",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchvision = { url = "https://download.pytorch.org/whl/nightly/cpu/torchvision-0.25.0.dev20250913-cp313-cp313-macosx_12_0_arm64.whl" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/nightly/cpu"

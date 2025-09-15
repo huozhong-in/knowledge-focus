@@ -456,8 +456,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 构建系统prompt(要描述可选工具)
             system_prompt = ["You are a helpful assistant."]
             scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
-            if scenario_system_prompt:
-                system_prompt.append(scenario_system_prompt)
+            system_prompt = scenario_system_prompt if scenario_system_prompt is not None else system_prompt
             count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
             logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
             

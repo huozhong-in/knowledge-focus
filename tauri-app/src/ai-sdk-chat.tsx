@@ -47,7 +47,7 @@ import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
-import { GlobeIcon, MicIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
+import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
 import { useTranslation } from "react-i18next"
 
 
@@ -436,19 +436,19 @@ export function AiSdkChat({
       parts: parts
     }
 
-    // 调试日志：输出消息内容
-    console.log('🔍 [DEBUG] 构建的消息内容:', JSON.stringify(messageContent, null, 2))
-    console.log('🔍 [DEBUG] parts数组:', JSON.stringify(parts, null, 2))
-    console.log('🔍 [DEBUG] selectedImage:', selectedImage)
-    console.log('🔍 [DEBUG] screenshotPreview:', screenshotPreview)
-    console.log('🔍 [DEBUG] currentScreenshotForMessage:', currentScreenshotForMessage)
-    console.log('🔍 [DEBUG] userMessage:', userMessage)
-    console.log('🔍 [DEBUG] 共读模式检查:', {
-      hasScenarioId: !!currentSession?.scenario_id,
-      screenshotPreviewExists: !!screenshotPreview,
-      currentScreenshotExists: !!currentScreenshotForMessage,
-      selectedImageExists: !!selectedImage
-    })
+    // // 调试日志：输出消息内容
+    // console.log('🔍 [DEBUG] 构建的消息内容:', JSON.stringify(messageContent, null, 2))
+    // console.log('🔍 [DEBUG] parts数组:', JSON.stringify(parts, null, 2))
+    // console.log('🔍 [DEBUG] selectedImage:', selectedImage)
+    // console.log('🔍 [DEBUG] screenshotPreview:', screenshotPreview)
+    // console.log('🔍 [DEBUG] currentScreenshotForMessage:', currentScreenshotForMessage)
+    // console.log('🔍 [DEBUG] userMessage:', userMessage)
+    // console.log('🔍 [DEBUG] 共读模式检查:', {
+    //   hasScenarioId: !!currentSession?.scenario_id,
+    //   screenshotPreviewExists: !!screenshotPreview,
+    //   currentScreenshotExists: !!currentScreenshotForMessage,
+    //   selectedImageExists: !!selectedImage
+    // })
 
     // 检查是否需要创建会话（延迟创建逻辑）
     let currentSessionId = effectiveSessionId

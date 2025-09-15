@@ -58,6 +58,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 不同业务场景所需模型能力的组合
 SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.VISION]
 
+# Docling支持的文件格式, https://docling-project.github.io/docling/examples/run_with_formats/
 SUPPORTED_FORMATS = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown']
 
 @singleton

@@ -42,36 +42,22 @@
         {
           "name": "../../../../api/.venv/bin/python",
           "sidecar": true,
-          "args": [
-            {
-              "validator": ".*"
-            },
-            "--port",
-            {
-              "validator": "\\d+"
-            },
-            "--host",
-            {
-              "validator": "[\\w\\.]+"
-            }
-          ]
+          "args": true
+        }
+      ]
+    },
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "bun",
+          "sidecar": true,
+          "args": true
         },
         {
-          "name": "venv/bin/python",
+          "name": "uvx",
           "sidecar": true,
-          "args": [
-            {
-              "validator": ".*"
-            },
-            "--port",
-            {
-              "validator": "\\d+"
-            },
-            "--host",
-            {
-              "validator": "[\\w\\.]+"
-            }
-          ]
+          "args": true
         }
       ]
     },

@@ -64,95 +64,107 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             .unwrap_or_else(|_| "无法获取当前工作目录".to_string());
         println!("当前工作目录: {}", current_dir);
         
-        // According to dev/production environment, choose different Python paths
-        let python_path = if cfg!(debug_assertions) {
-            "../../../../api/.venv/bin/python"
-        } else {
-            // Production environment - use Python from venv directory
-            "./venv/bin/python" // Assuming venv is bundled relative to the executable
-        };
-        println!("Python路径: {}", python_path);
-
-        let sidecar_result = app_handle.shell().sidecar(python_path);
-
-        let sidecar = match sidecar_result {
-            //打印调试信息，sidecar的绝对路径
-            Ok(s) => {
-                // println!("成功找到sidecar: {:?}", s);
-                s
-            },
-            Err(e) => {
-                eprintln!("无法找到sidecar: {}", e);
-                if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-process-error", Some(format!("无法找到sidecar: {}", e)));
+        // According to dev/production environment, choose different venv_parent_path: ../api or /path/to/app/app_data_dir
+        let venv_parent_path = if cfg!(debug_assertions) {
+            // 在当前工作目录的上一级目录中寻找api文件夹
+            match std::env::current_dir() {
+                Ok(mut path) => {
+                    path.pop(); // 移动到上一级目录
+                    path.pop(); // 移动到上一级目录
+                    path.push("api");
+                    path
                 }
-                // API启动失败，发送失败信号
-                if let Some(sender) = tx.lock().unwrap().take() {
-                    let _ = sender.send(false);
-                }
-                return;
-            }
-        };
-        
-        // Use Tauri's resource path API to handle script path
-        // 检查是否在lldb调试模式下运行 - 因为debug模式和dev模式的当前工作目录不同
-        let script_path = if cfg!(debug_assertions) {
-            if std::env::var("LLDB_DEBUGGER").is_ok() {
-                // LLDB调试模式
-                "./api/main.py".to_string()
-            } else {
-                // 普通开发模式
-                "../../api/main.py".to_string() // Python FastAPI 主入口
-                // "../../api/bridge_events.py".to_string() // 直接测试Python端事件桥接器
-                // "../../api/test_event_buffering.py".to_string() // 直接测试Python端事件缓冲器
-                // "../../api/multivector_mgr.py".to_string() // 直接测试Python端多模态向量化
-            }
-        } else {
-            // Production environment - use resource path API
-            match app_handle
-                .path()
-                .resolve("api/main.py", BaseDirectory::Resource)
-            {
-                Ok(p) => p.to_string_lossy().to_string(),
                 Err(e) => {
-                    eprintln!("无法解析资源路径: {}", e);
+                    eprintln!("无法获取当前工作目录: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit(
-                            "api-process-error",
-                            Some(format!("无法解析资源路径: {}", e)),
-                        );
+                        let _ = window.emit("api-process-error", Some(format!("无法获取当前工作目录: {}", e)));
                     }
-                    // API启动失败，发送失败信号
-                    if let Some(sender) = tx.lock().unwrap().take() {
-                        let _ = sender.send(false);
+                    return;
+                }
+            }
+        } else {
+            match app_handle.path().app_data_dir() {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("无法获取应用数据目录: {}", e);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit("api-process-error", Some(format!("无法获取应用数据目录: {}", e)));
                     }
                     return;
                 }
             }
         };
-        println!("脚本路径: {}", script_path);
-
-        // 构造基础参数
-        let mut args = vec![
-            script_path.clone(),
-            "--port".to_string(),
-            port_to_use.to_string(),
-            "--host".to_string(),
-            host_to_use.clone(),
-            "--db-path".to_string(),
-            db_path_to_use.clone(),
-        ];
-
-        // 如果是开发环境，添加 --mode=dev 参数
-        if cfg!(debug_assertions) {
-            args.push("--mode".to_string());
-            args.push("dev".to_string());
+        println!("venv_parent_path: {:?}", venv_parent_path);
+        
+        // 如果是生产环境，复制BaseDirectory::Resource/api/pyproject.toml到app_data_dir
+        if !cfg!(debug_assertions) {
+            let resource_api_path = match app_handle.path().resolve("api", BaseDirectory::Resource) {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("无法解析资源路径: {}", e);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit("api-process-error", Some(format!("无法解析资源路径: {}", e)));
+                    }
+                    return;
+                }
+            };
+            let pyproject_src_path = resource_api_path.join("pyproject.toml");
+            let pyproject_dest_path = venv_parent_path.join("pyproject.toml");
+            println!("pyproject_src_path: {:?}", pyproject_src_path);
+            println!("pyproject_dest_path: {:?}", pyproject_dest_path);
+            // 总是复制文件，以便在部署新版本后能自动更新虚拟环境
+            if let Err(e) = std::fs::copy(&pyproject_src_path, &pyproject_dest_path) {
+                eprintln!("复制pyproject.toml失败: {}", e);
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.emit("api-process-error", Some(format!("复制pyproject.toml失败: {}", e)));
+                }
+                return;
+            }
         }
+        
+        // 创建或更新虚拟环境
+        let sidecar_command = app_handle
+        .shell()
+        .sidecar("uv")
+        .unwrap()
+        .args(["sync", "--directory", venv_parent_path.to_str().unwrap()]);
+        println!("Running command: {:?}", sidecar_command);
+        sidecar_command
+        .spawn()
+        .expect("Failed to create or update virtual environment");
 
-        let command = sidecar.args(&args);
-        println!("命令行: {:?}", command);
+        // 通过uv运行main.py
+        // 如果是开发环境main.py在../api/main.py，否则在BaseDirectory::Resource/api/main.py
+        let script_path = if cfg!(debug_assertions) {
+            venv_parent_path.join("main.py")
+        } else {
+            match app_handle.path().resolve("api/main.py", BaseDirectory::Resource) {
+                Ok(path) => path,
+                Err(e) => {
+                    eprintln!("无法解析main.py路径: {}", e);
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.emit("api-process-error", Some(format!("无法解析main.py路径: {}", e)));
+                    }
+                    return;
+                }
+            }
+        };
+        println!("app_py_path: {:?}", script_path);
+        let sidecar_command = app_handle
+        .shell()
+        .sidecar("uv")
+        .unwrap()
+        .args([
+            "run", 
+            "--directory", venv_parent_path.to_str().unwrap(),
+            script_path.to_str().unwrap(), 
+            "--host", host_to_use.as_str(), 
+            "--port", port_to_use.to_string().as_str(),
+            "--db-path", db_path_to_use.as_str(),
+            ]);
+        println!("Running command: {:?}", sidecar_command);
 
-        match command.spawn() {
+        match sidecar_command.spawn() {
             Ok((mut rx, child)) => {
                 {
                     // Scope to ensure lock is released

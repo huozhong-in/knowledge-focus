@@ -36,6 +36,7 @@ def configure_parsing_warnings():
     logger.info("解析库的警告和日志级别配置已应用")
 
 # 可被markitdown解析的文件扩展名
+# * 可以生成图像描述（目前仅支持pptx和图像文件） https://github.com/microsoft/markitdown#python-api
 MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
 # 其他可解析的纯文本类型文件扩展名
 OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt']  # json/xml/csv也能，但意义不大
