@@ -7,19 +7,14 @@ import { resourceDir, join, appDataDir } from '@tauri-apps/api/path';
 import App from "./App";
 import { setupI18nWithStore } from './i18n';
 import { ThemeProvider } from "./tweakcn/components/theme-provider";
-import { TooltipProvider } from "./tweakcn/components/ui/tooltip";
 
 // // 导入工具初始化模块
 // import './lib/initializeTools';
 
 interface AppGlobalState {
-  showWelcomeDialog: boolean;
-  setShowWelcomeDialog: (show: boolean) => Promise<void>;
-
   // For UI state management during first launch
-  isFirstLaunch: boolean;
-  isInitializing: boolean; 
-  initializationError: string | null;
+  // isInitializing: boolean; 
+  // initializationError: string | null;
 
   // API readiness state
   isApiReady: boolean; // New state
@@ -38,9 +33,8 @@ interface AppGlobalState {
   updateError: string | null;
   
   // Actions
-  setFirstLaunch: (pending: boolean) => void;
-  setIsInitializing: (initializing: boolean) => void;
-  setInitializationError: (error: string | null) => void;
+  // setIsInitializing: (initializing: boolean) => void;
+  // setInitializationError: (error: string | null) => void;
   setApiReady: (ready: boolean) => void; // New action
   
   // 语言相关操作
@@ -61,13 +55,10 @@ async function setTrayIcon() {
   let newIconPath;
   
   if (import.meta.env.MODE === 'development') {
-    // console.log("当前环境: 开发");
     newIconPath = await join(await resourceDir(), '../../../mac-tray-icon.png');
   } else {
     newIconPath = await join(await resourceDir(), 'mac-tray-icon.png');
   }
-  
-  // console.log("图标路径:", newIconPath);
   
   if (newIconPath) {
     const tray = await TrayIcon.getById("1");
@@ -82,13 +73,8 @@ async function setTrayIcon() {
 
 // 创建 Zustand store
 export const useAppStore = create<AppGlobalState>((set, _get) => ({
-  showWelcomeDialog: true, // 默认显示介绍页
-  isFirstLaunch: false,
-  isInitializing: false, // Will be set to true by initializeApp
-  initializationError: null,
   isApiReady: false, // Initialize API as not ready
   language: 'en', // 默认使用英文
-
   // 更新相关状态初始值
   updateAvailable: false,
   updateVersion: null,
@@ -99,30 +85,6 @@ export const useAppStore = create<AppGlobalState>((set, _get) => ({
   lastUpdateCheck: null,
   updateError: null,
 
-  setShowWelcomeDialog: async (show: boolean) => {
-    try {
-      const appDataPath = await appDataDir();
-      const storePath = await join(appDataPath, 'settings.json');
-      const store = await load(storePath, { autoSave: false });
-      
-      // 先更新zustand状态
-      set({ showWelcomeDialog: show });
-      
-      if (!show) { // 用户关闭欢迎对话框，标记首次启动已完成
-        // 更新持久化存储，标记应用已至少启动过一次
-        await store.set('isFirstLaunch', false);
-        await store.save();
-        console.log('settings.json updated: isFirstLaunch=false.');
-      }
-    } catch (error) {
-      console.error('Failed to update store in setShowWelcomeDialog:', error);
-      // Even if store op fails, update UI state.
-      set({ showWelcomeDialog: show });
-    }
-  },
-  setFirstLaunch: (pending: boolean) => set({ isFirstLaunch: pending }),
-  setIsInitializing: (initializing: boolean) => set({ isInitializing: initializing }),
-  setInitializationError: (error: string | null) => set({ initializationError: error }),
   setApiReady: (ready: boolean) => set({ isApiReady: ready }), // Implement new action
   
   // 设置语言并保存到设置文件中
@@ -200,8 +162,6 @@ const initializeApp = async () => {
     const appDataPath = await appDataDir();
     const storePath = await join(appDataPath, 'settings.json');
     const store = await load(storePath, { autoSave: false });
-    const isFirstLaunchValue = await store.get('isFirstLaunch');
-    const isActuallyFirstLaunch = isFirstLaunchValue === null || isFirstLaunchValue === undefined || isFirstLaunchValue === true;
     
     // 获取保存的语言设置
     const savedLanguage = await store.get('language') as string | null;
@@ -210,15 +170,12 @@ const initializeApp = async () => {
     // 获取上次更新检查时间
     const savedLastUpdateCheck = await store.get('lastUpdateCheck') as number | null;
 
-    console.log(`initializeApp: isFirstLaunchValue from store: ${isFirstLaunchValue}, isActuallyFirstLaunch: ${isActuallyFirstLaunch}`);
+
     console.log(`initializeApp: Loaded language preference: ${language}`);
     console.log(`initializeApp: Last update check: ${savedLastUpdateCheck ? new Date(savedLastUpdateCheck).toISOString() : 'never'}`);
     
     // Set initial Zustand states based on whether it's the first launch
     useAppStore.setState({ 
-      showWelcomeDialog: true, // 始终显示欢迎对话框，作为 splash 屏幕
-      isFirstLaunch: isActuallyFirstLaunch,
-      isInitializing: false, // 不再使用单独的初始化状态，由 IntroDialog 处理
       isApiReady: false,     // API is not ready at this point
       language: language,    // 设置语言
       lastUpdateCheck: savedLastUpdateCheck // 设置上次更新检查时间
@@ -231,10 +188,7 @@ const initializeApp = async () => {
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>
         <ThemeProvider>
-          {/* @ts-ignore */}
-          <TooltipProvider delayDuration={0}>
-            <App />
-          </TooltipProvider>
+          <App />
         </ThemeProvider>
       </React.StrictMode>
     );

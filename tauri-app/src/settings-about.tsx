@@ -70,88 +70,88 @@ export default function SettingsAbout() {
   };
 
   // 详细检查 latest.json 格式
-  const debugLatestJson = async () => {
-    try {
-      console.log('[调试] 开始检查 latest.json 格式...');
+//   const debugLatestJson = async () => {
+//     try {
+//       console.log('[调试] 开始检查 latest.json 格式...');
       
-      const fetchOptions: any = {
-        method: 'GET',
-        timeout: 10000,
-        headers: {
-          'User-Agent': 'KnowledgeFocus-Debug/1.0',
-          'Accept': 'application/json',
-          'Cache-Control': 'no-cache'
-        }
-      };
+//       const fetchOptions: any = {
+//         method: 'GET',
+//         timeout: 10000,
+//         headers: {
+//           'User-Agent': 'KnowledgeFocus-Debug/1.0',
+//           'Accept': 'application/json',
+//           'Cache-Control': 'no-cache'
+//         }
+//       };
       
-      if (useProxy && proxyUrl) {
-        fetchOptions.proxy = { all: proxyUrl };
-      }
+//       if (useProxy && proxyUrl) {
+//         fetchOptions.proxy = { all: proxyUrl };
+//       }
       
-      const response = await tauriFetch('https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json', fetchOptions);
+//       const response = await tauriFetch('https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json', fetchOptions);
       
-      console.log('[调试] 响应状态:', response.status);
-      console.log('[调试] 响应头:', Object.fromEntries(response.headers.entries()));
+//       console.log('[调试] 响应状态:', response.status);
+//       console.log('[调试] 响应头:', Object.fromEntries(response.headers.entries()));
       
-      if (response.ok) {
-        const rawText = await response.text();
-        console.log('[调试] 原始响应内容 (前500字符):', rawText.substring(0, 500));
-        console.log('[调试] 响应长度:', rawText.length);
-        console.log('[调试] 完整原始响应:', rawText);
+//       if (response.ok) {
+//         const rawText = await response.text();
+//         console.log('[调试] 原始响应内容 (前500字符):', rawText.substring(0, 500));
+//         console.log('[调试] 响应长度:', rawText.length);
+//         console.log('[调试] 完整原始响应:', rawText);
         
-        // 显示原始内容给用户
-        toast.info(`原始响应: ${rawText.substring(0, 200)}${rawText.length > 200 ? '...' : ''}`, {
-          duration: 10000
-        });
+//         // 显示原始内容给用户
+//         toast.info(`原始响应: ${rawText.substring(0, 200)}${rawText.length > 200 ? '...' : ''}`, {
+//           duration: 10000
+//         });
         
-        try {
-          const jsonData = JSON.parse(rawText);
-          console.log('[调试] 解析后的 JSON:', jsonData);
+//         try {
+//           const jsonData = JSON.parse(rawText);
+//           console.log('[调试] 解析后的 JSON:', jsonData);
           
-          // 检查 Tauri updater 期望的字段
-          const requiredFields = ['version', 'pub_date', 'url', 'signature'];
-          const missingFields = requiredFields.filter(field => !(field in jsonData));
+//           // 检查 Tauri updater 期望的字段
+//           const requiredFields = ['version', 'pub_date', 'url', 'signature'];
+//           const missingFields = requiredFields.filter(field => !(field in jsonData));
           
-          if (missingFields.length > 0) {
-            console.warn('[调试] 缺少必需字段:', missingFields);
-            toast.error(`latest.json 缺少字段: ${missingFields.join(', ')}`);
-          } else {
-            console.log('[调试] JSON 格式正确，包含所有必需字段');
-            toast.success('latest.json 格式检查通过！');
-          }
+//           if (missingFields.length > 0) {
+//             console.warn('[调试] 缺少必需字段:', missingFields);
+//             toast.error(`latest.json 缺少字段: ${missingFields.join(', ')}`);
+//           } else {
+//             console.log('[调试] JSON 格式正确，包含所有必需字段');
+//             toast.success('latest.json 格式检查通过！');
+//           }
           
-          // 显示完整信息
-          const info = `
-版本: ${jsonData.version || '未知'}
-发布日期: ${jsonData.pub_date || '未知'}
-下载 URL: ${jsonData.url || '未知'}
-签名: ${jsonData.signature ? '存在' : '缺失'}
-更新说明: ${jsonData.notes || '无'}
-          `.trim();
+//           // 显示完整信息
+//           const info = `
+// 版本: ${jsonData.version || '未知'}
+// 发布日期: ${jsonData.pub_date || '未知'}
+// 下载 URL: ${jsonData.url || '未知'}
+// 签名: ${jsonData.signature ? '存在' : '缺失'}
+// 更新说明: ${jsonData.notes || '无'}
+//           `.trim();
           
-          console.log('[调试] 更新信息:', info);
+//           console.log('[调试] 更新信息:', info);
           
-        } catch (parseError) {
-          console.error('[调试] JSON 解析失败:', parseError);
-          console.error('[调试] 原始内容:', rawText);
-          toast.error(`JSON 解析失败: ${parseError instanceof Error ? parseError.message : '未知错误'}`);
+//         } catch (parseError) {
+//           console.error('[调试] JSON 解析失败:', parseError);
+//           console.error('[调试] 原始内容:', rawText);
+//           toast.error(`JSON 解析失败: ${parseError instanceof Error ? parseError.message : '未知错误'}`);
           
-          // 检查是否是 HTML 错误页面
-          if (rawText.includes('<html') || rawText.includes('<!DOCTYPE')) {
-            toast.error('返回的是 HTML 页面，可能是 404 错误或服务器错误页面');
-          }
-        }
-      } else {
-        const errorText = await response.text();
-        console.error('[调试] HTTP 错误响应:', errorText);
-        toast.error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
-      }
-    } catch (error) {
-      console.error('[调试] 检查失败:', error);
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      toast.error(`调试检查失败: ${errorMsg}`);
-    }
-  };
+//           // 检查是否是 HTML 错误页面
+//           if (rawText.includes('<html') || rawText.includes('<!DOCTYPE')) {
+//             toast.error('返回的是 HTML 页面，可能是 404 错误或服务器错误页面');
+//           }
+//         }
+//       } else {
+//         const errorText = await response.text();
+//         console.error('[调试] HTTP 错误响应:', errorText);
+//         toast.error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+//       }
+//     } catch (error) {
+//       console.error('[调试] 检查失败:', error);
+//       const errorMsg = error instanceof Error ? error.message : '未知错误';
+//       toast.error(`调试检查失败: ${errorMsg}`);
+//     }
+//   };
 
   return (
     <div className="space-y-6">
@@ -305,16 +305,16 @@ export default function SettingsAbout() {
                 size="sm"
               >
                 <Wifi className="h-4 w-4 mr-1" />
-                测试HTTP
+                测试到GitHub的网络连接
               </Button>
               
-              <Button 
+              {/* <Button 
                 onClick={debugLatestJson}
                 variant="outline"
                 size="sm"
               >
                 🔍 调试JSON
-              </Button>
+              </Button> */}
             </div>
           </div>
           

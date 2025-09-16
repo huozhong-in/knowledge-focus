@@ -548,8 +548,8 @@ pub fn run() {
                 
                 // 使用reqwest客户端检查API健康状态
                 let client = reqwest::Client::new();
-                let max_retries = 150; // 最多尝试150次
-                let retry_interval = std::time::Duration::from_millis(500); // 每500ms检查一次
+                let max_retries = 300; // 最多尝试次数
+                let retry_interval = std::time::Duration::from_millis(1000); // 毫秒
                 let mut api_ready = false;
                 
                 for i in 0..max_retries {

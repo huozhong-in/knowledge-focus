@@ -275,7 +275,7 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
     
         except Exception as e:
             logger.error(f"Failed to get model config: {e}")
-            return "新会话"
+            return "new chat"
         model = self.model_config_mgr.model_adapter(model_interface)
         messages = [
             {"role": "system", "content": "You are an expert at creating concise, meaningful titles. Generate a short title (max 20 characters) that captures the essence of the user's request or question."},
@@ -297,7 +297,7 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
             if len(title) > 20:
                 title = title[:17] + "..."
                 
-            return title if title else "新会话"
+            return title if title else "new chat"
 
         except Exception as e:
             logger.error(f"Failed to generate session title: {e}")
@@ -305,7 +305,7 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
             fallback_title = first_message_content.strip()[:17]
             if len(first_message_content) > 17:
                 fallback_title += "..."
-            return fallback_title or "新会话"
+            return fallback_title or "new chat"
 
     def _build_title_prompt(self, first_message: str) -> str:
         """Build prompt for session title generation"""

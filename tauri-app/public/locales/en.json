@@ -14,7 +14,6 @@
         "permission-check-failed": "Permission check failed, please restart the app.",
         "initialization-complete": "Initialization complete, entering the app...",
         "permission-granted": "Permission successfully granted! Initializing the system...",
-        "backend-ready": "Backend system is ready. You can start using the app.",
         "permission-not-effective": "If you have granted permission but it's not effective, please restart the app.",
         "permission-request-failed": "Permission request failed. Please enable it manually in System Settings.",
         "start-use": "Start Using",

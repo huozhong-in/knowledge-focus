@@ -383,7 +383,7 @@ pub async fn start_backend_scanning(
 ) -> Result<bool, String> {
     println!("[扫描] 启动后端全量扫描工作");
     // println!("[扫描] 【重要提示】此函数只能在前端确认用户已授予完全磁盘访问权限后调用");
-    // println!("[扫描] 正确流程：IntroDialog检查权限通过 -> 调用start_backend_scanning -> 进入应用");
+    // println!("[扫描] 正确流程：Splash检查权限通过 -> 调用start_backend_scanning -> 进入应用");
     
     // Get the FileMonitor instance from AppState.
     // It should have been created by setup_file_monitoring_infrastructure and be in a "new" state.

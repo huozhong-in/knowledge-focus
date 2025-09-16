@@ -2,14 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/main';
 import { Button } from "./components/ui/button";
 import { toast } from "sonner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { invoke } from '@tauri-apps/api/core';
 import { 
   checkFullDiskAccessPermission, 
@@ -18,18 +10,15 @@ import {
 import { relaunch } from '@tauri-apps/plugin-process';
 import { useTranslation } from 'react-i18next';
 
-interface IntroDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+interface SplashProps {
+  setShowSplash: (showSplash: boolean) => void;
 }
 
-const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
+const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
   // 使用 selector 获取 Zustand store 中的状态，避免不必要的重渲染
   const isApiReady = useAppStore(state => state.isApiReady);
-  const isFirstLaunch = useAppStore(state => state.isFirstLaunch);
-  const setShowWelcomeDialog = useAppStore(state => state.setShowWelcomeDialog);
   const [loading, setLoading] = useState(true);
-  const [loadingMessage, setLoadingMessage] = useState("正在检查系统权限...");
+  const [loadingMessage, setLoadingMessage] = useState("Checking permissions...");
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionRequested, setPermissionRequested] = useState(false);
@@ -161,13 +150,9 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
     initPermissionCheck();
   }, []);
   
-  // 使用全局状态的 isApiReady 值而不是直接监听事件
   useEffect(() => {
     // 只有在已经获取到权限且API就绪的情况下才启动后端扫描
     if (hasFullDiskAccess && isApiReady) {
-      // console.log("[API就绪] 权限检查通过且API就绪，启动后端扫描");
-      
-      // 启动后端扫描（仅在权限和API都就绪时）
       const startBackendScan = async () => {
         try {
           setLoadingMessage("Starting backend file scanning...");
@@ -183,146 +168,98 @@ const IntroDialog: React.FC<IntroDialogProps> = ({ open, onOpenChange }) => {
         
         setLoading(false); // 更新本地加载状态
         
-        // 处理非首次启动的逻辑
-        if (!isFirstLaunch) {
-          // 设置消息为自动关闭提示
-          setLoadingMessage(t('INTRO.initialization-complete'));
-          // 略微延迟关闭对话框以便用户能看到成功信息
-          setTimeout(() => {
-            // console.log('[API就绪] 非首次启动：自动关闭对话框');
-            onOpenChange(false); // 自动关闭对话框
-          }, 800);
-        } else {
-          // 首次启动时显示就绪消息，等待用户操作
-          // console.log('[API就绪] 首次启动：显示开始使用按钮');
-          setLoadingMessage(t('INTRO.backend-ready'));
-        }
+        // 设置消息为自动关闭提示
+        setLoadingMessage(t('INTRO.initialization-complete'));
+        // 略微延迟关闭Splash以便用户能看到成功信息
+        setTimeout(() => {
+          setShowSplash(false); // 自动关闭Splash
+        }, 800);
       };
       
       startBackendScan();
     } else if (!hasFullDiskAccess) {
       // 如果API就绪但权限不足，仍然阻止进入
-      // console.log("[API就绪] API就绪但权限不足，阻止进入应用");
       setLoading(false);
     }
-  }, [isApiReady, isFirstLaunch, hasFullDiskAccess, onOpenChange]);
-
-  const handleEnterApp = async () => {
-    try {
-      // 关闭对话框
-      onOpenChange(false);
-      // 更新状态以便将来不再显示首次启动对话框
-      await setShowWelcomeDialog(false);
-      // console.log('首次启动流程：欢迎对话框已关闭，状态已更新');
-    } catch (error) {
-      console.error('更新首次启动状态时出错:', error);
-    }
-  };
+  }, [isApiReady, hasFullDiskAccess]);
 
   return (
-    <Dialog 
-      open={open} 
-      onOpenChange={(newOpenState) => {
-        // 阻止没有权限时关闭对话框
-        if (!hasFullDiskAccess && newOpenState === false) {
-          // console.log("[对话框] 尝试在没有权限时关闭对话框，已阻止");
-          toast.error(t('INTRO.permission-not-granted'));
-          return;
-        }
-        
-        // 如果有权限或是打开操作，正常处理
-        if (hasFullDiskAccess || newOpenState === true) {
-          onOpenChange(newOpenState);
-        }
-      }}
-    >
-      <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
-        <DialogHeader>
-          <DialogTitle className="text-2xl font-bold text-center">{t('INTRO.welcome')}</DialogTitle>
-          <DialogDescription className="text-center">
-            {t('INTRO.description')}
-          </DialogDescription>
-        </DialogHeader>
-        
-        {/* 加载指示器容器 - 固定高度防止布局跳动 */}
-        <div className="h-20 flex justify-center items-center my-4">
-          {(loading || checkingPermission) && (
-            <div className="relative w-12 h-12">
-              <svg className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="#D29B71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="12" y1="2" x2="12" y2="6"></line>
-                <line x1="12" y1="18" x2="12" y2="22"></line>
-                <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
-                <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
-                <line x1="2" y1="12" x2="6" y2="12"></line>
-                <line x1="18" y1="12" x2="22" y2="12"></line>
-                <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
-                <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
-              </svg>
-            </div>
-          )}
-          
-          {/* 权限状态图标 */}
-          {!loading && !checkingPermission && (
-            <div className={`flex items-center justify-center p-3 rounded-full ${hasFullDiskAccess ? 'bg-green-100' : 'bg-yellow-100'}`}>
-              {hasFullDiskAccess ? (
-                <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                </svg>
-              ) : (
-                <svg className="w-10 h-10 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-              )}
-            </div>
-          )}
+    <div className="flex flex-col items-center justify-center max-w-md mx-auto h-screen p-5">
+      <div>
+        <div className="text-2xl font-bold text-center">{t('INTRO.welcome')}</div>
+        <div className="text-center">
+          {t('INTRO.description')}
         </div>
-        
-        <p className={`text-center mb-4 ${
-          hasFullDiskAccess && isApiReady 
-            ? "text-green-600" 
-            : !hasFullDiskAccess 
-              ? "text-yellow-600 font-semibold" 
-              : "text-whiskey-700 animate-pulse"
-        }`}>
-          {loadingMessage}
-        </p>
-        
-        {/* 权限说明 */}
-        {!hasFullDiskAccess && !checkingPermission && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
-            <p className="text-sm text-yellow-700 mb-2">
-              {t('INTRO.permission-request')}
-            </p>
-            <p className="text-sm text-yellow-700">
-              {t('INTRO.permission-request-detail')}
-            </p>
+      </div>
+      
+      {/* 加载指示器容器 - 固定高度防止布局跳动 */}
+      <div className="h-20 flex justify-center items-center my-4">
+        {(loading || checkingPermission) && (
+          <div className="relative w-12 h-12">
+            <svg className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="#D29B71" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="2" x2="12" y2="6"></line>
+              <line x1="12" y1="18" x2="12" y2="22"></line>
+              <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"></line>
+              <line x1="16.24" y1="16.24" x2="19.07" y2="19.07"></line>
+              <line x1="2" y1="12" x2="6" y2="12"></line>
+              <line x1="18" y1="12" x2="22" y2="12"></line>
+              <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"></line>
+              <line x1="16.24" y1="7.76" x2="19.07" y2="4.93"></line>
+            </svg>
           </div>
         )}
+        
+        {/* 权限状态图标 */}
+        {!loading && !checkingPermission && (
+          <div className={`flex items-center justify-center p-3 rounded-full ${hasFullDiskAccess ? 'bg-green-100' : 'bg-yellow-100'}`}>
+            {hasFullDiskAccess ? (
+              <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            ) : (
+              <svg className="w-10 h-10 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+              </svg>
+            )}
+          </div>
+        )}
+      </div>
+      
+      <p className={`text-center mb-4 ${
+        hasFullDiskAccess && isApiReady 
+          ? "text-green-600" 
+          : !hasFullDiskAccess 
+            ? "text-yellow-600 font-semibold" 
+            : "text-whiskey-700 animate-pulse"
+      }`}>
+        {loadingMessage}
+      </p>
+      
+      {/* 权限说明 */}
+      {!hasFullDiskAccess && !checkingPermission && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-4">
+          <p className="text-sm text-yellow-700 mb-2">
+            {t('INTRO.permission-request')}
+          </p>
+          <p className="text-sm text-yellow-700">
+            {t('INTRO.permission-request-detail')}
+          </p>
+        </div>
+      )}
 
-        <DialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
-          {/* 首次启动且已获得权限时显示"开始使用"按钮 */}
-          {isFirstLaunch && hasFullDiskAccess && isApiReady && (
-            <Button
-              onClick={handleEnterApp}
-              className="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 rounded-lg"
-            >
-              {t('INTRO.start-use')}
-            </Button>
-          )}
-          
-          {/* 未获得权限时显示请求权限按钮或重启App按钮 */}
-          {!hasFullDiskAccess && !checkingPermission && (
-            <Button
-              onClick={permissionRequested ? () => relaunch() : requestFullDiskAccess}
-              className={`w-full sm:w-auto text-white ${permissionRequested ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} rounded-lg`}
-            >
-              {permissionRequested ? t('INTRO.restart-app') : t('INTRO.request-permission')}
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+      <div className="flex flex-col sm:flex-row gap-2 sm:gap-0">          
+        {/* 未获得权限时显示请求权限按钮或重启App按钮 */}
+        {!hasFullDiskAccess && !checkingPermission && (
+          <Button
+            onClick={permissionRequested ? () => relaunch() : requestFullDiskAccess}
+            className={`w-full sm:w-auto text-white ${permissionRequested ? 'bg-green-600 hover:bg-green-700' : 'bg-yellow-600 hover:bg-yellow-700'} rounded-lg`}
+          >
+            {permissionRequested ? t('INTRO.restart-app') : t('INTRO.request-permission')}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
 };
 
-export default IntroDialog;
+export default Splash;

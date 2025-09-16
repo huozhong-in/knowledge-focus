@@ -14,7 +14,6 @@
         "permission-check-failed": "权限检查失败，请重启应用",
         "initialization-complete": "初始化完成，正在进入应用...",
         "permission-granted": "权限已成功获取！正在初始化系统...",
-        "backend-ready": "后端系统就绪，可以开始使用应用",
         "permission-not-effective": "如果您已授予权限但未生效，请重启应用",
         "permission-request-failed": "权限请求失败，请手动在系统设置中开启权限",
         "start-use": "开始使用",
