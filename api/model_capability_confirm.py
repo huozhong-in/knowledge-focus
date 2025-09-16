@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 class ModelCapabilityConfirm:
     """每种能力都需要一段测试程序来确认模型是否具备"""
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, base_dir: str):
         self.session = session
+        self.base_dir = base_dir
         self.model_config_mgr = ModelConfigMgr(session)
         proxy = self.model_config_mgr.get_proxy_value()
         if proxy is not None and proxy.value is not None and proxy.value != "":
@@ -157,7 +158,7 @@ class ModelCapabilityConfirm:
         """
         try:
             from models_mgr import ModelsMgr
-            model_mgr = ModelsMgr(self.session)
+            model_mgr = ModelsMgr(self.session, base_dir=self.base_dir)
             text_embeds = model_mgr.get_embedding("I like reading")
             # logger.info(len(text_embeds))
             if text_embeds is not None and len(text_embeds) > 0:
@@ -278,7 +279,7 @@ if __name__ == "__main__":
     async def main():
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
         with Session(engine) as session:
-            mgr = ModelCapabilityConfirm(session)
+            mgr = ModelCapabilityConfirm(session, base_dir=Path(TEST_DB_PATH).parent)
             logger.info(await mgr.confirm_text_capability(9))
             logger.info(await mgr.confirm_tooluse_capability(9))
             logger.info(await mgr.confirm_structured_output_capability(9))

@@ -461,25 +461,24 @@ class DBManager:
         self.session = session
 
     def init_db(self) -> bool:
-        """初始化数据库"""
+        """初始化数据库 - 使用统一的Session连接管理，避免多连接冲突"""
         engine = self.session.get_bind()
         inspector = inspect(engine)
-
-        with engine.connect() as conn:
+        
+        try:
             # 创建任务表
             if not inspector.has_table(Task.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Task.__table__])
-                # if not any([col['name'] == 'idx_task_type' for col in inspector.get_indexes(Task.__tablename__)]):
-                #     conn.execute(text(f'CREATE INDEX idx_task_type ON {Task.__tablename__} (task_type);'))
+                # 使用engine创建表
+                Task.__table__.create(engine, checkfirst=True)
                 # * 删除表中已经完成的24小时之前的任务
-                conn.execute(text(f'''
+                self.session.exec(text(f'''
                     DELETE FROM {Task.__tablename__}
                     WHERE status = 'completed' AND updated_at < datetime('now', '-24 hours');
                 '''))
 
             # 创建通知表
             if not inspector.has_table(Notification.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Notification.__table__])
+                Notification.__table__.create(engine, checkfirst=True)
                 # 创建触发器 - 当任务表中洞察任务状态成功完成时插入通知
                 # conn.execute(text(f'''
                 #     CREATE TRIGGER IF NOT EXISTS notify_insight_task
@@ -494,17 +493,17 @@ class DBManager:
             
             # 创建文件夹表
             if not inspector.has_table(MyFolders.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[MyFolders.__table__])
+                MyFolders.__table__.create(engine, checkfirst=True)
                 self._init_default_directories()  # 初始化默认文件夹
             
             # 创建Bundle扩展名表
             if not inspector.has_table(BundleExtension.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[BundleExtension.__table__])
+                BundleExtension.__table__.create(engine, checkfirst=True)
                 self._init_bundle_extensions()  # 初始化Bundle扩展名数据
             
             # 创建系统配置表
             if not inspector.has_table(SystemConfig.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[SystemConfig.__table__])
+                SystemConfig.__table__.create(engine, checkfirst=True)
                 system_configs = [
                     {
                         "key": "proxy",
@@ -523,38 +522,38 @@ class DBManager:
             
             # 创建文件分类表
             if not inspector.has_table(FileCategory.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[FileCategory.__table__])
+                FileCategory.__table__.create(engine, checkfirst=True)
                 self._init_file_categories()  # 初始化文件分类数据
             
             # 创建文件扩展名映射表
             if not inspector.has_table(FileExtensionMap.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[FileExtensionMap.__table__])
+                FileExtensionMap.__table__.create(engine, checkfirst=True)
                 self._init_file_extensions()  # 初始化文件扩展名映射数据
             
             # 创建文件过滤规则表
             if not inspector.has_table(FileFilterRule.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[FileFilterRule.__table__])
+                FileFilterRule.__table__.create(engine, checkfirst=True)
                 self._init_basic_file_filter_rules()  # 初始化基础文件过滤规则（简化版）
                         
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Tags.__table__])
+                Tags.__table__.create(engine, checkfirst=True)
             
             # 创建文件粗筛结果表
             if not inspector.has_table(FileScreeningResult.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[FileScreeningResult.__table__])
+                FileScreeningResult.__table__.create(engine, checkfirst=True)
                 # 创建索引 - 为文件路径创建唯一索引
-                conn.execute(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_file_path ON {FileScreeningResult.__tablename__} (file_path);'))
+                self.session.exec(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_file_path ON {FileScreeningResult.__tablename__} (file_path);'))
                 # 创建索引 - 为文件状态创建索引，便于查询待处理文件
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
+                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
                 # 创建索引 - 为修改时间创建索引，便于按时间查询
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
+                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
                 # 创建索引 - 为task_id创建索引，便于查询关联任务
-                conn.execute(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
+                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
 
             # 创建 FTS5 虚拟表和触发器
             if not inspector.has_table('t_files_fts'):
-                conn.execute(text("""
+                self.session.exec(text("""
                     CREATE VIRTUAL TABLE t_files_fts USING fts5(
                         file_id UNINDEXED,
                         tags_search_ids
@@ -562,12 +561,12 @@ class DBManager:
                 """))
             
             # 删除旧的触发器（如果存在）
-            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_insert;"))
-            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_delete;"))
-            conn.execute(text("DROP TRIGGER IF EXISTS trg_files_after_update;"))
+            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_insert;"))
+            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_delete;"))
+            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_update;"))
             
             # 创建新的触发器
-            conn.execute(text(f"""
+            self.session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_insert AFTER INSERT ON {FileScreeningResult.__tablename__}
                 BEGIN
                     INSERT INTO t_files_fts (file_id, tags_search_ids)
@@ -575,14 +574,14 @@ class DBManager:
                 END;
             """))
 
-            conn.execute(text(f"""
+            self.session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_delete AFTER DELETE ON {FileScreeningResult.__tablename__}
                 BEGIN
                     DELETE FROM t_files_fts WHERE file_id = OLD.id;
                 END;
             """))
 
-            conn.execute(text(f"""
+            self.session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE ON {FileScreeningResult.__tablename__}
                 BEGIN
                     DELETE FROM t_files_fts WHERE file_id = OLD.id;
@@ -590,43 +589,39 @@ class DBManager:
                     VALUES (NEW.id, REPLACE(IFNULL(NEW.tags_display_ids, ''), ',', ' '));
                 END;
             """))
-            
-            conn.commit()  # 提交所有更改
 
             # 创建文档表
             # TODO 根据后续代码里的要求创建索引
             if not inspector.has_table(Document.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Document.__table__])
+                Document.__table__.create(engine, checkfirst=True)
             # 创建父块表
             if not inspector.has_table(ParentChunk.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ParentChunk.__table__])
+                ParentChunk.__table__.create(engine, checkfirst=True)
             # 创建子块表
             if not inspector.has_table(ChildChunk.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ChildChunk.__table__])
+                ChildChunk.__table__.create(engine, checkfirst=True)
         
             # 创建聊天会话表
             if not inspector.has_table(ChatSession.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ChatSession.__table__])
+                ChatSession.__table__.create(engine, checkfirst=True)
             # 创建聊天消息表
             if not inspector.has_table(ChatMessage.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ChatMessage.__table__])
+                ChatMessage.__table__.create(engine, checkfirst=True)
                 # INDEX(session_id, created_at)   -- 查询优化
-                conn.execute(text(f"""
+                self.session.exec(text(f"""
                     CREATE INDEX IF NOT EXISTS idx_chat_message_session ON {ChatMessage.__tablename__} (session_id, created_at);
                 """))
-                conn.commit()
             # 创建会话Pin文件表
             if not inspector.has_table(ChatSessionPinFile.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ChatSessionPinFile.__table__])
+                ChatSessionPinFile.__table__.create(engine, checkfirst=True)
                 # UNIQUE(session_id, file_path)   -- 同一会话中文件唯一
-                conn.execute(text(f"""
+                self.session.exec(text(f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_session_pin_file ON {ChatSessionPinFile.__tablename__} (session_id, file_path);
                 """))
-                conn.commit()
             
             # 模型提供者表
             if not inspector.has_table(ModelProvider.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ModelProvider.__table__])
+                ModelProvider.__table__.create(engine, checkfirst=True)
                 # 初始化默认模型提供者
                 data = [
                     {
@@ -741,20 +736,19 @@ class DBManager:
             
             # 模型配置表
             if not inspector.has_table(ModelConfiguration.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[ModelConfiguration.__table__])
+                ModelConfiguration.__table__.create(engine, checkfirst=True)
                 # provider_id和model_identifier的组合唯一
-                conn.execute(text(f"""
+                self.session.exec(text(f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_id_model_identifier ON {ModelConfiguration.__tablename__} (provider_id, model_identifier);
                 """))
-                conn.commit()
             
             # 能力指派表
             if not inspector.has_table(CapabilityAssignment.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[CapabilityAssignment.__table__])
+                CapabilityAssignment.__table__.create(engine, checkfirst=True)
         
             # 工具表
             if not inspector.has_table(Tool.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Tool.__table__])
+                Tool.__table__.create(engine, checkfirst=True)
                 data = [
                     {
                         "name": "calculator_add",
@@ -810,7 +804,7 @@ class DBManager:
 
             # 场景表
             if not inspector.has_table(Scenario.__tablename__):
-                SQLModel.metadata.create_all(engine, tables=[Scenario.__table__])
+                Scenario.__table__.create(engine, checkfirst=True)
                 data = [
                     {
                         "name": "co_reading", 
@@ -837,8 +831,15 @@ class DBManager:
                 ]
                 self.session.add_all([Scenario(**scenario) for scenario in data])
                 self.session.commit()
-
-        return True
+                
+            # 提交所有数据库更改
+            self.session.commit()
+            return True
+            
+        except Exception as e:
+            # 发生错误时回滚
+            self.session.rollback()
+            raise e
 
     def _init_bundle_extensions(self) -> None:
         """初始化macOS Bundle扩展名数据"""
@@ -1244,7 +1245,136 @@ class DBManager:
             self.session.commit()
 
 if __name__ == '__main__':
+    import os
     from config import TEST_DB_PATH
-    db_mgr = DBManager(Session(create_engine(f'sqlite:///{TEST_DB_PATH}')))
-    db_mgr.init_db()
-    print("数据库初始化完成")
+    from sqlalchemy import event
+    
+    def setup_sqlite_wal_mode(engine):
+        """为SQLite引擎设置WAL模式和优化参数"""
+        @event.listens_for(engine, "connect")
+        def set_sqlite_pragma(dbapi_connection, connection_record):
+            """设置SQLite优化参数和WAL模式"""
+            cursor = dbapi_connection.cursor()
+            
+            # 启用WAL模式（Write-Ahead Logging）
+            cursor.execute("PRAGMA journal_mode=WAL")
+            
+            # 设置同步模式为NORMAL，在WAL模式下提供良好的性能和安全性平衡
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            
+            # 设置缓存大小（负数表示KB，这里设置为64MB）
+            cursor.execute("PRAGMA cache_size=-65536")
+            
+            # 启用外键约束
+            cursor.execute("PRAGMA foreign_keys=ON")
+            
+            # 设置临时存储为内存模式
+            cursor.execute("PRAGMA temp_store=MEMORY")
+            
+            # 设置WAL自动检查点阈值（页面数）
+            cursor.execute("PRAGMA wal_autocheckpoint=1000")
+            
+            cursor.close()
+
+    def create_optimized_sqlite_engine(sqlite_url, **kwargs):
+        """创建优化的SQLite引擎，自动配置WAL模式"""
+        default_connect_args = {"check_same_thread": False, "timeout": 30}
+        
+        # 合并用户提供的connect_args
+        if "connect_args" in kwargs:
+            default_connect_args.update(kwargs["connect_args"])
+        kwargs["connect_args"] = default_connect_args
+        
+        # 创建引擎
+        engine = create_engine(sqlite_url, echo=False, **kwargs)
+        
+        # 设置WAL模式
+        setup_sqlite_wal_mode(engine)
+        
+        return engine
+    
+    # 清理可能存在的WAL文件残留
+    wal_file = TEST_DB_PATH + "-wal"
+    shm_file = TEST_DB_PATH + "-shm"
+    
+    if os.path.exists(wal_file) or os.path.exists(shm_file):
+        print("检测到WAL/SHM文件残留，尝试清理...")
+        try:
+            # 尝试删除WAL和SHM文件
+            if os.path.exists(wal_file):
+                os.remove(wal_file)
+                print("已删除WAL文件")
+            if os.path.exists(shm_file):
+                os.remove(shm_file)
+                print("已删除SHM文件")
+        except Exception as cleanup_error:
+            print(f"清理WAL/SHM文件失败: {cleanup_error}")
+            print("请手动删除这些文件后重试")
+            exit(1)
+    
+    print(f"数据库文件检查完成: {TEST_DB_PATH}")
+    
+    # 使用优化的引擎（和main.py一样的配置）
+    sqlite_url = f'sqlite:///{TEST_DB_PATH}'
+    engine = create_optimized_sqlite_engine(
+        sqlite_url,
+        pool_size=5,       # 设置连接池大小
+        max_overflow=10,   # 允许的最大溢出连接数
+        pool_timeout=30,   # 获取连接的超时时间
+        pool_recycle=1800  # 30分钟回收一次连接
+    )
+    
+    print("创建优化SQLite引擎完成，WAL模式已配置")
+    
+    # 使用单一连接进行完整的数据库初始化流程 - 避免连接池竞争
+    print("开始单一连接数据库初始化流程...")
+    try:
+        # 使用单个连接完成所有操作
+        with engine.connect() as conn:
+            print("设置WAL模式和优化参数...")
+            # 显式设置WAL模式和优化参数
+            conn.execute(text("PRAGMA journal_mode=WAL"))
+            conn.execute(text("PRAGMA synchronous=NORMAL"))
+            conn.execute(text("PRAGMA cache_size=-65536"))
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+            conn.execute(text("PRAGMA temp_store=MEMORY"))
+            conn.execute(text("PRAGMA wal_autocheckpoint=1000"))
+            
+            # 验证WAL模式设置
+            journal_mode = conn.execute(text("PRAGMA journal_mode")).fetchone()[0]
+            if journal_mode.upper() != 'WAL':
+                print(f"警告：WAL模式设置可能失败，当前模式: {journal_mode}")
+            else:
+                print("WAL模式设置成功")
+            
+            # 使用同一个连接创建Session并进行数据库初始化
+            print("开始数据库结构初始化...")
+            # 创建一个基于当前连接的Session
+            session = Session(bind=conn)
+            try:
+                db_mgr = DBManager(session)
+                success = db_mgr.init_db()
+                if success:
+                    print("数据库结构初始化成功")
+                    # 显式提交事务
+                    session.commit()
+                else:
+                    print("数据库结构初始化返回失败状态")
+                    session.rollback()
+            except Exception as init_error:
+                print(f"数据库初始化过程中发生错误: {init_error}")
+                session.rollback()
+                raise
+            finally:
+                session.close()
+            
+            # 最终提交连接级别的事务
+            conn.commit()
+            print("数据库初始化完成")
+            
+    except Exception as error:
+        print(f"数据库初始化失败: {error}")
+        print("这可能表明数据库被其他进程锁定，请检查是否有其他程序正在使用数据库")
+        import traceback
+        traceback.print_exc()
+        exit(1)

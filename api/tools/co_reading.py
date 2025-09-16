@@ -38,8 +38,8 @@ from backend_tool_caller import g_backend_tool_caller
 #     CGWindowListCopyWindowInfo,
 #     kCGNullWindowID,
 # )
-from sqlmodel import Session
-from models_mgr import ModelsMgr
+# from sqlmodel import Session
+# from models_mgr import ModelsMgr
 import logging
 logger = logging.getLogger(__name__)
 
@@ -368,8 +368,6 @@ co_reading_graph = Graph(
 # =============================================================================
 # 共读流协议处理函数
 # =============================================================================
-# # 从db_session中获取持久化目录
-# db_path = chat_mgr.session.get_bind().url.database
 # persistence_dir = Path(db_path).parent / "graph_persistence"
 # persistence_dir.mkdir(exist_ok=True)
 

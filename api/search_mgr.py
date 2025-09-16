@@ -370,7 +370,7 @@ if __name__ == "__main__":
     db_directory = Path(TEST_DB_PATH).parent
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     # 模型管理器
-    models_mgr = ModelsMgr(session)
+    models_mgr = ModelsMgr(session, base_dir=db_directory)
     
     # 1. testing SearchManager
     search_mgr = SearchManager(session, lancedb_mgr, models_mgr)

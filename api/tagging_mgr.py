@@ -606,7 +606,7 @@ if __name__ == '__main__':
     base_dir = pathlib.Path(TEST_DB_PATH).parent
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
     lancedb_mgr = LanceDBMgr(base_dir=base_dir)
-    models_mgr = ModelsMgr(session=session)
+    models_mgr = ModelsMgr(session=session, base_dir=base_dir)
     tagging_mgr = TaggingMgr(
         session=session,
         lancedb_mgr=lancedb_mgr,

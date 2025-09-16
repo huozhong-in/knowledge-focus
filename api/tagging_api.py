@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session
 from typing import List, Dict, Any
 import logging
-import pathlib
 from tagging_mgr import TaggingMgr
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
@@ -10,22 +9,20 @@ from file_tagging_mgr import FileTaggingMgr
 
 logger = logging.getLogger(__name__)
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_tagging_manager(session: Session = Depends(external_get_session)) -> TaggingMgr:
         """FastAPI dependency to get a TaggingMgr instance."""
         # These dependencies will be resolved by FastAPI for each request.
-        db_path = session.get_bind().url.database
-        lancedb_mgr = LanceDBMgr(base_dir=pathlib.Path(db_path).parent)
-        models_mgr = ModelsMgr(session=session)
+        lancedb_mgr = LanceDBMgr(base_dir=base_dir)
+        models_mgr = ModelsMgr(session=session, base_dir=base_dir)
         return TaggingMgr(session=session, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
 
     def get_file_tagging_manager(session: Session = Depends(external_get_session)) -> FileTaggingMgr:
         """FastAPI dependency to get a FileTaggingMgr instance."""
-        db_path = session.get_bind().url.database
-        lancedb_mgr = LanceDBMgr(base_dir=pathlib.Path(db_path).parent)
-        models_mgr = ModelsMgr(session=session)
+        lancedb_mgr = LanceDBMgr(base_dir=base_dir)
+        models_mgr = ModelsMgr(session=session, base_dir=base_dir)
         return FileTaggingMgr(session=session, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
 
     @router.post("/tagging/search-files", response_model=List[Dict[str, Any]])

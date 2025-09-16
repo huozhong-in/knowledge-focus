@@ -16,7 +16,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     @router.get("/images/{image_filename}")
@@ -42,8 +42,6 @@ def get_router(external_get_session: callable) -> APIRouter:
             # 获取docling缓存目录
             try:
                 # 从数据库引擎获取基础目录
-                db_path = session.get_bind().url.database
-                base_dir = Path(db_path).parent
                 docling_cache_dir = base_dir / "docling_cache"
                 image_path = docling_cache_dir / image_filename
                 

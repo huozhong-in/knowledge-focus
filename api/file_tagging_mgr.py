@@ -160,6 +160,10 @@ class FileTaggingMgr:
         for result in results:
             processed_count += 1
             file_process_start_time = time.time()
+            
+            # 确保对象绑定到当前Session，避免DetachedInstanceError
+            result = self.session.merge(result)
+            
             logger.info(f"[FILE_TAGGING_BATCH] Processing file {processed_count}/{total_files}: {result.file_path}")
 
             try:
@@ -282,7 +286,7 @@ if __name__ == "__main__":
     # 创建解析管理器实例进行测试
     db_directory = os.path.dirname(TEST_DB_PATH)
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
-    models_mgr = ModelsMgr(session)
+    models_mgr = ModelsMgr(session, base_dir=db_directory)
     file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
     print(file_tagging_mgr.check_file_tagging_model_availability())
     

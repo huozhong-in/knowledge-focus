@@ -317,7 +317,7 @@ impl FileMonitor {
         }
     }
 
-    // --- New method to fetch all configurations ---
+    // --- fetch all configurations ---
     async fn fetch_and_store_all_config(&self) -> Result<(), String> {
         let url = format!("http://{}:{}/config/all", self.api_host, self.api_port);
         println!("[CONFIG_FETCH] Fetching all configurations from URL: {}", url);
@@ -423,7 +423,7 @@ impl FileMonitor {
         Err(last_error)
     }
 
-    // 新方法：获取简化的文件扫描配置
+    // 获取简化的文件扫描配置
     pub async fn fetch_file_scanning_config(&self) -> Result<FileScanningConfig, String> {
         let url = format!("http://{}:{}/file-scanning-config", self.api_host, self.api_port);
         println!("[CONFIG_FETCH] Fetching simplified file scanning config from URL: {}", url);

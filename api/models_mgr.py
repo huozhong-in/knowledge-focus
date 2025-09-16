@@ -108,8 +108,9 @@ def create_bridge_progress_reporter(bridge_events, model_name):
 
 @singleton
 class ModelsMgr:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, base_dir: str):
         self.session = session
+        self.base_dir = base_dir
         self.model_config_mgr = ModelConfigMgr(session)
         self.tool_provider = ToolProvider(session)
         self.memory_mgr = MemoryMgr(session)
@@ -122,17 +123,34 @@ class ModelsMgr:
         This is typically called by backend processes (document parsing, vectorization),
         so model validation failures will trigger IPC events to notify the frontend.
         """
-        # 从SQLite数据库路径推导出base_dir
-        db_path = self.session.get_bind().url.database
-        cache_directory = os.path.dirname(db_path)
         model_path = self.model_config_mgr.get_embeddings_model_path()
         if model_path == "":
-            model_path = self.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+            model_path = self.download_embedding_model(EMBEDDING_MODEL, self.base_dir)
             self.model_config_mgr.set_embeddings_model_path(model_path)        
         try:
             model, tokenizer = load_embedding_model(model_path)
-            input_ids = tokenizer.encode(text_str, return_tensors="mlx")
-            outputs = model(input_ids)
+            
+            # 使用批处理编码并指定参数
+            if hasattr(tokenizer, 'batch_encode_plus'):
+                inputs = tokenizer.batch_encode_plus(
+                    [text_str], 
+                    return_tensors="mlx", 
+                    padding=True, 
+                    truncation=True, 
+                    max_length=512
+                )
+                input_ids = inputs["input_ids"]
+                attention_mask = inputs.get("attention_mask", None)
+            else:
+                input_ids = tokenizer.encode(text_str, return_tensors="mlx")
+                attention_mask = None
+                
+            # 调用模型时提供attention_mask参数（如果可用）
+            if attention_mask is not None:
+                outputs = model(input_ids, attention_mask=attention_mask)
+            else:
+                outputs = model(input_ids)
+                
             # raw_embeds = outputs.last_hidden_state[:, 0, :] # CLS token
             text_embeds = outputs.text_embeds # mean pooled and normalized embeddings
             return text_embeds[0].tolist()
@@ -919,9 +937,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             
             # 使用SearchManager进行检索
             from lancedb_mgr import LanceDBMgr
-            db_path = self.session.get_bind().url.database
-            db_directory = os.path.dirname(db_path)
-            lancedb_mgr = LanceDBMgr(base_dir=db_directory)
+            lancedb_mgr = LanceDBMgr(base_dir=self.base_dir)
             from search_mgr import SearchManager
             search_mgr = SearchManager(
                 session=self.session, 
@@ -1440,17 +1456,17 @@ if __name__ == "__main__":
     from config import TEST_DB_PATH
     from sqlmodel import create_engine
     session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
-    mgr = ModelsMgr(session)
+    mgr = ModelsMgr(session, base_dir=Path(TEST_DB_PATH).parent)
 
     # # Test get TEXT model interface
     # model_interface = mgr.model_config_mgr.get_text_model_config()
     # print(model_interface.model_dump())
     
-    import asyncio
+    # import asyncio
 
-    # # Test embedding generation
-    # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
-    # print("Embedding Length:", len(embedding))
+    # Test embedding generation
+    embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
+    print("Embedding Length:", len(embedding))
     
     # # Test tag generation
     # tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
@@ -1469,19 +1485,19 @@ if __name__ == "__main__":
     # except Exception as e:
     #     print("Chat Error:", e)
 
-    # test stream
-    async def test_stream():
-        messages = [
-            {'role': 'user', 'content': '拜占庭将军问题是什么？'}
-        ]
+    # # test stream
+    # async def test_stream():
+    #     messages = [
+    #         {'role': 'user', 'content': '拜占庭将军问题是什么？'}
+    #     ]
         
-        print('Testing Vercel AI SDK compatible stream protocol:')
-        print('=' * 50)
+    #     print('Testing Vercel AI SDK compatible stream protocol:')
+    #     print('=' * 50)
         
-        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
-            print(chunk, end='')
+    #     async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
+    #         print(chunk, end='')
     
-    asyncio.run(test_stream())
+    # asyncio.run(test_stream())
 
     # # 下载MLX优化的Qwen3 Embedding模型
     # import os
@@ -1535,10 +1551,8 @@ if __name__ == "__main__":
     #         from lancedb_mgr import LanceDBMgr
     #         from search_mgr import SearchManager
             
-    #         db_path = session.get_bind().url.database
-    #         db_directory = os.path.dirname(db_path)
-    #         lancedb_mgr = LanceDBMgr(base_dir=db_directory)
-            
+    #         lancedb_mgr = LanceDBMgr(base_dir=base_dir)
+
     #         search_mgr = SearchManager(
     #             session=session, 
     #             lancedb_mgr=lancedb_mgr, 

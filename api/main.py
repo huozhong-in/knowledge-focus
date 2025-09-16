@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 from sqlmodel import create_engine, Session, select
+from sqlalchemy import event, text
 from db_mgr import (
     DBManager, 
     TaskStatus, 
@@ -28,17 +29,56 @@ from lancedb_mgr import LanceDBMgr
 from file_tagging_mgr import FileTaggingMgr, configure_parsing_warnings
 from multivector_mgr import MultiVectorMgr
 from task_mgr import TaskManager
-from models_api import get_router as get_models_router
-from tagging_api import get_router as get_tagging_router
-from chatsession_api import get_router as get_chatsession_router
-from myfolders_api import get_router as get_myfolders_router
-from screening_api import get_router as get_screening_router
-from search_api import get_router as get_search_router
-from unified_tools_api import get_router as get_tools_router
-from documents_api import get_router as get_documents_router
+# API路由导入将在lifespan函数中进行
 
-# 初始化logger
-logger = logging.getLogger(__name__)
+# # 初始化logger
+# logger = logging.getLogger(__name__)
+
+# --- SQLite WAL Mode Setup ---
+def setup_sqlite_wal_mode(engine):
+    """为SQLite引擎设置WAL模式和优化参数"""
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        """设置SQLite优化参数和WAL模式"""
+        cursor = dbapi_connection.cursor()
+        
+        # 启用WAL模式（Write-Ahead Logging）
+        # WAL模式允许读写操作并发执行，显著减少锁定冲突
+        cursor.execute("PRAGMA journal_mode=WAL")
+        
+        # 设置同步模式为NORMAL，在WAL模式下提供良好的性能和安全性平衡
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        
+        # 设置缓存大小（负数表示KB，这里设置为64MB）
+        cursor.execute("PRAGMA cache_size=-65536")
+        
+        # 启用外键约束
+        cursor.execute("PRAGMA foreign_keys=ON")
+        
+        # 设置临时存储为内存模式
+        cursor.execute("PRAGMA temp_store=MEMORY")
+        
+        # 设置WAL自动检查点阈值（页面数）
+        cursor.execute("PRAGMA wal_autocheckpoint=1000")
+        
+        cursor.close()
+
+def create_optimized_sqlite_engine(sqlite_url, **kwargs):
+    """创建优化的SQLite引擎，自动配置WAL模式"""
+    default_connect_args = {"check_same_thread": False, "timeout": 30}
+    
+    # 合并用户提供的connect_args
+    if "connect_args" in kwargs:
+        default_connect_args.update(kwargs["connect_args"])
+    kwargs["connect_args"] = default_connect_args
+    
+    # 创建引擎
+    engine = create_engine(sqlite_url, echo=False, **kwargs)
+    
+    # 设置WAL模式
+    setup_sqlite_wal_mode(engine)
+    
+    return engine
 
 # --- Centralized Logging Setup ---
 def setup_logging(logging_dir: str):
@@ -56,7 +96,7 @@ def setup_logging(logging_dir: str):
         log_filepath = log_dir / log_filename
 
         # Get the root logger and configure it
-        root_logger = logging.getLogger()
+        root_logger = logging.getLogger(__name__)
         root_logger.setLevel(logging.INFO)
 
         # Avoid adding duplicate handlers
@@ -92,28 +132,63 @@ async def lifespan(app: FastAPI):
         if hasattr(app.state, "db_path"):
             sqlite_url = f"sqlite:///{app.state.db_path}"
             logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
+            # 保存数据库目录路径供其他组件使用
+            app.state.db_directory = os.path.dirname(app.state.db_path)
             try:
-                # For SQLite, especially when accessed by FastAPI (which can use threads for async routes)
-                # and potentially by background tasks, 'check_same_thread': False is often needed.
-                # The set_sqlite_pragma event listener will configure WAL mode.
-                app.state.engine = create_engine(
-                    sqlite_url, 
-                    echo=False, 
-                    connect_args={"check_same_thread": False, "timeout": 30},
+                # 创建优化的SQLite数据库引擎，自动配置WAL模式
+                app.state.engine = create_optimized_sqlite_engine(
+                    sqlite_url,
                     pool_size=5,       # 设置连接池大小
                     max_overflow=10,   # 允许的最大溢出连接数
                     pool_timeout=30,   # 获取连接的超时时间
                     pool_recycle=1800  # 30分钟回收一次连接
                 )
+                logger.info("SQLite WAL模式和优化参数已设置")
                 logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
                 
-                # 初始化数据库结构
+                # 初始化数据库结构 - 使用单连接方法避免连接竞争
                 try:
-                    logger.info("开始初始化数据库结构...")
-                    with Session(app.state.engine) as session:
-                        db_mgr = DBManager(session)
-                        db_mgr.init_db()
-                    logger.info("数据库结构初始化完成")
+                    logger.info("开始数据库结构初始化...")
+                    # 使用单个连接完成所有数据库初始化操作
+                    with app.state.engine.connect() as conn:
+                        logger.info("设置WAL模式和优化参数...")
+                        # 显式设置WAL模式和优化参数（确保在生产环境中也正确设置）
+                        conn.execute(text("PRAGMA journal_mode=WAL"))
+                        conn.execute(text("PRAGMA synchronous=NORMAL"))
+                        conn.execute(text("PRAGMA cache_size=-65536"))
+                        conn.execute(text("PRAGMA foreign_keys=ON"))
+                        conn.execute(text("PRAGMA temp_store=MEMORY"))
+                        conn.execute(text("PRAGMA wal_autocheckpoint=1000"))
+                        
+                        # 验证WAL模式设置
+                        journal_mode = conn.execute(text("PRAGMA journal_mode")).fetchone()[0]
+                        if journal_mode.upper() != 'WAL':
+                            logger.warning(f"WAL模式设置可能失败，当前模式: {journal_mode}")
+                        else:
+                            logger.info("WAL模式设置成功")
+                        
+                        # 使用同一个连接创建Session并进行数据库初始化
+                        session = Session(bind=conn)
+                        try:
+                            db_mgr = DBManager(session)
+                            success = db_mgr.init_db()
+                            if success:
+                                logger.info("数据库结构初始化成功")
+                                session.commit()
+                            else:
+                                logger.warning("数据库结构初始化返回失败状态")
+                                session.rollback()
+                        except Exception as init_error:
+                            logger.error(f"数据库初始化过程中发生错误: {str(init_error)}")
+                            session.rollback()
+                            raise
+                        finally:
+                            session.close()
+                        
+                        # 最终提交连接级别的事务
+                        conn.commit()
+                        logger.info("数据库结构初始化完成")
+                        
                 except Exception as init_err:
                     logger.error(f"初始化数据库结构失败: {str(init_err)}", exc_info=True)
                     # 继续运行应用，不要因为初始化失败而中断
@@ -131,14 +206,14 @@ async def lifespan(app: FastAPI):
         except Exception as proc_err:
             logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
         
-        # 初始化后台任务处理线程
+        # 初始化后台任务处理线程（使用共享引擎）
         try:
             logger.info("初始化后台任务处理线程...")
             # 创建一个事件来优雅地停止线程
             app.state.task_processor_stop_event = threading.Event()
             app.state.task_processor_thread = threading.Thread(
                 target=task_processor,
-                args=(app.state.db_path, app.state.task_processor_stop_event),
+                args=(app.state.engine, app.state.db_directory, app.state.task_processor_stop_event),
                 daemon=True
             )
             app.state.task_processor_thread.start()
@@ -147,14 +222,14 @@ async def lifespan(app: FastAPI):
             logger.error(f"初始化后台任务处理线程失败: {e}", exc_info=True)
             raise
         
-        # 初始化高优先级任务处理线程
+        # 初始化高优先级任务处理线程（使用共享引擎）
         try:
             logger.info("初始化高优先级任务处理线程...")
             # 创建一个事件来优雅地停止线程
             app.state.high_priority_task_processor_stop_event = threading.Event()
             app.state.high_priority_task_processor_thread = threading.Thread(
                 target=high_priority_task_processor,
-                args=(app.state.db_path, app.state.high_priority_task_processor_stop_event),
+                args=(app.state.engine, app.state.db_directory, app.state.high_priority_task_processor_stop_event),
                 daemon=True
             )
             app.state.high_priority_task_processor_thread.start()
@@ -178,6 +253,50 @@ async def lifespan(app: FastAPI):
             logger.info("解析库日志配置已应用")
         except Exception as parsing_config_err:
             logger.error(f"配置解析库日志失败: {str(parsing_config_err)}", exc_info=True)
+
+        # 注册API路由（在数据库初始化完成后）
+        try:
+            logger.info("注册API路由...")
+            
+            # 动态导入API路由
+            from models_api import get_router as get_models_router
+            from tagging_api import get_router as get_tagging_router
+            from chatsession_api import get_router as get_chatsession_router
+            from myfolders_api import get_router as get_myfolders_router
+            from screening_api import get_router as get_screening_router
+            from search_api import get_router as get_search_router
+            from unified_tools_api import get_router as get_tools_router
+            from documents_api import get_router as get_documents_router
+            
+            # 注册各个API路由
+            models_router = get_models_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            app.include_router(models_router, prefix="", tags=["models"])
+            
+            tagging_router = get_tagging_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            app.include_router(tagging_router, prefix="", tags=["tagging"])
+            
+            chatsession_router = get_chatsession_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
+            
+            myfolders_router = get_myfolders_router(external_get_session=get_session)
+            app.include_router(myfolders_router, prefix="", tags=["myfolders"])
+            
+            screening_router = get_screening_router(external_get_session=get_session)
+            app.include_router(screening_router, prefix="", tags=["screening"])
+            
+            search_router = get_search_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            app.include_router(search_router, prefix="", tags=["search"])
+            
+            tools_router = get_tools_router(external_get_session=get_session)
+            app.include_router(tools_router, prefix="", tags=["tools"])
+            
+            documents_router = get_documents_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            app.include_router(documents_router, prefix="", tags=["documents"])
+            
+            logger.info("所有API路由注册完成")
+        except Exception as router_err:
+            logger.error(f"注册API路由失败: {str(router_err)}", exc_info=True)
+            raise
 
         # 正式开始服务
         logger.info("应用初始化完成，开始提供服务...")
@@ -249,37 +368,7 @@ def get_session():
     with Session(app.state.engine) as session:
         yield session
 
-# 本地大模型API端点添加
-models_router = get_models_router(external_get_session=get_session)
-app.include_router(models_router, prefix="", tags=["models"])
-
-# 添加新的标签API路由
-tagging_router = get_tagging_router(external_get_session=get_session)
-app.include_router(tagging_router, prefix="", tags=["tagging"])
-
-# 添加聊天会话API路由
-chatsession_router = get_chatsession_router(external_get_session=get_session)
-app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
-
-# 添加文件管理API路由
-myfolders_router = get_myfolders_router(external_get_session=get_session)
-app.include_router(myfolders_router, prefix="", tags=["myfolders"])
-
-# 添加粗筛API路由
-screening_router = get_screening_router(external_get_session=get_session)
-app.include_router(screening_router, prefix="", tags=["screening"])
-
-# 添加搜索API路由
-search_router = get_search_router(external_get_session=get_session)
-app.include_router(search_router, prefix="", tags=["search"])
-
-# 添加工具API路由
-tools_router = get_tools_router(external_get_session=get_session)
-app.include_router(tools_router, prefix="", tags=["tools"])
-
-# 添加文档API路由
-documents_router = get_documents_router(external_get_session=get_session)
-app.include_router(documents_router, prefix="", tags=["documents"])
+# API路由将在lifespan函数中注册，以确保数据库初始化完成
 
 # 获取 TaskManager 的依赖函数
 def get_task_manager(session: Session = Depends(get_session)):
@@ -289,7 +378,7 @@ def get_task_manager(session: Session = Depends(get_session)):
 # 任务处理者
 def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManager) -> None:
     """通用任务处理逻辑"""
-    models_mgr = ModelsMgr(session)
+    models_mgr = ModelsMgr(session, base_dir=app.state.db_directory)
     file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
     multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
 
@@ -379,11 +468,12 @@ def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManag
         task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
 
 
-def _generic_task_processor(db_path: str, stop_event: threading.Event, processor_name: str, task_getter_func: str, sleep_duration: int = 5):
+def _generic_task_processor(engine, db_directory: str, stop_event: threading.Event, processor_name: str, task_getter_func: str, sleep_duration: int = 5):
     """通用任务处理器
     
     Args:
-        db_path: 数据库路径
+        engine: 共享的SQLAlchemy引擎实例
+        db_directory: 数据库目录路径（用于LanceDB）
         stop_event: 停止事件
         processor_name: 处理器名称（用于日志）
         task_getter_func: TaskManager中获取任务的方法名
@@ -391,24 +481,20 @@ def _generic_task_processor(db_path: str, stop_event: threading.Event, processor
     """
     logger.info(f"{processor_name}已启动")
     
-    sqlite_url = f"sqlite:///{db_path}"
-    engine = create_engine(
-        sqlite_url, 
-        echo=False, 
-        connect_args={"check_same_thread": False, "timeout": 30}
-    )
-    db_directory = os.path.dirname(db_path)
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
 
     while not stop_event.is_set():
         try:
-            with Session(engine) as session:
+            # 使用共享引擎创建Session，让SQLAlchemy管理连接池
+            session = Session(bind=engine)
+            try:
                 task_mgr = TaskManager(session)
                 # 动态调用指定的任务获取方法
                 task_getter = getattr(task_mgr, task_getter_func)
                 task: Task = task_getter()
 
                 if task is None:
+                    session.close()
                     time.sleep(sleep_duration)
                     continue
 
@@ -416,6 +502,21 @@ def _generic_task_processor(db_path: str, stop_event: threading.Event, processor
                 
                 # 调用通用任务处理逻辑
                 _process_task(task, session, lancedb_mgr, task_mgr)
+                
+                # 提交事务
+                session.commit()
+                
+            except Exception as task_error:
+                logger.error(f"{processor_name}处理任务时发生错误: {task_error}", exc_info=True)
+                try:
+                    session.rollback()
+                except Exception:
+                    pass  # 如果回滚失败，忽略错误
+            finally:
+                try:
+                    session.close()
+                except Exception:
+                    pass  # 如果关闭失败，忽略错误
 
         except Exception as e:
             logger.error(f"{processor_name}发生意外错误: {e}", exc_info=True)
@@ -424,10 +525,11 @@ def _generic_task_processor(db_path: str, stop_event: threading.Event, processor
     logger.info(f"{processor_name}已停止")
 
 
-def task_processor(db_path: str, stop_event: threading.Event):
+def task_processor(engine, db_directory: str, stop_event: threading.Event):
     """普通任务处理线程工作函数（处理所有优先级任务）"""
     _generic_task_processor(
-        db_path=db_path,
+        engine=engine,
+        db_directory=db_directory,
         stop_event=stop_event,
         processor_name="普通任务处理线程",
         task_getter_func="get_and_lock_next_task",
@@ -435,132 +537,16 @@ def task_processor(db_path: str, stop_event: threading.Event):
     )
 
 
-def high_priority_task_processor(db_path: str, stop_event: threading.Event):
+def high_priority_task_processor(engine, db_directory: str, stop_event: threading.Event):
     """高优先级任务处理线程工作函数（仅处理HIGH优先级任务）"""
     _generic_task_processor(
-        db_path=db_path,
+        engine=engine,
+        db_directory=db_directory,
         stop_event=stop_event,
         processor_name="高优先级任务处理线程",
         task_getter_func="get_and_lock_next_high_priority_task",
         sleep_duration=2
     )
-    logger.info("任务处理线程已启动")
-    
-    sqlite_url = f"sqlite:///{db_path}"
-    engine = create_engine(
-        sqlite_url, 
-        echo=False, 
-        connect_args={"check_same_thread": False, "timeout": 30}
-    )
-    db_directory = os.path.dirname(db_path)
-    lancedb_mgr = LanceDBMgr(base_dir=db_directory)
-
-    while not stop_event.is_set():
-        try:
-            with Session(engine) as session:
-                task_mgr = TaskManager(session)
-                # 使用原子操作获取并锁定任务
-                task: Task = task_mgr.get_and_lock_next_task()
-
-                if task is None:
-                    time.sleep(5) # 没有任务时，等待5秒
-                    continue
-
-                logger.info(f"任务处理线程接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}', Priority={task.priority}")
-                # 注意：任务状态已经在get_and_lock_next_task中设置为RUNNING了
-
-                models_mgr = ModelsMgr(session)
-                file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
-                multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
-
-                if task.task_type == TaskType.TAGGING.value:
-                    # 检查模型可用性
-                    if not file_tagging_mgr.check_file_tagging_model_availability():
-                        logger.error("相关模型不可用，无法处理文件打标签任务")
-                        time.sleep(5)
-                        continue
-                    # 高优先级任务: 通常是单个文件处理
-                    if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
-                        logger.info(f"开始处理高优先级文件打标签任务 (Task ID: {task.id})")
-                        success = file_tagging_mgr.process_single_file_task(task.extra_data['screening_result_id'])
-                        if success:
-                            task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
-                            
-                            # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
-                            if multivector_mgr.check_multivector_model_availability():
-                                _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
-                        else:
-                            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
-                    # 低优先级任务: 批量处理
-                    else:
-                        logger.info(f"开始批量文件打标签任务 (Task ID: {task.id})")
-                        result_data = file_tagging_mgr.process_pending_batch(task_id=task.id)
-                        
-                        # 无论批量任务处理了多少文件，都将触发任务文件打标签为完成
-                        task_mgr.update_task_status(
-                            task.id, 
-                            TaskStatus.COMPLETED, 
-                            result=TaskResult.SUCCESS, 
-                            message=f"批量处理完成: 处理了 {result_data.get('processed', 0)} 个文件。"
-                        )
-                
-                elif task.task_type == TaskType.MULTIVECTOR.value:
-                    if not multivector_mgr.check_multivector_model_availability():
-                        logger.error("相关模型不可用，无法处理多模态向量化任务")
-                        time.sleep(5)
-                        continue
-                    # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
-                    if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
-                        file_path = task.extra_data['file_path']
-                        logger.info(f"开始处理高优先级多模态向量化任务 (Task ID: {task.id}): {file_path}")
-                        
-                        try:
-                            # 传递task_id以便事件追踪
-                            success = multivector_mgr.process_document(file_path, str(task.id))
-                            if success:
-                                task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.COMPLETED, 
-                                    result=TaskResult.SUCCESS,
-                                    message=f"多模态向量化完成: {file_path}"
-                                )
-                                logger.info(f"多模态向量化成功完成: {file_path}")
-                            else:
-                                task_mgr.update_task_status(
-                                    task.id, 
-                                    TaskStatus.FAILED, 
-                                    result=TaskResult.FAILURE,
-                                    message=f"多模态向量化失败: {file_path}"
-                                )
-                                logger.error(f"多模态向量化失败: {file_path}")
-                        except Exception as e:
-                            error_msg = f"多模态向量化异常: {file_path} - {str(e)}"
-                            task_mgr.update_task_status(
-                                task.id, 
-                                TaskStatus.FAILED, 
-                                result=TaskResult.FAILURE,
-                                message=error_msg
-                            )
-                            logger.error(error_msg, exc_info=True)
-                    else:
-                        # 中低优先级任务: 批量处理（未来支持）
-                        logger.info(f"其他任务类型暂未实现 (Task ID: {task.id})")
-                        task_mgr.update_task_status(
-                            task.id, 
-                            TaskStatus.COMPLETED, 
-                            result=TaskResult.SUCCESS,
-                            message="批量处理任务已跳过"
-                        )
-                
-                else:
-                    logger.warning(f"未知的任务类型: {task.task_type} for task ID: {task.id}")
-                    task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"Unknown task type: {task.task_type}")
-
-        except Exception as e:
-            logger.error(f"任务处理线程发生意外错误: {e}", exc_info=True)
-            time.sleep(30)
-
-    logger.info("任务处理线程已停止")
 
 def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, screening_result_id: int):
     """
@@ -806,8 +792,8 @@ async def pin_file(
             }
 
         # 在创建任务前检查多模态向量化所需的模型配置
-        lancedb_mgr = LanceDBMgr(os.path.dirname(app.state.db_path))
-        models_mgr = ModelsMgr(session)
+        lancedb_mgr = LanceDBMgr(app.state.db_directory)
+        models_mgr = ModelsMgr(session, base_dir=app.state.db_directory)
         multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
         
         # 检查多模态向量化所需的模型是否已配置
@@ -859,7 +845,6 @@ if __name__ == "__main__":
         parser.add_argument("--port", type=int, default=60315, help="API服务监听端口")
         parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
         parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
-        parser.add_argument("--mode", type=str, default="dev", help="标记是开发环境还是生产环境")
         args = parser.parse_args()
 
         # 设置日志目录
@@ -867,8 +852,22 @@ if __name__ == "__main__":
         logging_dir = os.path.join(db_dir, "logs")
         if not os.path.exists(logging_dir):
             os.makedirs(logging_dir, exist_ok=True)
-        setup_logging(logging_dir)
         logger = logging.getLogger(__name__)
+        log_dir = Path(logging_dir)
+        log_filename = f'api_{time.strftime("%Y%m%d")}.log'
+        log_filepath = log_dir / log_filename
+        # Get the root logger and configure it
+        logger.setLevel(logging.INFO)
+        # Console handler
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+        logger.addHandler(console_handler)
+        # File handler
+        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(file_formatter)
+        logger.addHandler(file_handler)
         logger.info("API服务程序启动")
         logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
 
@@ -887,7 +886,7 @@ if __name__ == "__main__":
         logger.info(f"设置数据库路径: {args.db_path}")
         
         # 启动服务器
-        logger.info(f"API服务启动在: http://{args.host}:{args.port}")        
+        logger.info(f"API服务启动在: http://{args.host}:{args.port}")
         uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     
     except Exception as e:

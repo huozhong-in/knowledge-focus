@@ -29,6 +29,7 @@ class VectorRecord(LanceModel):
 @singleton
 class LanceDBMgr:
     def __init__(self, base_dir: str):
+        self.base_dir = base_dir  # 保存基础目录路径供其他组件使用
         self.uri = os.path.join(base_dir, "lancedb")
         self.db = lancedb.connect(self.uri)
         self.tags_tbl = None
@@ -293,7 +294,7 @@ if __name__ == '__main__':
     lancedb_mgr = LanceDBMgr(base_dir=Path(TEST_DB_PATH).parent)
     # 模型管理器
     from models_mgr import ModelsMgr
-    models_mgr = ModelsMgr(session)
+    models_mgr = ModelsMgr(session, base_dir=Path(TEST_DB_PATH).parent)
     
     # # prepare the tables
     # sample_tags = [

@@ -13,7 +13,7 @@ from chatsession_mgr import ChatSessionMgr
 logger = logging.getLogger(__name__)
 
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
@@ -63,7 +63,7 @@ def get_router(external_get_session: callable) -> APIRouter:
             
             # 使用LLM生成智能会话名称
             from models_mgr import ModelsMgr
-            models_mgr = ModelsMgr(chat_mgr.session)
+            models_mgr = ModelsMgr(chat_mgr.session, base_dir=base_dir)
             smart_title = models_mgr.generate_session_title(first_message_content)
             
             # 创建会话

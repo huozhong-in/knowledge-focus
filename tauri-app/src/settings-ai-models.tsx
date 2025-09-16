@@ -43,6 +43,7 @@ import {
   Zap,
   BadgeCheckIcon,
   SearchCheck,
+  ExternalLinkIcon,
 } from "lucide-react"
 import {
   openUrl,
@@ -637,6 +638,7 @@ function ProviderConfigDisplay({ provider }: { provider: Provider }) {
               onClick={() => provider.get_key_url && openUrl(provider.get_key_url)}
             >
               {t('SETTINGS.aimodels.go-to-get-api-key')}
+              <ExternalLinkIcon className="w-4 h-4 inline-block ml-1" />
             </Button>
           </div>
         </div>

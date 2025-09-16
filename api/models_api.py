@@ -15,17 +15,17 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_model_config_manager(session: Session = Depends(external_get_session)) -> ModelConfigMgr:
         return ModelConfigMgr(session)
     
     def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
-        return ModelsMgr(session)
+        return ModelsMgr(session, base_dir=base_dir)
 
     def get_model_capability_confirm(session: Session = Depends(external_get_session)) -> ModelCapabilityConfirm:
-        return ModelCapabilityConfirm(session)
+        return ModelCapabilityConfirm(session, base_dir=base_dir)
 
     def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
         return ChatSessionMgr(session)
@@ -402,7 +402,7 @@ def get_router(external_get_session: callable) -> APIRouter:
                 else:
                     logger.warning(f"No content to save for assistant message {assistant_message_id}")
                 # # 清理截图文件
-                # screenshots_dir = Path(models_mgr.session.get_bind().url.database).parent / "tauri-plugin-screenshots"
+                # screenshots_dir = Path(base_dir).parent / "tauri-plugin-screenshots"
                 # for image_path in screenshots_dir.glob("*.png"):
                 #     # 清理24小时以上的旧文件
                 #     if (datetime.now() - datetime.fromtimestamp(image_path.stat().st_mtime)).days >= 1:

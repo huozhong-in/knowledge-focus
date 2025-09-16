@@ -109,15 +109,6 @@ class MultiVectorMgr:
             if hasattr(self.lancedb_mgr, 'db') and hasattr(self.lancedb_mgr.db, 'uri'):
                 lancedb_path = Path(self.lancedb_mgr.db.uri)
                 self.data_base_dir = lancedb_path.parent
-            else:
-                # 从SQLite连接获取路径
-                sqlite_url = str(self.session.bind.url)
-                if sqlite_url.startswith('sqlite:///'):
-                    sqlite_path = Path(sqlite_url.replace('sqlite:///', ''))
-                    self.data_base_dir = sqlite_path.parent
-                else:
-                    # 备用方案：使用当前目录
-                    self.data_base_dir = Path.cwd()
             
             # 创建docling缓存目录
             self.docling_cache_dir = self.data_base_dir / "docling_cache"
@@ -205,8 +196,8 @@ Give a concise summary of the image that is well optimized for retrieval.
             # 使用通用tokenizer进行近似估算更稳定可靠，这里我们使用内置的中英文友好tokenizer作为chunk大小估算器
             model_path = self.model_config_mgr.get_embeddings_model_path()
             if model_path == "":
-                db_path = self.session.get_bind().url.database
-                cache_directory = os.path.dirname(db_path)
+                # 使用lancedb_mgr的base_dir作为缓存目录，它与SQLite数据库在同一父目录
+                cache_directory = self.lancedb_mgr.base_dir
                 model_path = self.models_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
                 self.model_config_mgr.set_embeddings_model_path(model_path)  
             tokenizer = HuggingFaceTokenizer(
@@ -1299,7 +1290,7 @@ def test_multivector_file():
     db_directory = Path(TEST_DB_PATH).parent
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     # 模型管理器
-    models_mgr = ModelsMgr(session)
+    models_mgr = ModelsMgr(session, base_dir=db_directory)
     # 事件发送器
     _bridge_events = BridgeEventSender()
     # 分块管理器

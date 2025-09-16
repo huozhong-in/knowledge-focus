@@ -149,7 +149,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 }
             }
         };
-        println!("app_py_path: {:?}", script_path);
+        println!("main_py_path: {:?}", script_path);
         let sidecar_command = app_handle
         .shell()
         .sidecar("uv")
@@ -188,7 +188,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 let app_handle_clone = app_handle.clone();
                 let api_state_mutex_clone = api_state_mutex.clone();
                 
-                // 启动健康检查，在API准备好后发送信号
+                // // 启动健康检查，在API准备好后发送信号
                 // let api_url = format!("http://{}:{}/health", host_to_use, port_to_use);
                 // let tx_for_health = Arc::clone(&tx);
                 

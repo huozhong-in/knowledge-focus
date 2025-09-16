@@ -1,30 +1,24 @@
 from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session
 from typing import Dict, Any
-import os
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from search_mgr import SearchManager
 import logging
 logger = logging.getLogger(__name__)
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_lancedb_manager(session: Session = Depends(external_get_session)) -> LanceDBMgr:
         """获取LanceDB管理器实例"""
-        db_path = session.get_bind().url.database
-        if db_path != "":
-            db_directory = os.path.dirname(db_path)
-            return LanceDBMgr(base_dir=db_directory)
-        else:
-            raise RuntimeError("无法从数据库URL推导出LanceDB路径")
+        return LanceDBMgr(base_dir=base_dir)
     
     def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
-        return ModelsMgr(session)
-    
+        return ModelsMgr(session, base_dir=base_dir)
+
     def get_search_manager(session: Session = Depends(external_get_session)) -> SearchManager:
-        return SearchManager(session, get_lancedb_manager(), get_models_manager())
+        return SearchManager(session, get_lancedb_manager(session), get_models_manager(session))
 
     # =============================================================================
     # 📊 向量内容搜索API端点
