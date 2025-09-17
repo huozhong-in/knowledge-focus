@@ -1,7 +1,7 @@
 {
-  "version": "0.2.0",
-  "notes": "测试版本更新\n\n新功能:\n• 添加了自动更新功能\n• 改进了用户界面\n• 修复了一些已知问题\n\n这是一个测试版本，用于验证自动更新机制。",
-  "pub_date": "2025-09-03T07:36:58Z",
-  "url": "https://github.com/huozhong-in/knowledge-focus/releases/download/v0.2.0/KnowledgeFocus.app.tar.gz",
-  "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRZVV6RWJDcGFOY2t3ZG1PLzRQY3Y0YlUxOWM2NU1oUEdOdnlLL3RXdlV6REkzaUtOMzJOVHZZbVR6STZ0T3J4MjFEVmZCR21sNUJvcXRtelFCMUFpeE5pN2s2RkEyakFjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzU2ODgyNDk4CWZpbGU6S25vd2xlZGdlRm9jdXMuYXBwLnRhci5negpBNWFOcFRJMmR2RnR0L3NOeTJranpIa0dKOFR2UUxSeTVPYldwT0g3U3hOaTc0NTZ1RS9hb09ZSW5vMmgvWjNOYW14UjE2MncwNWpNZ1Rwd3FXcGFDdz09Cg=="
+  "version": "0.3.2",
+  "notes": "release note\n\n新功能:\n• 完整迁移到uv方案,大大减少安装包体积\n• 通过了macOS bundle的代码签名和公证  \n• 改进了SQLite数据库连接的机制\n• 向量模型改为Google的embeddinggemma,只有198M\n\n希望小伙伴们多多测试。",
+  "pub_date": "2025-09-17T00:41:25Z",
+  "url": "https://github.com/huozhong-in/knowledge-focus/releases/download/v0.3.2/KnowledgeFocus.app.tar.gz",
+  "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRNlNQTkxneVhIbUNSc2x4ZXRHRWxVcjJXV2JMcjZoUFk0M0FMYlptd3I4Y2NSalN0Z2JLOEdseXorL1FJclJtNFM0dU1vM2EvdG02aHZFL25LSUVxVTBsc0ZKVHpNaHdjPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzU4MDY5MzI5CWZpbGU6S25vd2xlZGdlRm9jdXMuYXBwLnRhci5negpYL3laejlEaitTcUkxY1FGcnh2eXBhQ2RETjNjWWtDVmRGSGVQbGMzNnZYb2xOQ2c0VmhRd0NSU2cwSm5yV2NCVGF6YWErallyb3ZWREtYSjRPbVNBQT09Cg=="
 }
