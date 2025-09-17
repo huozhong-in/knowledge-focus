@@ -664,7 +664,7 @@ class DBManager:
                         "base_url": "https://generativelanguage.googleapis.com/v1beta",
                         "is_user_added": False,
                         "get_key_url": "https://aistudio.google.com/apikey",
-                        "support_discovery": False,
+                        "support_discovery": True,
                         "use_proxy": False,
                     },
                     # {
@@ -709,6 +709,16 @@ class DBManager:
                         "support_discovery": False,
                         "use_proxy": False,
                     },
+                    # {
+                    #     "display_name": "Deepseek", 
+                    #     "provider_type": "openai", 
+                    #     "source_type": ModelSourceType.CONFIGURABLE.value, 
+                    #     "base_url": "https://api.deepseek.com/v1",
+                    #     "is_user_added": False,
+                    #     "get_key_url": "https://platform.deepseek.com/api_keys",
+                    #     "support_discovery": False,
+                    #     "use_proxy": False,
+                    # },
                     {
                         "display_name": "Ollama", 
                         "provider_type": "openai", 

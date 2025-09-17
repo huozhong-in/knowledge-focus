@@ -61,6 +61,7 @@ interface Provider {
   config: Record<string, any>
   is_enabled: boolean
   is_user_added?: boolean  // 是否为用户添加的提供商
+  support_discovery?: boolean // 是否支持模型发现
   // 添加预置提供商的字段
   base_url?: string
   api_key?: string
@@ -155,6 +156,7 @@ class ModelSettingsAPI {
         provider_type: config.provider_type,
         name: config.display_name,
         description: config.source_type,
+        support_discovery: config.support_discovery,
         config: {
           base_url: config.base_url,
           api_key: config.api_key,
@@ -834,7 +836,7 @@ function ProviderDetailSection({
               variant="default"
               size="sm"
               onClick={() => onDiscoverModels(provider.key)}
-              disabled={isLoading}
+              disabled={isLoading || !provider.support_discovery}
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
