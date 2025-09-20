@@ -127,7 +127,11 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
         .shell()
         .sidecar("uv")
         .unwrap()
-        .args(["sync", "--directory", venv_parent_path.to_str().unwrap()]);
+        .args([
+            "sync", 
+            "--index-strategy", "unsafe-best-match",
+            "--directory", venv_parent_path.to_str().unwrap()
+            ]);
         println!("Running command: {:?}", sidecar_command);
         sidecar_command
         .spawn()
