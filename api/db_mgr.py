@@ -761,53 +761,32 @@ class DBManager:
                 Tool.__table__.create(engine, checkfirst=True)
                 data = [
                     {
-                        "name": "calculator_add",
-                        "description": "简单的加法计算器",
-                        "tool_type": "direct",
-                        "metadata_json": {"model_path": "tools.calculator:calculator_add"}
+                        "name": "local_file_serch",
+                        "description": "本机文件搜索工具。参数是一个搜索关键词，返回匹配的文件路径列表。",
+                        "tool_type": "direct",  # 直接调用
+                        "metadata_json": {"model_path": "tools.local_file_search:local_file_search" }
                     },
                     {
-                        "name": "calculator_multiply",
-                        "description": "简单的乘法计算器",
+                        "name": "multimodal_vectorize",
+                        "description": "给文件进行多模态向量化，以便后续支持多模态检索",
                         "tool_type": "direct",
-                        "metadata_json": {"model_path": "tools.calculator:calculator_multiply"}
+                        "metadata_json": {"model_path": "tools.vector_store:multimodal_vectorize" }
                     },
                     {
-                        "name": "calculator_bmi",
-                        "description": "BMI计算器",
+                        "name": "search_use_tavily",
+                        "description": "使用Tavily进行搜索",
                         "tool_type": "direct",
-                        "metadata_json": {"model_path": "tools.calculator:calculator_bmi"}
+                        "metadata_json": {
+                            "model_path": "tools.web_search:search_use_tavily",
+                            "api_key": ""
+                        }
                     },
-                    # {
-                    #     "name": "scroll_pdf_reader",
-                    #     "description": "智能滚动PDF阅读器。会自动使用之前打开PDF时保存的中心点坐标，无需指定具体坐标。",
-                    #     "tool_type": "direct",  # 直接调用
-                    #     "metadata_json": {"model_path": "tools.co_reading:scroll_pdf_reader"}
-                    # },
                     # {
                     #     "name": "handle_pdf_reading",
                     #     "description": "通过系统默认PDF阅读器打开PDF文件。并重新排布窗口，本App位于左侧，PDF阅读器位于右侧。",
                     #     "tool_type": "channel",  # 通过工具通道调用
                     #     "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reading"}
                     # },
-                    # {
-                    #     "name": "ensure_accessibility_permission",
-                    #     "description": "确保应用具有辅助功能权限",
-                    #     "tool_type": "channel",
-                    #     "metadata_json": {"model_path": "tools.co_reading:ensure_accessibility_permission"}
-                    # },
-                    # {
-                    #     "name": "handle_activate_pdf_reader",
-                    #     "description": "激活当前PDF阅读器窗口。如果它最小化或被遮挡，会将其恢复并置于前端",
-                    #     "tool_type": "channel",
-                    #     "metadata_json": {"model_path": "tools.co_reading:handle_activate_pdf_reader"}
-                    # },
-                    # {
-                    #     "name": "handle_pdf_reader_screenshot",
-                    #     "description": "对当前PDF页面截图，并查看其内容",
-                    #     "tool_type": "channel",
-                    #     "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reader_screenshot"}
-                    # }
                 ]
                 self.session.add_all([Tool(**tool) for tool in data])
                 self.session.commit()
@@ -1265,62 +1244,51 @@ if __name__ == '__main__':
         def set_sqlite_pragma(dbapi_connection, connection_record):
             """设置SQLite优化参数和WAL模式"""
             cursor = dbapi_connection.cursor()
-            
             # 启用WAL模式（Write-Ahead Logging）
             cursor.execute("PRAGMA journal_mode=WAL")
-            
             # 设置同步模式为NORMAL，在WAL模式下提供良好的性能和安全性平衡
             cursor.execute("PRAGMA synchronous=NORMAL")
-            
             # 设置缓存大小（负数表示KB，这里设置为64MB）
             cursor.execute("PRAGMA cache_size=-65536")
-            
             # 启用外键约束
             cursor.execute("PRAGMA foreign_keys=ON")
-            
             # 设置临时存储为内存模式
             cursor.execute("PRAGMA temp_store=MEMORY")
-            
             # 设置WAL自动检查点阈值（页面数）
             cursor.execute("PRAGMA wal_autocheckpoint=1000")
-            
             cursor.close()
 
     def create_optimized_sqlite_engine(sqlite_url, **kwargs):
         """创建优化的SQLite引擎，自动配置WAL模式"""
         default_connect_args = {"check_same_thread": False, "timeout": 30}
-        
         # 合并用户提供的connect_args
         if "connect_args" in kwargs:
             default_connect_args.update(kwargs["connect_args"])
         kwargs["connect_args"] = default_connect_args
-        
         # 创建引擎
         engine = create_engine(sqlite_url, echo=False, **kwargs)
-        
         # 设置WAL模式
         setup_sqlite_wal_mode(engine)
-        
         return engine
     
-    # 清理可能存在的WAL文件残留
-    wal_file = TEST_DB_PATH + "-wal"
-    shm_file = TEST_DB_PATH + "-shm"
+    # # 清理可能存在的WAL文件残留
+    # wal_file = TEST_DB_PATH + "-wal"
+    # shm_file = TEST_DB_PATH + "-shm"
     
-    if os.path.exists(wal_file) or os.path.exists(shm_file):
-        print("检测到WAL/SHM文件残留，尝试清理...")
-        try:
-            # 尝试删除WAL和SHM文件
-            if os.path.exists(wal_file):
-                os.remove(wal_file)
-                print("已删除WAL文件")
-            if os.path.exists(shm_file):
-                os.remove(shm_file)
-                print("已删除SHM文件")
-        except Exception as cleanup_error:
-            print(f"清理WAL/SHM文件失败: {cleanup_error}")
-            print("请手动删除这些文件后重试")
-            exit(1)
+    # if os.path.exists(wal_file) or os.path.exists(shm_file):
+    #     print("检测到WAL/SHM文件残留，尝试清理...")
+    #     try:
+    #         # 尝试删除WAL和SHM文件
+    #         if os.path.exists(wal_file):
+    #             os.remove(wal_file)
+    #             print("已删除WAL文件")
+    #         if os.path.exists(shm_file):
+    #             os.remove(shm_file)
+    #             print("已删除SHM文件")
+    #     except Exception as cleanup_error:
+    #         print(f"清理WAL/SHM文件失败: {cleanup_error}")
+    #         print("请手动删除这些文件后重试")
+    #         exit(1)
     
     print(f"数据库文件检查完成: {TEST_DB_PATH}")
     

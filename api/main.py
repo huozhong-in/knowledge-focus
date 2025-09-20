@@ -454,7 +454,7 @@ def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManag
                 )
                 logger.error(error_msg, exc_info=True)
         else:
-            # 中低优先级任务: 批量处理（未来支持）
+            # TODO 中低优先级任务: 批量处理（未来支持）
             logger.info(f"其他任务类型暂未实现 (Task ID: {task.id})")
             task_mgr.update_task_status(
                 task.id, 
@@ -469,7 +469,7 @@ def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManag
 
 
 def _generic_task_processor(engine, db_directory: str, stop_event: threading.Event, processor_name: str, task_getter_func: str, sleep_duration: int = 5):
-    """通用任务处理器
+    """通用任务处理器（优化版：缩短事务持续时间）
     
     Args:
         engine: 共享的SQLAlchemy引擎实例
@@ -484,43 +484,100 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
 
     while not stop_event.is_set():
+        task_id = None
+        task_to_process = None
+
         try:
-            # 使用共享引擎创建Session，让SQLAlchemy管理连接池
-            session = Session(bind=engine)
-            try:
-                task_mgr = TaskManager(session)
-                # 动态调用指定的任务获取方法
-                task_getter = getattr(task_mgr, task_getter_func)
-                task: Task = task_getter()
-
-                if task is None:
-                    session.close()
-                    time.sleep(sleep_duration)
-                    continue
-
-                logger.info(f"{processor_name}接收任务: ID={task.id}, Name='{task.task_name}', Type='{task.task_type}', Priority={task.priority}")
-                
-                # 调用通用任务处理逻辑
-                _process_task(task, session, lancedb_mgr, task_mgr)
-                
-                # 提交事务
-                session.commit()
-                
-            except Exception as task_error:
-                logger.error(f"{processor_name}处理任务时发生错误: {task_error}", exc_info=True)
+            # --- 事务一: 获取并锁定任务 ---
+            # 这个事务非常短暂，只做一件事：获取任务并标记为处理中
+            with Session(bind=engine) as session:
                 try:
+                    task_mgr = TaskManager(session)
+                    task_getter = getattr(task_mgr, task_getter_func)
+                    locked_task: Task = task_getter()
+
+                    if locked_task:
+                        task_id = locked_task.id
+                        # 创建一个任务的非托管副本，以便在会话关闭后使用
+                        task_to_process = {
+                            "id": locked_task.id,
+                            "task_name": locked_task.task_name,
+                            "task_type": locked_task.task_type,
+                            "priority": locked_task.priority,
+                            "extra_data": locked_task.extra_data,
+                        }
+                        session.commit() # 立即提交，释放锁
+                        logger.info(f"{processor_name}已锁定任务: ID={task_id}")
+                    else:
+                        # 没有任务，直接结束本次循环
+                        pass
+                except Exception as e:
+                    logger.error(f"{processor_name}在获取任务时发生错误: {e}", exc_info=True)
                     session.rollback()
-                except Exception:
-                    pass  # 如果回滚失败，忽略错误
-            finally:
+
+            # --- 如果没有任务，则休眠并继续 ---
+            if not task_to_process:
+                time.sleep(sleep_duration)
+                continue
+
+            # --- 执行耗时操作 ---
+            # 这个阶段不持有任何数据库会话或事务
+            logger.info(f"{processor_name}开始处理任务: ID={task_id}, Name='{task_to_process['task_name']}'")
+            
+            # 创建一个临时的、只读的会话来执行任务逻辑
+            # 注意：_process_task现在需要被改造，或者在这里重新实现其逻辑
+            # 为了简化，我们假设_process_task的逻辑可以在这里重构
+            # 并且它需要的任何数据库读取都在一个新的、短暂的会话中完成
+            
+            # 模拟_process_task的逻辑
+            # 注意：这里我们不能再传递一个持久的session给_process_task
+            # _process_task内部需要的所有数据库操作都应该在自己的短暂会话中完成
+            # 为了直接修复，我们在这里创建一个新的session来传递
+            with Session(bind=engine) as processing_session:
                 try:
-                    session.close()
-                except Exception:
-                    pass  # 如果关闭失败，忽略错误
+                    task_mgr_for_processing = TaskManager(processing_session)
+                    
+                    # 从字典重建Task对象，或从数据库重新获取
+                    task_obj_for_processing = task_mgr_for_processing.get_task(task_id)
+                    if not task_obj_for_processing:
+                        raise ValueError(f"任务 {task_id} 在处理前消失")
+
+                    # 调用原始的任务处理逻辑，但现在它在一个独立的会话中运行
+                    # 这个会话仍然可能长时间运行，但它不应该持有对task表的写锁
+                    _process_task(task_obj_for_processing, processing_session, lancedb_mgr, task_mgr_for_processing)
+                    
+                    # _process_task内部不应该commit()，由这里统一管理
+                    processing_session.commit()
+                    
+                    # --- 事务三: 更新最终结果 ---
+                    # 任务成功完成
+                    with Session(bind=engine) as final_session:
+                        task_mgr_final = TaskManager(final_session)
+                        task_mgr_final.update_task_status(task_id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
+                        final_session.commit()
+                    logger.info(f"{processor_name}成功完成任务: ID={task_id}")
+
+                except Exception as task_error:
+                    logger.error(f"{processor_name}处理任务 {task_id} 时发生错误: {task_error}", exc_info=True)
+                    # --- 事务三 (失败情况): 更新最终结果 ---
+                    with Session(bind=engine) as final_session:
+                        task_mgr_final = TaskManager(final_session)
+                        task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(task_error))
+                        final_session.commit()
+                    logger.warning(f"{processor_name}任务失败: ID={task_id}")
 
         except Exception as e:
-            logger.error(f"{processor_name}发生意外错误: {e}", exc_info=True)
-            time.sleep(30)
+            logger.error(f"{processor_name}发生意外的顶层错误: {e}", exc_info=True)
+            # 如果在获取任务ID后发生未知错误，也尝试标记任务失败
+            if task_id:
+                try:
+                    with Session(bind=engine) as final_session:
+                        task_mgr_final = TaskManager(final_session)
+                        task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"处理器顶层错误: {e}")
+                        final_session.commit()
+                except Exception as final_update_error:
+                    logger.error(f"尝试标记任务 {task_id} 失败时再次出错: {final_update_error}", exc_info=True)
+            time.sleep(30) # 发生严重错误时等待更长时间
 
     logger.info(f"{processor_name}已停止")
 
