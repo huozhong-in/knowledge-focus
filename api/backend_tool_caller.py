@@ -21,7 +21,7 @@ import logging
 from typing import Any, Dict
 from bridge_events import BridgeEventSender
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class BackendToolCaller:
     """后端工具调用器 - 负责向前端发送工具调用请求并等待响应"""

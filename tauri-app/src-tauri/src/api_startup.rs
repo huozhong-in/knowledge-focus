@@ -154,6 +154,8 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             }
         };
         println!("main_py_path: {:?}", script_path);
+        
+        // 通过uv运行Python脚本
         let sidecar_command = app_handle
         .shell()
         .sidecar("uv")
@@ -166,6 +168,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             "--port", port_to_use.to_string().as_str(),
             "--db-path", db_path_to_use.as_str(),
             ]);
+        
         println!("Running command: {:?}", sidecar_command);
 
         match sidecar_command.spawn() {

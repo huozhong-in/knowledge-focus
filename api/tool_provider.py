@@ -13,10 +13,10 @@ import logging
 import importlib
 from typing import List, Dict, Any, Optional, Callable
 from sqlmodel import Session, select
-from db_mgr import ChatSession, Tool, Scenario
+from db_mgr import ChatSession, Tool, Scenario, ToolType
 from backend_tool_caller import g_backend_tool_caller
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class ToolProvider:
     """工具提供者 - 负责为不同会话和场景提供相应的工具集"""
@@ -38,28 +38,29 @@ class ToolProvider:
         """
         try:
             if session_id:
+                tools = []
                 # 获取会话信息
                 chat_session = self.session.get(ChatSession, session_id)
-                if chat_session and chat_session.scenario_id:
-                    tools = []
-                    # 获取场景的预置工具
-                    tools.extend(self._get_scenario_tools(chat_session.scenario_id))
-                    # 获取用户为此会话选择的额外工具
-                    stmt = select(ChatSession).where(
-                        ChatSession.id == session_id
-                    )
-                    selected_tool_ids = self.session.exec(stmt).first().selected_tool_ids if self.session.exec(stmt).first() else []
-                    for selected_tool_id in selected_tool_ids:
-                        tool_func = self._load_tool_function(selected_tool_id)
+                if chat_session:
+                    # 根据selected_tool_names字段加载用户选择的工具
+                    for tool_name in chat_session.selected_tool_names:
+                        tool_func = self._load_tool_function(tool_name)
                         if tool_func:
                             tools.append(tool_func)
-                    return tools
-                else:
-                    logger.warning(f"会话 {session_id} 未找到或没有场景，使用默认工具集")
-            
-            # 返回默认工具集
-            return []
-            
+                    
+                    # 获取场景的预置工具
+                    if chat_session.scenario_id:
+                        tools.extend(self._get_scenario_tools(chat_session.scenario_id))
+                        # 获取用户为此会话选择的额外工具
+                        stmt = select(ChatSession).where(
+                            ChatSession.id == session_id
+                        )
+                        selected_tool_names = self.session.exec(stmt).first().selected_tool_names if self.session.exec(stmt).first() else []
+                        for selected_tool_name in selected_tool_names:
+                            tool_func = self._load_tool_function(selected_tool_name)
+                            if tool_func:
+                                tools.append(tool_func)
+                return tools
         except Exception as e:
             logger.error(f"获取会话工具失败: {e}")
             return []
@@ -81,10 +82,10 @@ class ToolProvider:
         tools = []
         try:
             scenario = self.session.get(Scenario, scenario_id)
-            if scenario and scenario.preset_tool_ids:
-                preset_tool_ids = scenario.preset_tool_ids
-                for tool_id in preset_tool_ids:
-                    tool_func = self._load_tool_function(tool_id)
+            if scenario and scenario.preset_tool_names:
+                preset_tool_names = scenario.preset_tool_names
+                for tool_name in preset_tool_names:
+                    tool_func = self._load_tool_function(tool_name)
                     if tool_func:
                         tools.append(tool_func)
             
@@ -100,47 +101,50 @@ class ToolProvider:
         tools = []
         
         # 默认加载的工具ID列表
-        default_tool_ids = [
-            1, #"calculator_add",
-            2, #"calculator_multiply",
-            3, #"calculator_bmi",
-            # "file_search",  # 本机文件搜索工具
-            # "memory_summary",  # 上下文工程(二期)：汇总会话历史记录
+        default_tool_names = [
+            "calculator_add",
+            "calculator_multiply",
+            "calculator_bmi",
+            "file_search",  # 本机文件搜索工具
+            "memory_summary",  # 上下文工程(二期)：汇总会话历史记录
         ]
         
-        for tool_id in default_tool_ids:
-            tool_func = self._load_tool_function(tool_id)
+        for tool_name in default_tool_names:
+            tool_func = self._load_tool_function(tool_name)
             if tool_func:
                 tools.append(tool_func)
         
         logger.info(f"加载了 {len(tools)} 个默认工具")
         return tools
     
-    def _load_tool_function(self, tool_id: str) -> Optional[Callable]:
+    def _load_tool_function(self, tool_name: str) -> Optional[Callable]:
         """根据工具ID动态加载工具函数"""
         try:
             # 从数据库获取工具信息
             tool = self.session.exec(
-                select(Tool).where(Tool.id == tool_id)
+                select(Tool).where(Tool.name == tool_name)
             ).first()
             
             if not tool:
-                logger.warning(f"工具 {tool_id} 在数据库中未找到")
+                logger.warning(f"工具 {tool_name} 在数据库中未找到")
                 return None
             
             # 根据工具类型加载函数
-            if tool.tool_type == "channel":
+            if tool.tool_type == ToolType.CHANNEL:
                 # 工具通道类型 - 包装为异步调用前端的函数
                 return self._create_channel_tool_wrapper(tool)
-            elif tool.tool_type == "direct":
+            elif tool.tool_type == ToolType.DIRECT:
                 # 直接调用类型 - 动态导入Python函数
                 return self._import_direct_tool(tool)
+            elif tool.tool_type == ToolType.MCP:
+                # MCP类型 - 返回调用器
+                return self.get_mcp_tool_caller(tool)
             else:
                 logger.warning(f"不支持的工具类型: {tool.tool_type}")
                 return None
                 
         except Exception as e:
-            logger.error(f"加载工具 {tool_id} 失败: {e}")
+            logger.error(f"加载工具 {tool_name} 失败: {e}")
             return None
     
     def _create_channel_tool_wrapper(self, tool: Tool) -> Callable:
@@ -267,7 +271,6 @@ class ToolProvider:
             if 'model_path' in metadata:
                 module_name, function_name = metadata['model_path'].split(':')
             else:
-                # TODO 考虑怎么支持MCP
                 return None
             
             # 动态导入模块
@@ -289,33 +292,6 @@ class ToolProvider:
             logger.error(f"导入工具函数失败 {tool.module_path}: {e}")
             return None
     
-    # def get_tool_categories(self) -> Dict[str, List[Dict[str, Any]]]:
-    #     """获取工具分类信息 - 用于前端UI展示"""
-    #     try:
-    #         # 获取所有工具
-    #         stmt = select(Tool)
-    #         tools = self.session.exec(stmt).all()
-            
-    #         categories = {}
-    #         for tool in tools:
-    #             category = tool.category or "未分类"
-    #             if category not in categories:
-    #                 categories[category] = []
-                
-    #             categories[category].append({
-    #                 "id": tool.id,
-    #                 "name": tool.name,
-    #                 "description": tool.description,
-    #                 "tool_type": tool.tool_type,
-    #                 "is_preset": tool.is_preset
-    #             })
-            
-    #         return categories
-            
-    #     except Exception as e:
-    #         logger.error(f"获取工具分类失败: {e}")
-    #         return {}
-    
     def get_available_scenarios(self) -> List[Dict[str, Any]]:
         """获取可用场景列表"""
         try:
@@ -327,7 +303,7 @@ class ToolProvider:
                     "id": scenario.id,
                     "name": scenario.name,
                     "description": scenario.description,
-                    "preset_tool_count": len(scenario.preset_tool_ids) if scenario.preset_tool_ids else 0
+                    "preset_tool_count": len(scenario.preset_tool_names) if scenario.preset_tool_names else 0
                 }
                 for scenario in scenarios
             ]
@@ -335,6 +311,64 @@ class ToolProvider:
         except Exception as e:
             logger.error(f"获取场景列表失败: {e}")
             return []
+    
+    def get_mcp_tool_api_key(self, tool_name: str) -> str:
+        """获取MCP类型工具的api_key"""
+        try:
+            stmt = select(Tool).where(Tool.name == tool_name, Tool.tool_type == ToolType.MCP)
+            tool = self.session.exec(stmt).first()
+            if tool and tool.metadata_json and 'api_key' in tool.metadata_json:
+                return tool.metadata_json['api_key']  # 初始化是空字符串
+            else:
+                # 如果忘记初始化也返回空字符串
+                logger.warning(f"MCP工具 {tool_name} 未配置api_key")
+                return ""
+        except Exception as e:
+            logger.error(f"获取MCP工具api_key失败 {tool_name}: {e}")
+            return ""
+    
+    def set_mcp_tool_api_key(self, tool_name: str, api_key: str) -> bool:
+        """设置MCP类型工具的api_key"""
+        try:
+            stmt = select(Tool).where(Tool.name == tool_name)
+            tool = self.session.exec(stmt).first()
+            if tool:
+                tool.metadata_json['api_key'] = api_key
+                self.session.add(tool)
+                self.session.commit()
+                logger.info(f"设置MCP工具 {tool_name} 的api_key成功")
+                return True
+            else:
+                logger.warning(f"MCP工具 {tool_name} 未找到")
+                return False
+        except Exception as e:
+            logger.error(f"设置MCP工具api_key失败 {tool_name}: {e}")
+            return False
+    
+    def get_mcp_tool_caller(self, tool: Tool) -> Optional[Callable]:
+        """获取MCP类型工具的调用器"""
+        
+        # 准备MCP类型的工具调用器，注意对于非remote server的情况，需要本地先启动mcp server
+        
+        metadata = tool.metadata_json
+        if 'model_path' in metadata:
+            module_name, function_name = metadata['model_path'].split(':')
+        else:
+            return None
+        
+        # 动态导入模块
+        module = importlib.import_module(module_name)
+        
+        # 获取函数
+        if hasattr(module, function_name):
+            func = getattr(module, function_name)
+            if callable(func):
+                return func
+            else:
+                logger.warning(f"{module_name}.{function_name} 不是可调用对象")
+        else:
+            logger.warning(f"模块 {module_name} 中未找到函数 {function_name}")
+        
 
 # 测试代码
 if __name__ == "__main__":

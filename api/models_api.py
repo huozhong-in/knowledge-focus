@@ -13,7 +13,7 @@ from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()

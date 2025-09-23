@@ -13,7 +13,7 @@ from sqlmodel import (
 )
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class TaskManager:
     """任务管理器，负责任务的添加、获取、更新等操作"""

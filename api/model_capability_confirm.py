@@ -13,7 +13,7 @@ from pydantic_ai import Agent, BinaryContent, RunContext
 from model_config_mgr import ModelConfigMgr, ModelUseInterface
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class ModelCapabilityConfirm:
     """每种能力都需要一段测试程序来确认模型是否具备"""

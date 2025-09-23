@@ -16,6 +16,10 @@ export interface ChatSession {
     message_count: number
     pinned_file_count: number
   }
+  // 前端恢复工具勾选：会话选择的工具名列表
+  selected_tools?: string[]
+  // 前端对话框预填：工具配置（目前仅用到 Tavily）
+  tool_configs?: Record<string, { has_api_key: boolean; api_key?: string }>
 }
 
 export interface ChatMessage {
@@ -168,6 +172,54 @@ export async function getSession(sessionId: number): Promise<ChatSession> {
   }
 
   return result.data
+}
+
+// ==================== 工具管理 ====================
+
+export async function changeSessionTools(
+  sessionId: number,
+  addTools?: string[],
+  removeTools?: string[],
+): Promise<boolean> {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/tools`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      add_tools: addTools || [],
+      remove_tools: removeTools || [],
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to change session tools: ${response.statusText}`)
+  }
+
+  const result: ApiResponse<{ success: boolean }> = await response.json()
+  if (!result.success) {
+    throw new Error(result.message || 'Failed to change session tools')
+  }
+  return true
+}
+
+// export async function getMcpToolApiKey(toolName: string): Promise<string> {
+//   const url = `${API_BASE_URL}/tools/mcp/get_api_key?tool_name=${encodeURIComponent(toolName)}`
+//   const response = await fetch(url)
+//   if (!response.ok) {
+//     return ''
+//   }
+//   const json = await response.json()
+//   if (json?.success && typeof json?.api_key === 'string') {
+//     return json.api_key as string
+//   }
+//   return ''
+// }
+
+export async function setMcpToolApiKey(toolName: string, apiKey: string): Promise<boolean> {
+  const url = `${API_BASE_URL}/tools/mcp/set_api_key?tool_name=${encodeURIComponent(toolName)}&api_key=${encodeURIComponent(apiKey)}`
+  const response = await fetch(url, { method: 'POST' })
+  if (!response.ok) return false
+  const json = await response.json()
+  return !!json?.success
 }
 
 export async function updateSession(

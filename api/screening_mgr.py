@@ -7,7 +7,7 @@ import logging
 import os
 import time
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class ScreeningManager:
     """文件粗筛结果管理类，提供增删改查方法"""
@@ -134,6 +134,8 @@ class ScreeningManager:
         elif failed_count > 0 : # If only failures, still good to rollback any session changes
              self.session.rollback()
         
+        self.session.close()
+
         return {
             "success": success_count,
             "failed": failed_count,

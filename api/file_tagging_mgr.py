@@ -17,7 +17,7 @@ import time
 from bridge_events import BridgeEventSender
 
 # 为当前模块创建日志器
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def configure_parsing_warnings():
     """
@@ -256,7 +256,7 @@ if __name__ == "__main__":
         file_handler.setFormatter(formatter)
         
         # 为当前模块的日志器添加文件处理器
-        test_logger = logging.getLogger(__name__)
+        test_logger = logging.getLogger()
         test_logger.addHandler(file_handler)
         
         # 配置第三方库的日志级别，减少噪音

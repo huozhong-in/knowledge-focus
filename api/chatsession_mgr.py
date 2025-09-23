@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from sqlmodel import Session, select, desc, and_
 from db_mgr import ChatSession, ChatMessage, ChatSessionPinFile
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 class ChatSessionMgr:
@@ -202,6 +202,43 @@ class ChatSessionMgr:
         self.session.refresh(session_obj)
         
         return session_obj
+    
+    # 给定会话增加和减少工具
+    def change_session_tools(
+            self,
+            session_id: int,
+            add_tools: List[str] = None,
+            remove_tools: List[str] = None
+    ) -> bool:
+        """
+        增加或减少会话可用的工具
+        
+        Args:
+            session_id: 会话ID
+            add_tools: 需要添加的工具ID列表
+            remove_tools: 需要移除的工具ID列表
+            
+        Returns:
+            是否操作成功
+        """
+        session_obj = self.session.get(ChatSession, session_id)
+        if not session_obj:
+            return False
+        
+        current_tools = set(session_obj.selected_tool_names or [])
+        
+        if add_tools:
+            current_tools.update(add_tools)
+        if remove_tools:
+            current_tools.difference_update(remove_tools)
+        
+        session_obj.selected_tool_names = list(current_tools)
+        session_obj.updated_at = datetime.now()
+        
+        self.session.add(session_obj)
+        self.session.commit()
+        
+        return True
 
     # ==================== 消息管理 ====================
     

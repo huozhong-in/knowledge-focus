@@ -17,7 +17,7 @@ from db_mgr import ChatMessage
 from pydantic_ai import Tool, format_as_xml
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class MemoryMgr:
     """记忆管理器"""

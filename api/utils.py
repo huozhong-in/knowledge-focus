@@ -6,11 +6,10 @@ import logging
 import os
 import time
 import signal
-import sys
 import tiktoken
 
 # 为当前模块创建专门的日志器（最佳实践）
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 def kill_process_on_port(port):
@@ -166,11 +165,16 @@ def kill_orphaned_processes(process_name, function_name=None):
         function_name: 可选参数，进程中可能包含的函数名 (例如: "task_processor")
     """
     try:
-        logger.info(f"查找可能的孤立 {process_name} 进程...")
+        logger.info(f"查找可能的孤立 {process_name} 进程（函数: {function_name}）...")
         count = 0
+        current_pid = os.getpid()
         
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'ppid']):
             try:
+                # 跳过当前进程
+                if proc.info['pid'] == current_pid:
+                    continue
+                    
                 # 检查进程名
                 if process_name.lower() in proc.info['name'].lower():
                     # 如果指定了函数名，检查命令行参数
@@ -178,18 +182,38 @@ def kill_orphaned_processes(process_name, function_name=None):
                         proc.info['cmdline'] and 
                         any(function_name in cmd for cmd in proc.info['cmdline'] if cmd)
                     ):
-                        logger.info(f"发现可能的孤立进程: {proc.info['pid']} {' '.join(proc.info['cmdline'] if proc.info['cmdline'] else [])}")
+                        # 额外安全检查：确保不是系统关键进程
+                        cmdline_str = ' '.join(proc.info['cmdline'] if proc.info['cmdline'] else [])
                         
-                        # 终止该进程
-                        try:
-                            proc.terminate()
-                            count += 1
-                        except psutil.NoSuchProcess:
+                        # 检查是否包含我们的应用特征（更安全的匹配）
+                        if any(pattern in cmdline_str for pattern in [
+                            'task_processor', 
+                            'high_priority_task_processor',
+                            'knowledge-focus',
+                            'main.py --host 127.0.0.1'
+                        ]):
+                            logger.info(f"发现可能的孤立进程: PID={proc.info['pid']}, PPID={proc.info['ppid']}, CMD={cmdline_str}")
+                            
+                            # 先尝试优雅终止，等待2秒
                             try:
-                                proc.kill()
+                                proc.terminate()
+                                proc.wait(timeout=2)
                                 count += 1
-                            except Exception as e:
-                                logger.error(f"无法终止进程 {proc.info['pid']}: {str(e)}")
+                                logger.info(f"优雅终止进程 {proc.info['pid']} 成功")
+                            except psutil.TimeoutExpired:
+                                # 如果优雅终止超时，强制终止
+                                try:
+                                    proc.kill()
+                                    count += 1
+                                    logger.info(f"强制终止进程 {proc.info['pid']} 成功")
+                                except Exception as kill_err:
+                                    logger.error(f"无法强制终止进程 {proc.info['pid']}: {str(kill_err)}")
+                            except psutil.NoSuchProcess:
+                                # 进程已经不存在
+                                count += 1
+                            except Exception as term_err:
+                                logger.error(f"无法终止进程 {proc.info['pid']}: {str(term_err)}")
+                        
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
         
@@ -199,27 +223,33 @@ def kill_orphaned_processes(process_name, function_name=None):
             logger.info(f"未发现孤立的 {process_name} 进程")
             
     except Exception as e:
-        logger.error(f"查找孤立进程时出错: {str(e)}")
+        logger.error(f"查找孤立进程时出错: {str(e)}", exc_info=True)
 
 def monitor_parent():
     """Monitor the parent process and exit if it's gone"""
     parent_pid = os.getppid()
-    print(f"Parent PID: {parent_pid}")
+    logger.info(f"开始监控父进程 PID: {parent_pid}")
     
     while True:
         try:
             # Check if parent process still exists
             parent = psutil.Process(parent_pid)
             if not parent.is_running():
-                print("Parent process terminated, shutting down...")
+                logger.info(f"父进程 {parent_pid} 已终止，开始优雅关闭...")
+                # 使用 SIGTERM 信号优雅关闭，让 lifespan 的 finally 块执行清理
                 os.kill(os.getpid(), signal.SIGTERM)
-                sys.exit(0)
+                break
         except psutil.NoSuchProcess:
-            print("Parent process no longer exists, shutting down...")
+            logger.info(f"父进程 {parent_pid} 不存在，开始优雅关闭...")
+            # 使用 SIGTERM 信号优雅关闭，让 lifespan 的 finally 块执行清理
             os.kill(os.getpid(), signal.SIGTERM)
-            sys.exit(0)
+            break
+        except Exception as e:
+            logger.error(f"监控父进程时发生错误: {e}")
         
-        time.sleep(2)
+        time.sleep(5)  # 降低监控频率到5秒，减少资源消耗
+    
+    logger.info("父进程监控线程已退出")
 
 # copy & paste from https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
 def num_tokens_from_string(string: str, encoding_name: str = "o200k_base") -> int:

@@ -4,6 +4,7 @@ import argparse
 import logging
 import time
 import threading
+import signal
 from datetime import datetime
 from typing import Dict, Any
 from pathlib import Path
@@ -32,7 +33,7 @@ from task_mgr import TaskManager
 # API路由导入将在lifespan函数中进行
 
 # # 初始化logger
-# logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # --- SQLite WAL Mode Setup ---
 def setup_sqlite_wal_mode(engine):
@@ -41,43 +42,32 @@ def setup_sqlite_wal_mode(engine):
     def set_sqlite_pragma(dbapi_connection, connection_record):
         """设置SQLite优化参数和WAL模式"""
         cursor = dbapi_connection.cursor()
-        
         # 启用WAL模式（Write-Ahead Logging）
         # WAL模式允许读写操作并发执行，显著减少锁定冲突
         cursor.execute("PRAGMA journal_mode=WAL")
-        
         # 设置同步模式为NORMAL，在WAL模式下提供良好的性能和安全性平衡
         cursor.execute("PRAGMA synchronous=NORMAL")
-        
         # 设置缓存大小（负数表示KB，这里设置为64MB）
         cursor.execute("PRAGMA cache_size=-65536")
-        
         # 启用外键约束
         cursor.execute("PRAGMA foreign_keys=ON")
-        
         # 设置临时存储为内存模式
         cursor.execute("PRAGMA temp_store=MEMORY")
-        
         # 设置WAL自动检查点阈值（页面数）
         cursor.execute("PRAGMA wal_autocheckpoint=1000")
-        
         cursor.close()
 
 def create_optimized_sqlite_engine(sqlite_url, **kwargs):
     """创建优化的SQLite引擎，自动配置WAL模式"""
     default_connect_args = {"check_same_thread": False, "timeout": 30}
-    
     # 合并用户提供的connect_args
     if "connect_args" in kwargs:
         default_connect_args.update(kwargs["connect_args"])
     kwargs["connect_args"] = default_connect_args
-    
     # 创建引擎
     engine = create_engine(sqlite_url, echo=False, **kwargs)
-    
     # 设置WAL模式
     setup_sqlite_wal_mode(engine)
-    
     return engine
 
 # --- Centralized Logging Setup ---
@@ -91,36 +81,54 @@ def setup_logging(logging_dir: str):
     
     try:
         # Determine log directory
-        log_dir = Path(logging_dir)
+        log_dir = Path(logging_dir) / 'logs'
+        # 确保日志目录存在
+        log_dir.mkdir(parents=True, exist_ok=True)
+        
         log_filename = f'api_{time.strftime("%Y%m%d")}.log'
         log_filepath = log_dir / log_filename
-
-        # Get the root logger and configure it
-        root_logger = logging.getLogger(__name__)
+        
+        # 获取根日志器
+        root_logger = logging.getLogger()
+        
+        # 清除可能存在的默认handlers，避免重复
+        if root_logger.handlers:
+            root_logger.handlers.clear()
+            
+        # 设置日志级别
         root_logger.setLevel(logging.INFO)
+        
+        # 创建formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        
+        # Console handler - 输出到控制台
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(formatter)
+        root_logger.addHandler(console_handler)
 
-        # Avoid adding duplicate handlers
-        if not root_logger.handlers:
-            # Console handler
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            console_handler.setFormatter(console_formatter)
-            root_logger.addHandler(console_handler)
-
-            # File handler
-            file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
-            file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            file_handler.setFormatter(file_formatter)
-            root_logger.addHandler(file_handler)
+        # File handler - 输出到文件
+        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+        
+        # 防止日志传播到父logger，避免重复输出
+        root_logger.propagate = False
+        
+        print(f"日志配置成功: 文件路径 {log_filepath}")
 
     except Exception as e:
-        # Fallback to basic config if setup fails
-        logging.basicConfig(level=logging.INFO)
-        logging.error(f"Error setting up custom logging: {e}", exc_info=True)
+        print(f"Failed to set up logging: {e}", file=sys.stderr)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理器"""
+    # 重新配置logging以确保uvicorn启动后仍然有效
+    if hasattr(app.state, "db_path"):
+        db_directory = os.path.dirname(app.state.db_path)
+        setup_logging(logging_dir=db_directory)
+    
     # 在应用启动时执行初始化操作
     logger.info("应用正在启动...")
     
@@ -128,7 +136,7 @@ async def lifespan(app: FastAPI):
         logger.info(f"调试信息: Python版本 {sys.version}")
         logger.info(f"调试信息: 当前工作目录 {os.getcwd()}")
         
-        # 初始化数据库引擋
+        # 初始化数据库引擎
         if hasattr(app.state, "db_path"):
             sqlite_url = f"sqlite:///{app.state.db_path}"
             logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
@@ -203,6 +211,9 @@ async def lifespan(app: FastAPI):
         try:
             logger.info("清理可能存在的孤立子进程...")
             kill_orphaned_processes("python", "task_processor")
+            kill_orphaned_processes("Python", "task_processor")
+            kill_orphaned_processes("python", "high_priority_task_processor")
+            kill_orphaned_processes("Python", "high_priority_task_processor")
         except Exception as proc_err:
             logger.error(f"清理孤立进程失败: {str(proc_err)}", exc_info=True)
         
@@ -301,6 +312,7 @@ async def lifespan(app: FastAPI):
         # 正式开始服务
         logger.info("应用初始化完成，开始提供服务...")
         yield
+
     except Exception as e:
         logger.critical(f"应用启动过程中发生严重错误: {str(e)}", exc_info=True)
         # 确保异常传播，这样FastAPI会知道启动失败
@@ -332,6 +344,16 @@ async def lifespan(app: FastAPI):
                     logger.info("高优先级任务处理线程已停止")
         except Exception as e:
             logger.error(f"停止高优先级任务处理线程失败: {e}", exc_info=True)
+        
+        # 清理可能残留的子进程
+        try:
+            logger.info("清理可能残留的子进程...")
+            kill_orphaned_processes("python", "task_processor")
+            kill_orphaned_processes("Python", "task_processor")
+            kill_orphaned_processes("python", "high_priority_task_processor")
+            kill_orphaned_processes("Python", "high_priority_task_processor")
+        except Exception as cleanup_err:
+            logger.error(f"清理残留进程失败: {str(cleanup_err)}", exc_info=True)
         
         # 在应用关闭时执行清理操作
         try:
@@ -365,6 +387,9 @@ def get_session():
         # 确保数据库引擎已初始化
         raise RuntimeError("数据库引擎未初始化")
     
+    if hasattr(app.state.engine, "pool"):
+        logger.debug(f"数据库连接池状态: {app.state.engine.pool.status()}")
+
     with Session(app.state.engine) as session:
         yield session
 
@@ -703,7 +728,12 @@ def get_task_status(task_id: int, task_mgr: TaskManager = Depends(get_task_manag
 @app.get("/")
 def read_root():
     # 现在可以在任何路由中使用 app.state.db_path
-    return {"Hello": "World", "db_path": app.state.db_path}
+    return {
+        "Success": True,
+        "message": "API服务运行中",
+        "db_path": app.state.db_path,
+        "db_pool_status": str(app.state.engine.pool.status()) if hasattr(app.state, "engine") and app.state.engine else "N/A"
+        }
 
 # 添加健康检查端点
 @app.get("/health")
@@ -872,6 +902,8 @@ async def pin_file(
             extra_data={"file_path": file_path}
         )
         
+        # 确保task对象绑定到当前Session，避免DetachedInstanceError
+        task = session.merge(task)
         logger.info(f"成功创建Pin文件的多模态向量化任务: {file_path} (Task ID: {task.id})")
         
         return {
@@ -896,58 +928,61 @@ def test_bridge_stdout():
     return {"status": "ok"}
 
 
+def signal_handler(signum, frame):
+    """信号处理器，用于优雅关闭"""
+    print(f"接收到信号 {signum}，开始优雅关闭...")
+    # 清理可能残留的子进程
+    try:
+        kill_orphaned_processes("python", "task_processor")
+        kill_orphaned_processes("Python", "task_processor")
+        kill_orphaned_processes("python", "high_priority_task_processor")
+        kill_orphaned_processes("Python", "high_priority_task_processor")
+    except Exception as e:
+        print(f"信号处理器清理进程失败: {e}")
+    sys.exit(0)
+
 if __name__ == "__main__":
     try:
+        # 注册信号处理器
+        signal.signal(signal.SIGTERM, signal_handler)
+        signal.signal(signal.SIGINT, signal_handler)
+        
         parser = argparse.ArgumentParser()
         parser.add_argument("--port", type=int, default=60315, help="API服务监听端口")
         parser.add_argument("--host", type=str, default="127.0.0.1", help="API服务监听地址")
         parser.add_argument("--db-path", type=str, default="knowledge-focus.db", help="数据库文件路径")
         args = parser.parse_args()
 
-        # 设置日志目录
-        db_dir = os.path.dirname(os.path.abspath(args.db_path))
-        logging_dir = os.path.join(db_dir, "logs")
-        if not os.path.exists(logging_dir):
-            os.makedirs(logging_dir, exist_ok=True)
-        logger = logging.getLogger(__name__)
-        log_dir = Path(logging_dir)
-        log_filename = f'api_{time.strftime("%Y%m%d")}.log'
-        log_filepath = log_dir / log_filename
-        # Get the root logger and configure it
-        logger.setLevel(logging.INFO)
-        # Console handler
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        console_handler.setFormatter(console_formatter)
-        logger.addHandler(console_handler)
-        # File handler
-        file_handler = logging.FileHandler(log_filepath, encoding='utf-8')
-        file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-        logger.info("API服务程序启动")
-        logger.info(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
+        print("API服务程序启动")
+        print(f"命令行参数: port={args.port}, host={args.host}, db_path={args.db_path}")
 
         # 检查端口是否被占用，如果被占用则终止占用进程
         try:
-            logger.info(f"检查端口 {args.port} 是否被占用...")
+            print(f"检查端口 {args.port} 是否被占用...")
             kill_process_on_port(args.port)
             time.sleep(2)  # 等待端口释放
-            logger.info(f"端口 {args.port} 已释放或本来就没被占用")
+            print(f"端口 {args.port} 已释放或本来就没被占用")
         except Exception as e:
-            logger.error(f"释放端口 {args.port} 失败: {str(e)}", exc_info=True)
+            print(f"释放端口 {args.port} 失败: {str(e)}")
             # 继续执行，端口可能本来就没有被占用
         
         # 设置数据库路径
         app.state.db_path = args.db_path
-        logger.info(f"设置数据库路径: {args.db_path}")
-        
+        print(f"设置数据库路径: {args.db_path}")
         # 启动服务器
-        logger.info(f"API服务启动在: http://{args.host}:{args.port}")
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+        print(f"API服务启动在: http://{args.host}:{args.port}")
+        # 配置uvicorn日志，防止覆盖我们的日志配置
+        uvicorn.run(
+            app, 
+            host=args.host, 
+            port=args.port, 
+            log_level="info",
+            access_log=False,  # 禁用uvicorn的访问日志，使用我们自己的
+            use_colors=False   # 禁用颜色输出，保持日志文件的整洁
+        )
     
     except Exception as e:
-        logger.critical(f"API服务启动失败: {str(e)}", exc_info=True)
+        print(f"API服务启动失败: {str(e)}")
 
         # 返回退出码2，表示发生错误
         sys.exit(2)

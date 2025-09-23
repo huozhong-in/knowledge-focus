@@ -32,22 +32,177 @@ struct ApiProcessManager {
     api_state: Arc<Mutex<ApiProcessState>>,
 }
 
-// 实现 Drop trait，在应用退出时自动终止 API 进程
-impl Drop for ApiProcessManager {
-    fn drop(&mut self) {
-        println!("应用程序退出，ApiProcessManager.drop() 被调用");
+impl ApiProcessManager {
+    /// 实例清理方法，执行完整的清理逻辑
+    pub fn cleanup(&self) {
+        println!("执行ApiProcessManager完整清理");
+        eprintln!("执行ApiProcessManager完整清理"); // 同时输出到 stderr
+        
         // 尝试获取并终止 API 进程
         if let Ok(mut api_state) = self.api_state.lock() {
             if let Some(child) = api_state.process_child.take() {
-                println!("通过 Drop trait 自动终止 Python API 进程");
-                let _ = child.kill();
-                println!("Python API 进程已终止");
+                println!("通过实例方法终止 uv 和 Python API 进程树");
+                
+                // 由于使用 uv 启动，需要终止整个进程树
+                // 先尝试获取进程ID用于进程树清理
+                let child_pid = child.pid();
+                println!("uv 进程 PID: {}", child_pid);
+                
+                // 尝试终止 uv 进程（这会终止直接子进程，但不一定终止孙进程）
+                match child.kill() {
+                    Ok(_) => {
+                        println!("发送终止信号到 uv 进程成功");
+                        
+                        // 等待短暂时间让进程响应信号
+                        std::thread::sleep(std::time::Duration::from_millis(1000));
+                    }
+                    Err(e) => {
+                        eprintln!("终止 uv 进程失败: {}", e);
+                    }
+                }
+                
+                // // 在Unix系统上，强制清理整个进程树和相关进程
+                // #[cfg(unix)]
+                // {
+                //     println!("开始清理 uv 和 Python 进程树");
+                    
+                //     // 1. 首先尝试通过进程组终止（如果 uv 创建了进程组）
+                //     println!("尝试终止进程组...");
+                //     let _ = std::process::Command::new("pkill")
+                //         .args(["-g", &child_pid.to_string()])
+                //         .status();
+                    
+                //     // 2. 使用 pgrep 找到所有 uv 相关的子进程并终止
+                //     println!("查找并终止 uv 的所有子进程...");
+                //     if let Ok(output) = std::process::Command::new("pgrep")
+                //         .args(["-P", &child_pid.to_string()])
+                //         .output() {
+                //         let children_pids = String::from_utf8_lossy(&output.stdout);
+                //         for pid_str in children_pids.lines() {
+                //             if let Ok(pid) = pid_str.parse::<u32>() {
+                //                 println!("终止子进程 PID: {}", pid);
+                //                 let _ = std::process::Command::new("kill")
+                //                     .args(["-TERM", &pid.to_string()])
+                //                     .status();
+                //             }
+                //         }
+                //     }
+                    
+                //     // 3. 等待一下后强制终止
+                //     std::thread::sleep(std::time::Duration::from_millis(500));
+                    
+                //     // 4. 使用精确的进程命令行匹配来清理 Python 进程
+                //     println!("使用命令行匹配清理 Python 进程...");
+                //     let cleanup_patterns = [
+                //         "main.py --host 127.0.0.1 --port 60315",
+                //         "/api/main.py",
+                //         "knowledge-focus.db",
+                //     ];
+                    
+                //     for pattern in &cleanup_patterns {
+                //         println!("清理匹配模式: {}", pattern);
+                //         // 先发送 SIGTERM
+                //         let _ = std::process::Command::new("pkill")
+                //             .args(["-f", pattern])
+                //             .status();
+                //     }
+                    
+                //     // 5. 等待后强制终止
+                //     std::thread::sleep(std::time::Duration::from_millis(1000));
+                //     for pattern in &cleanup_patterns {
+                //         let _ = std::process::Command::new("pkill")
+                //             .args(["-9", "-f", pattern])
+                //             .status();
+                //     }
+                    
+                //     // 6. 最后清理 uv 进程本身（以防还在运行）
+                //     println!("最终清理 uv 进程: {}", child_pid);
+                //     let _ = std::process::Command::new("kill")
+                //         .args(["-9", &child_pid.to_string()])
+                //         .status();
+                    
+                //     println!("进程树清理完成");
+                // }
+                
+                println!("API 进程树终止完成");
             } else {
-                println!("没有需要终止的 Python API 进程");
+                println!("没有需要终止的 API 进程");
             }
         } else {
             eprintln!("无法获取 API 状态互斥锁");
         }
+        
+        // 执行静态清理作为后备
+        Self::cleanup_processes_static();
+    }
+    
+    /// 静态清理方法，可以在任何地方调用（后备清理）
+    pub fn cleanup_processes() {
+        Self::cleanup_processes_static();
+    }
+    
+    /// 静态清理的实际实现
+    fn cleanup_processes_static() {
+        println!("执行静态进程清理");
+        eprintln!("执行静态进程清理"); // 同时输出到 stderr
+        
+        // 在Unix系统上，强制清理所有相关的进程
+        #[cfg(unix)]
+        {
+            println!("开始强制清理所有相关的 uv 和 Python 进程");
+            
+            // 使用多种模式确保清理干净，包括 uv 进程
+            let cleanup_patterns = [
+                "uv run --directory",
+                "main.py --host 127.0.0.1 --port 60315",
+                "/api/main.py",
+                "knowledge-focus.db",
+            ];
+            
+            for pattern in &cleanup_patterns {
+                println!("清理模式: {}", pattern);
+                eprintln!("清理模式: {}", pattern);
+                
+                // 先发送SIGTERM
+                match std::process::Command::new("pkill")
+                    .args(["-f", pattern])
+                    .status() {
+                    Ok(status) => {
+                        println!("SIGTERM 发送结果: {:?}", status);
+                    }
+                    Err(e) => {
+                        println!("SIGTERM 发送失败: {}", e);
+                    }
+                }
+                    
+                // 等待一秒后发送SIGKILL
+                std::thread::sleep(std::time::Duration::from_millis(1000));
+                match std::process::Command::new("pkill")
+                    .args(["-9", "-f", pattern])
+                    .status() {
+                    Ok(status) => {
+                        println!("SIGKILL 发送结果: {:?}", status);
+                    }
+                    Err(e) => {
+                        println!("SIGKILL 发送失败: {}", e);
+                    }
+                }
+            }
+            
+            println!("静态进程清理完成");
+            eprintln!("静态进程清理完成");
+        }
+    }
+}
+
+// 实现 Drop trait，在应用退出时自动终止 API 进程
+impl Drop for ApiProcessManager {
+    fn drop(&mut self) {
+        println!("应用程序退出，ApiProcessManager.drop() 被调用");
+        eprintln!("应用程序退出，ApiProcessManager.drop() 被调用"); // 同时输出到 stderr
+        
+        // 调用实例清理方法
+        self.cleanup();
     }
 }
 
@@ -504,6 +659,14 @@ pub fn run() {
             app_handle.manage(api_manager);
             println!("已注册 ApiProcessManager，将在应用退出时自动清理 API 进程");
             
+            // 注册全局 panic hook 用于清理
+            let prev_hook = std::panic::take_hook();
+            std::panic::set_hook(Box::new(move |panic_info| {
+                println!("Panic detected, executing cleanup: {:?}", panic_info);
+                ApiProcessManager::cleanup_processes();
+                prev_hook(panic_info);
+            }));
+            
             // Start the Python API service automatically
             let db_path_str = app_handle
                 .path()
@@ -810,6 +973,18 @@ pub fn run() {
                     "quit" => {
                         println!("退出菜单项被点击");
                         
+                        // 在退出前执行完整清理
+                        println!("执行完整进程清理");
+                        
+                        // 尝试获取ApiProcessManager并执行完整清理
+                        if let Some(api_manager) = app.try_state::<ApiProcessManager>() {
+                            api_manager.cleanup();
+                            println!("通过ApiProcessManager实例执行了完整清理");
+                        } else {
+                            println!("无法获取ApiProcessManager，使用静态清理");
+                            ApiProcessManager::cleanup_processes();
+                        }
+                        
                         // 终止所有资源并退出应用
                         app.exit(0);
                     }
@@ -887,9 +1062,21 @@ pub fn run() {
                 // 获取窗口的标牌，区分是哪个窗口被销毁
                 let window_label = window.label();
                 
-                // 我们不再需要在这里手动终止 API 进程，因为 ApiProcessManager 的 Drop 实现会在应用退出时自动处理
-                // 只记录窗口被销毁的事件
                 println!("窗口被销毁: {}", window_label);
+                
+                // 如果是主窗口被销毁，执行清理
+                if window_label == "main" {
+                    println!("主窗口被销毁，执行完整进程清理");
+                    
+                    // 尝试获取ApiProcessManager并执行完整清理
+                    if let Some(api_manager) = window.app_handle().try_state::<ApiProcessManager>() {
+                        api_manager.cleanup();
+                        println!("通过ApiProcessManager实例执行了完整清理");
+                    } else {
+                        println!("无法获取ApiProcessManager，使用静态清理");
+                        ApiProcessManager::cleanup_processes();
+                    }
+                }
             }
             WindowEvent::CloseRequested { api, .. } => {
                 // 获取窗口的标牌，用于区分不同窗口
@@ -925,6 +1112,51 @@ pub fn run() {
             }
             _ => {}
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            // 获取事件名称用于调试
+            let event_name = match &event {
+                tauri::RunEvent::ExitRequested { .. } => "ExitRequested",
+                tauri::RunEvent::Exit => "Exit",
+                tauri::RunEvent::WindowEvent { event, .. } => match event {
+                    tauri::WindowEvent::CloseRequested { .. } => "WindowEvent::CloseRequested",
+                    tauri::WindowEvent::Destroyed => "WindowEvent::Destroyed",
+                    _ => "WindowEvent::Other",
+                },
+                _ => "Other",
+            };
+            
+            // 只在重要事件时打印，减少输出噪音
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                println!("=== 收到重要运行事件: {} ===", event_name);
+            }
+            
+            match event {
+                tauri::RunEvent::ExitRequested { .. } => {
+                    // 应用退出请求时终止API进程
+                    println!("ExitRequested 事件：开始清理API进程");
+                    
+                    // 尝试获取ApiProcessManager并执行完整清理
+                    if let Some(api_manager) = app_handle.try_state::<ApiProcessManager>() {
+                        api_manager.cleanup();
+                        println!("通过ApiProcessManager实例执行了完整清理");
+                    } else {
+                        println!("无法获取ApiProcessManager，使用静态清理");
+                        ApiProcessManager::cleanup_processes();
+                    }
+                    
+                    println!("ExitRequested 事件：资源清理完毕");
+                }
+                tauri::RunEvent::Exit => {
+                    // 应用最终退出时的备用清理
+                    println!("Exit 事件：进行备用API进程清理");
+                    ApiProcessManager::cleanup_processes();
+                    println!("Exit 事件：备用清理完毕");
+                }
+                _ => {
+                    // 其他事件不做处理
+                }
+            }
+        });
 }

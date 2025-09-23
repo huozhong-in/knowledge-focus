@@ -9,7 +9,7 @@ from db_mgr import (
     TaskType, TaskPriority, Task,
 )
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()
@@ -89,6 +89,8 @@ def get_router(external_get_session: callable) -> APIRouter:
                 priority=TaskPriority.MEDIUM,
                 extra_data={"file_count": len(data_list)}
             )
+            # 确保task对象绑定到当前Session，避免DetachedInstanceError
+            task = task_mgr.session.merge(task)
             logger.info(f"已创建标记任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
 
             # 2. 批量添加粗筛结果，并关联 task_id

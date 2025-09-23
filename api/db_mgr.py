@@ -394,7 +394,7 @@ class ChatSession(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON)) # 会话元数据：{"topic": "...", "file_count": 3, "message_count": 15}
     is_active: bool = Field(default=True)
-    selected_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的额外工具
+    selected_tool_names: List[str] = Field(default=[], sa_column=Column(JSON)) # 会话中用户选中的额外工具
     scenario_id: int | None = Field(default=None, foreign_key="t_scenarios.id") # 关联的“场景”ID
 
 # 聊天消息表
@@ -409,7 +409,6 @@ class ChatMessage(SQLModel, table=True):
     # 存储符合Vercel AI SDK UI协议的结构化消息内容
     # e.g. [{'type': 'text', 'text': '...'}, {'type': 'tool-call', 'toolName': '...', 'args': {...}}]
     parts: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
-    
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     sources: List[Dict[str, Any]] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
@@ -426,9 +425,9 @@ class ChatSessionPinFile(SQLModel, table=True):
 
 # 工具类型
 class ToolType(str, PyEnum):
-    DIRECT = "direct"
-    CHANNEL = "channel"
-    MCP = "mcp"
+    DIRECT = "direct"  # 直接调用Python函数
+    CHANNEL = "channel"  # 通过消息通道调用前端功能
+    MCP = "mcp"  # 通过模型上下文协议调用 https://github.com/modelcontextprotocol
 # 大模型可使用的工具表
 class Tool(SQLModel, table=True):
     __tablename__ = "t_tools"
@@ -448,7 +447,7 @@ class Scenario(SQLModel, table=True):
     description: str | None = Field(default=None, max_length=500)
     display_name: str | None = Field(default=None, max_length=100)
     system_prompt: str | None = Field(default=None, max_length=500)
-    preset_tool_ids: List[int] = Field(default=[], sa_column=Column(JSON))  # 存储Tool ID列表
+    preset_tool_names: List[str] = Field(default=[], sa_column=Column(JSON))  # 存储Tool ID列表
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
@@ -763,22 +762,30 @@ class DBManager:
                     {
                         "name": "local_file_serch",
                         "description": "本机文件搜索工具。参数是一个搜索关键词，返回匹配的文件路径列表。",
-                        "tool_type": "direct",  # 直接调用
+                        "tool_type": ToolType.DIRECT.value,  # 直接调用
                         "metadata_json": {"model_path": "tools.local_file_search:local_file_search" }
                     },
                     {
                         "name": "multimodal_vectorize",
                         "description": "给文件进行多模态向量化，以便后续支持多模态检索",
-                        "tool_type": "direct",
+                        "tool_type": ToolType.DIRECT.value,
                         "metadata_json": {"model_path": "tools.vector_store:multimodal_vectorize" }
                     },
                     {
                         "name": "search_use_tavily",
-                        "description": "使用Tavily进行搜索",
-                        "tool_type": "direct",
+                        "description": "使用Tavily进行网络搜索",
+                        "tool_type": ToolType.MCP.value,
                         "metadata_json": {
                             "model_path": "tools.web_search:search_use_tavily",
-                            "api_key": ""
+                            "api_key": "",
+                            "languages": {
+                                "zh": "使用Tavily进行网络搜索",
+                                "en": "Using Tavily for web search",
+                            },
+                            "icon": {
+                                "light": "https://www.tavily.com/images/logo.svg",
+                                "dark": "https://www.tavily.com/images/logo.svg"
+                            }
                         }
                     },
                     # {

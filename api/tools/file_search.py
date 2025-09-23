@@ -7,7 +7,7 @@ from pydantic_ai import RunContext
 from backend_tool_caller import g_backend_tool_caller
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 async def search_pdf_files(ctx: RunContext[int], description: str, limit: int = 5) -> Dict:
     """

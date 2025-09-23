@@ -10,7 +10,7 @@ from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from db_mgr import ParentChunk, Document
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class QueryProcessor:
     """查询预处理器 - P0核心"""

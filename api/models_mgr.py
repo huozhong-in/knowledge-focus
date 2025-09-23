@@ -31,7 +31,7 @@ from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model
 import mlx.core as mx
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # 定义一个可以在运行时创建的 BridgeProgressReporter 类
 def create_bridge_progress_reporter(bridge_events, model_name):
@@ -471,7 +471,8 @@ Generate a title that best represents what this conversation will be about. Avoi
             count_tokens_tools = self.memory_mgr.calculate_tools_tokens(tools)
             logger.info(f"当前工具数: {len(tools)}, tools token数: {count_tokens_tools}")
             
-            # 构建系统prompt(要描述可选工具)
+            # 构建系统prompt
+            # TODO 要描述可选工具
             system_prompt = ["You are a helpful assistant."]
             scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
             system_prompt = scenario_system_prompt if scenario_system_prompt is not None else system_prompt
@@ -1462,11 +1463,11 @@ if __name__ == "__main__":
     # model_interface = mgr.model_config_mgr.get_text_model_config()
     # print(model_interface.model_dump())
     
-    # import asyncio
+    import asyncio
 
     # Test embedding generation
-    embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
-    print("Embedding Length:", len(embedding))
+    # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
+    # print("Embedding Length:", len(embedding))
     
     # # Test tag generation
     # tags = mgr.get_tags_from_llm("北京是中国的首都，拥有丰富的历史和文化。", ["北京", "首都"])
@@ -1485,19 +1486,19 @@ if __name__ == "__main__":
     # except Exception as e:
     #     print("Chat Error:", e)
 
-    # # test stream
-    # async def test_stream():
-    #     messages = [
-    #         {'role': 'user', 'content': '拜占庭将军问题是什么？'}
-    #     ]
+    # test stream
+    async def test_stream():
+        messages = [
+            {'role': 'user', 'content': '拜占庭将军问题是什么？'}
+        ]
         
-    #     print('Testing Vercel AI SDK compatible stream protocol:')
-    #     print('=' * 50)
+        print('Testing Vercel AI SDK compatible stream protocol:')
+        print('=' * 50)
         
-    #     async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
-    #         print(chunk, end='')
+        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
+            print(chunk, end='')
     
-    # asyncio.run(test_stream())
+    asyncio.run(test_stream())
 
     # # 下载MLX优化的Qwen3 Embedding模型
     # import os

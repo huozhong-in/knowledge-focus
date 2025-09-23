@@ -13,7 +13,7 @@ from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 # from bridge_events import BridgeEventSender
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class TaggingMgr:
     def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:

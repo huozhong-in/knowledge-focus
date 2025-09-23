@@ -5,7 +5,7 @@ from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from search_mgr import SearchManager
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()

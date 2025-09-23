@@ -41,7 +41,7 @@ from backend_tool_caller import g_backend_tool_caller
 # from sqlmodel import Session
 # from models_mgr import ModelsMgr
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # # PDF阅读器坐标缓存 - 全局变量用于保存PDF阅读器中心点坐标
 # _pdf_reader_center_point = None

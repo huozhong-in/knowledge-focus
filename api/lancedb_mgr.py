@@ -5,7 +5,7 @@ from typing import List
 import os
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # Pydantic model for the tags table in LanceDB
 class Tags(LanceModel):

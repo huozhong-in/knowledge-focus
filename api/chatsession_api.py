@@ -4,13 +4,14 @@
 """
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
-from sqlmodel import Session
+from sqlmodel import Session, select
 from typing import Dict, Any, Optional
 import logging
 
 from chatsession_mgr import ChatSessionMgr
+from db_mgr import Tool
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 
 def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
@@ -145,6 +146,30 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
             
             stats = chat_mgr.get_session_stats(session_id)
             
+            # 恢复前端工具勾选所需：返回会话选择的工具列表
+            selected_tools = session.selected_tool_names or []
+
+            # 可选：返回前端需要呈现的工具配置（例如 Tavily 的 api_key），用于预填 Dialog
+            # 仅示例性返回 search_use_tavily 的配置
+            tool_configs: Dict[str, Any] = {}
+            try:
+                tavily_tool = chat_mgr.session.exec(
+                    select(Tool).where(Tool.name == "search_use_tavily")
+                ).first()
+                tavily_api_key = ""
+                if tavily_tool and tavily_tool.metadata_json:
+                    tavily_api_key = tavily_tool.metadata_json.get("api_key", "") or ""
+                tool_configs["search_use_tavily"] = {
+                    "has_api_key": bool(tavily_api_key),
+                    "api_key": tavily_api_key,
+                }
+            except Exception:
+                # 安全兜底，不影响主流程
+                tool_configs["search_use_tavily"] = {
+                    "has_api_key": False,
+                    "api_key": "",
+                }
+            
             return {
                 "success": True,
                 "data": {
@@ -155,7 +180,9 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
                     "metadata": session.metadata_json or {},
                     "is_active": session.is_active,
                     "scenario_id": session.scenario_id,
-                    "stats": stats
+                    "stats": stats,
+                    "selected_tools": selected_tools,
+                    "tool_configs": tool_configs,
                 }
             }
         except HTTPException:
@@ -213,6 +240,29 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
                 raise HTTPException(status_code=404, detail="Session not found")
             
             return {"success": True, "message": "Session deleted successfully"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+    # ==================== 工具管理端点 ====================
+    # change_session_tools
+    @router.put("/chat/sessions/{session_id}/tools", tags=["chat-sessions"])
+    def change_session_tools(
+        session_id: int,
+        data: Dict[str, Any] = Body(...),
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+    ):
+        """更改会话关联的工具列表"""
+        try:
+            add_tools = data.get("add_tools", [])
+            remove_tools = data.get("remove_tools", [])
+            
+            result = chat_mgr.change_session_tools(session_id, add_tools=add_tools, remove_tools=remove_tools)
+            return {
+                "success": True,
+                "data": result
+            }
         except HTTPException:
             raise
         except Exception as e:

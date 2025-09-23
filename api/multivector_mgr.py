@@ -52,7 +52,7 @@ from models_mgr import ModelsMgr
 from model_config_mgr import ModelConfigMgr
 from bridge_events import BridgeEventSender
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 不同业务场景所需模型能力的组合
@@ -212,7 +212,6 @@ Give a concise summary of the image that is well optimized for retrieval.
             )
             
             logger.info(f"Chunker initialized with max_tokens={tokenizer.get_max_tokens()}")
-            logger.info("Note: Chunker tokenizer is decoupled from embedding model - embeddings generated via API")
             
         except Exception as e:
             logger.error(f"Failed to initialize chunker: {e}")

@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
     router = APIRouter()

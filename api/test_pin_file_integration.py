@@ -35,7 +35,7 @@ def setup_logging():
 def test_pin_file_integration():
     """测试Pin文件和多模态向量化的完整集成"""
     
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger()
     logger.info("🚀 开始第二阶段集成测试：Pin文件多模态向量化")
     
     # 1. 初始化数据库组件
@@ -109,7 +109,7 @@ def test_pin_file_integration():
 def test_tagging_multivector_chain():
     """测试TAGGING→MULTIVECTOR任务链式处理"""
     
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger()
     logger.info("🔗 测试TAGGING→MULTIVECTOR自动衔接")
     
     # 导入TAGGING→MULTIVECTOR衔接函数

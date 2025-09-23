@@ -7,7 +7,7 @@ from db_mgr import MyFolders, FileCategory, FileFilterRule, FileExtensionMap, Bu
 from myfolders_mgr import MyFoldersManager
 from screening_mgr import ScreeningManager
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 def get_router(external_get_session: callable) -> APIRouter:
     router = APIRouter()

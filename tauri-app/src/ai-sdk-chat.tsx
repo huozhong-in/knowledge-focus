@@ -3,10 +3,20 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   ChatSession,
   ChatMessage as ApiChatMessage,
   getSessionMessages,
   getSession,
+  changeSessionTools,
+  // getMcpToolApiKey,
+  setMcpToolApiKey,
 } from "./lib/chat-session-api"
 import { useCoReadingTimer } from "./hooks/useCoReadingTimer"
 import { CoReadingPauseWidget } from "./components/ui/co-reading-pause-widget"
@@ -25,12 +35,11 @@ import {
 } from "@/components/ai-elements/reasoning"
 import {
   PromptInput,
-  PromptInputButton,
-  // PromptInputModelSelect,
-  // PromptInputModelSelectContent,
-  // PromptInputModelSelectItem,
-  // PromptInputModelSelectTrigger,
-  // PromptInputModelSelectValue,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
+  PromptInputBody,
+  // PromptInputButton,
   PromptInputSubmit,
   PromptInputTextarea,
   PromptInputToolbar,
@@ -48,6 +57,7 @@ import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
 import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
+import { Checkbox } from "./components/ui/checkbox"
 import { useTranslation } from "react-i18next"
 
 
@@ -84,7 +94,14 @@ export function AiSdkChat({
   const [input, setInput] = useState("")
   const [selectedImage, setSelectedImage] = useState<string | null>(null) // 存储选中的图片路径
   const [screenshotPreview, setScreenshotPreview] = useState<{path: string, metadata?: any} | null>(null) // 存储截图预览信息
-
+  const [enableWebSearch, setEnableWebSearch] = useState(false) // 是否启用网络搜索功能
+  // Tavily 工具相关状态
+  const TAVILY_TOOL_NAME = 'search_use_tavily'
+  const [tavilyEnabled, setTavilyEnabled] = useState(false)
+  const [tavilyDialogOpen, setTavilyDialogOpen] = useState(false)
+  const [tavilyApiKey, setTavilyApiKey] = useState("")
+  // 控制 Search 下拉菜单开关，避免遮挡输入框导致无法聚焦
+  const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const { t } = useTranslation()
 
   // PDF共读模式定时器
@@ -275,6 +292,21 @@ export function AiSdkChat({
         const session = await getSession(sessionIdNum)
         setCurrentSession(session)
         console.log("📋 会话信息加载完成:", session)
+        // 恢复 Tavily 勾选和API Key预填
+        try {
+          const selected = session.selected_tools || []
+          setTavilyEnabled(selected.includes(TAVILY_TOOL_NAME))
+          const keyFromSession = session.tool_configs?.[TAVILY_TOOL_NAME]?.api_key || ""
+          if (keyFromSession) {
+            setTavilyApiKey(keyFromSession)
+          } else {
+            // // 兜底：从独立接口读取（兼容旧实现）
+            // const k = await getMcpToolApiKey(TAVILY_TOOL_NAME)
+            // if (k) setTavilyApiKey(k)
+          }
+        } catch (e) {
+          console.warn('恢复Tavily状态失败', e)
+        }
         
         const result = await getSessionMessages(sessionIdNum, 1, 50, false) // 获取前50条消息，时间升序
 
@@ -341,7 +373,7 @@ export function AiSdkChat({
   }, [sessionId, setMessages])
 
   // 根据官方文档，需要手动管理输入状态
-  const handleFormSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (_message: any, e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
 
     if ((!input.trim() && !selectedImage && !screenshotPreview) || status !== "ready") return
@@ -690,42 +722,6 @@ export function AiSdkChat({
                   </div>
                 </div>
               )}
-              
-              {/* 截图预览区域 - 第二位（无图片时左边预留空位） */}
-              {/* {screenshotPreview && (
-                <div className={`w-[300px] p-2 bg-blue-50/80 backdrop-blur-sm rounded-lg border border-blue-200 shadow-lg ${!selectedImage ? 'ml-[316px]' : ''}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-blue-700">PDF screenshot:</span>
-                    <Button
-                      onClick={() => setScreenshotPreview(null)}
-                      variant="ghost"
-                      className="size-6 items-center"
-                    >
-                      <CircleXIcon className="inline size-4 m-1" />
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <img 
-                      src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(screenshotPreview.path)}&width=48&height=48`}
-                      alt="Screenshot Preview"
-                      className="w-12 h-12 object-cover rounded border"
-                      onError={(e) => {
-                        console.error('Failed to load screenshot thumbnail:', screenshotPreview.path);
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs truncate" title={screenshotPreview.path}>
-                        {screenshotPreview.path.split('/').pop()}
-                      </div>
-                      <div className="text-xs text-blue-600 truncate">
-                        PDF screenshot
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )} */}
             </div>
           </div>
         )}
@@ -774,20 +770,60 @@ export function AiSdkChat({
         )}
         
         <PromptInput onSubmit={handleFormSubmit} className="relative">
-          <PromptInputTextarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={selectedImage ? "Describe what you want to know about this image..." : t("AISDKCHAT.input-message")}
-          />
+          <PromptInputBody className="border-0 m-0 p-0">
+            <PromptInputTextarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={selectedImage ? "Describe what you want to know about this image..." : t("AISDKCHAT.input-message")}
+            />
+          </PromptInputBody>
           <PromptInputToolbar>
             <PromptInputTools>
-              {/* <PromptInputButton>
-                <MicIcon size={16} />
-              </PromptInputButton> */}
-              <PromptInputButton>
-                <GlobeIcon size={16} />
-                <span>Search</span>
-              </PromptInputButton>
+              <PromptInputActionMenu open={actionMenuOpen} onOpenChange={setActionMenuOpen}>
+                <PromptInputActionMenuTrigger variant={enableWebSearch ? "outline" : "ghost"}>
+                  <GlobeIcon />
+                  <span>Search</span>
+                </PromptInputActionMenuTrigger>
+                <PromptInputActionMenuContent>
+                  <div className="flex flex-row justify-between items-center">
+                    <Checkbox id="enable-web-search" className="mr-2"
+                      checked={tavilyEnabled}
+                      onCheckedChange={async (checked) => {
+                        const enable = checked === true
+                        if (!currentSession?.id) return
+                        if (enable) {
+                          // 检查是否已有key
+                          let key = tavilyApiKey
+                          // if (!key) {
+                          //   // 再试一次后端
+                          //   key = await getMcpToolApiKey(TAVILY_TOOL_NAME)
+                          // }
+                          if (!key) {
+                            // 先关闭下拉，再打开对话框，避免遮挡焦点
+                            setActionMenuOpen(false)
+                            setTavilyDialogOpen(true)
+                            return
+                          }
+                          await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
+                          setTavilyEnabled(true)
+                          setEnableWebSearch(true)
+                          // 操作完成后收起下拉
+                          setActionMenuOpen(false)
+                        } else {
+                          await changeSessionTools(currentSession.id, [], [TAVILY_TOOL_NAME])
+                          setTavilyEnabled(false)
+                          setEnableWebSearch(false)
+                          setActionMenuOpen(false)
+                        }
+                      }}
+                    />
+                    <img src="https://www.tavily.com/images/logo.svg" className="w-[50px] h-[20px]" />
+                    <button type="button" className="text-xs text-muted-foreground underline"
+                      onClick={() => { setActionMenuOpen(false); setTavilyDialogOpen(true) }}
+                    >config</button>
+                </div>
+                </PromptInputActionMenuContent>
+              </PromptInputActionMenu>
             </PromptInputTools>
             <PromptInputSubmit
               className="absolute right-1 bottom-1"
@@ -796,6 +832,57 @@ export function AiSdkChat({
             />
           </PromptInputToolbar>
         </PromptInput>
+
+        {/* Tavily API Key 配置 Dialog */}
+        <Dialog open={tavilyDialogOpen} onOpenChange={(open) => {
+          setTavilyDialogOpen(open)
+          if (!open) {
+            // 关闭时尝试把焦点还给输入框
+            setTimeout(() => {
+              const el = document.querySelector('textarea[name="message"]') as HTMLTextAreaElement | null
+              el?.focus()
+            }, 50)
+            // 确保下拉关闭
+            setActionMenuOpen(false)
+          }
+        }}>
+          <DialogContent className="search-command-dialog max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>配置 Tavily API Key</DialogTitle>
+              <DialogDescription>
+                输入你的 Tavily API Key。没有？
+                <a className="underline ml-1" href="#" onClick={() => openUrl('https://app.tavily.com/')}>去官网获取</a>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <input
+                className="w-full rounded border px-3 py-2 text-sm"
+                placeholder="Tavily API Key"
+                value={tavilyApiKey}
+                onChange={(e) => setTavilyApiKey(e.target.value)}
+              />
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setTavilyDialogOpen(false)}>取消</Button>
+                <Button
+                  onClick={async () => {
+                    if (!currentSession?.id) return
+                    const key = tavilyApiKey.trim()
+                    if (!key) return
+                    const ok = await setMcpToolApiKey(TAVILY_TOOL_NAME, key)
+                    if (!ok) return
+                    await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
+                    // 本地也保存一份，便于后续使用
+                    setTavilyApiKey(key)
+                    setTavilyEnabled(true)
+                    setEnableWebSearch(true)
+                    setTavilyDialogOpen(false)
+                    setActionMenuOpen(false)
+                  }}
+                >保存并启用</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

@@ -18,7 +18,7 @@ import sys
 from typing import Dict, Any, List
 from enum import Enum
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 # 保存原始的stdout引用，确保桥接事件能够直接输出到原始stdout
 # 避免被uvicorn或其他日志系统重定向

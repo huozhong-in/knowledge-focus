@@ -509,11 +509,11 @@ export default function App() {
         }
       } catch (error) {
         console.error("App.tsx: Error during startup sequence:", error)
-        const errorMessage = `API service is unavailable: ${
-          error instanceof Error ? error.message : String(error)
-        }`
+        // const errorMessage = `API service is unavailable: ${
+        //   error instanceof Error ? error.message : String(error)
+        // }`
         setApiReady(false)
-        toast.error("API service error", { description: errorMessage, duration: 8000 })
+        // toast.error("API service error", { description: errorMessage, duration: 8000 })
       }
     }
     startupSequence()

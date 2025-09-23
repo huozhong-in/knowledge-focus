@@ -26,7 +26,7 @@ from pydantic_ai.providers.groq import GroqProvider
 from pydantic_ai.models.groq import GroqModel
 import logging
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
 
 class ModelUseInterface(BaseModel):
     model_identifier: str
