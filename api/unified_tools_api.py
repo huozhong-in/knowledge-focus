@@ -7,7 +7,7 @@
 3. 工具提供者API（获取工具列表等，为动态组织给agent的工具/工具集列表做支持）
 """
 
-from sqlmodel import Session
+from sqlalchemy import Engine
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -17,12 +17,12 @@ from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(get_engine: Engine) -> APIRouter:
     """获取统一的工具API路由器"""
     router = APIRouter()
 
-    def get_tool_provider(session: Session = Depends(external_get_session)) -> ToolProvider:
-        return ToolProvider(session)
+    def get_tool_provider(engine: Engine = Depends(get_engine)) -> ToolProvider:
+        return ToolProvider(engine=engine)
 
     # ==================== 前端直接调用API ====================
 
@@ -74,28 +74,28 @@ def get_router(external_get_session: callable) -> APIRouter:
             logger.error(f"设置MCP工具api_key失败 {tool_name}: {e}")
             raise HTTPException(status_code=500, detail=f"Error setting API key for {tool_name}: {str(e)}")
 
-    # # 读取MCP工具的API Key
-    # @router.get("/tools/mcp/get_api_key")
-    # async def get_mcp_tool_api_key(
-    #     tool_name: str,
-    #     tool_provider: ToolProvider = Depends(get_tool_provider)
-    # ):
-    #     """
-    #     获取MCP类型工具的API Key
+    # 读取MCP工具的API Key
+    @router.get("/tools/mcp/get_api_key")
+    async def get_mcp_tool_api_key(
+        tool_name: str,
+        tool_provider: ToolProvider = Depends(get_tool_provider)
+    ):
+        """
+        获取MCP类型工具的API Key
         
-    #     Args:
-    #         tool_name: 工具名称
-    #     """
-    #     try:
-    #         api_key = tool_provider.get_mcp_tool_api_key(tool_name)
-    #         if api_key != "":
-    #             return {"success": True, "tool_name": tool_name, "api_key": api_key}
-    #         else:
-    #             # raise HTTPException(status_code=404, detail=f"API key not found for {tool_name}")
-    #             return {"success": False, "message": f"API key not found for {tool_name}", "tool_name": tool_name}
-    #     except Exception as e:
-    #         logger.error(f"获取MCP工具api_key失败 {tool_name}: {e}")
-    #         raise HTTPException(status_code=500, detail=f"Error getting API key for {tool_name}: {str(e)}")
+        Args:
+            tool_name: 工具名称
+        """
+        try:
+            api_key = tool_provider.get_mcp_tool_api_key(tool_name)
+            if api_key != "":
+                return {"success": True, "tool_name": tool_name, "api_key": api_key}
+            else:
+                # raise HTTPException(status_code=404, detail=f"API key not found for {tool_name}")
+                return {"success": False, "message": f"API key not found for {tool_name}", "tool_name": tool_name}
+        except Exception as e:
+            logger.error(f"获取MCP工具api_key失败 {tool_name}: {e}")
+            raise HTTPException(status_code=500, detail=f"Error getting API key for {tool_name}: {str(e)}")
 
     # ==================== 工具通道响应API ====================
     # 新的工具通道机制相关API

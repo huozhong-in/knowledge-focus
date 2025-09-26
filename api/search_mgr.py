@@ -6,6 +6,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 from sqlmodel import Session, select
+from sqlalchemy import Engine
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from db_mgr import ParentChunk, Document
@@ -78,9 +79,9 @@ class QueryProcessor:
 class ResultFormatter:
     """结果格式化器 - P0核心"""
     
-    def __init__(self, session: Session):
-        self.session = session
-    
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
     def format_for_llm(self, search_results: List[Dict[str, Any]]) -> Dict[str, Any]:
         """组织检索结果为LLM友好格式"""
         if not search_results:
@@ -138,13 +139,14 @@ class ResultFormatter:
     def _get_parent_chunks_content(self, parent_chunk_ids: List[int]) -> Dict[int, ParentChunk]:
         """批量获取父块内容"""
         try:
-            stmt = select(ParentChunk).where(ParentChunk.id.in_(parent_chunk_ids))
-            chunks = self.session.exec(stmt).all()
-            
-            # 转换为字典以便快速查找
-            chunks_dict = {chunk.id: chunk for chunk in chunks}
-            logger.debug(f"Retrieved {len(chunks_dict)} parent chunks")
-            return chunks_dict
+            with Session(self.engine) as session:
+                stmt = select(ParentChunk).where(ParentChunk.id.in_(parent_chunk_ids))
+                chunks = session.exec(stmt).all()
+                
+                # 转换为字典以便快速查找
+                chunks_dict = {chunk.id: chunk for chunk in chunks}
+                logger.debug(f"Retrieved {len(chunks_dict)} parent chunks")
+                return chunks_dict
             
         except Exception as e:
             logger.error(f"Failed to get parent chunks: {e}")
@@ -154,29 +156,30 @@ class ResultFormatter:
 class ContextEnhancer:
     """上下文增强器 - P0核心"""
     
-    def __init__(self, session: Session):
-        self.session = session
-    
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
     def get_parent_chunks_by_ids(self, parent_chunk_ids: List[int]) -> List[Dict[str, Any]]:
         """通过parent_chunk_id获取完整父块内容"""
         try:
-            stmt = select(ParentChunk).where(ParentChunk.id.in_(parent_chunk_ids))
-            chunks = self.session.exec(stmt).all()
-            
-            # 转换为字典格式，包含chunk类型信息
-            result = []
-            for chunk in chunks:
-                chunk_data = {
-                    "id": chunk.id,
-                    "document_id": chunk.document_id, 
-                    "chunk_type": chunk.chunk_type,
-                    "content": chunk.content,
-                    "metadata": chunk.metadata_json
-                }
-                result.append(chunk_data)
-            
-            logger.info(f"Retrieved {len(result)} parent chunks with full content")
-            return result
+            with Session(self.engine) as session:
+                stmt = select(ParentChunk).where(ParentChunk.id.in_(parent_chunk_ids))
+                chunks = session.exec(stmt).all()
+                
+                # 转换为字典格式，包含chunk类型信息
+                result = []
+                for chunk in chunks:
+                    chunk_data = {
+                        "id": chunk.id,
+                        "document_id": chunk.document_id, 
+                        "chunk_type": chunk.chunk_type,
+                        "content": chunk.content,
+                        "metadata": chunk.metadata_json
+                    }
+                    result.append(chunk_data)
+                
+                logger.info(f"Retrieved {len(result)} parent chunks with full content")
+                return result
             
         except Exception as e:
             logger.error(f"Failed to get parent chunks by IDs: {e}")
@@ -218,24 +221,25 @@ class ContextEnhancer:
         """获取chunk类型和文档信息"""
         try:
             # 联查获取chunk和document信息
-            stmt = select(ParentChunk, Document).join(
-                Document, ParentChunk.document_id == Document.id
-            ).where(ParentChunk.id.in_(parent_chunk_ids))
-            
-            results = self.session.exec(stmt).all()
-            
-            chunks_info = {}
-            for chunk, document in results:
-                # 从文件路径中提取文件名
-                import os
-                file_name = os.path.basename(document.file_path) if document.file_path else 'Unknown'
+            with Session(self.engine) as session:
+                stmt = select(ParentChunk, Document).join(
+                    Document, ParentChunk.document_id == Document.id
+                ).where(ParentChunk.id.in_(parent_chunk_ids))
                 
-                chunks_info[chunk.id] = {
-                    'chunk_type': chunk.chunk_type,
-                    'document_name': file_name
-                }
-            
-            return chunks_info
+                results = session.exec(stmt).all()
+                
+                chunks_info = {}
+                for chunk, document in results:
+                    # 从文件路径中提取文件名
+                    import os
+                    file_name = os.path.basename(document.file_path) if document.file_path else 'Unknown'
+                    
+                    chunks_info[chunk.id] = {
+                        'chunk_type': chunk.chunk_type,
+                        'document_name': file_name
+                    }
+                
+                return chunks_info
             
         except Exception as e:
             logger.error(f"Failed to get chunks type info: {e}")
@@ -248,15 +252,15 @@ class SearchManager:
     统一管理向量内容检索的完整流程
     """
     
-    def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr):
-        self.session = session
+    def __init__(self, engine: Engine, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr):
+        self.engine = engine
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
         
         # 初始化各个组件
         self.query_processor = QueryProcessor(models_mgr)
-        self.result_formatter = ResultFormatter(session)
-        self.context_enhancer = ContextEnhancer(session)
+        self.result_formatter = ResultFormatter(self.engine)
+        self.context_enhancer = ContextEnhancer(self.engine)
     
     def search_documents(self, query: str, top_k: int = 10, 
                         document_ids: Optional[List[int]] = None,
@@ -365,15 +369,15 @@ if __name__ == "__main__":
     from config import TEST_DB_PATH
     from sqlmodel import create_engine
     from pathlib import Path
-    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
     # LanceDB
     db_directory = Path(TEST_DB_PATH).parent
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     # 模型管理器
-    models_mgr = ModelsMgr(session, base_dir=db_directory)
+    models_mgr = ModelsMgr(engine, base_dir=db_directory)
     
     # 1. testing SearchManager
-    search_mgr = SearchManager(session, lancedb_mgr, models_mgr)
+    search_mgr = SearchManager(engine, lancedb_mgr, models_mgr)
     logger.info("SearchManager 核心功能模块已创建完成")
     results = search_mgr.search_documents(
         query="人工智能", top_k=5,
@@ -382,7 +386,7 @@ if __name__ == "__main__":
     logger.info(f"Search results: {results}")
 
     # 2. testing ContextEnhancer
-    # context_enhancer = ContextEnhancer(session)
+    # context_enhancer = ContextEnhancer(engine)
     # parent_chunk_ids = [1, 2, 3]  # 假设我们有一些父块ID需要查询
     # parent_chunks = context_enhancer.get_parent_chunks_by_ids(parent_chunk_ids)
     # logger.info(f"Retrieved parent chunks: {parent_chunks}")
@@ -400,7 +404,7 @@ if __name__ == "__main__":
     #     logger.error(f"Query validation failed: {validation_message}")
 
     # 4. testing ResultFormatter
-    # result_formatter = ResultFormatter(session)
+    # result_formatter = ResultFormatter(engine)
     # sample_results = [
     #     {
     #         "parent_chunk_id": 1,

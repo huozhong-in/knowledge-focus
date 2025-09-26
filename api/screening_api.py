@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Body
-from sqlmodel import Session
+from sqlalchemy import Engine
 from typing import Dict, Any
 from datetime import datetime
 import os
@@ -11,14 +11,14 @@ from db_mgr import (
 import logging
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(get_engine: Engine) -> APIRouter:
     router = APIRouter()
 
-    def get_screening_manager(session: Session = Depends(external_get_session)) -> ScreeningManager:
-        return ScreeningManager(session)
+    def get_screening_manager(engine: Engine = Depends(get_engine)) -> ScreeningManager:
+        return ScreeningManager(engine)
     
-    def get_task_manager(session: Session = Depends(external_get_session)) -> TaskManager:
-        return TaskManager(session)
+    def get_task_manager(engine: Engine = Depends(get_engine)) -> TaskManager:
+        return TaskManager(engine)
 
     @router.post("/file-screening/batch")
     def add_batch_file_screening_results(
@@ -89,8 +89,6 @@ def get_router(external_get_session: callable) -> APIRouter:
                 priority=TaskPriority.MEDIUM,
                 extra_data={"file_count": len(data_list)}
             )
-            # 确保task对象绑定到当前Session，避免DetachedInstanceError
-            task = task_mgr.session.merge(task)
             logger.info(f"已创建标记任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
 
             # 2. 批量添加粗筛结果，并关联 task_id

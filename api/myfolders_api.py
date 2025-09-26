@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session, select
+from sqlalchemy import Engine
 from typing import Dict, Any
 import time
 import sys
@@ -9,20 +10,20 @@ from screening_mgr import ScreeningManager
 import logging
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable) -> APIRouter:
+def get_router(get_engine: Engine) -> APIRouter:
     router = APIRouter()
 
-    def get_myfolders_manager(session: Session = Depends(external_get_session)) -> MyFoldersManager:
+    def get_myfolders_manager(engine: Engine = Depends(get_engine)) -> MyFoldersManager:
         """获取文件夹管理器实例"""
-        return MyFoldersManager(session)
+        return MyFoldersManager(engine=engine)
 
-    def get_screening_manager(session: Session = Depends(external_get_session)) -> ScreeningManager:
-        return ScreeningManager(session)
+    def get_screening_manager(engine: Engine = Depends(get_engine)) -> ScreeningManager:
+        return ScreeningManager(engine=engine)
     
     # 获取所有配置信息的API端点
     @router.get("/config/all", tags=["myfolders"], summary="获取所有配置")
     def get_all_configuration(
-        session: Session = Depends(external_get_session),
+        engine: Engine = Depends(get_engine),
         myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         """
@@ -30,35 +31,36 @@ def get_router(external_get_session: callable) -> APIRouter:
         包括文件分类、粗筛规则、文件扩展名映射、项目识别规则以及监控的文件夹列表。
         """
         try:
-            start_time = time.time()
-            file_categories = session.exec(select(FileCategory)).all()
-            file_filter_rules = session.exec(select(FileFilterRule)).all()
-            file_extension_maps = session.exec(select(FileExtensionMap)).all()
-            monitored_folders = session.exec(select(MyFolders)).all()
-            
-            # 检查完全磁盘访问权限状态 
-            full_disk_access = False
-            if sys.platform == "darwin":  # macOS
-                access_status = myfolders_mgr.check_full_disk_access_status()
-                full_disk_access = access_status.get("has_full_disk_access", False)
-                logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
-            
-            elapsed = time.time() - start_time
-            logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
-            
-            # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
-            bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
-            logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
-            # from file_tagging_mgr import MARKITDOWN_EXTENSIONS, OTHER_PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
-            return {
-                "file_categories": file_categories,
-                "file_filter_rules": file_filter_rules,
-                "file_extension_maps": file_extension_maps,
-                "monitored_folders": monitored_folders,
-                # "parsable_extensions": list(set(MARKITDOWN_EXTENSIONS + OTHER_PARSEABLE_EXTENSIONS)),  # 去重
-                "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
-                "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
-            }
+            with Session(engine) as session:
+                start_time = time.time()
+                file_categories = session.exec(select(FileCategory)).all()
+                file_filter_rules = session.exec(select(FileFilterRule)).all()
+                file_extension_maps = session.exec(select(FileExtensionMap)).all()
+                monitored_folders = session.exec(select(MyFolders)).all()
+                
+                # 检查完全磁盘访问权限状态 
+                full_disk_access = False
+                if sys.platform == "darwin":  # macOS
+                    access_status = myfolders_mgr.check_full_disk_access_status()
+                    full_disk_access = access_status.get("has_full_disk_access", False)
+                    logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
+                
+                elapsed = time.time() - start_time
+                logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
+                
+                # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
+                bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
+                logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
+                # from file_tagging_mgr import MARKITDOWN_EXTENSIONS, OTHER_PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
+                return {
+                    "file_categories": file_categories,
+                    "file_filter_rules": file_filter_rules,
+                    "file_extension_maps": file_extension_maps,
+                    "monitored_folders": monitored_folders,
+                    # "parsable_extensions": list(set(MARKITDOWN_EXTENSIONS + OTHER_PARSEABLE_EXTENSIONS)),  # 去重
+                    "full_disk_access": full_disk_access,  # 完全磁盘访问权限状态
+                    "bundle_extensions": bundle_extensions  # 添加直接可用的 bundle 扩展名列表
+                }
         except Exception as e:
             logger.error(f"Error fetching all configuration: {e}", exc_info=True)
             # Return a default structure in case of error to prevent client-side parsing issues.
@@ -74,42 +76,42 @@ def get_router(external_get_session: callable) -> APIRouter:
 
     @router.get("/file-scanning-config", tags=["myfolders"], summary="获取文件扫描配置（简化版）")
     async def get_file_scanning_config(
-        session: Session = Depends(external_get_session),
-        myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
+        engine: Engine = Depends(get_engine),
     ):
         """
         获取Rust端文件扫描所需的简化配置信息。
         只包含扩展名映射、Bundle扩展名和基础忽略规则。
         """
         try:
-            # 获取文件分类和扩展名映射
-            file_categories = session.exec(select(FileCategory)).all()
-            file_extension_maps = session.exec(select(FileExtensionMap)).all()
-            
-            # 构建扩展名到分类ID的映射
-            extension_mappings = {}
-            for ext_map in file_extension_maps:
-                extension_mappings[ext_map.extension] = ext_map.category_id
-            
-            # 获取Bundle扩展名列表
-            bundle_extensions_data = session.exec(select(BundleExtension).where(BundleExtension.is_active)).all()
-            bundle_extensions = [be.extension for be in bundle_extensions_data]
-            
-            # 获取基础忽略规则
-            ignore_rules = session.exec(
-                select(FileFilterRule).where(
-                    FileFilterRule.action == "exclude",
-                    FileFilterRule.enabled
-                )
-            ).all()
-            ignore_patterns = [rule.pattern for rule in ignore_rules]
-            
-            return {
-                "extension_mappings": extension_mappings,
-                "bundle_extensions": bundle_extensions,
-                "ignore_patterns": ignore_patterns,
-                "file_categories": [{"id": cat.id, "name": cat.name, "description": cat.description} for cat in file_categories]
-            }
+            with Session(engine) as session:
+                # 获取文件分类和扩展名映射
+                file_categories = session.exec(select(FileCategory)).all()
+                file_extension_maps = session.exec(select(FileExtensionMap)).all()
+                
+                # 构建扩展名到分类ID的映射
+                extension_mappings = {}
+                for ext_map in file_extension_maps:
+                    extension_mappings[ext_map.extension] = ext_map.category_id
+                
+                # 获取Bundle扩展名列表
+                bundle_extensions_data = session.exec(select(BundleExtension).where(BundleExtension.is_active)).all()
+                bundle_extensions = [be.extension for be in bundle_extensions_data]
+                
+                # 获取基础忽略规则
+                ignore_rules = session.exec(
+                    select(FileFilterRule).where(
+                        FileFilterRule.action == "exclude",
+                        FileFilterRule.enabled
+                    )
+                ).all()
+                ignore_patterns = [rule.pattern for rule in ignore_rules]
+                
+                return {
+                    "extension_mappings": extension_mappings,
+                    "bundle_extensions": bundle_extensions,
+                    "ignore_patterns": ignore_patterns,
+                    "file_categories": [{"id": cat.id, "name": cat.name, "description": cat.description} for cat in file_categories]
+                }
             
         except Exception as e:
             logger.error(f"Error fetching file scanning config: {e}", exc_info=True)
@@ -124,6 +126,7 @@ def get_router(external_get_session: callable) -> APIRouter:
     # 添加文件夹管理相关API
     @router.get("/directories", tags=["myfolders"])
     def get_directories(
+        engine: Engine = Depends(get_engine),
         myfolders_mgr: MyFoldersManager = Depends(get_myfolders_manager)
     ):
         try:
@@ -138,22 +141,22 @@ def get_router(external_get_session: callable) -> APIRouter:
 
             # 使用 select 语句从数据库获取所有监控的目录
             stmt = select(MyFolders)
-            directories_from_db = myfolders_mgr.session.exec(stmt).all()
-            
-            processed_dirs = []
-            for d in directories_from_db:
-                dir_dict = {
-                    "id": getattr(d, 'id', None),
-                    "path": getattr(d, 'path', None),
-                    "alias": getattr(d, 'alias', None),
-                    "is_blacklist": getattr(d, 'is_blacklist', False),
-                    "created_at": d.created_at.isoformat() if getattr(d, 'created_at', None) else None,
-                    "updated_at": d.updated_at.isoformat() if getattr(d, 'updated_at', None) else None,
-                }
-                processed_dirs.append(dir_dict)
-            
-            logger.info(f"[API DEBUG] /directories returning: fda_status={fda_status}, num_dirs={len(processed_dirs)}")
-            return {"status": "success", "full_disk_access": fda_status, "data": processed_dirs}
+            with Session(engine) as session:
+                directories_from_db = session.exec(stmt).all()
+                processed_dirs = []
+                for d in directories_from_db:
+                    dir_dict = {
+                        "id": getattr(d, 'id', None),
+                        "path": getattr(d, 'path', None),
+                        "alias": getattr(d, 'alias', None),
+                        "is_blacklist": getattr(d, 'is_blacklist', False),
+                        "created_at": d.created_at.isoformat() if getattr(d, 'created_at', None) else None,
+                        "updated_at": d.updated_at.isoformat() if getattr(d, 'updated_at', None) else None,
+                    }
+                    processed_dirs.append(dir_dict)
+                
+                logger.info(f"[API DEBUG] /directories returning: fda_status={fda_status}, num_dirs={len(processed_dirs)}")
+                return {"status": "success", "full_disk_access": fda_status, "data": processed_dirs}
         except Exception as e:
             logger.error(f"Error in get_directories: {e}", exc_info=True)
             return {"status": "error", "full_disk_access": False, "data": [], "message": str(e)}

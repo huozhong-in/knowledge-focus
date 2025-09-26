@@ -7,6 +7,7 @@ import os
 import time
 import signal
 import tiktoken
+from typing import Dict, Any
 
 # 为当前模块创建专门的日志器（最佳实践）
 logger = logging.getLogger()
@@ -301,3 +302,98 @@ def num_tokens_from_messages(messages, model="gpt-4o-mini-2024-07-18"):
                 num_tokens += tokens_per_name
     num_tokens += 3  # every reply is primed with <|start|>assistant<|message|>
     return num_tokens
+
+'''
+总结：JSON字段操作的最佳实践
+🔄 推荐的通用模式
+1. 总是创建新字典实例：
+new_data = dict(current_data)
+new_data.update(changes)
+obj.field = new_data
+
+2. 总是使用flag_modified （保险做法）：
+attributes.flag_modified(obj, 'field_name')
+
+📋 何时必须使用
+✅ 修改嵌套字典内容时
+✅ 使用dict.update(), dict.pop(), dict.clear()等方法时
+✅ 修改列表内元素时（如果JSON字段包含列表）
+✅ 任何原地修改（in-place modification）操作
+
+🎯 实际应用建议
+对于您的项目，我建议：
+1. 使用统一的辅助方法（已经实现）：
+
+_update_json_field_safely() - 更新部分键值
+_replace_json_field_safely() - 替换整个字段
+_remove_json_keys_safely() - 删除特定键
+2. 在所有JSON字段操作中都使用这些方法，这样能确保：
+
+✅ 数据一致性
+✅ 变化检测准确
+✅ 代码可维护性高
+'''
+
+def update_json_field_safely(obj, field_name: str, updates: Dict[str, Any]) -> None:
+    """
+    安全地更新JSON字段，确保SQLAlchemy能正确检测到变化
+    
+    Args:
+        obj: 数据库对象
+        field_name: JSON字段名
+        updates: 要更新的键值对
+    """
+    from sqlalchemy.orm import attributes
+    
+    # 获取当前JSON数据
+    current_data = getattr(obj, field_name) or {}
+    
+    # 创建新的字典，包含更新
+    new_data = dict(current_data)
+    new_data.update(updates)
+    
+    # 设置新数据
+    setattr(obj, field_name, new_data)
+    
+    # 显式标记字段已修改
+    attributes.flag_modified(obj, field_name)
+
+def replace_json_field_safely(obj, field_name: str, new_data: Dict[str, Any]) -> None:
+    """
+    安全地替换整个JSON字段
+    
+    Args:
+        obj: 数据库对象
+        field_name: JSON字段名
+        new_data: 新的JSON数据
+    """
+    from sqlalchemy.orm import attributes
+    
+    # 替换整个字段
+    setattr(obj, field_name, new_data)
+    
+    # 为了保险起见，仍然标记字段已修改
+    attributes.flag_modified(obj, field_name)
+
+def remove_json_keys_safely(obj, field_name: str, keys_to_remove: list) -> None:
+    """
+    安全地从JSON字段中删除指定键
+    
+    Args:
+        obj: 数据库对象
+        field_name: JSON字段名
+        keys_to_remove: 要删除的键列表
+    """
+    from sqlalchemy.orm import attributes
+    
+    # 获取当前JSON数据
+    current_data = getattr(obj, field_name) or {}
+    
+    # 创建新字典，排除要删除的键
+    new_data = {k: v for k, v in current_data.items() if k not in keys_to_remove}
+    
+    # 设置新数据
+    setattr(obj, field_name, new_data)
+    
+    # 显式标记字段已修改
+    attributes.flag_modified(obj, field_name)

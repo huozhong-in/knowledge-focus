@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Body
-from sqlmodel import Session
+from sqlalchemy import Engine
 from typing import Dict, Any
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
@@ -7,18 +7,18 @@ from search_mgr import SearchManager
 import logging
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
+def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     router = APIRouter()
 
-    def get_lancedb_manager(session: Session = Depends(external_get_session)) -> LanceDBMgr:
+    def get_lancedb_manager() -> LanceDBMgr:
         """获取LanceDB管理器实例"""
         return LanceDBMgr(base_dir=base_dir)
     
-    def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
-        return ModelsMgr(session, base_dir=base_dir)
+    def get_models_manager(engine: Engine = Depends(get_engine)) -> ModelsMgr:
+        return ModelsMgr(engine=engine, base_dir=base_dir)
 
-    def get_search_manager(session: Session = Depends(external_get_session)) -> SearchManager:
-        return SearchManager(session, get_lancedb_manager(session), get_models_manager(session))
+    def get_search_manager(engine: Engine = Depends(get_engine)) -> SearchManager:
+        return SearchManager(engine=engine, lancedb_mgr=get_lancedb_manager(), models_mgr=get_models_manager(engine))
 
     # =============================================================================
     # 📊 向量内容搜索API端点

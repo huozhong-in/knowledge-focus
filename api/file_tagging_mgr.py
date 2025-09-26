@@ -12,7 +12,8 @@ from lancedb_mgr import LanceDBMgr
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from db_mgr import FileScreenResult, ModelCapability
-from sqlmodel import select, and_
+from sqlmodel import select, and_, update
+from sqlalchemy import Engine
 import time
 from bridge_events import BridgeEventSender
 
@@ -45,13 +46,13 @@ SCENE_FILE_TAGGING: List[ModelCapability] = [ModelCapability.STRUCTURED_OUTPUT]
 
 @singleton
 class FileTaggingMgr:
-    def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
-        self.session = session
+    def __init__(self, engine: Engine, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr) -> None:
+        self.engine = engine
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
-        self.model_config_mgr = ModelConfigMgr(session)
-        self.tagging_mgr = TaggingMgr(session, self.lancedb_mgr, self.models_mgr)
-        
+        self.model_config_mgr = ModelConfigMgr(engine)
+        self.tagging_mgr = TaggingMgr(engine, self.lancedb_mgr, self.models_mgr)
+
         # 初始化markitdown解析器
         self.md_parser = MarkItDown(enable_plugins=False)
         # * markitdown现在明确不支持PDF中的图片导出,[出处](https://github.com/microsoft/markitdown/pull/1140#issuecomment-2968323805)
@@ -69,38 +70,117 @@ class FileTaggingMgr:
 
         return True
 
-    def parse_and_tag_file(self, screening_result: FileScreeningResult) -> bool:
+    def parse_and_tag_file_optimized(self, screening_result_id: int) -> bool:
         """
-        Parses the content of a file, generates tags using the new vector-based
-        workflow, and links them to the file. Does NOT commit the session.
+        优化版本：分三步处理，避免长事务锁定
+        1. 读取数据（短Session）
+        2. 处理计算（无Session）  
+        3. 更新结果（短Session）
         """
-        if not screening_result or not screening_result.file_path or not os.path.exists(screening_result.file_path):
-            logger.warning(f"Skipping parsing for non-existent file: {screening_result.file_path if screening_result else 'N/A'}")
+        # 第一步：读取数据，转换为纯字典
+        result_data = self._read_screening_result_data(screening_result_id)
+        if not result_data:
             return False
-
-        # 1. Extract content summary (a portion of the full content)
+            
+        # 第二步：纯计算处理（无数据库连接）
+        processed_data = self._process_file_content_pure(result_data)
+        if not processed_data:
+            return False
+            
+        # 第三步：更新数据库
+        return self._update_screening_result_data(screening_result_id, processed_data)
+    
+    def _read_screening_result_data(self, screening_result_id: int) -> Dict[str, Any]:
+        """第一步：从数据库读取数据并转换为纯字典"""
         try:
-            content = self._extract_content(screening_result.file_path)
+            with Session(self.engine) as session:
+                result = session.get(FileScreeningResult, screening_result_id)
+                if not result:
+                    logger.warning(f"FileScreeningResult not found: {screening_result_id}")
+                    return {}
+                
+                if not result.file_path or not os.path.exists(result.file_path):
+                    logger.warning(f"File not exists: {result.file_path}")
+                    return {}
+                
+                # 转换为纯字典，脱离ORM绑定
+                return result.model_dump()
+        except Exception as e:
+            logger.error(f"Error reading screening result {screening_result_id}: {e}")
+            return {}
+    
+    def _process_file_content_pure(self, result_data: Dict[str, Any]) -> Dict[str, Any]:
+        """第二步：纯计算处理，无数据库操作"""
+        try:
+            file_path = result_data.get('file_path')
+            if not file_path:
+                return {}
+            
+            # 提取文件内容
+            content = self._extract_content(file_path)
             if not content:
-                logger.info(f"No content extracted from {screening_result.file_path}. Marking as processed.")
-                self._update_tagged_time(screening_result)
-                return True # Mark as processed even if no content
+                logger.info(f"No content extracted from {file_path}")
+                return {
+                    'status': FileScreenResult.PROCESSED.value,
+                    'tagged_time': datetime.now(),
+                    'content_extracted': False
+                }
             
             # * Use a summary for efficiency
-            summary = content[:3000] # Use the first 3000 characters as a summary
+            summary = content[:3000]
+            
+            success = self.tagging_mgr.generate_and_link_tags_for_file(result_data, summary)
+            if not success:
+                return {
+                    'status': FileScreenResult.FAILED.value,
+                    'error_message': "Tag generation failed"
+                }
 
+            logger.info(f"Content extracted successfully for {file_path}, summary length: {len(summary)}")
+            
+            return {
+                'status': FileScreenResult.PROCESSED.value,
+                'tagged_time': datetime.now(),
+                'content_extracted': True,
+                'content_summary': summary
+            }
+            
         except Exception as e:
-            logger.error(f"Error extracting content from {screening_result.file_path}: {e}")
-            screening_result.error_message = f"Content extraction failed: {e}"
-            return False
-
-        # 2. Orchestrate the new tagging process
-        success = self.tagging_mgr.generate_and_link_tags_for_file(screening_result, summary)
-        if success:
-            self._update_tagged_time(screening_result)
-            self.bridge_event_sender.tags_updated()
-            return True
-        else:
+            logger.error(f"Error processing file content: {e}")
+            return {
+                'status': FileScreenResult.FAILED.value,
+                'error_message': f"Content processing failed: {e}"
+            }
+    
+    def _update_screening_result_data(self, screening_result_id: int, processed_data: Dict[str, Any]) -> bool:
+        """第三步：更新数据库结果"""
+        try:
+            with Session(self.engine) as session:
+                # 使用update语句，只更新必要字段，最高效
+                update_fields = {}
+                if 'status' in processed_data:
+                    update_fields['status'] = processed_data['status']
+                if 'tagged_time' in processed_data:
+                    update_fields['tagged_time'] = processed_data['tagged_time']
+                if 'error_message' in processed_data:
+                    update_fields['error_message'] = processed_data['error_message']
+                
+                if update_fields:
+                    stmt = update(FileScreeningResult).where(
+                        FileScreeningResult.id == screening_result_id
+                    ).values(**update_fields)
+                    
+                    session.exec(stmt)
+                    session.commit()
+                    
+                    # 如果成功处理了内容，发送事件
+                    if processed_data.get('content_extracted'):
+                        self.bridge_event_sender.tags_updated()
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating screening result {screening_result_id}: {e}")
             return False
 
     def _extract_content(self, file_path: str) -> str:
@@ -123,12 +203,6 @@ class FileTaggingMgr:
         else:
             # 不支持的文件类型，静默跳过
             return ""
-
-    def _update_tagged_time(self, screening_result: FileScreeningResult):
-        """Updates the tagged_time for a screening result object. Does not commit."""
-        if screening_result:
-            screening_result.tagged_time = datetime.now()
-            self.session.add(screening_result)
     
     def process_pending_batch(self, task_id: int) -> Dict[str, Any]:
         """
@@ -137,14 +211,16 @@ class FileTaggingMgr:
 
         logger.info("[FILE_TAGGING_BATCH] Checking for a batch of pending files...")
         start_time = time.time()
-
-        results = self.session.exec(
-            select(FileScreeningResult)
-            .where(and_(
-                FileScreeningResult.status == FileScreenResult.PENDING.value,
-                FileScreeningResult.task_id == task_id
-            ))
-        ).all()
+        with Session(self.engine) as session:
+            results = session.exec(
+                select(FileScreeningResult)
+                .where(and_(
+                    FileScreeningResult.status == FileScreenResult.PENDING.value,
+                    FileScreeningResult.task_id == task_id
+                ))
+            ).all()
+            # 转为纯字典，避免长事务锁定
+            results: List[Dict[str, Any]] = [r.model_dump() for r in results]
 
         if not results:
             logger.info("[FILE_TAGGING_BATCH] No pending files to process in this batch.")
@@ -160,44 +236,46 @@ class FileTaggingMgr:
         for result in results:
             processed_count += 1
             file_process_start_time = time.time()
-            
-            # 确保对象绑定到当前Session，避免DetachedInstanceError
-            result = self.session.merge(result)
-            
-            logger.info(f"[FILE_TAGGING_BATCH] Processing file {processed_count}/{total_files}: {result.file_path}")
+            logger.info(f"[FILE_TAGGING_BATCH] Processing file {processed_count}/{total_files}: {result.get('file_path', 'Unknown')}")
 
             try:
-                if result.tagged_time and result.modified_time and result.tagged_time > result.modified_time:
-                    logger.info(f"Skipping file, already tagged: {result.file_path}")
-                    result.status = FileScreenResult.PROCESSED.value
-                    self.session.add(result)
-                    self.session.commit()
+                if result.get('tagged_time') and result.get('modified_time') and result.get('tagged_time') > result.get('modified_time'):
+                    logger.info(f"Skipping file, already tagged: {result.get('file_path', 'Unknown')}")
+                    # 导入update语句
+                    from sqlmodel import update
+                    stmt = update(FileScreeningResult).where(
+                        FileScreeningResult.id == result['id']
+                    ).values(status=FileScreenResult.PROCESSED.value)
+                    with Session(self.engine) as session:
+                        session.exec(stmt)
+                        session.commit()
                     success_count += 1
                     continue
                 
-                if self.parse_and_tag_file(result):
-                    result.status = FileScreenResult.PROCESSED.value
+                # 使用优化版本，避免长事务锁定
+                if self.parse_and_tag_file_optimized(result['id']):
                     success_count += 1
                 else:
-                    result.status = FileScreenResult.FAILED.value
                     failed_count += 1
-                
-                self.session.commit()
                 file_process_duration = time.time() - file_process_start_time
                 logger.info(f"[FILE_TAGGING_BATCH] Finished file {processed_count}/{total_files}. Duration: {file_process_duration:.2f}s")
                 time.sleep(0.5)
 
             except Exception as e:
-                logger.error(f"Error processing {result.file_path}: {e}")
-                self.session.rollback()
-                try:
-                    result.status = FileScreenResult.FAILED.value
-                    result.error_message = f"Unexpected error: {e}"
-                    self.session.add(result)
-                    self.session.commit()
+                logger.error(f"Error processing {result.get('file_path', 'Unknown')}: {e}")
+                # 注意：这里不能调用session.rollback()，因为此时没有active session
+                try:                    
+                    stmt = update(FileScreeningResult).where(
+                        FileScreeningResult.id == result['id']
+                    ).values(
+                        status=FileScreenResult.FAILED.value,
+                        error_message=f"Unexpected error: {e}"
+                    )
+                    with Session(self.engine) as session:
+                        session.exec(stmt)
+                        session.commit()
                 except Exception as inner_e:
                     logger.error(f"Failed to mark file as failed: {inner_e}")
-                    self.session.rollback()
                 failed_count += 1
 
         total_duration = time.time() - start_time
@@ -208,38 +286,12 @@ class FileTaggingMgr:
     def process_single_file_task(self, screening_result_id: int) -> bool:
         """
         Processes a single high-priority file parsing task.
+        使用优化版本，避免长事务锁定
         """
-
         logger.info(f"[PARSING_SINGLE] Starting to process high-priority file task for screening_result_id: {screening_result_id}")
-        result = self.session.get(FileScreeningResult, screening_result_id)
-
-        if not result:
-            logger.error(f"[PARSING_SINGLE] Could not find FileScreeningResult with id: {screening_result_id}")
-            return False
-
-        try:
-            if self.parse_and_tag_file(result):
-                result.status = FileScreenResult.PROCESSED.value
-                self.session.commit()
-                logger.info(f"[PARSING_SINGLE] Successfully processed file: {result.file_path}")
-                return True
-            else:
-                result.status = FileScreenResult.FAILED.value
-                self.session.commit()
-                logger.error(f"[PARSING_SINGLE] Failed to process file: {result.file_path}")
-                return False
-        except Exception as e:
-            logger.error(f"[PARSING_SINGLE] Error processing file {result.file_path}: {e}")
-            self.session.rollback()
-            try:
-                result.status = FileScreenResult.FAILED.value
-                result.error_message = f"Unexpected error: {e}"
-                self.session.add(result)
-                self.session.commit()
-            except Exception as inner_e:
-                logger.error(f"[PARSING_SINGLE] Failed to mark file as failed: {inner_e}")
-                self.session.rollback()
-            return False
+        
+        # 直接使用优化版本，自动处理三步分离
+        return self.parse_and_tag_file_optimized(screening_result_id)
 
 
 # 功能测试代码 - 相当于手动单元测试
@@ -271,7 +323,7 @@ if __name__ == "__main__":
 
     # 数据库连接
     from config import TEST_DB_PATH
-    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
 
     # 测试文件路径
     # import pathlib
@@ -286,8 +338,8 @@ if __name__ == "__main__":
     # 创建解析管理器实例进行测试
     db_directory = os.path.dirname(TEST_DB_PATH)
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
-    models_mgr = ModelsMgr(session, base_dir=db_directory)
-    file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
+    models_mgr = ModelsMgr(engine, base_dir=db_directory)
+    file_tagging_mgr = FileTaggingMgr(engine, lancedb_mgr, models_mgr)
     print(file_tagging_mgr.check_file_tagging_model_availability())
     
     # 测试示例：

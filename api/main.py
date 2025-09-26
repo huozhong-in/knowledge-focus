@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from utils import kill_process_on_port, monitor_parent, kill_orphaned_processes
 from sqlmodel import create_engine, Session, select
-from sqlalchemy import event, text
+from sqlalchemy import Engine, event, text
 from db_mgr import (
     DBManager, 
     TaskStatus, 
@@ -174,28 +174,14 @@ async def lifespan(app: FastAPI):
                             logger.warning(f"WAL模式设置可能失败，当前模式: {journal_mode}")
                         else:
                             logger.info("WAL模式设置成功")
-                        
-                        # 使用同一个连接创建Session并进行数据库初始化
-                        session = Session(bind=conn)
-                        try:
-                            db_mgr = DBManager(session)
-                            success = db_mgr.init_db()
-                            if success:
-                                logger.info("数据库结构初始化成功")
-                                session.commit()
-                            else:
-                                logger.warning("数据库结构初始化返回失败状态")
-                                session.rollback()
-                        except Exception as init_error:
-                            logger.error(f"数据库初始化过程中发生错误: {str(init_error)}")
-                            session.rollback()
-                            raise
-                        finally:
-                            session.close()
-                        
+
                         # 最终提交连接级别的事务
                         conn.commit()
-                        logger.info("数据库结构初始化完成")
+                    
+                    db_mgr = DBManager(app.state.engine)
+                    db_mgr.init_db()
+                    logger.info("数据库结构初始化完成")
+                            
                         
                 except Exception as init_err:
                     logger.error(f"初始化数据库结构失败: {str(init_err)}", exc_info=True)
@@ -280,28 +266,28 @@ async def lifespan(app: FastAPI):
             from documents_api import get_router as get_documents_router
             
             # 注册各个API路由
-            models_router = get_models_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            models_router = get_models_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(models_router, prefix="", tags=["models"])
             
-            tagging_router = get_tagging_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            tagging_router = get_tagging_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(tagging_router, prefix="", tags=["tagging"])
             
-            chatsession_router = get_chatsession_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            chatsession_router = get_chatsession_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(chatsession_router, prefix="", tags=["chat-sessions"])
             
-            myfolders_router = get_myfolders_router(external_get_session=get_session)
+            myfolders_router = get_myfolders_router(get_engine=get_engine)
             app.include_router(myfolders_router, prefix="", tags=["myfolders"])
             
-            screening_router = get_screening_router(external_get_session=get_session)
+            screening_router = get_screening_router(get_engine=get_engine)
             app.include_router(screening_router, prefix="", tags=["screening"])
             
-            search_router = get_search_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            search_router = get_search_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(search_router, prefix="", tags=["search"])
             
-            tools_router = get_tools_router(external_get_session=get_session)
+            tools_router = get_tools_router(get_engine=get_engine)
             app.include_router(tools_router, prefix="", tags=["tools"])
             
-            documents_router = get_documents_router(external_get_session=get_session, base_dir=app.state.db_directory)
+            documents_router = get_documents_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(documents_router, prefix="", tags=["documents"])
             
             logger.info("所有API路由注册完成")
@@ -381,31 +367,24 @@ app.add_middleware(
     allow_headers=["*"],    # Allows all headers
 )
 
-def get_session():
-    """FastAPI依赖函数，用于获取数据库会话"""
+def get_engine():
+    """FastAPI依赖函数，用于获取数据库引擎"""
     if not hasattr(app.state, "engine") or app.state.engine is None:
         # 确保数据库引擎已初始化
         raise RuntimeError("数据库引擎未初始化")
-    
-    if hasattr(app.state.engine, "pool"):
-        logger.debug(f"数据库连接池状态: {app.state.engine.pool.status()}")
-
-    with Session(app.state.engine) as session:
-        yield session
-
-# API路由将在lifespan函数中注册，以确保数据库初始化完成
+    return app.state.engine
 
 # 获取 TaskManager 的依赖函数
-def get_task_manager(session: Session = Depends(get_session)):
+def get_task_manager(engine: Engine = Depends(get_engine)) -> TaskManager:
     """获取任务管理器实例"""
-    return TaskManager(session)
+    return TaskManager(engine)
 
 # 任务处理者
-def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManager) -> None:
+def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine) -> None:
     """通用任务处理逻辑"""
-    models_mgr = ModelsMgr(session, base_dir=app.state.db_directory)
-    file_tagging_mgr = FileTaggingMgr(session, lancedb_mgr, models_mgr)
-    multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+    models_mgr = ModelsMgr(engine=engine, base_dir=app.state.db_directory)
+    file_tagging_mgr = FileTaggingMgr(engine=engine, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
+    multivector_mgr = MultiVectorMgr(engine=engine, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
 
     if task.task_type == TaskType.TAGGING.value:
         # 检查模型可用性
@@ -423,7 +402,7 @@ def _process_task(task: Task, session: Session, lancedb_mgr, task_mgr: TaskManag
                 
                 # 检查是否需要自动衔接MULTIVECTOR任务（仅当文件被pin时）
                 if multivector_mgr.check_multivector_model_availability():
-                    _check_and_create_multivector_task(session, task_mgr, task.extra_data.get('screening_result_id'))
+                    _check_and_create_multivector_task(engine, task_mgr, task.extra_data.get('screening_result_id'))
             else:
                 task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
         # 中低优先级任务: 批量处理
@@ -513,32 +492,29 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
         task_to_process = None
 
         try:
-            # --- 事务一: 获取并锁定任务 ---
-            # 这个事务非常短暂，只做一件事：获取任务并标记为处理中
-            with Session(bind=engine) as session:
-                try:
-                    task_mgr = TaskManager(session)
-                    task_getter = getattr(task_mgr, task_getter_func)
-                    locked_task: Task = task_getter()
+            # --- 获取并锁定任务 ---
+            # 获取任务并标记为处理中
+            try:
+                task_mgr = TaskManager(engine=engine)
+                task_getter = getattr(task_mgr, task_getter_func)
+                locked_task: Task = task_getter()
 
-                    if locked_task:
-                        task_id = locked_task.id
-                        # 创建一个任务的非托管副本，以便在会话关闭后使用
-                        task_to_process = {
-                            "id": locked_task.id,
-                            "task_name": locked_task.task_name,
-                            "task_type": locked_task.task_type,
-                            "priority": locked_task.priority,
-                            "extra_data": locked_task.extra_data,
-                        }
-                        session.commit() # 立即提交，释放锁
-                        logger.info(f"{processor_name}已锁定任务: ID={task_id}")
-                    else:
-                        # 没有任务，直接结束本次循环
-                        pass
-                except Exception as e:
-                    logger.error(f"{processor_name}在获取任务时发生错误: {e}", exc_info=True)
-                    session.rollback()
+                if locked_task:
+                    task_id = locked_task.id
+                    # 创建一个任务的非托管副本，以便在会话关闭后使用
+                    task_to_process = {
+                        "id": locked_task.id,
+                        "task_name": locked_task.task_name,
+                        "task_type": locked_task.task_type,
+                        "priority": locked_task.priority,
+                        "extra_data": locked_task.extra_data,
+                    }
+                    logger.info(f"{processor_name}已锁定任务: ID={task_id}")
+                else:
+                    # 没有任务，直接结束本次循环
+                    pass
+            except Exception as e:
+                logger.error(f"{processor_name}在获取任务时发生错误: {e}", exc_info=True)
 
             # --- 如果没有任务，则休眠并继续 ---
             if not task_to_process:
@@ -546,60 +522,40 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
                 continue
 
             # --- 执行耗时操作 ---
-            # 这个阶段不持有任何数据库会话或事务
             logger.info(f"{processor_name}开始处理任务: ID={task_id}, Name='{task_to_process['task_name']}'")
-            
-            # 创建一个临时的、只读的会话来执行任务逻辑
-            # 注意：_process_task现在需要被改造，或者在这里重新实现其逻辑
-            # 为了简化，我们假设_process_task的逻辑可以在这里重构
-            # 并且它需要的任何数据库读取都在一个新的、短暂的会话中完成
-            
-            # 模拟_process_task的逻辑
-            # 注意：这里我们不能再传递一个持久的session给_process_task
-            # _process_task内部需要的所有数据库操作都应该在自己的短暂会话中完成
-            # 为了直接修复，我们在这里创建一个新的session来传递
-            with Session(bind=engine) as processing_session:
-                try:
-                    task_mgr_for_processing = TaskManager(processing_session)
-                    
-                    # 从字典重建Task对象，或从数据库重新获取
-                    task_obj_for_processing = task_mgr_for_processing.get_task(task_id)
-                    if not task_obj_for_processing:
-                        raise ValueError(f"任务 {task_id} 在处理前消失")
+            try:
+                task_mgr_for_processing = TaskManager(engine=engine)
+                
+                # 从字典重建Task对象，或从数据库重新获取
+                task_obj_for_processing = task_mgr_for_processing.get_task(task_id)
+                if not task_obj_for_processing:
+                    raise ValueError(f"任务 {task_id} 在处理前消失")
 
-                    # 调用原始的任务处理逻辑，但现在它在一个独立的会话中运行
-                    # 这个会话仍然可能长时间运行，但它不应该持有对task表的写锁
-                    _process_task(task_obj_for_processing, processing_session, lancedb_mgr, task_mgr_for_processing)
-                    
-                    # _process_task内部不应该commit()，由这里统一管理
-                    processing_session.commit()
-                    
-                    # --- 事务三: 更新最终结果 ---
-                    # 任务成功完成
-                    with Session(bind=engine) as final_session:
-                        task_mgr_final = TaskManager(final_session)
-                        task_mgr_final.update_task_status(task_id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
-                        final_session.commit()
-                    logger.info(f"{processor_name}成功完成任务: ID={task_id}")
+                # 调用原始的任务处理逻辑，但现在它在一个独立的会话中运行
+                # 这个会话仍然可能长时间运行，但它不应该持有对task表的写锁
+                _process_task(task=task_obj_for_processing, lancedb_mgr=lancedb_mgr, task_mgr=task_mgr_for_processing, engine=engine)
+                
+                
+                # --- 事务三: 更新最终结果 ---
+                # 任务成功完成
+                task_mgr_final = TaskManager(engine=engine)
+                task_mgr_final.update_task_status(task_id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
+                logger.info(f"{processor_name}成功完成任务: ID={task_id}")
 
-                except Exception as task_error:
-                    logger.error(f"{processor_name}处理任务 {task_id} 时发生错误: {task_error}", exc_info=True)
-                    # --- 事务三 (失败情况): 更新最终结果 ---
-                    with Session(bind=engine) as final_session:
-                        task_mgr_final = TaskManager(final_session)
-                        task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(task_error))
-                        final_session.commit()
-                    logger.warning(f"{processor_name}任务失败: ID={task_id}")
+            except Exception as task_error:
+                logger.error(f"{processor_name}处理任务 {task_id} 时发生错误: {task_error}", exc_info=True)
+                # --- 事务三 (失败情况): 更新最终结果 ---
+                task_mgr_final = TaskManager(engine=engine)
+                task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=str(task_error))
+                logger.warning(f"{processor_name}任务失败: ID={task_id}")
 
         except Exception as e:
             logger.error(f"{processor_name}发生意外的顶层错误: {e}", exc_info=True)
             # 如果在获取任务ID后发生未知错误，也尝试标记任务失败
             if task_id:
                 try:
-                    with Session(bind=engine) as final_session:
-                        task_mgr_final = TaskManager(final_session)
-                        task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"处理器顶层错误: {e}")
-                        final_session.commit()
+                    task_mgr_final = TaskManager(engine=engine)
+                    task_mgr_final.update_task_status(task_id, TaskStatus.FAILED, result=TaskResult.FAILURE, message=f"处理器顶层错误: {e}")
                 except Exception as final_update_error:
                     logger.error(f"尝试标记任务 {task_id} 失败时再次出错: {final_update_error}", exc_info=True)
             time.sleep(30) # 发生严重错误时等待更长时间
@@ -630,12 +586,12 @@ def high_priority_task_processor(engine, db_directory: str, stop_event: threadin
         sleep_duration=2
     )
 
-def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, screening_result_id: int):
+def _check_and_create_multivector_task(engine: Engine, task_mgr: TaskManager, screening_result_id: int):
     """
     检查文件是否处于pin状态，如果是则自动创建MULTIVECTOR任务
     
     Args:
-        session: 数据库会话
+        engine: 数据库引擎
         task_mgr: 任务管理器
         screening_result_id: 粗筛结果ID
     """
@@ -643,45 +599,45 @@ def _check_and_create_multivector_task(session: Session, task_mgr: TaskManager, 
         return
     
     try:
-        # 获取粗筛结果，包含文件路径信息
-        screening_result = session.get(FileScreeningResult, screening_result_id)
-        if not screening_result:
-            logger.warning(f"未找到screening_result_id: {screening_result_id}")
-            return
-        
-        file_path = screening_result.file_path
-        
-        # 检查文件是否在最近24小时内被pin过
-        is_recently_pinned = _check_file_pin_status(file_path, session)
-        
-        if is_recently_pinned:
-            logger.info(f"文件 {file_path} 在最近24小时内被pin过，创建MULTIVECTOR任务")
-            task_mgr.add_task(
-                task_name=f"多模态向量化: {Path(file_path).name}",
-                task_type=TaskType.MULTIVECTOR,
-                priority=TaskPriority.HIGH,
-                extra_data={"file_path": file_path},
-                target_file_path=file_path  # 设置冗余字段便于查询
-            )
-        else:
-            logger.info(f"文件 {file_path} 在最近8小时内未被pin过，跳过MULTIVECTOR任务")
+        with Session(bind=engine) as session:
+            # 获取粗筛结果，包含文件路径信息
+            screening_result = session.get(FileScreeningResult, screening_result_id)
+            if not screening_result:
+                logger.warning(f"未找到screening_result_id: {screening_result_id}")
+                return
+            
+            file_path = screening_result.file_path
+            
+            # 检查文件是否在最近24小时内被pin过
+            is_recently_pinned = _check_file_pin_status(file_path, task_mgr)
+            
+            if is_recently_pinned:
+                logger.info(f"文件 {file_path} 在最近24小时内被pin过，创建MULTIVECTOR任务")
+                task_mgr.add_task(
+                    task_name=f"多模态向量化: {Path(file_path).name}",
+                    task_type=TaskType.MULTIVECTOR,
+                    priority=TaskPriority.HIGH,
+                    extra_data={"file_path": file_path},
+                    target_file_path=file_path  # 设置冗余字段便于查询
+                )
+            else:
+                logger.info(f"文件 {file_path} 在最近8小时内未被pin过，跳过MULTIVECTOR任务")
             
     except Exception as e:
         logger.error(f"检查和创建MULTIVECTOR任务时发生错误: {e}", exc_info=True)
 
-def _check_file_pin_status(file_path: str, session: Session) -> bool:
+def _check_file_pin_status(file_path: str, task_mgr: TaskManager = Depends(get_task_manager)) -> bool:
     """
     检查文件是否在最近24小时内被pin过（即有成功的MULTIVECTOR任务）
     
     Args:
         file_path: 文件路径
-        session: 数据库会话
+        task_mgr: 任务管理器实例
         
     Returns:
         bool: 文件是否在最近24小时内被pin过
     """
     try:
-        task_mgr = TaskManager(session)
         return task_mgr.is_file_recently_pinned(file_path, hours=24)
     except Exception as e:
         logger.error(f"检查文件pin状态时发生错误: {e}", exc_info=True)
@@ -745,7 +701,7 @@ def health_check():
     }
 
 @app.get("/system-config/{config_key}")
-def get_system_config(config_key: str, session: Session = Depends(get_session)):
+def get_system_config(config_key: str, engine: Engine = Depends(get_engine)):
     """获取系统配置
     
     参数:
@@ -755,19 +711,20 @@ def get_system_config(config_key: str, session: Session = Depends(get_session)):
     - 配置值和描述信息
     """
     try:
-        config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
-        if not config:
-            return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
-        
-        return {
-            "success": True,
-            "config": {
-                "key": config.key,
-                "value": config.value,
-                "description": config.description,
-                "updated_at": config.updated_at
+        with Session(bind=engine) as session:
+            config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
+            if not config:
+                return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
+            
+            return {
+                "success": True,
+                "config": {
+                    "key": config.key,
+                    "value": config.value,
+                    "description": config.description,
+                    "updated_at": config.updated_at
+                }
             }
-        }
         
     except Exception as e:
         logger.error(f"获取系统配置时发生错误: {e}", exc_info=True)
@@ -777,7 +734,7 @@ def get_system_config(config_key: str, session: Session = Depends(get_session)):
 def update_system_config(
     config_key: str, 
     data: Dict[str, Any] = Body(...),
-    session: Session = Depends(get_session)
+    engine: Engine = Depends(get_engine),
 ):
     """更新系统配置
     
@@ -792,30 +749,30 @@ def update_system_config(
     """
     try:
         new_value = data.get("value", "")
-        
-        config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
-        if not config:
-            return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
-        
-        # 更新配置值和时间戳
-        config.value = new_value
-        config.updated_at = datetime.now()
-        
-        session.add(config)
-        session.commit()
-        
-        logger.info(f"系统配置 '{config_key}' 已更新为: {new_value}")
-        
-        return {
-            "success": True,
-            "message": f"配置项 '{config_key}' 更新成功",
-            "config": {
-                "key": config.key,
-                "value": config.value,
-                "description": config.description,
-                "updated_at": config.updated_at
+        with Session(bind=engine) as session:
+            config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
+            if not config:
+                return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
+            
+            # 更新配置值和时间戳
+            config.value = new_value
+            config.updated_at = datetime.now()
+            
+            session.add(config)
+            session.commit()
+            
+            logger.info(f"系统配置 '{config_key}' 已更新为: {new_value}")
+            
+            return {
+                "success": True,
+                "message": f"配置项 '{config_key}' 更新成功",
+                "config": {
+                    "key": config.key,
+                    "value": config.value,
+                    "description": config.description,
+                    "updated_at": config.updated_at
+                }
             }
-        }
         
     except Exception as e:
         logger.error(f"更新系统配置时发生错误: {e}", exc_info=True)
@@ -825,7 +782,7 @@ def update_system_config(
 async def pin_file(
     data: Dict[str, Any] = Body(...),
     task_mgr: TaskManager = Depends(get_task_manager),
-    session: Session = Depends(get_session)
+    engine: Engine = Depends(get_engine),
 ):
     """Pin文件并创建多模态向量化任务
     
@@ -879,9 +836,9 @@ async def pin_file(
             }
 
         # 在创建任务前检查多模态向量化所需的模型配置
-        lancedb_mgr = LanceDBMgr(app.state.db_directory)
-        models_mgr = ModelsMgr(session, base_dir=app.state.db_directory)
-        multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+        lancedb_mgr = LanceDBMgr(base_dir=app.state.db_directory)
+        models_mgr = ModelsMgr(engine=engine, base_dir=app.state.db_directory)
+        multivector_mgr = MultiVectorMgr(engine=engine, lancedb_mgr=lancedb_mgr, models_mgr=models_mgr)
         
         # 检查多模态向量化所需的模型是否已配置
         if not multivector_mgr.check_multivector_model_availability():
@@ -902,8 +859,6 @@ async def pin_file(
             extra_data={"file_path": file_path}
         )
         
-        # 确保task对象绑定到当前Session，避免DetachedInstanceError
-        task = session.merge(task)
         logger.info(f"成功创建Pin文件的多模态向量化任务: {file_path} (Task ID: {task.id})")
         
         return {

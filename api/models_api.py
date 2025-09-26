@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
-from sqlmodel import Session
+from sqlalchemy import Engine
 from typing import List, Dict, Any, Tuple
 import json
 import uuid
@@ -15,20 +15,20 @@ from pydantic import BaseModel
 
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
+def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     router = APIRouter()
 
-    def get_model_config_manager(session: Session = Depends(external_get_session)) -> ModelConfigMgr:
-        return ModelConfigMgr(session)
+    def get_model_config_manager(engine: Engine = Depends(get_engine)) -> ModelConfigMgr:
+        return ModelConfigMgr(engine)
     
-    def get_models_manager(session: Session = Depends(external_get_session)) -> ModelsMgr:
-        return ModelsMgr(session, base_dir=base_dir)
+    def get_models_manager(engine: Engine = Depends(get_engine)) -> ModelsMgr:
+        return ModelsMgr(engine, base_dir=base_dir)
 
-    def get_model_capability_confirm(session: Session = Depends(external_get_session)) -> ModelCapabilityConfirm:
-        return ModelCapabilityConfirm(session, base_dir=base_dir)
+    def get_model_capability_confirm(engine: Engine = Depends(get_engine)) -> ModelCapabilityConfirm:
+        return ModelCapabilityConfirm(engine, base_dir=base_dir)
 
-    def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
-        return ChatSessionMgr(session)
+    def get_chat_session_manager(engine: Engine = Depends(get_engine)) -> ChatSessionMgr:
+        return ChatSessionMgr(engine)
 
     @router.get("/models/providers", tags=["models"])
     def get_all_provider_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):

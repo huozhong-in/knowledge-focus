@@ -15,6 +15,7 @@ from sqlmodel import (
     Enum,
     JSON,
 )
+from sqlalchemy import Engine
 from datetime import datetime
 from enum import Enum as PyEnum
 from typing import List, Dict, Any
@@ -456,28 +457,29 @@ class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
     从上层拿到session，自己不管理数据库连接"""
     
-    def __init__(self, session: Session) -> None:
-        self.session = session
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
 
     def init_db(self) -> bool:
         """初始化数据库 - 使用统一的Session连接管理，避免多连接冲突"""
-        engine = self.session.get_bind()
-        inspector = inspect(engine)
+        inspector = inspect(self.engine)
         
-        try:
+        with Session(self.engine) as session:
             # 创建任务表
             if not inspector.has_table(Task.__tablename__):
                 # 使用engine创建表
-                Task.__table__.create(engine, checkfirst=True)
+                Task.__table__.create(self.engine, checkfirst=True)
+                print(f"Created table {Task.__tablename__}")
                 # * 删除表中已经完成的24小时之前的任务
-                self.session.exec(text(f'''
+                session.exec(text(f'''
                     DELETE FROM {Task.__tablename__}
                     WHERE status = 'completed' AND updated_at < datetime('now', '-24 hours');
                 '''))
-
+                session.commit()
+        with Session(self.engine) as session:
             # 创建通知表
             if not inspector.has_table(Notification.__tablename__):
-                Notification.__table__.create(engine, checkfirst=True)
+                Notification.__table__.create(self.engine, checkfirst=True)
                 # 创建触发器 - 当任务表中洞察任务状态成功完成时插入通知
                 # conn.execute(text(f'''
                 #     CREATE TRIGGER IF NOT EXISTS notify_insight_task
@@ -489,20 +491,21 @@ class DBManager:
                 #         VALUES (NEW.id, '洞察任务完成', CURRENT_TIMESTAMP, 0);
                 #     END;
                 # '''))
-            
+                session.commit()
+        with Session(self.engine) as session:
             # 创建文件夹表
             if not inspector.has_table(MyFolders.__tablename__):
-                MyFolders.__table__.create(engine, checkfirst=True)
+                MyFolders.__table__.create(self.engine, checkfirst=True)
                 self._init_default_directories()  # 初始化默认文件夹
             
             # 创建Bundle扩展名表
             if not inspector.has_table(BundleExtension.__tablename__):
-                BundleExtension.__table__.create(engine, checkfirst=True)
+                BundleExtension.__table__.create(self.engine, checkfirst=True)
                 self._init_bundle_extensions()  # 初始化Bundle扩展名数据
             
             # 创建系统配置表
             if not inspector.has_table(SystemConfig.__tablename__):
-                SystemConfig.__table__.create(engine, checkfirst=True)
+                SystemConfig.__table__.create(self.engine, checkfirst=True)
                 system_configs = [
                     {
                         "key": "proxy",
@@ -516,43 +519,43 @@ class DBManager:
                         value=config_data["value"],
                         description=config_data["description"]
                     )
-                    self.session.add(new_config)
-                self.session.commit()
+                    session.add(new_config)
+                session.commit()
             
             # 创建文件分类表
             if not inspector.has_table(FileCategory.__tablename__):
-                FileCategory.__table__.create(engine, checkfirst=True)
+                FileCategory.__table__.create(self.engine, checkfirst=True)
                 self._init_file_categories()  # 初始化文件分类数据
             
             # 创建文件扩展名映射表
             if not inspector.has_table(FileExtensionMap.__tablename__):
-                FileExtensionMap.__table__.create(engine, checkfirst=True)
+                FileExtensionMap.__table__.create(self.engine, checkfirst=True)
                 self._init_file_extensions()  # 初始化文件扩展名映射数据
             
             # 创建文件过滤规则表
             if not inspector.has_table(FileFilterRule.__tablename__):
-                FileFilterRule.__table__.create(engine, checkfirst=True)
+                FileFilterRule.__table__.create(self.engine, checkfirst=True)
                 self._init_basic_file_filter_rules()  # 初始化基础文件过滤规则（简化版）
                         
             # 创建标签表
             if not inspector.has_table(Tags.__tablename__):
-                Tags.__table__.create(engine, checkfirst=True)
+                Tags.__table__.create(self.engine, checkfirst=True)
             
             # 创建文件粗筛结果表
             if not inspector.has_table(FileScreeningResult.__tablename__):
-                FileScreeningResult.__table__.create(engine, checkfirst=True)
+                FileScreeningResult.__table__.create(self.engine, checkfirst=True)
                 # 创建索引 - 为文件路径创建唯一索引
-                self.session.exec(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_file_path ON {FileScreeningResult.__tablename__} (file_path);'))
+                session.exec(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_file_path ON {FileScreeningResult.__tablename__} (file_path);'))
                 # 创建索引 - 为文件状态创建索引，便于查询待处理文件
-                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
+                session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_file_status ON {FileScreeningResult.__tablename__} (status);'))
                 # 创建索引 - 为修改时间创建索引，便于按时间查询
-                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
+                session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
                 # 创建索引 - 为task_id创建索引，便于查询关联任务
-                self.session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
+                session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
 
             # 创建 FTS5 虚拟表和触发器
             if not inspector.has_table('t_files_fts'):
-                self.session.exec(text("""
+                session.exec(text("""
                     CREATE VIRTUAL TABLE t_files_fts USING fts5(
                         file_id UNINDEXED,
                         tags_search_ids
@@ -560,12 +563,12 @@ class DBManager:
                 """))
             
             # 删除旧的触发器（如果存在）
-            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_insert;"))
-            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_delete;"))
-            self.session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_update;"))
+            session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_insert;"))
+            session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_delete;"))
+            session.exec(text("DROP TRIGGER IF EXISTS trg_files_after_update;"))
             
             # 创建新的触发器
-            self.session.exec(text(f"""
+            session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_insert AFTER INSERT ON {FileScreeningResult.__tablename__}
                 BEGIN
                     INSERT INTO t_files_fts (file_id, tags_search_ids)
@@ -573,14 +576,14 @@ class DBManager:
                 END;
             """))
 
-            self.session.exec(text(f"""
+            session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_delete AFTER DELETE ON {FileScreeningResult.__tablename__}
                 BEGIN
                     DELETE FROM t_files_fts WHERE file_id = OLD.id;
                 END;
             """))
 
-            self.session.exec(text(f"""
+            session.exec(text(f"""
                 CREATE TRIGGER IF NOT EXISTS trg_files_after_update AFTER UPDATE ON {FileScreeningResult.__tablename__}
                 BEGIN
                     DELETE FROM t_files_fts WHERE file_id = OLD.id;
@@ -592,35 +595,35 @@ class DBManager:
             # 创建文档表
             # TODO 根据后续代码里的要求创建索引
             if not inspector.has_table(Document.__tablename__):
-                Document.__table__.create(engine, checkfirst=True)
+                Document.__table__.create(self.engine, checkfirst=True)
             # 创建父块表
             if not inspector.has_table(ParentChunk.__tablename__):
-                ParentChunk.__table__.create(engine, checkfirst=True)
+                ParentChunk.__table__.create(self.engine, checkfirst=True)
             # 创建子块表
             if not inspector.has_table(ChildChunk.__tablename__):
-                ChildChunk.__table__.create(engine, checkfirst=True)
+                ChildChunk.__table__.create(self.engine, checkfirst=True)
         
             # 创建聊天会话表
             if not inspector.has_table(ChatSession.__tablename__):
-                ChatSession.__table__.create(engine, checkfirst=True)
+                ChatSession.__table__.create(self.engine, checkfirst=True)
             # 创建聊天消息表
             if not inspector.has_table(ChatMessage.__tablename__):
-                ChatMessage.__table__.create(engine, checkfirst=True)
+                ChatMessage.__table__.create(self.engine, checkfirst=True)
                 # INDEX(session_id, created_at)   -- 查询优化
-                self.session.exec(text(f"""
+                session.exec(text(f"""
                     CREATE INDEX IF NOT EXISTS idx_chat_message_session ON {ChatMessage.__tablename__} (session_id, created_at);
                 """))
             # 创建会话Pin文件表
             if not inspector.has_table(ChatSessionPinFile.__tablename__):
-                ChatSessionPinFile.__table__.create(engine, checkfirst=True)
+                ChatSessionPinFile.__table__.create(self.engine, checkfirst=True)
                 # UNIQUE(session_id, file_path)   -- 同一会话中文件唯一
-                self.session.exec(text(f"""
+                session.exec(text(f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_session_pin_file ON {ChatSessionPinFile.__tablename__} (session_id, file_path);
                 """))
             
             # 模型提供者表
             if not inspector.has_table(ModelProvider.__tablename__):
-                ModelProvider.__table__.create(engine, checkfirst=True)
+                ModelProvider.__table__.create(self.engine, checkfirst=True)
                 # 初始化默认模型提供者
                 data = [
                     {
@@ -740,24 +743,24 @@ class DBManager:
                         "use_proxy": False,
                     },
                 ]
-                self.session.add_all([ModelProvider(**provider) for provider in data])
-                self.session.commit()
+                session.add_all([ModelProvider(**provider) for provider in data])
+                session.commit()
             
             # 模型配置表
             if not inspector.has_table(ModelConfiguration.__tablename__):
-                ModelConfiguration.__table__.create(engine, checkfirst=True)
+                ModelConfiguration.__table__.create(self.engine, checkfirst=True)
                 # provider_id和model_identifier的组合唯一
-                self.session.exec(text(f"""
+                session.exec(text(f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_id_model_identifier ON {ModelConfiguration.__tablename__} (provider_id, model_identifier);
                 """))
             
             # 能力指派表
             if not inspector.has_table(CapabilityAssignment.__tablename__):
-                CapabilityAssignment.__table__.create(engine, checkfirst=True)
+                CapabilityAssignment.__table__.create(self.engine, checkfirst=True)
         
             # 工具表
             if not inspector.has_table(Tool.__tablename__):
-                Tool.__table__.create(engine, checkfirst=True)
+                Tool.__table__.create(self.engine, checkfirst=True)
                 data = [
                     {
                         "name": "local_file_serch",
@@ -795,12 +798,12 @@ class DBManager:
                     #     "metadata_json": {"model_path": "tools.co_reading:handle_pdf_reading"}
                     # },
                 ]
-                self.session.add_all([Tool(**tool) for tool in data])
-                self.session.commit()
+                session.add_all([Tool(**tool) for tool in data])
+                session.commit()
 
             # 场景表
             if not inspector.has_table(Scenario.__tablename__):
-                Scenario.__table__.create(engine, checkfirst=True)
+                Scenario.__table__.create(self.engine, checkfirst=True)
                 data = [
                     {
                         "name": "co_reading", 
@@ -825,17 +828,13 @@ class DBManager:
                         "metadata_json": []
                     },
                 ]
-                self.session.add_all([Scenario(**scenario) for scenario in data])
-                self.session.commit()
+                session.add_all([Scenario(**scenario) for scenario in data])
+                session.commit()
                 
             # 提交所有数据库更改
-            self.session.commit()
+            session.commit()
             return True
-            
-        except Exception as e:
-            # 发生错误时回滚
-            self.session.rollback()
-            raise e
+
 
     def _init_bundle_extensions(self) -> None:
         """初始化macOS Bundle扩展名数据"""
@@ -903,9 +902,9 @@ class DBManager:
                     is_system_default=True  # 系统初始化的记录标记为不可删除/修改
                 )
             )
-        
-        self.session.add_all(bundle_objs)
-        self.session.commit()
+        with Session(self.engine) as session:
+            session.add_all(bundle_objs)
+            session.commit()
     
     def _init_basic_file_filter_rules(self) -> None:
         """初始化基础文件过滤规则（仅保留基础忽略规则）"""
@@ -992,9 +991,9 @@ class DBManager:
                     extra_data=rule_data.get("extra_data")
                 )
             )
-        
-        self.session.add_all(rule_objs)
-        self.session.commit()
+        with Session(self.engine) as session:
+            session.add_all(rule_objs)
+            session.commit()
     
     def _init_file_categories(self) -> None:
         """初始化文件分类数据"""
@@ -1009,176 +1008,179 @@ class DBManager:
             FileCategory(name="temp", description="Temporary files", icon="⏱️"),
             FileCategory(name="other", description="Other files", icon="📎"),
         ]
-        self.session.add_all(categories)
-        self.session.commit()
+        with Session(self.engine) as session:
+            session.add_all(categories)
+            session.commit()
 
     def _init_file_extensions(self) -> None:
         """初始化文件扩展名映射"""
         # 获取分类ID映射
-        stmt = select(FileCategory)
-        category_map = {cat.name: cat.id for cat in self.session.exec(stmt).all()}
-        
-        # 文档类扩展名
-        doc_extensions = [
-            # MS Office
-            {"extension": "doc", "category_id": category_map["document"], "description": "Microsoft Word Document (Old Version)"},
-            {"extension": "docx", "category_id": category_map["document"], "description": "Microsoft Word Document"},
-            {"extension": "ppt", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation (Old Version)"},
-            {"extension": "pptx", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation"},
-            {"extension": "xls", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet (Old Version)"},
-            {"extension": "xlsx", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet"},
-            # Apple iWork
-            {"extension": "pages", "category_id": category_map["document"], "description": "Apple Pages Document"},
-            {"extension": "key", "category_id": category_map["document"], "description": "Apple Keynote Presentation"},
-            {"extension": "numbers", "category_id": category_map["document"], "description": "Apple Numbers Spreadsheet"},
-            # Text Documents
-            {"extension": "md", "category_id": category_map["document"], "description": "Markdown Document"},
-            {"extension": "markdown", "category_id": category_map["document"], "description": "Markdown Document"},
-            {"extension": "txt", "category_id": category_map["document"], "description": "Plain Text Document"},
-            {"extension": "rtf", "category_id": category_map["document"], "description": "Rich Text Format Document"},
-            # E-books/Fixed Format
-            {"extension": "pdf", "category_id": category_map["document"], "description": "PDF Document", "priority": "high"},
-            {"extension": "epub", "category_id": category_map["document"], "description": "EPUB E-book"},
-            {"extension": "mobi", "category_id": category_map["document"], "description": "MOBI E-book"},
-            # Web Documents
-            {"extension": "html", "category_id": category_map["document"], "description": "HTML Web Page"},
-            {"extension": "htm", "category_id": category_map["document"], "description": "HTML Web Page"},
-        ]
-        
-        # Image Extensions
-        image_extensions = [
-            {"extension": "jpg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
-            {"extension": "jpeg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
-            {"extension": "png", "category_id": category_map["image"], "description": "PNG Image", "priority": "high"},
-            {"extension": "gif", "category_id": category_map["image"], "description": "GIF Image"},
-            {"extension": "bmp", "category_id": category_map["image"], "description": "BMP Image"},
-            {"extension": "tiff", "category_id": category_map["image"], "description": "TIFF Image"},
-            {"extension": "heic", "category_id": category_map["image"], "description": "HEIC Image (Apple Devices)"},
-            {"extension": "webp", "category_id": category_map["image"], "description": "WebP Image"},
-            {"extension": "svg", "category_id": category_map["image"], "description": "SVG Vector Image"},
-            {"extension": "cr2", "category_id": category_map["image"], "description": "Canon RAW Image"},
-            {"extension": "nef", "category_id": category_map["image"], "description": "Nikon RAW Image"},
-            {"extension": "arw", "category_id": category_map["image"], "description": "Sony RAW Image"},
-            {"extension": "dng", "category_id": category_map["image"], "description": "Generic RAW Image"},
-        ]
-        
-        # Audio/Video Extensions
-        av_extensions = [
-            # Audio
-            {"extension": "mp3", "category_id": category_map["audio_video"], "description": "MP3 Audio", "priority": "high"},
-            {"extension": "wav", "category_id": category_map["audio_video"], "description": "WAV Audio"},
-            {"extension": "aac", "category_id": category_map["audio_video"], "description": "AAC Audio"},
-            {"extension": "flac", "category_id": category_map["audio_video"], "description": "FLAC Lossless Audio"},
-            {"extension": "ogg", "category_id": category_map["audio_video"], "description": "OGG Audio"},
-            {"extension": "m4a", "category_id": category_map["audio_video"], "description": "M4A Audio"},
-            # Video
-            {"extension": "mp4", "category_id": category_map["audio_video"], "description": "MP4 Video", "priority": "high"},
-            {"extension": "mov", "category_id": category_map["audio_video"], "description": "MOV Video (Apple Devices)", "priority": "high"},
-            {"extension": "avi", "category_id": category_map["audio_video"], "description": "AVI Video"},
-            {"extension": "mkv", "category_id": category_map["audio_video"], "description": "MKV Video"},
-            {"extension": "wmv", "category_id": category_map["audio_video"], "description": "WMV Video (Windows)"},
-            {"extension": "flv", "category_id": category_map["audio_video"], "description": "Flash Video"},
-            {"extension": "webm", "category_id": category_map["audio_video"], "description": "WebM Video"},
-        ]
-        
-        # Archive Extensions
-        archive_extensions = [
-            {"extension": "zip", "category_id": category_map["archive"], "description": "ZIP Archive", "priority": "high"},
-            {"extension": "rar", "category_id": category_map["archive"], "description": "RAR Archive"},
-            {"extension": "7z", "category_id": category_map["archive"], "description": "7-Zip Archive"},
-            {"extension": "tar", "category_id": category_map["archive"], "description": "TAR Archive"},
-            {"extension": "gz", "category_id": category_map["archive"], "description": "GZIP Archive"},
-            {"extension": "bz2", "category_id": category_map["archive"], "description": "BZIP2 Archive"},
-        ]
-        
-        # Installer Extensions
-        installer_extensions = [
-            {"extension": "dmg", "category_id": category_map["installer"], "description": "macOS Disk Image", "priority": "high"},
-            {"extension": "pkg", "category_id": category_map["installer"], "description": "macOS Installer Package", "priority": "high"},
-            {"extension": "exe", "category_id": category_map["installer"], "description": "Windows Executable File", "priority": "high"},
-            {"extension": "msi", "category_id": category_map["installer"], "description": "Windows Installer Package"},
-        ]
-        
-        # Code Extensions
-        code_extensions = [
-            {"extension": "py", "category_id": category_map["code"], "description": "Python Source Code"},
-            {"extension": "js", "category_id": category_map["code"], "description": "JavaScript Source Code"},
-            {"extension": "ts", "category_id": category_map["code"], "description": "TypeScript Source Code"},
-            {"extension": "java", "category_id": category_map["code"], "description": "Java Source Code"},
-            {"extension": "c", "category_id": category_map["code"], "description": "C Source Code"},
-            {"extension": "cpp", "category_id": category_map["code"], "description": "C++ Source Code"},
-            {"extension": "h", "category_id": category_map["code"], "description": "C/C++ Header File"},
-            {"extension": "cs", "category_id": category_map["code"], "description": "C# Source Code"},
-            {"extension": "php", "category_id": category_map["code"], "description": "PHP Source Code"},
-            {"extension": "rb", "category_id": category_map["code"], "description": "Ruby Source Code"},
-            {"extension": "go", "category_id": category_map["code"], "description": "Go Source Code"},
-            {"extension": "swift", "category_id": category_map["code"], "description": "Swift Source Code"},
-            {"extension": "kt", "category_id": category_map["code"], "description": "Kotlin Source Code"},
-            {"extension": "sh", "category_id": category_map["code"], "description": "Shell Script"},
-            {"extension": "bat", "category_id": category_map["code"], "description": "Windows Batch File"},
-            {"extension": "json", "category_id": category_map["code"], "description": "JSON Data File"},
-            {"extension": "yaml", "category_id": category_map["code"], "description": "YAML Configuration File"},
-            {"extension": "yml", "category_id": category_map["code"], "description": "YAML Configuration File"},
-            {"extension": "toml", "category_id": category_map["code"], "description": "TOML Configuration File"},
-            {"extension": "xml", "category_id": category_map["code"], "description": "XML Data File"},
-            {"extension": "css", "category_id": category_map["code"], "description": "CSS Stylesheet"},
-            {"extension": "scss", "category_id": category_map["code"], "description": "SCSS Stylesheet"},
-        ]
-        
-        # Design Extensions
-        design_extensions = [
-            {"extension": "psd", "category_id": category_map["design"], "description": "Photoshop Design File"},
-            {"extension": "ai", "category_id": category_map["design"], "description": "Adobe Illustrator Design File"},
-            {"extension": "sketch", "category_id": category_map["design"], "description": "Sketch Design File"},
-            {"extension": "fig", "category_id": category_map["design"], "description": "Figma Design File"},
-            {"extension": "xd", "category_id": category_map["design"], "description": "Adobe XD Design File"},
-        ]
-        
-        # Temporary File Extensions
-        temp_extensions = [
-            {"extension": "tmp", "category_id": category_map["temp"], "description": "Temporary File"},
-            {"extension": "temp", "category_id": category_map["temp"], "description": "Temporary File"},
-            {"extension": "part", "category_id": category_map["temp"], "description": "Incomplete Downloaded File"},
-            {"extension": "crdownload", "category_id": category_map["temp"], "description": "Chrome Download Temporary File"},
-            {"extension": "download", "category_id": category_map["temp"], "description": "Download Temporary File"},
-            {"extension": "bak", "category_id": category_map["temp"], "description": "Backup File"},
-        ]
-        
-        # 合并所有扩展名
-        all_extensions = []
-        all_extensions.extend(doc_extensions)
-        all_extensions.extend(image_extensions)
-        all_extensions.extend(av_extensions)
-        all_extensions.extend(archive_extensions)
-        all_extensions.extend(installer_extensions)
-        all_extensions.extend(code_extensions)
-        all_extensions.extend(design_extensions)
-        all_extensions.extend(temp_extensions)
-        
-        # 转换为FileExtensionMap对象并批量插入
-        extension_objs = []
-        for ext_data in all_extensions:
-            priority = ext_data.get("priority", "medium")
-            extension_objs.append(
-                FileExtensionMap(
-                    extension=ext_data["extension"],
-                    category_id=ext_data["category_id"],
-                    description=ext_data["description"],
-                    priority=priority
+        with Session(self.engine) as session:
+            stmt = select(FileCategory)
+            category_map = {cat.name: cat.id for cat in session.exec(stmt).all()}
+            
+            # 文档类扩展名
+            doc_extensions = [
+                # MS Office
+                {"extension": "doc", "category_id": category_map["document"], "description": "Microsoft Word Document (Old Version)"},
+                {"extension": "docx", "category_id": category_map["document"], "description": "Microsoft Word Document"},
+                {"extension": "ppt", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation (Old Version)"},
+                {"extension": "pptx", "category_id": category_map["document"], "description": "Microsoft PowerPoint Presentation"},
+                {"extension": "xls", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet (Old Version)"},
+                {"extension": "xlsx", "category_id": category_map["document"], "description": "Microsoft Excel Spreadsheet"},
+                # Apple iWork
+                {"extension": "pages", "category_id": category_map["document"], "description": "Apple Pages Document"},
+                {"extension": "key", "category_id": category_map["document"], "description": "Apple Keynote Presentation"},
+                {"extension": "numbers", "category_id": category_map["document"], "description": "Apple Numbers Spreadsheet"},
+                # Text Documents
+                {"extension": "md", "category_id": category_map["document"], "description": "Markdown Document"},
+                {"extension": "markdown", "category_id": category_map["document"], "description": "Markdown Document"},
+                {"extension": "txt", "category_id": category_map["document"], "description": "Plain Text Document"},
+                {"extension": "rtf", "category_id": category_map["document"], "description": "Rich Text Format Document"},
+                # E-books/Fixed Format
+                {"extension": "pdf", "category_id": category_map["document"], "description": "PDF Document", "priority": "high"},
+                {"extension": "epub", "category_id": category_map["document"], "description": "EPUB E-book"},
+                {"extension": "mobi", "category_id": category_map["document"], "description": "MOBI E-book"},
+                # Web Documents
+                {"extension": "html", "category_id": category_map["document"], "description": "HTML Web Page"},
+                {"extension": "htm", "category_id": category_map["document"], "description": "HTML Web Page"},
+            ]
+            
+            # Image Extensions
+            image_extensions = [
+                {"extension": "jpg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
+                {"extension": "jpeg", "category_id": category_map["image"], "description": "JPEG Image", "priority": "high"},
+                {"extension": "png", "category_id": category_map["image"], "description": "PNG Image", "priority": "high"},
+                {"extension": "gif", "category_id": category_map["image"], "description": "GIF Image"},
+                {"extension": "bmp", "category_id": category_map["image"], "description": "BMP Image"},
+                {"extension": "tiff", "category_id": category_map["image"], "description": "TIFF Image"},
+                {"extension": "heic", "category_id": category_map["image"], "description": "HEIC Image (Apple Devices)"},
+                {"extension": "webp", "category_id": category_map["image"], "description": "WebP Image"},
+                {"extension": "svg", "category_id": category_map["image"], "description": "SVG Vector Image"},
+                {"extension": "cr2", "category_id": category_map["image"], "description": "Canon RAW Image"},
+                {"extension": "nef", "category_id": category_map["image"], "description": "Nikon RAW Image"},
+                {"extension": "arw", "category_id": category_map["image"], "description": "Sony RAW Image"},
+                {"extension": "dng", "category_id": category_map["image"], "description": "Generic RAW Image"},
+            ]
+            
+            # Audio/Video Extensions
+            av_extensions = [
+                # Audio
+                {"extension": "mp3", "category_id": category_map["audio_video"], "description": "MP3 Audio", "priority": "high"},
+                {"extension": "wav", "category_id": category_map["audio_video"], "description": "WAV Audio"},
+                {"extension": "aac", "category_id": category_map["audio_video"], "description": "AAC Audio"},
+                {"extension": "flac", "category_id": category_map["audio_video"], "description": "FLAC Lossless Audio"},
+                {"extension": "ogg", "category_id": category_map["audio_video"], "description": "OGG Audio"},
+                {"extension": "m4a", "category_id": category_map["audio_video"], "description": "M4A Audio"},
+                # Video
+                {"extension": "mp4", "category_id": category_map["audio_video"], "description": "MP4 Video", "priority": "high"},
+                {"extension": "mov", "category_id": category_map["audio_video"], "description": "MOV Video (Apple Devices)", "priority": "high"},
+                {"extension": "avi", "category_id": category_map["audio_video"], "description": "AVI Video"},
+                {"extension": "mkv", "category_id": category_map["audio_video"], "description": "MKV Video"},
+                {"extension": "wmv", "category_id": category_map["audio_video"], "description": "WMV Video (Windows)"},
+                {"extension": "flv", "category_id": category_map["audio_video"], "description": "Flash Video"},
+                {"extension": "webm", "category_id": category_map["audio_video"], "description": "WebM Video"},
+            ]
+            
+            # Archive Extensions
+            archive_extensions = [
+                {"extension": "zip", "category_id": category_map["archive"], "description": "ZIP Archive", "priority": "high"},
+                {"extension": "rar", "category_id": category_map["archive"], "description": "RAR Archive"},
+                {"extension": "7z", "category_id": category_map["archive"], "description": "7-Zip Archive"},
+                {"extension": "tar", "category_id": category_map["archive"], "description": "TAR Archive"},
+                {"extension": "gz", "category_id": category_map["archive"], "description": "GZIP Archive"},
+                {"extension": "bz2", "category_id": category_map["archive"], "description": "BZIP2 Archive"},
+            ]
+            
+            # Installer Extensions
+            installer_extensions = [
+                {"extension": "dmg", "category_id": category_map["installer"], "description": "macOS Disk Image", "priority": "high"},
+                {"extension": "pkg", "category_id": category_map["installer"], "description": "macOS Installer Package", "priority": "high"},
+                {"extension": "exe", "category_id": category_map["installer"], "description": "Windows Executable File", "priority": "high"},
+                {"extension": "msi", "category_id": category_map["installer"], "description": "Windows Installer Package"},
+            ]
+            
+            # Code Extensions
+            code_extensions = [
+                {"extension": "py", "category_id": category_map["code"], "description": "Python Source Code"},
+                {"extension": "js", "category_id": category_map["code"], "description": "JavaScript Source Code"},
+                {"extension": "ts", "category_id": category_map["code"], "description": "TypeScript Source Code"},
+                {"extension": "java", "category_id": category_map["code"], "description": "Java Source Code"},
+                {"extension": "c", "category_id": category_map["code"], "description": "C Source Code"},
+                {"extension": "cpp", "category_id": category_map["code"], "description": "C++ Source Code"},
+                {"extension": "h", "category_id": category_map["code"], "description": "C/C++ Header File"},
+                {"extension": "cs", "category_id": category_map["code"], "description": "C# Source Code"},
+                {"extension": "php", "category_id": category_map["code"], "description": "PHP Source Code"},
+                {"extension": "rb", "category_id": category_map["code"], "description": "Ruby Source Code"},
+                {"extension": "go", "category_id": category_map["code"], "description": "Go Source Code"},
+                {"extension": "swift", "category_id": category_map["code"], "description": "Swift Source Code"},
+                {"extension": "kt", "category_id": category_map["code"], "description": "Kotlin Source Code"},
+                {"extension": "sh", "category_id": category_map["code"], "description": "Shell Script"},
+                {"extension": "bat", "category_id": category_map["code"], "description": "Windows Batch File"},
+                {"extension": "json", "category_id": category_map["code"], "description": "JSON Data File"},
+                {"extension": "yaml", "category_id": category_map["code"], "description": "YAML Configuration File"},
+                {"extension": "yml", "category_id": category_map["code"], "description": "YAML Configuration File"},
+                {"extension": "toml", "category_id": category_map["code"], "description": "TOML Configuration File"},
+                {"extension": "xml", "category_id": category_map["code"], "description": "XML Data File"},
+                {"extension": "css", "category_id": category_map["code"], "description": "CSS Stylesheet"},
+                {"extension": "scss", "category_id": category_map["code"], "description": "SCSS Stylesheet"},
+            ]
+            
+            # Design Extensions
+            design_extensions = [
+                {"extension": "psd", "category_id": category_map["design"], "description": "Photoshop Design File"},
+                {"extension": "ai", "category_id": category_map["design"], "description": "Adobe Illustrator Design File"},
+                {"extension": "sketch", "category_id": category_map["design"], "description": "Sketch Design File"},
+                {"extension": "fig", "category_id": category_map["design"], "description": "Figma Design File"},
+                {"extension": "xd", "category_id": category_map["design"], "description": "Adobe XD Design File"},
+            ]
+            
+            # Temporary File Extensions
+            temp_extensions = [
+                {"extension": "tmp", "category_id": category_map["temp"], "description": "Temporary File"},
+                {"extension": "temp", "category_id": category_map["temp"], "description": "Temporary File"},
+                {"extension": "part", "category_id": category_map["temp"], "description": "Incomplete Downloaded File"},
+                {"extension": "crdownload", "category_id": category_map["temp"], "description": "Chrome Download Temporary File"},
+                {"extension": "download", "category_id": category_map["temp"], "description": "Download Temporary File"},
+                {"extension": "bak", "category_id": category_map["temp"], "description": "Backup File"},
+            ]
+            
+            # 合并所有扩展名
+            all_extensions = []
+            all_extensions.extend(doc_extensions)
+            all_extensions.extend(image_extensions)
+            all_extensions.extend(av_extensions)
+            all_extensions.extend(archive_extensions)
+            all_extensions.extend(installer_extensions)
+            all_extensions.extend(code_extensions)
+            all_extensions.extend(design_extensions)
+            all_extensions.extend(temp_extensions)
+            
+            # 转换为FileExtensionMap对象并批量插入
+            extension_objs = []
+            for ext_data in all_extensions:
+                priority = ext_data.get("priority", "medium")
+                extension_objs.append(
+                    FileExtensionMap(
+                        extension=ext_data["extension"],
+                        category_id=ext_data["category_id"],
+                        description=ext_data["description"],
+                        priority=priority
+                    )
                 )
-            )
-        
-        self.session.add_all(extension_objs)
-        self.session.commit()
+            
+            session.add_all(extension_objs)
+            session.commit()
 
     def _init_default_directories(self) -> None:
         """初始化默认系统文件夹"""
         import platform
         
         # 检查是否已有文件夹记录，如果有则跳过初始化
-        existing_count = self.session.exec(select(MyFolders)).first()
-        if existing_count is not None:
-            return
+        with Session(self.engine) as session:
+            existing_count = session.exec(select(MyFolders)).first()
+            if existing_count is not None:
+                return
         
         default_dirs = []
         system = platform.system()
@@ -1236,9 +1238,9 @@ class DBManager:
                 )
         
         if default_dirs:
-            self.session.add_all(default_dirs)
-
-            self.session.commit()
+            with Session(self.engine) as session:
+                session.add_all(default_dirs)
+                session.commit()
 
 if __name__ == '__main__':
     import os
@@ -1334,24 +1336,8 @@ if __name__ == '__main__':
             
             # 使用同一个连接创建Session并进行数据库初始化
             print("开始数据库结构初始化...")
-            # 创建一个基于当前连接的Session
-            session = Session(bind=conn)
-            try:
-                db_mgr = DBManager(session)
-                success = db_mgr.init_db()
-                if success:
-                    print("数据库结构初始化成功")
-                    # 显式提交事务
-                    session.commit()
-                else:
-                    print("数据库结构初始化返回失败状态")
-                    session.rollback()
-            except Exception as init_error:
-                print(f"数据库初始化过程中发生错误: {init_error}")
-                session.rollback()
-                raise
-            finally:
-                session.close()
+            db_mgr = DBManager(engine=engine)
+            db_mgr.init_db()
             
             # 最终提交连接级别的事务
             conn.commit()

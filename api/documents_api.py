@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from PIL import Image
 from sqlmodel import Session, select
+from sqlalchemy import Engine
 from db_mgr import ParentChunk
 from fastapi import APIRouter, HTTPException, Query, Depends
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -16,11 +17,11 @@ import logging
 
 logger = logging.getLogger()
 
-def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
+def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     router = APIRouter()
 
     @router.get("/images/{image_filename}")
-    def get_image(image_filename: str, session: Session = Depends(external_get_session)):
+    def get_image(image_filename: str, engine: Engine = Depends(get_engine)):
         """
         获取图片文件内容
         
@@ -60,11 +61,12 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
                 ParentChunk.chunk_type == "image",
                 ParentChunk.metadata_json.contains(image_filename)
             )
-            chunk = session.exec(stmt).first()
-            
-            if not chunk:
-                logger.warning(f"图片文件未在数据库中找到关联记录: {image_filename}")
-                return {"success": False, "error": "图片文件无效或已过期"}
+            with Session(engine) as session:
+                chunk = session.exec(stmt).first()
+                
+                if not chunk:
+                    logger.warning(f"图片文件未在数据库中找到关联记录: {image_filename}")
+                    return {"success": False, "error": "图片文件无效或已过期"}
             
             # 根据文件扩展名确定正确的 MIME 类型
             file_ext = image_filename.lower().split('.')[-1]
@@ -90,7 +92,7 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
             return {"success": False, "error": f"获取图片失败: {str(e)}"}
 
     @router.get("/images/by-chunk/{parent_chunk_id}")
-    def get_image_by_chunk(parent_chunk_id: int, session: Session = Depends(external_get_session)):
+    def get_image_by_chunk(parent_chunk_id: int):
         """
         通过ParentChunk ID获取关联的图片
         
@@ -106,42 +108,43 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
                 ParentChunk.id == parent_chunk_id,
                 ParentChunk.chunk_type == "image"
             )
-            chunk = session.exec(stmt).first()
-            
-            if not chunk:
-                return {"success": False, "error": f"图片块不存在: {parent_chunk_id}"}
-            
-            # 从chunk中提取图片文件路径
-            image_filename = None
-            
-            # 从metadata中获取image_file_path
-            try:
-                metadata = json.loads(chunk.metadata_json)
-                image_file_path = metadata.get("image_file_path")
+            with Session(get_engine) as session:
+                chunk = session.exec(stmt).first()
                 
-                if image_file_path and os.path.exists(image_file_path):
-                    # metadata中有完整的文件路径
-                    image_path = Path(image_file_path)
-                    image_filename = image_path.name
-                    logger.info(f"Found image file from metadata: {image_filename}")
-                else:
-                    logger.warning(f"Image file path not found or file does not exist: {image_file_path}")
-                            
-            except Exception as e:
-                logger.warning(f"无法从metadata提取图片路径: {e}")
-            
-            if not image_filename:
-                return {"success": False, "error": "无法确定图片文件路径"}
-            
-            # 重定向到图片获取端点
-            return RedirectResponse(url=f"/images/{image_filename}")
+                if not chunk:
+                    return {"success": False, "error": f"图片块不存在: {parent_chunk_id}"}
+                
+                # 从chunk中提取图片文件路径
+                image_filename = None
+                
+                # 从metadata中获取image_file_path
+                try:
+                    metadata = json.loads(chunk.metadata_json)
+                    image_file_path = metadata.get("image_file_path")
+                    
+                    if image_file_path and os.path.exists(image_file_path):
+                        # metadata中有完整的文件路径
+                        image_path = Path(image_file_path)
+                        image_filename = image_path.name
+                        logger.info(f"Found image file from metadata: {image_filename}")
+                    else:
+                        logger.warning(f"Image file path not found or file does not exist: {image_file_path}")
+                                
+                except Exception as e:
+                    logger.warning(f"无法从metadata提取图片路径: {e}")
+                
+                if not image_filename:
+                    return {"success": False, "error": "无法确定图片文件路径"}
+                
+                # 重定向到图片获取端点
+                return RedirectResponse(url=f"/images/{image_filename}")
             
         except Exception as e:
             logger.error(f"通过chunk获取图片时发生错误: {e}", exc_info=True)
             return {"success": False, "error": f"获取图片失败: {str(e)}"}
 
     @router.get("/documents/{document_id}/images")
-    def get_document_images(document_id: int, session: Session = Depends(external_get_session)):
+    def get_document_images(document_id: int):
         """
         获取文档中的所有图片列表
         
@@ -157,55 +160,56 @@ def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
                 ParentChunk.document_id == document_id,
                 ParentChunk.chunk_type == "image"
             )
-            image_chunks = session.exec(stmt).all()
-            
-            images = []
-            for chunk in image_chunks:
-                try:
-                    # 提取图片文件名 - 从metadata中获取
-                    image_filename = None
-                    
-                    # 从metadata中获取image_file_path
+            with Session(get_engine) as session:
+                image_chunks = session.exec(stmt).all()
+                
+                images = []
+                for chunk in image_chunks:
                     try:
-                        metadata = json.loads(chunk.metadata_json)
-                        image_file_path = metadata.get("image_file_path")
+                        # 提取图片文件名 - 从metadata中获取
+                        image_filename = None
                         
-                        if image_file_path and os.path.exists(image_file_path):
-                            # metadata中有完整的文件路径
-                            image_path = Path(image_file_path)
-                            image_filename = image_path.name
-                        else:
-                            logger.warning(f"Image file path not found or file does not exist for chunk {chunk.id}: {image_file_path}")
-                                    
+                        # 从metadata中获取image_file_path
+                        try:
+                            metadata = json.loads(chunk.metadata_json)
+                            image_file_path = metadata.get("image_file_path")
+                            
+                            if image_file_path and os.path.exists(image_file_path):
+                                # metadata中有完整的文件路径
+                                image_path = Path(image_file_path)
+                                image_filename = image_path.name
+                            else:
+                                logger.warning(f"Image file path not found or file does not exist for chunk {chunk.id}: {image_file_path}")
+                                        
+                        except Exception as e:
+                            logger.warning(f"处理图片块 {chunk.id} metadata时出错: {e}")
+                        
+                        # 如果无法确定文件名，跳过这个图片块
+                        if not image_filename:
+                            logger.warning(f"无法确定图片块 {chunk.id} 的文件名，跳过")
+                            continue
+                        
+                        # 获取图片描述 - 现在直接从content字段获取
+                        image_description = chunk.content if chunk.content else ""
+                        
+                        images.append({
+                            "chunk_id": chunk.id,
+                            "filename": image_filename,
+                            "description": image_description,
+                            "image_url": f"/images/{image_filename}",
+                            "chunk_url": f"/images/by-chunk/{chunk.id}"
+                        })
+                        
                     except Exception as e:
-                        logger.warning(f"处理图片块 {chunk.id} metadata时出错: {e}")
-                    
-                    # 如果无法确定文件名，跳过这个图片块
-                    if not image_filename:
-                        logger.warning(f"无法确定图片块 {chunk.id} 的文件名，跳过")
+                        logger.warning(f"处理图片块 {chunk.id} 时出错: {e}")
                         continue
-                    
-                    # 获取图片描述 - 现在直接从content字段获取
-                    image_description = chunk.content if chunk.content else ""
-                    
-                    images.append({
-                        "chunk_id": chunk.id,
-                        "filename": image_filename,
-                        "description": image_description,
-                        "image_url": f"/images/{image_filename}",
-                        "chunk_url": f"/images/by-chunk/{chunk.id}"
-                    })
-                    
-                except Exception as e:
-                    logger.warning(f"处理图片块 {chunk.id} 时出错: {e}")
-                    continue
-            
-            return {
-                "success": True,
-                "document_id": document_id,
-                "images": images,
-                "total_count": len(images)
-            }
+                
+                return {
+                    "success": True,
+                    "document_id": document_id,
+                    "images": images,
+                    "total_count": len(images)
+                }
             
         except Exception as e:
             logger.error(f"获取文档图片列表时发生错误: {e}", exc_info=True)

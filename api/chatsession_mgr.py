@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from sqlmodel import Session, select, desc, and_
+from sqlalchemy import Engine
 from db_mgr import ChatSession, ChatMessage, ChatSessionPinFile
 
 logger = logging.getLogger()
@@ -15,9 +16,9 @@ logger = logging.getLogger()
 
 class ChatSessionMgr:
     """聊天会话管理器"""
-    
-    def __init__(self, session: Session):
-        self.session = session
+
+    def __init__(self, engine: Engine):
+        self.engine = engine
 
     # ==================== 会话管理 ====================
     
@@ -40,12 +41,11 @@ class ChatSessionMgr:
             metadata_json=metadata or {},
             is_active=True
         )
-        
-        self.session.add(session_obj)
-        self.session.commit()
-        self.session.refresh(session_obj)
-        
-        return session_obj
+        with Session(self.engine) as session:
+            session.add(session_obj)
+            session.commit()
+            session.refresh(session_obj)
+            return session_obj
     
     def get_sessions(self, page: int = 1, page_size: int = 20, search: str = None) -> Tuple[List[ChatSession], int]:
         """
@@ -69,20 +69,21 @@ class ChatSessionMgr:
         count_query = select(ChatSession.id).where(ChatSession.is_active)
         if search:
             count_query = count_query.where(ChatSession.name.contains(search))
-        total = len(self.session.exec(count_query).all())
-        
-        # 分页查询，按更新时间倒序
-        sessions = self.session.exec(
-            query.order_by(desc(ChatSession.updated_at))
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-        ).all()
-        
-        return list(sessions), total
+        with Session(self.engine) as session:
+            total = len(session.exec(count_query).all())
+            # 分页查询，按更新时间倒序
+            sessions = session.exec(
+                query.order_by(desc(ChatSession.updated_at))
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            ).all()
+            
+            return list(sessions), total
     
     def get_session(self, session_id: int) -> Optional[ChatSession]:
         """获取指定会话"""
-        return self.session.get(ChatSession, session_id)
+        with Session(self.engine) as session:
+            return session.get(ChatSession, session_id)
     
     def update_session(self, session_id: int, name: str = None, metadata: Dict[str, Any] = None) -> Optional[ChatSession]:
         """
@@ -96,22 +97,23 @@ class ChatSessionMgr:
         Returns:
             更新后的会话对象
         """
-        session_obj = self.session.get(ChatSession, session_id)
-        if not session_obj or not session_obj.is_active:
-            return None
+        with Session(self.engine) as session:
+            session_obj = session.get(ChatSession, session_id)
+            if not session_obj or not session_obj.is_active:
+                return None
+                
+            if name is not None:
+                session_obj.name = name
+            if metadata is not None:
+                session_obj.metadata_json = metadata
+                
+            session_obj.updated_at = datetime.now()
             
-        if name is not None:
-            session_obj.name = name
-        if metadata is not None:
-            session_obj.metadata_json = metadata
+            session.add(session_obj)
+            session.commit()
+            session.refresh(session_obj)
             
-        session_obj.updated_at = datetime.now()
-        
-        self.session.add(session_obj)
-        self.session.commit()
-        self.session.refresh(session_obj)
-        
-        return session_obj
+            return session_obj
     
     def delete_session(self, session_id: int) -> bool:
         """
@@ -123,17 +125,18 @@ class ChatSessionMgr:
         Returns:
             是否删除成功
         """
-        session_obj = self.session.get(ChatSession, session_id)
-        if not session_obj:
-            return False
+        with Session(self.engine) as session:
+            session_obj = session.get(ChatSession, session_id)
+            if not session_obj:
+                return False
+                
+            session_obj.is_active = False
+            session_obj.updated_at = datetime.now()
             
-        session_obj.is_active = False
-        session_obj.updated_at = datetime.now()
-        
-        self.session.add(session_obj)
-        self.session.commit()
-        
-        return True
+            session.add(session_obj)
+            session.commit()
+            
+            return True
 
     # ==================== 场景管理 ====================
     
@@ -148,10 +151,11 @@ class ChatSessionMgr:
             场景ID，如果未找到则返回None
         """
         from db_mgr import Scenario
-        stmt = select(Scenario).where(Scenario.name == name)
-        scenario = self.session.exec(stmt).first()
-        return scenario.id if scenario else None
-    
+        with Session(self.engine) as session:
+            stmt = select(Scenario).where(Scenario.name == name)
+            scenario = session.exec(stmt).first()
+            return scenario.id if scenario else None
+
     def update_session_scenario(
         self, 
         session_id: int, 
@@ -169,39 +173,40 @@ class ChatSessionMgr:
         Returns:
             更新后的会话对象
         """
-        session_obj = self.session.get(ChatSession, session_id)
-        if not session_obj or not session_obj.is_active:
-            return None
-        
-        # 更新scenario_id
-        session_obj.scenario_id = scenario_id
-        
-        # 合并元数据
-        if metadata is not None:
-            current_metadata = {}
-            if session_obj.metadata_json:
-                # metadata_json是JSON列，已经自动反序列化为dict，无需手动json.loads
-                if isinstance(session_obj.metadata_json, dict):
-                    current_metadata = session_obj.metadata_json
-                else:
-                    # 兼容旧数据：如果是字符串则尝试解析
-                    try:
-                        current_metadata = json.loads(session_obj.metadata_json)
-                    except (json.JSONDecodeError, TypeError):
-                        current_metadata = {}
+        with Session(self.engine) as session:
+            session_obj = session.get(ChatSession, session_id)
+            if not session_obj or not session_obj.is_active:
+                return None
             
-            # 合并新的元数据
-            current_metadata.update(metadata)
-            # 直接赋值dict对象，SQLAlchemy的JSON列会自动序列化
-            session_obj.metadata_json = current_metadata
-        
-        session_obj.updated_at = datetime.now()
-        
-        self.session.add(session_obj)
-        self.session.commit()
-        self.session.refresh(session_obj)
-        
-        return session_obj
+            # 更新scenario_id
+            session_obj.scenario_id = scenario_id
+            
+            # 合并元数据
+            if metadata is not None:
+                current_metadata = {}
+                if session_obj.metadata_json:
+                    # metadata_json是JSON列，已经自动反序列化为dict，无需手动json.loads
+                    if isinstance(session_obj.metadata_json, dict):
+                        current_metadata = session_obj.metadata_json
+                    else:
+                        # 兼容旧数据：如果是字符串则尝试解析
+                        try:
+                            current_metadata = json.loads(session_obj.metadata_json)
+                        except (json.JSONDecodeError, TypeError):
+                            current_metadata = {}
+                
+                # 合并新的元数据
+                current_metadata.update(metadata)
+                # 直接赋值dict对象，SQLAlchemy的JSON列会自动序列化
+                session_obj.metadata_json = current_metadata
+            
+            session_obj.updated_at = datetime.now()
+            
+            session.add(session_obj)
+            session.commit()
+            session.refresh(session_obj)
+            
+            return session_obj
     
     # 给定会话增加和减少工具
     def change_session_tools(
@@ -221,24 +226,25 @@ class ChatSessionMgr:
         Returns:
             是否操作成功
         """
-        session_obj = self.session.get(ChatSession, session_id)
-        if not session_obj:
-            return False
-        
-        current_tools = set(session_obj.selected_tool_names or [])
-        
-        if add_tools:
-            current_tools.update(add_tools)
-        if remove_tools:
-            current_tools.difference_update(remove_tools)
-        
-        session_obj.selected_tool_names = list(current_tools)
-        session_obj.updated_at = datetime.now()
-        
-        self.session.add(session_obj)
-        self.session.commit()
-        
-        return True
+        with Session(self.engine) as session:
+            session_obj = session.get(ChatSession, session_id)
+            if not session_obj:
+                return False
+            
+            current_tools = set(session_obj.selected_tool_names or [])
+            
+            if add_tools:
+                current_tools.update(add_tools)
+            if remove_tools:
+                current_tools.difference_update(remove_tools)
+            
+            session_obj.selected_tool_names = list(current_tools)
+            session_obj.updated_at = datetime.now()
+            
+            session.add(session_obj)
+            session.commit()
+            
+            return True
 
     # ==================== 消息管理 ====================
     
@@ -276,11 +282,11 @@ class ChatSessionMgr:
             metadata_json=metadata or {},
             sources=sources or []
         )
-        
-        self.session.add(message)
-        self.session.commit()
-        self.session.refresh(message)
-        
+        with Session(self.engine) as session:
+            session.add(message)
+            session.commit()
+            session.refresh(message)
+
         # 更新会话的updated_at
         self._update_session_timestamp(session_id)
         
@@ -306,35 +312,37 @@ class ChatSessionMgr:
             (消息列表, 总数量)
         """
         # 获取总数
-        total = len(self.session.exec(
-            select(ChatMessage.id).where(ChatMessage.session_id == session_id)
-        ).all())
-        
-        # 分页查询
-        query = select(ChatMessage).where(ChatMessage.session_id == session_id)
-        
-        if latest_first:
-            query = query.order_by(desc(ChatMessage.created_at))
-        else:
-            query = query.order_by(ChatMessage.created_at)
+        with Session(self.engine) as session:
+            total = len(session.exec(
+                select(ChatMessage.id).where(ChatMessage.session_id == session_id)
+            ).all())
             
-        messages = self.session.exec(
-            query.offset((page - 1) * page_size).limit(page_size)
-        ).all()
-        
-        return list(messages), total
+            # 分页查询
+            query = select(ChatMessage).where(ChatMessage.session_id == session_id)
+            
+            if latest_first:
+                query = query.order_by(desc(ChatMessage.created_at))
+            else:
+                query = query.order_by(ChatMessage.created_at)
+                
+            messages = session.exec(
+                query.offset((page - 1) * page_size).limit(page_size)
+            ).all()
+            
+            return list(messages), total
     
     def get_recent_messages(self, session_id: int, limit: int = 10) -> List[ChatMessage]:
         """获取会话的最近N条消息，用作恢复聊天现场"""
-        messages = self.session.exec(
-            select(ChatMessage)
-            .where(ChatMessage.session_id == session_id)
-            .order_by(desc(ChatMessage.created_at))
-            .limit(limit)
-        ).all()
+        with Session(self.engine) as session:
+            messages = session.exec(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == session_id)
+                .order_by(desc(ChatMessage.created_at))
+                .limit(limit)
+            ).all()
         
-        # 返回时间正序的消息
-        return list(reversed(messages))
+            # 返回时间正序的消息
+            return list(reversed(messages))
 
     # ==================== Pin文件管理 ====================
     
@@ -358,16 +366,17 @@ class ChatSessionMgr:
             创建的Pin文件对象
         """
         # 检查是否已经Pin过
-        existing = self.session.exec(
-            select(ChatSessionPinFile)
-            .where(and_(
-                ChatSessionPinFile.session_id == session_id,
-                ChatSessionPinFile.file_path == file_path
-            ))
-        ).first()
-        
-        if existing:
-            return existing
+        with Session(self.engine) as session:
+            existing = session.exec(
+                select(ChatSessionPinFile)
+                .where(and_(
+                    ChatSessionPinFile.session_id == session_id,
+                    ChatSessionPinFile.file_path == file_path
+                ))
+            ).first()
+            
+            if existing:
+                return existing
             
         pin_file = ChatSessionPinFile(
             session_id=session_id,
@@ -375,11 +384,11 @@ class ChatSessionMgr:
             file_name=file_name,
             metadata_json=metadata or {}
         )
-        
-        self.session.add(pin_file)
-        self.session.commit()
-        self.session.refresh(pin_file)
-        
+        with Session(self.engine) as session:
+            session.add(pin_file)
+            session.commit()
+            session.refresh(pin_file)
+
         # 更新会话时间戳
         self._update_session_timestamp(session_id)
         
@@ -396,19 +405,20 @@ class ChatSessionMgr:
         Returns:
             是否成功取消
         """
-        pin_file = self.session.exec(
-            select(ChatSessionPinFile)
-            .where(and_(
-                ChatSessionPinFile.session_id == session_id,
-                ChatSessionPinFile.file_path == file_path
-            ))
-        ).first()
-        
-        if not pin_file:
-            return False
+        with Session(self.engine) as session:
+            pin_file = session.exec(
+                select(ChatSessionPinFile)
+                .where(and_(
+                    ChatSessionPinFile.session_id == session_id,
+                    ChatSessionPinFile.file_path == file_path
+                ))
+            ).first()
             
-        self.session.delete(pin_file)
-        self.session.commit()
+            if not pin_file:
+                return False
+                
+            session.delete(pin_file)
+            session.commit()
         
         # 更新会话时间戳
         self._update_session_timestamp(session_id)
@@ -417,11 +427,12 @@ class ChatSessionMgr:
     
     def get_pinned_files(self, session_id: int) -> List[ChatSessionPinFile]:
         """获取会话的Pin文件列表"""
-        return list(self.session.exec(
-            select(ChatSessionPinFile)
-            .where(ChatSessionPinFile.session_id == session_id)
-            .order_by(ChatSessionPinFile.pinned_at)
-        ).all())
+        with Session(self.engine) as session:
+            return list(session.exec(
+                select(ChatSessionPinFile)
+                .where(ChatSessionPinFile.session_id == session_id)
+                .order_by(ChatSessionPinFile.pinned_at)
+            ).all())
 
     def get_pinned_document_ids(self, session_id: int) -> List[int]:
         """
@@ -439,14 +450,16 @@ class ChatSessionMgr:
             return []
         
         # 通过file_path查找对应的Document记录
+        document_ids = []
         file_paths = [pf.file_path for pf in pin_files]
-        documents = self.session.exec(
-            select(Document)
-            .where(Document.file_path.in_(file_paths))
-        ).all()
-        
-        # 返回文档ID列表
-        document_ids = [doc.id for doc in documents]
+        with Session(self.engine) as session:
+            documents = session.exec(
+                select(Document)
+                .where(Document.file_path.in_(file_paths))
+            ).all()
+
+            # 返回文档ID列表
+            document_ids = [doc.id for doc in documents]
         
         logger.debug(f"会话 {session_id} Pin文件: {len(pin_files)}个, 对应文档: {len(document_ids)}个")
         return document_ids
@@ -455,11 +468,12 @@ class ChatSessionMgr:
     
     def _update_session_timestamp(self, session_id: int):
         """更新会话的updated_at时间戳"""
-        session_obj = self.session.get(ChatSession, session_id)
-        if session_obj:
-            session_obj.updated_at = datetime.now()
-            self.session.add(session_obj)
-            self.session.commit()
+        with Session(self.engine) as session:
+            session_obj = session.get(ChatSession, session_id)
+            if session_obj:
+                session_obj.updated_at = datetime.now()
+                session.add(session_obj)
+                session.commit()
     
     def get_session_stats(self, session_id: int) -> Dict[str, Any]:
         """
@@ -469,16 +483,17 @@ class ChatSessionMgr:
             统计信息字典：消息数量、Pin文件数量等
         """
         # 消息数量
-        message_count = len(self.session.exec(
-            select(ChatMessage.id).where(ChatMessage.session_id == session_id)
-        ).all())
-        
-        # Pin文件数量
-        pinned_file_count = len(self.session.exec(
-            select(ChatSessionPinFile.id).where(ChatSessionPinFile.session_id == session_id)
-        ).all())
-        
-        return {
-            "message_count": message_count,
-            "pinned_file_count": pinned_file_count
-        }
+        with Session(self.engine) as session:
+            message_count = len(session.exec(
+                select(ChatMessage.id).where(ChatMessage.session_id == session_id)
+            ).all())
+            
+            # Pin文件数量
+            pinned_file_count = len(session.exec(
+                select(ChatSessionPinFile.id).where(ChatSessionPinFile.session_id == session_id)
+            ).all())
+            
+            return {
+                "message_count": message_count,
+                "pinned_file_count": pinned_file_count
+            }

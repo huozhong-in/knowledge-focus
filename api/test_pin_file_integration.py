@@ -11,15 +11,13 @@
 import logging
 import sys
 import os
-import time
-import threading
 from pathlib import Path
 
 # 添加当前目录到Python路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from sqlmodel import create_engine, Session
-from db_mgr import TaskType, TaskPriority, Task
+from db_mgr import TaskType, TaskPriority
 from task_mgr import TaskManager
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
@@ -52,7 +50,7 @@ def test_pin_file_integration():
         return False
     
     try:
-        with Session(engine) as session:
+        with Session(bind=engine) as session:
             # 2. 测试任务创建（模拟/pin-file API调用）
             logger.info("📝 步骤1: 创建MULTIVECTOR任务（模拟pin文件操作）")
             task_mgr = TaskManager(session)
@@ -113,7 +111,7 @@ def test_tagging_multivector_chain():
     logger.info("🔗 测试TAGGING→MULTIVECTOR自动衔接")
     
     # 导入TAGGING→MULTIVECTOR衔接函数
-    from main import _check_and_create_multivector_task, _check_file_pin_status
+    from main import _check_file_pin_status
     
     # 测试pin状态检查
     test_file = "/Users/dio/Downloads/AI代理的上下文工程：构建Manus的经验教训.pdf"

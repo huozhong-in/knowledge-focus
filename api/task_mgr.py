@@ -1,3 +1,4 @@
+from config import singleton
 import multiprocessing
 from db_mgr import TaskStatus, TaskResult, Task, TaskPriority, TaskType
 from typing import Dict, Any, List
@@ -11,20 +12,22 @@ from sqlmodel import (
     desc,
     # text,
 )
+from sqlalchemy import Engine
 from datetime import datetime
 
 logger = logging.getLogger()
 
+@singleton
 class TaskManager:
     """任务管理器，负责任务的添加、获取、更新等操作"""
 
-    def __init__(self, session: Session):
+    def __init__(self, engine: Engine):
         """初始化任务管理器
         
         Args:
-            session: SQLAlchemy数据库会话
+            engine: SQLAlchemy数据库引擎
         """
-        self.session: Session = session
+        self.engine = engine
 
     def add_task(self, task_name: str, task_type: TaskType, priority: TaskPriority = TaskPriority.MEDIUM, 
                  extra_data: Dict[str, Any] = None, target_file_path: str = None) -> Task:
@@ -52,12 +55,12 @@ class TaskManager:
             extra_data=extra_data,
             target_file_path=target_file_path
         )
-        
-        self.session.add(task)
-        self.session.commit()
-        self.session.refresh(task)
-        
-        return task
+        with Session(self.engine) as session:
+            session.add(task)
+            session.commit()
+            session.refresh(task)
+            
+            return task
     
     def get_task(self, task_id: int) -> Task | None:
         """根据ID获取任务
@@ -68,7 +71,8 @@ class TaskManager:
         Returns:
             任务对象，如果不存在则返回None
         """
-        return self.session.get(Task, task_id)
+        with Session(self.engine) as session:
+            return session.get(Task, task_id)
     
     def get_tasks(self, limit: int = 100) -> List[Task]:
         """获取任务列表
@@ -79,22 +83,24 @@ class TaskManager:
         Returns:
             任务对象列表
         """
-        statement = select(Task).limit(limit)
-        return self.session.exec(statement).all()
+        with Session(self.engine) as session:
+            statement = select(Task).limit(limit)
+            return session.exec(statement).all()
     
     def get_next_task(self) -> Task | None:
         """获取下一个待处理的任务，优先处理优先级高的任务"""
-        return self.session.exec(
-            select(Task)
+        with Session(self.engine) as session:
+            return session.exec(
+                select(Task)
             .where(Task.status == TaskStatus.PENDING.value)
             .order_by(Task.priority, Task.created_at)
         ).first()
     
     def get_and_lock_next_high_priority_task(self) -> Task | None:
         """原子地获取并锁定下一个高优先级任务"""
-        try:
+        with Session(self.engine) as session:
             # 查找第一个HIGH优先级的PENDING任务
-            task = self.session.exec(
+            task = session.exec(
                 select(Task)
                 .where(Task.status == TaskStatus.PENDING.value)
                 .where(Task.priority == TaskPriority.HIGH.value)
@@ -107,23 +113,18 @@ class TaskManager:
                 task.status = TaskStatus.RUNNING.value
                 task.start_time = datetime.now()
                 task.updated_at = datetime.now()
-                self.session.add(task)
-                self.session.commit()
+                session.add(task)
+                session.commit()
                 logger.info(f"高优先级任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
                 return task
             else:
                 return None
-                
-        except Exception as e:
-            logger.error(f"获取并锁定高优先级任务失败: {e}")
-            self.session.rollback()
-            return None
     
     def get_and_lock_next_task(self) -> Task | None:
         """原子地获取并锁定下一个待处理的任务（排除已被锁定的任务）"""
-        try:
+        with Session(self.engine) as session:
             # 查找第一个PENDING状态的任务
-            task = self.session.exec(
+            task = session.exec(
                 select(Task)
                 .where(Task.status == TaskStatus.PENDING.value)
                 .order_by(Task.priority, Task.created_at)
@@ -135,17 +136,12 @@ class TaskManager:
                 task.status = TaskStatus.RUNNING.value
                 task.start_time = datetime.now()
                 task.updated_at = datetime.now()
-                self.session.add(task)
-                self.session.commit()
+                session.add(task)
+                session.commit()
                 logger.info(f"普通任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
                 return task
             else:
                 return None
-                
-        except Exception as e:
-            logger.error(f"获取并锁定任务失败: {e}")
-            self.session.rollback()
-            return None
     
     def update_task_status(self, task_id: int, status: TaskStatus, 
                           result: TaskResult = None, message: str = None) -> bool:
@@ -163,38 +159,39 @@ class TaskManager:
         logger.info(f"更新任务 {task_id} 状态: {status.name}")
         
         try:
-            task = self.session.get(Task, task_id)
-            if not task:
-                logger.error(f"任务 {task_id} 不存在")
-                return False
-            
-            # 设置状态值
-            task.status = status.value
-            task.updated_at = datetime.now()
-            
-            if status == TaskStatus.RUNNING:
-                task.start_time = datetime.now()
-            
-            if result:
-                task.result = result.value
+            with Session(self.engine) as session:
+                task = session.get(Task, task_id)
+                if not task:
+                    logger.error(f"任务 {task_id} 不存在")
+                    return False
                 
-            if message:
-                task.error_message = message
+                # 设置状态值
+                task.status = status.value
+                task.updated_at = datetime.now()
                 
-            # 确保所有日期时间字段都是 datetime 对象
-            # 如果已经是字符串格式，则转换回 datetime 对象
-            if hasattr(task, 'created_at') and isinstance(task.created_at, str):
-                try:
-                    task.created_at = datetime.fromisoformat(task.created_at)
-                except Exception as e:
-                    logger.error(f"转换 created_at 字段失败: {str(e)}")
-                    # 如果转换失败，使用当前时间
-                    task.created_at = datetime.now()
-            
-            self.session.add(task)
-            self.session.commit()
-            
-            return True
+                if status == TaskStatus.RUNNING:
+                    task.start_time = datetime.now()
+                
+                if result:
+                    task.result = result.value
+                    
+                if message:
+                    task.error_message = message
+                    
+                # 确保所有日期时间字段都是 datetime 对象
+                # 如果已经是字符串格式，则转换回 datetime 对象
+                if hasattr(task, 'created_at') and isinstance(task.created_at, str):
+                    try:
+                        task.created_at = datetime.fromisoformat(task.created_at)
+                    except Exception as e:
+                        logger.error(f"转换 created_at 字段失败: {str(e)}")
+                        # 如果转换失败，使用当前时间
+                        task.created_at = datetime.now()
+
+                session.add(task)
+                session.commit()
+
+                return True
         except Exception as e:
             logger.error(f"更新任务状态失败: {str(e)}")
             import traceback
@@ -296,12 +293,13 @@ class TaskManager:
             最新的已完成任务对象，如果没有则返回None
         """
         try:
-            return self.session.exec(
-                select(Task)
-                .where(Task.task_type == task_type, Task.status == TaskStatus.COMPLETED.value)
-                .order_by(desc(Task.created_at))
-                .limit(1)
-            ).first()
+            with Session(self.engine) as session:
+                return session.exec(
+                    select(Task)
+                    .where(Task.task_type == task_type, Task.status == TaskStatus.COMPLETED.value)
+                    .order_by(desc(Task.created_at))
+                    .limit(1)
+                ).first()
         except Exception as e:
             logger.error(f"获取最新已完成任务失败: {e}")
             return None
@@ -316,11 +314,12 @@ class TaskManager:
             最新的运行中任务对象，如果没有则返回None
         """
         try:
-            return self.session.exec(
-                select(Task)
-                .where(Task.task_type == task_type, Task.status == TaskStatus.RUNNING.value)
-                .order_by(desc(Task.created_at))
-                .limit(1)
+            with Session(self.engine) as session:
+                return session.exec(
+                    select(Task)
+                    .where(Task.task_type == task_type, Task.status == TaskStatus.RUNNING.value)
+                    .order_by(desc(Task.created_at))
+                    .limit(1)
             ).first()
         except Exception as e:
             logger.error(f"获取最新运行任务失败: {e}")
@@ -336,11 +335,12 @@ class TaskManager:
             最新的任务对象，如果没有则返回None
         """
         try:
-            return self.session.exec(
-                select(Task)
-                .where(Task.task_type == task_type)
-                .order_by(desc(Task.created_at))
-                .limit(1)
+            with Session(self.engine) as session:
+                return session.exec(
+                    select(Task)
+                    .where(Task.task_type == task_type)
+                    .order_by(desc(Task.created_at))
+                    .limit(1)
             ).first()
         except Exception as e:
             logger.error(f"获取最新任务失败: {e}")
@@ -360,9 +360,10 @@ class TaskManager:
         try:
             from datetime import timedelta
             cutoff_time = datetime.now() - timedelta(hours=hours)
-            
-            task = self.session.exec(
-                select(Task)
+
+            with Session(self.engine) as session:
+                task = session.exec(
+                    select(Task)
                 .where(Task.task_type == TaskType.MULTIVECTOR.value)
                 .where(Task.target_file_path == file_path)
                 .where(Task.updated_at > cutoff_time)
@@ -371,12 +372,12 @@ class TaskManager:
                 .order_by(desc(Task.updated_at))
             ).first()
             
-            result = task is not None
-            if result:
-                logger.info(f"文件 {file_path} 在最近{hours}小时内被pin过，最后任务ID: {task.id}")
-            else:
-                logger.info(f"文件 {file_path} 在最近{hours}小时内未被pin过")
-            return result
+                result = task is not None
+                if result:
+                    logger.info(f"文件 {file_path} 在最近{hours}小时内被pin过，最后任务ID: {task.id}")
+                else:
+                    logger.info(f"文件 {file_path} 在最近{hours}小时内未被pin过")
+                return result
             
         except Exception as e:
             logger.error(f"检查文件pin状态失败: {e}")
@@ -387,6 +388,6 @@ if __name__ == '__main__':
         create_engine, 
     )
     from config import TEST_DB_PATH
-    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
-    task_mgr = TaskManager(session)
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
+    task_mgr = TaskManager(engine)
     print(task_mgr.get_next_task())

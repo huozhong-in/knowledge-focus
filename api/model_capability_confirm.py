@@ -6,6 +6,7 @@ from db_mgr import (
 import json
 from pathlib import Path
 from sqlmodel import Session, select
+from sqlalchemy import Engine
 from pydantic import BaseModel, Field
 from typing import List, Dict
 from pydantic_ai import Agent, BinaryContent, RunContext
@@ -17,10 +18,10 @@ logger = logging.getLogger()
 
 class ModelCapabilityConfirm:
     """每种能力都需要一段测试程序来确认模型是否具备"""
-    def __init__(self, session: Session, base_dir: str):
-        self.session = session
+    def __init__(self, engine: Engine, base_dir: str):
+        self.engine = engine
         self.base_dir = base_dir
-        self.model_config_mgr = ModelConfigMgr(session)
+        self.model_config_mgr = ModelConfigMgr(engine)
         proxy = self.model_config_mgr.get_proxy_value()
         if proxy is not None and proxy.value is not None and proxy.value != "":
             self.system_proxy = proxy.value
@@ -47,10 +48,11 @@ class ModelCapabilityConfirm:
         for capa in self.get_sorted_capability_names():
             capability_dict[capa] = await self.confirm(config_id, ModelCapability(capa))
         if save_config:
-            model_config: ModelConfiguration = self.session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
-            model_config.capabilities_json = [capa for capa in capability_dict if capability_dict[capa]]
-            self.session.add(model_config)
-            self.session.commit()
+            with Session(self.engine) as session:
+                model_config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
+                model_config.capabilities_json = [capa for capa in capability_dict if capability_dict[capa]]
+                session.add(model_config)
+                session.commit()
         return capability_dict
 
     async def confirm(self, config_id: int, capa: ModelCapability) -> bool:
@@ -72,7 +74,7 @@ class ModelCapabilityConfirm:
         """
         获取指定模型的配置
         """
-        with self.session as session:
+        with Session(self.engine) as session:
             model_config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
             if model_config is None:
                 return None
@@ -158,7 +160,7 @@ class ModelCapabilityConfirm:
         """
         try:
             from models_mgr import ModelsMgr
-            model_mgr = ModelsMgr(self.session, base_dir=self.base_dir)
+            model_mgr = ModelsMgr(engine=self.engine, base_dir=self.base_dir)
             text_embeds = model_mgr.get_embedding("I like reading")
             # logger.info(len(text_embeds))
             if text_embeds is not None and len(text_embeds) > 0:
@@ -225,7 +227,7 @@ class ModelCapabilityConfirm:
         """
         给指定模型增加一项能力
         """
-        with self.session as session:
+        with Session(self.engine) as session:
             config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
             if config is None:
                 return False
@@ -245,7 +247,7 @@ class ModelCapabilityConfirm:
         """
         删除指定模型的一项能力
         """
-        with self.session as session:
+        with Session(self.engine) as session:
             config: ModelConfiguration = session.exec(select(ModelConfiguration).where(ModelConfiguration.id == config_id)).first()
             if config is None:
                 return False
@@ -278,7 +280,7 @@ if __name__ == "__main__":
     
     async def main():
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
-        with Session(engine) as session:
+        with Session(bind=engine) as session:
             mgr = ModelCapabilityConfirm(session, base_dir=Path(TEST_DB_PATH).parent)
             logger.info(await mgr.confirm_text_capability(9))
             logger.info(await mgr.confirm_tooluse_capability(9))

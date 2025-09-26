@@ -4,21 +4,21 @@
 """
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlalchemy import Engine
 from typing import Dict, Any, Optional
 import logging
-
 from chatsession_mgr import ChatSessionMgr
 from db_mgr import Tool
 
 logger = logging.getLogger()
 
 
-def get_router(external_get_session: callable, base_dir: str) -> APIRouter:
+def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     router = APIRouter()
 
-    def get_chat_session_manager(session: Session = Depends(external_get_session)) -> ChatSessionMgr:
-        return ChatSessionMgr(session)
+    def get_chat_session_manager(engine: Engine = Depends(get_engine)) -> ChatSessionMgr:
+        return ChatSessionMgr(engine=engine)
 
     # ==================== 会话管理端点 ====================
 

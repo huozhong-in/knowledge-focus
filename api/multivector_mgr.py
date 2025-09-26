@@ -27,6 +27,7 @@ from typing import (
     Tuple,
 )
 from sqlmodel import Session, select
+from sqlalchemy import Engine
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PictureDescriptionApiOptions,
@@ -64,20 +65,20 @@ SUPPORTED_FORMATS = ['pdf', 'docx', 'pptx', 'txt', 'md', 'markdown']
 @singleton
 class MultiVectorMgr:
     """多模态分块管理器"""
-    
-    def __init__(self, session: Session, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr):
+
+    def __init__(self, engine: Engine, lancedb_mgr: LanceDBMgr, models_mgr: ModelsMgr):
         """
         初始化分块管理器
         
         Args:
-            session: SQLModel数据库会话
+            engine: SQLAlchemy数据库引擎
             lancedb_mgr: LanceDB向量数据库管理器
             models_mgr: 模型管理器（用于调用vision和embedding模型）
         """
-        self.session = session
+        self.engine = engine
         self.lancedb_mgr = lancedb_mgr
         self.models_mgr = models_mgr
-        self.model_config_mgr = ModelConfigMgr(session)
+        self.model_config_mgr = ModelConfigMgr(engine)
         # 在用户指定vision模型之前，需要初始化才能使用
         self.converter = None
         self.use_proxy = False
@@ -261,13 +262,14 @@ Give a concise summary of the image that is well optimized for retrieval.
                 logger.info(f"[MULTIVECTOR] Document already processed and unchanged: {file_path}")
                 if task_id:
                     # 获取已有chunk统计
-                    parent_stmt = select(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
-                    parent_count = len(self.session.exec(parent_stmt).all())
-                    
-                    child_stmt = select(ChildChunk).join(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
-                    child_count = len(self.session.exec(child_stmt).all())
-                    
-                    self.bridge_events.multivector_completed(file_path, task_id, parent_count, child_count)
+                    with Session(self.engine) as session:
+                        parent_stmt = select(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
+                        parent_count = len(session.exec(parent_stmt).all())
+                        
+                        child_stmt = select(ChildChunk).join(ParentChunk).where(ParentChunk.document_id == existing_doc.id)
+                        child_count = len(session.exec(child_stmt).all())
+                        
+                        self.bridge_events.multivector_completed(file_path, task_id, parent_count, child_count)
                 return True
             
             # 4. 使用docling解析文档
@@ -319,8 +321,9 @@ Give a concise summary of the image that is well optimized for retrieval.
             # 10. 更新文档状态
             document.status = "done"
             document.processed_at = datetime.now()
-            self.session.add(document)
-            self.session.commit()
+            with Session(self.engine) as session:
+                session.add(document)
+                session.commit()
             
             # 发送完成事件
             if task_id:
@@ -352,8 +355,9 @@ Give a concise summary of the image that is well optimized for retrieval.
             try:
                 document = self._get_or_create_document_record(file_path, "", "")
                 document.status = "error"
-                self.session.add(document)
-                self.session.commit()
+                with Session(self.engine) as session:
+                    session.add(document)
+                    session.commit()
             except Exception as e:
                 logger.error(f"Failed to update document status: {e}")
                 pass  # 忽略状态更新错误
@@ -377,13 +381,13 @@ Give a concise summary of the image that is well optimized for retrieval.
     def _get_existing_document(self, file_path: str, file_hash: str) -> Optional[Document]:
         """检查是否存在相同hash的文档记录"""
         try:
-            from sqlmodel import select
             stmt = select(Document).where(
                 Document.file_path == file_path,
                 Document.file_hash == file_hash,
                 Document.status == "done"
             )
-            return self.session.exec(stmt).first()
+            with Session(self.engine) as session:
+                return session.exec(stmt).first()
         except Exception as e:
             logger.error(f"Failed to check existing document: {e}")
             return None
@@ -455,31 +459,32 @@ Give a concise summary of the image that is well optimized for retrieval.
             from sqlmodel import select
             
             # 尝试获取现有记录
-            stmt = select(Document).where(Document.file_path == file_path)
-            document = self.session.exec(stmt).first()
-            
-            if document:
-                # 更新现有记录
-                document.file_hash = file_hash
-                document.docling_json_path = docling_json_path
-                document.status = "processing"
-                document.processed_at = datetime.now()
-            else:
-                # 创建新记录
-                document = Document(
-                    file_path=file_path,
-                    file_hash=file_hash,
-                    docling_json_path=docling_json_path,
-                    status="processing",
-                    processed_at=datetime.now()
-                )
-            
-            self.session.add(document)
-            self.session.commit()
-            self.session.refresh(document)
-            
-            logger.info(f"[MULTIVECTOR] Document record created/updated: ID={document.id}")
-            return document
+            with Session(self.engine) as session:
+                stmt = select(Document).where(Document.file_path == file_path)
+                document = session.exec(stmt).first()
+                
+                if document:
+                    # 更新现有记录
+                    document.file_hash = file_hash
+                    document.docling_json_path = docling_json_path
+                    document.status = "processing"
+                    document.processed_at = datetime.now()
+                else:
+                    # 创建新记录
+                    document = Document(
+                        file_path=file_path,
+                        file_hash=file_hash,
+                        docling_json_path=docling_json_path,
+                        status="processing",
+                        processed_at=datetime.now()
+                    )
+                
+                session.add(document)
+                session.commit()
+                session.refresh(document)
+                
+                logger.info(f"[MULTIVECTOR] Document record created/updated: ID={document.id}")
+                return document
             
         except Exception as e:
             logger.error(f"Failed to create/update document record: {e}")
@@ -1140,39 +1145,33 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
     
     def _store_chunks(self, parent_chunks: List[ParentChunk], child_chunks: List[ChildChunk]):
         """存储父块和子块到SQLite"""
-        try:
-            if len(parent_chunks) != len(child_chunks):
-                raise ValueError(f"Parent chunks count ({len(parent_chunks)}) does not match child chunks count ({len(child_chunks)})")
-            
-            # 1. 先存储父块
-            if parent_chunks:
-                self.session.add_all(parent_chunks)
-                self.session.commit()
-                
+        if len(parent_chunks) != len(child_chunks):
+            raise ValueError(f"Parent chunks count ({len(parent_chunks)}) does not match child chunks count ({len(child_chunks)})")
+        
+        # 1. 先存储父块
+        if parent_chunks:
+            with Session(self.engine) as session:
+                session.add_all(parent_chunks)
+                session.commit()
                 # 刷新以获取生成的ID
                 for chunk in parent_chunks:
-                    self.session.refresh(chunk)
-                
-                logger.info(f"[MULTIVECTOR] Stored {len(parent_chunks)} parent chunks")
+                    session.refresh(chunk)
             
-            # 2. 设置子块的parent_chunk_id并存储
-            if child_chunks:
-                for i, child_chunk in enumerate(child_chunks):
-                    child_chunk.parent_chunk_id = parent_chunks[i].id
-                
-                self.session.add_all(child_chunks)
-                self.session.commit()
+            logger.info(f"[MULTIVECTOR] Stored {len(parent_chunks)} parent chunks")
+        
+        # 2. 设置子块的parent_chunk_id并存储
+        if child_chunks:
+            for i, child_chunk in enumerate(child_chunks):
+                child_chunk.parent_chunk_id = parent_chunks[i].id
+            with Session(self.engine) as session:
+                session.add_all(child_chunks)
+                session.commit()
                 
                 # 刷新以获取生成的ID
                 for chunk in child_chunks:
-                    self.session.refresh(chunk)
-                
-                logger.info(f"[MULTIVECTOR] Stored {len(child_chunks)} child chunks")
+                    session.refresh(chunk)
             
-        except Exception as e:
-            logger.error(f"Failed to store chunks: {e}")
-            self.session.rollback()
-            raise
+            logger.info(f"[MULTIVECTOR] Stored {len(child_chunks)} child chunks")
     
     def _vectorize_and_store(self, parent_chunks: List[ParentChunk], child_chunks: List[ChildChunk]):
         """向量化子块并存储到LanceDB（父块不需要向量化）"""
@@ -1221,60 +1220,6 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             logger.error(f"Failed to vectorize and store: {e}")
             raise
 
-    # # =============================================================================
-    # # 📊 查询管理功能 - P0核心 (新增)
-    # # =============================================================================
-    
-    # def get_parent_chunks_by_ids(self, parent_chunk_ids: List[int]) -> List[dict]:
-    #     """
-    #     根据ID列表获取父块内容
-        
-    #     Args:
-    #         parent_chunk_ids: 父块ID列表
-            
-    #     Returns:
-    #         父块内容列表
-    #     """
-    #     try:
-    #         from search_mgr import ContextEnhancer
-            
-    #         enhancer = ContextEnhancer(self.session)
-    #         chunks = enhancer.get_parent_chunks_by_ids(parent_chunk_ids)
-            
-    #         logger.info(f"[SEARCH] Retrieved {len(chunks)} parent chunks")
-    #         return chunks
-            
-    #     except Exception as e:
-    #         logger.error(f"[SEARCH] Failed to get parent chunks: {e}")
-    #         return []
-    
-    # def format_search_results(self, raw_results: List[dict]) -> dict:
-    #     """
-    #     格式化原始搜索结果为LLM友好格式
-        
-    #     Args:
-    #         raw_results: LanceDB返回的原始结果
-            
-    #     Returns:
-    #         格式化的搜索结果
-    #     """
-    #     try:
-    #         from search_mgr import ResultFormatter
-            
-    #         formatter = ResultFormatter(self.session)
-    #         formatted = formatter.format_for_llm(raw_results)
-            
-    #         logger.info(f"[SEARCH] Formatted {len(raw_results)} search results")
-    #         return formatted
-            
-    #     except Exception as e:
-    #         logger.error(f"[SEARCH] Failed to format search results: {e}")
-    #         return {
-    #             "context": "格式化结果时发生错误",
-    #             "sources": [],
-    #             "total_chunks": 0
-    #         }
-
 
 # 为了测试和调试使用
 def test_multivector_file():
@@ -1284,17 +1229,17 @@ def test_multivector_file():
     # SQLite数据库
     from config import TEST_DB_PATH
     from sqlmodel import create_engine
-    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
     # LanceDB
     db_directory = Path(TEST_DB_PATH).parent
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
     # 模型管理器
-    models_mgr = ModelsMgr(session, base_dir=db_directory)
+    models_mgr = ModelsMgr(engine, base_dir=db_directory)
     # 事件发送器
     _bridge_events = BridgeEventSender()
     # 分块管理器
     try:
-        multivector_mgr = MultiVectorMgr(session, lancedb_mgr, models_mgr)
+        multivector_mgr = MultiVectorMgr(engine, lancedb_mgr, models_mgr)
         logging.info('✅ MultivectorMgr初始化成功')
         logging.info('✅ Tokenizer解耦架构已启用')
         logging.info(f'✅ Chunker最大tokens: {multivector_mgr.chunker.tokenizer.get_max_tokens()}')

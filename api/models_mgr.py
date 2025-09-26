@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 import logging
 from typing import List, Dict, Any
-from sqlmodel import Session
+from sqlalchemy import Engine
 from pydantic import BaseModel, Field, ValidationError
 from pydantic_ai import Agent, Tool, BinaryContent
 from pydantic_ai.messages import (
@@ -108,12 +108,12 @@ def create_bridge_progress_reporter(bridge_events, model_name):
 
 @singleton
 class ModelsMgr:
-    def __init__(self, session: Session, base_dir: str):
-        self.session = session
+    def __init__(self, engine: Engine, base_dir: str):
+        self.engine = engine
         self.base_dir = base_dir
-        self.model_config_mgr = ModelConfigMgr(session)
-        self.tool_provider = ToolProvider(session)
-        self.memory_mgr = MemoryMgr(session)
+        self.model_config_mgr = ModelConfigMgr(engine)
+        self.tool_provider = ToolProvider(engine)
+        self.memory_mgr = MemoryMgr(engine)
         self.bridge_events = BridgeEventSender(source="models-manager")
 
     def get_embedding(self, text_str: str) -> List[float]:
@@ -929,7 +929,7 @@ Generate a title that best represents what this conversation will be about. Avoi
         try:
             # 获取会话Pin文件对应的文档ID
             from chatsession_mgr import ChatSessionMgr
-            chat_mgr = ChatSessionMgr(self.session)
+            chat_mgr = ChatSessionMgr(self.engine)
             document_ids = chat_mgr.get_pinned_document_ids(session_id)
             
             if not document_ids:
@@ -941,7 +941,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             lancedb_mgr = LanceDBMgr(base_dir=self.base_dir)
             from search_mgr import SearchManager
             search_mgr = SearchManager(
-                session=self.session, 
+                engine=self.engine, 
                 lancedb_mgr=lancedb_mgr, 
                 models_mgr=self
             )
@@ -1456,8 +1456,8 @@ if __name__ == "__main__":
 
     from config import TEST_DB_PATH
     from sqlmodel import create_engine
-    session = Session(create_engine(f'sqlite:///{TEST_DB_PATH}'))
-    mgr = ModelsMgr(session, base_dir=Path(TEST_DB_PATH).parent)
+    engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
+    mgr = ModelsMgr(engine, base_dir=Path(TEST_DB_PATH).parent)
 
     # # Test get TEXT model interface
     # model_interface = mgr.model_config_mgr.get_text_model_config()
@@ -1544,7 +1544,7 @@ if __name__ == "__main__":
     #     print("原始SearchManager返回数据:")
         
     #     from chatsession_mgr import ChatSessionMgr
-    #     chat_mgr = ChatSessionMgr(session)
+    #     chat_mgr = ChatSessionMgr(engine)
     #     document_ids = chat_mgr.get_pinned_document_ids(session_id)
     #     print(f"Pin的文档ID: {document_ids}")
         
@@ -1555,7 +1555,7 @@ if __name__ == "__main__":
     #         lancedb_mgr = LanceDBMgr(base_dir=base_dir)
 
     #         search_mgr = SearchManager(
-    #             session=session, 
+    #             engine=engine, 
     #             lancedb_mgr=lancedb_mgr, 
     #             models_mgr=mgr
     #         )

@@ -6,6 +6,7 @@ from sqlmodel import (
     or_, 
     not_,
 )
+from sqlalchemy import Engine
 from datetime import datetime
 from db_mgr import MyFolders, BundleExtension, FileCategory, FileExtensionMap, FileFilterRule
 from typing import Dict, List, Optional, Tuple, Set, Union
@@ -25,8 +26,8 @@ class MyFoldersManager:
     3. 管理黑名单功能
     4. 提供跨平台(macOS/Windows)的文件路径处理
     """
-    def __init__(self, session: Session) -> None:
-        self.session = session
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine
         self.system = platform.system()  # 'Darwin' for macOS, 'Windows' for Windows
     
     def get_default_directories(self) -> List[Dict[str, str]]:
@@ -88,25 +89,26 @@ class MyFoldersManager:
         Returns:
             int: 初始化的文件夹数量
         """
-        default_dirs = self.get_default_directories()
-        existing_paths = {myfolder.path for myfolder in self.session.exec(select(MyFolders)).all()}
-        
-        new_records = []
-        for dir_info in default_dirs:
-            if dir_info["path"] not in existing_paths:
-                new_file = MyFolders(
-                    path=dir_info["path"],
-                    alias=dir_info["name"],
-                    is_blacklist=False
-                )
-                new_records.append(new_file)
-        
-        if new_records:
-            self.session.add_all(new_records)
-            self.session.commit()
-            logger.info(f"已初始化 {len(new_records)} 个默认文件夹")
-        
-        return len(new_records)
+        with Session(self.engine) as session:
+            default_dirs = self.get_default_directories()
+            existing_paths = {myfolder.path for myfolder in session.exec(select(MyFolders)).all()}
+            
+            new_records = []
+            for dir_info in default_dirs:
+                if dir_info["path"] not in existing_paths:
+                    new_file = MyFolders(
+                        path=dir_info["path"],
+                        alias=dir_info["name"],
+                        is_blacklist=False
+                    )
+                    new_records.append(new_file)
+            
+            if new_records:
+                session.add_all(new_records)
+                session.commit()
+                logger.info(f"已初始化 {len(new_records)} 个默认文件夹")
+            
+            return len(new_records)
     
     def get_all_directories(self) -> List[MyFolders]:
         """获取所有文件夹记录
@@ -114,7 +116,8 @@ class MyFoldersManager:
         Returns:
             List[MyFolders]: 所有文件夹记录列表
         """
-        return self.session.exec(select(MyFolders)).all()
+        with Session(self.engine) as session:
+            return session.exec(select(MyFolders)).all()
     
     def get_authorized_directories(self) -> List[MyFolders]:
         """获取所有已授权的文件夹（即非黑名单的文件夹）
@@ -122,13 +125,12 @@ class MyFoldersManager:
         Returns:
             List[MyFolders]: 已授权的文件夹记录列表
         """
-        return self.session.exec(
-            select(MyFolders).where(
-                not_(MyFolders.is_blacklist)
-            )
-        ).all()
-    
-    # 已移除 get_pending_directories 方法，不再需要检查授权状态
+        with Session(self.engine) as session:
+            return session.exec(
+                select(MyFolders).where(
+                    not_(MyFolders.is_blacklist)
+                )
+            ).all()
     
     def get_blacklist_directories(self) -> List[MyFolders]:
         """获取所有黑名单文件夹
@@ -136,9 +138,10 @@ class MyFoldersManager:
         Returns:
             List[MyFolders]: 黑名单文件夹记录列表
         """
-        return self.session.exec(
-            select(MyFolders).where(MyFolders.is_blacklist)
-        ).all()
+        with Session(self.engine) as session:
+            return session.exec(
+                select(MyFolders).where(MyFolders.is_blacklist)
+            ).all()
 
     def add_directory(self, path: str, alias: Optional[str] = None, is_blacklist: bool = False) -> Tuple[bool, Union[MyFolders, str]]:
         """添加新文件夹
@@ -163,26 +166,28 @@ class MyFoldersManager:
             return False, f"不是有效的文件夹: {path}"
             
         # 检查记录是否已存在
-        existing = self.session.exec(
-            select(MyFolders).where(MyFolders.path == path)
-        ).first()
-        
-        if existing:
-            return False, f"文件夹已存在: {path}"
+        with Session(self.engine) as session:
             
-        # 添加新记录
-        new_file = MyFolders(
-            path=path,
-            alias=alias,
+            existing = session.exec(
+                select(MyFolders).where(MyFolders.path == path)
+            ).first()
+            
+            if existing:
+                return False, f"文件夹已存在: {path}"
+                
+            # 添加新记录
+            new_file = MyFolders(
+                path=path,
+                alias=alias,
 
-            is_blacklist=is_blacklist
-        )
-        
-        self.session.add(new_file)
-        self.session.commit()
-        self.session.refresh(new_file)  # 刷新以获取完整对象
-        
-        return True, new_file
+                is_blacklist=is_blacklist
+            )
+            
+            session.add(new_file)
+            session.commit()
+            session.refresh(new_file)  # 刷新以获取完整对象
+            
+            return True, new_file
         
     def toggle_blacklist(self, directory_id: int, is_blacklist: bool) -> Tuple[bool, MyFolders | str]:
         """切换文件夹的黑名单状态
@@ -194,16 +199,17 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, MyFolders | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
-        directory = self.session.get(MyFolders, directory_id)
-        if not directory:
-            return False, f"文件夹ID不存在: {directory_id}"
+        with Session(self.engine) as session:
+            directory = session.get(MyFolders, directory_id)
+            if not directory:
+                return False, f"文件夹ID不存在: {directory_id}"
 
-        directory.is_blacklist = is_blacklist
-        directory.updated_at = datetime.now()
-        self.session.add(directory)
-        self.session.commit()
-        self.session.refresh(directory)
-        return True, directory
+            directory.is_blacklist = is_blacklist
+            directory.updated_at = datetime.now()
+            session.add(directory)
+            session.commit()
+            session.refresh(directory)
+            return True, directory
     
     def remove_directory(self, directory_id: int) -> Tuple[bool, str]:
         """从数据库中删除文件夹记录，并清理相关的粗筛记录
@@ -215,29 +221,30 @@ class MyFoldersManager:
             Tuple[bool, str]: (成功标志, 消息)
         """
         # 查找记录
-        directory = self.session.get(MyFolders, directory_id)
-        
-        if not directory:
-            return False, f"文件夹ID不存在: {directory_id}"
-        
-        # 保存路径用于日志或消息
-        deleted_path = directory.path
-        
-        # 1. 先删除该目录相关的所有粗筛记录
-        try:
-            from screening_mgr import ScreeningManager
-            screening_mgr = ScreeningManager(self.session)
-            deleted_count = screening_mgr.delete_screening_results_by_path_prefix(deleted_path)
-            logger.info(f"已删除文件夹'{deleted_path}'相关的 {deleted_count} 条粗筛记录")
-        except Exception as e:
-            logger.error(f"删除文件夹'{deleted_path}'相关的粗筛记录时出错: {str(e)}")
-            # 继续执行删除目录操作，即使清理粗筛记录失败
-        
-        # 2. 删除目录记录
-        self.session.delete(directory)
-        self.session.commit()
-        
-        return True, f"成功删除文件夹: {deleted_path}"
+        with Session(self.engine) as session:
+            directory = session.get(MyFolders, directory_id)
+
+            if not directory:
+                return False, f"文件夹ID不存在: {directory_id}"
+            
+            # 保存路径用于日志或消息
+            deleted_path = directory.path
+            
+            # 1. 先删除该目录相关的所有粗筛记录
+            try:
+                from screening_mgr import ScreeningManager
+                screening_mgr = ScreeningManager(self.engine)
+                deleted_count = screening_mgr.delete_screening_results_by_path_prefix(deleted_path)
+                logger.info(f"已删除文件夹'{deleted_path}'相关的 {deleted_count} 条粗筛记录")
+            except Exception as e:
+                logger.error(f"删除文件夹'{deleted_path}'相关的粗筛记录时出错: {str(e)}")
+                # 继续执行删除目录操作，即使清理粗筛记录失败
+            
+            # 2. 删除目录记录
+            session.delete(directory)
+            session.commit()
+            
+            return True, f"成功删除文件夹: {deleted_path}"
     
     def update_alias(self, directory_id: int, alias: str) -> Tuple[bool, MyFolders | str]:
         """更新文件夹别名
@@ -250,19 +257,20 @@ class MyFoldersManager:
             Tuple[bool, MyFolders | str]: (成功标志, 更新后的文件夹对象或错误消息)
         """
         # 查找记录
-        directory = self.session.get(MyFolders, directory_id)
-        
-        if not directory:
-            return False, f"文件夹ID不存在: {directory_id}"
+        with Session(self.engine) as session:
+            directory = session.get(MyFolders, directory_id)
             
-        # 更新别名
-        directory.alias = alias
-        directory.updated_at = datetime.now()
-        self.session.add(directory)
-        self.session.commit()
-        self.session.refresh(directory)
-        
-        return True, directory
+            if not directory:
+                return False, f"文件夹ID不存在: {directory_id}"
+                
+            # 更新别名
+            directory.alias = alias
+            directory.updated_at = datetime.now()
+            session.add(directory)
+            session.commit()
+            session.refresh(directory)
+            
+            return True, directory
     
     def is_path_monitored(self, path: str) -> bool:
         """检查路径是否被监控（已授权且不在黑名单中）
@@ -281,13 +289,13 @@ class MyFoldersManager:
             return False
         
         # 检查路径是否存在于数据库
-        directory = self.session.exec(
-            select(MyFolders).where(MyFolders.path == path)
-        ).first()
-        
-        # 如果路径存在于数据库且不是黑名单，则认为已授权
-        if directory:
-            return not directory.is_blacklist
+        with Session(self.engine) as session:
+            directory = session.exec(
+                select(MyFolders).where(MyFolders.path == path)
+            ).first()
+            # 如果路径存在于数据库且不是黑名单，则认为已授权
+            if directory:
+                return not directory.is_blacklist
         
         # 检查是否是已授权文件夹的子文件夹
         authorized_dirs = self.get_authorized_directories()
@@ -322,38 +330,40 @@ class MyFoldersManager:
         path = os.path.normpath(path).replace("\\", "/")
         
         # 检查路径本身是否在黑名单中
-        directory = self.session.exec(
-            select(MyFolders).where(
-                and_(
-                    MyFolders.path == path,
-                    MyFolders.is_blacklist
+        with Session(self.engine) as session:
+            directory = session.exec(
+                select(MyFolders).where(
+                    and_(
+                        MyFolders.path == path,
+                        MyFolders.is_blacklist
+                    )
                 )
-            )
-        ).first()
-        
-        if directory:
-            return True
+            ).first()
+            
+            if directory:
+                return True
             
         # 优化黑名单子目录检查
         # 1. 使用SQL的LIKE操作符更高效地检查路径前缀匹配
-        blacklist_paths_query = self.session.exec(
-            select(MyFolders.path).where(MyFolders.is_blacklist)
-        ).all()
-        
-        # 将当前路径与所有黑名单路径进行比较
-        for blacklist_path in blacklist_paths_query:
-            normalized_blacklist = os.path.normpath(blacklist_path).replace("\\", "/")
+        with Session(self.engine) as session:
+            blacklist_paths_query = session.exec(
+                select(MyFolders.path).where(MyFolders.is_blacklist)
+            ).all()
             
-            # 确保两个路径都以/结尾，以处理目录
-            if not normalized_blacklist.endswith("/"):
-                normalized_blacklist += "/"
+            # 将当前路径与所有黑名单路径进行比较
+            for blacklist_path in blacklist_paths_query:
+                normalized_blacklist = os.path.normpath(blacklist_path).replace("\\", "/")
                 
-            # 简单的字符串前缀匹配
-            if path.startswith(normalized_blacklist):
-                return True
-                
-            # 另一种情况是当前路径是黑名单的父目录，这种情况不应该被标记为黑名单
-                
+                # 确保两个路径都以/结尾，以处理目录
+                if not normalized_blacklist.endswith("/"):
+                    normalized_blacklist += "/"
+                    
+                # 简单的字符串前缀匹配
+                if path.startswith(normalized_blacklist):
+                    return True
+                    
+                # 另一种情况是当前路径是黑名单的父目录，这种情况不应该被标记为黑名单
+
         # 备用方法：使用Path对象进行比较（较慢但更精确）
         # 检查路径是否是黑名单文件夹的子文件夹
         blacklist_dirs = self.get_blacklist_directories()
@@ -451,25 +461,26 @@ class MyFoldersManager:
         """
         try:
             # 获取目录
-            directory = self.session.get(MyFolders, directory_id)
-            if not directory:
-                return False, f"文件夹ID不存在: {directory_id}"
-            
-            path = directory.path
-            
-            # 检查路径是否存在
-            if not os.path.exists(path):
-                return False, f"路径不存在: {path}"
+            with Session(self.engine) as session:
+                directory = session.get(MyFolders, directory_id)
+                if not directory:
+                    return False, f"文件夹ID不存在: {directory_id}"
                 
-            # 尝试列出文件夹内容，这将触发系统授权对话框
-            file_list = os.listdir(path)
-            
-            # 如果成功读取，更新最后修改时间
-            directory.updated_at = datetime.now()
-            self.session.add(directory)
-            self.session.commit()
-            
-            return True, f"成功读取文件夹，发现 {len(file_list)} 个文件/文件夹"
+                path = directory.path
+                
+                # 检查路径是否存在
+                if not os.path.exists(path):
+                    return False, f"路径不存在: {path}"
+                    
+                # 尝试列出文件夹内容，这将触发系统授权对话框
+                file_list = os.listdir(path)
+                
+                # 如果成功读取，更新最后修改时间
+                directory.updated_at = datetime.now()
+                session.add(directory)
+                session.commit()
+                
+                return True, f"成功读取文件夹，发现 {len(file_list)} 个文件/文件夹"
         except PermissionError:
             return False, "没有访问权限，用户可能拒绝了授权请求"
         except Exception as e:
@@ -486,11 +497,12 @@ class MyFoldersManager:
         """
         try:
             # 获取目录
-            directory = self.session.get(MyFolders, directory_id)
-            if not directory:
-                return False, {"message": f"文件夹ID不存在: {directory_id}"}
-            
-            path = directory.path
+            with Session(self.engine) as session:
+                directory = session.get(MyFolders, directory_id)
+                if not directory:
+                    return False, {"message": f"文件夹ID不存在: {directory_id}"}
+                
+                path = directory.path
             
             # 检查路径是否存在
             if not os.path.exists(path):
@@ -602,24 +614,25 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[MyFolders, str]]: (成功标志, 黑名单文件夹对象或错误消息)
         """
-        try:
-            # 验证父文件夹存在且不是黑名单
-            parent_folder = self.session.get(MyFolders, parent_id)
+        # 验证父文件夹存在且不是黑名单
+        with Session(self.engine) as session:
+            parent_folder = session.get(MyFolders, parent_id)
             if not parent_folder:
                 return False, f"父文件夹ID不存在: {parent_id}"
             
             if parent_folder.is_blacklist:
                 return False, "不能在黑名单文件夹下添加子文件夹"
-            
+        
             # 验证子文件夹路径在父文件夹下
             folder_path = os.path.normpath(folder_path)
             parent_path = os.path.normpath(parent_folder.path)
             
             if not folder_path.startswith(parent_path):
                 return False, f"文件夹路径必须在父文件夹 {parent_path} 下"
-            
-            # 检查是否已存在
-            existing = self.session.exec(
+        
+        # 检查是否已存在
+        with Session(self.engine) as session:
+            existing = session.exec(
                 select(MyFolders).where(MyFolders.path == folder_path)
             ).first()
             
@@ -630,12 +643,13 @@ class MyFoldersManager:
                 existing.updated_at = datetime.now()
                 if folder_alias:
                     existing.alias = folder_alias
-                self.session.add(existing)
-                self.session.commit()
-                self.session.refresh(existing)
+                session.add(existing)
+                session.commit()
+                session.refresh(existing)
                 return True, existing
-            
-            # 创建新的黑名单记录
+        
+        # 创建新的黑名单记录
+        with Session(self.engine) as session:
             blacklist_folder = MyFolders(
                 path=folder_path,
                 alias=folder_alias or os.path.basename(folder_path),
@@ -644,16 +658,11 @@ class MyFoldersManager:
                 parent_id=parent_id  # 黑名单不需要授权状态
             )
             
-            self.session.add(blacklist_folder)
-            self.session.commit()
-            self.session.refresh(blacklist_folder)
+            session.add(blacklist_folder)
+            session.commit()
+            session.refresh(blacklist_folder)
             
             return True, blacklist_folder
-            
-        except Exception as e:
-            logger.error(f"添加黑名单文件夹失败: {str(e)}")
-            self.session.rollback()
-            return False, f"添加黑名单文件夹失败: {str(e)}"
     
     def get_folder_hierarchy(self) -> List[Dict]:
         """获取文件夹层级关系（白名单+其下的黑名单）
@@ -662,60 +671,61 @@ class MyFoldersManager:
             List[Dict]: 层级结构化的文件夹列表
         """
         try:
-            # 获取所有一级文件夹：白名单文件夹 + 已转为黑名单的常用文件夹
-            root_folders = self.session.exec(
-                select(MyFolders).where(
-                    and_(
-                        # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
-                        or_(
-                            not_(MyFolders.is_blacklist),
-                            and_(MyFolders.is_blacklist, MyFolders.is_common_folder)
-                        ),
-                        # 都是一级文件夹
-                        # * is_ 的用法理解不了
-                        or_(MyFolders.parent_id.is_(None), MyFolders.parent_id == 0)
-                    )
-                ).order_by(MyFolders.created_at)
-            ).all()
-            
-            hierarchy = []
-            for folder in root_folders:
-                # 获取此文件夹下的所有黑名单子文件夹（如果当前文件夹是白名单）
-                black_children = []
-                if not folder.is_blacklist:
-                    black_children = self.session.exec(
-                        select(MyFolders).where(
-                            and_(
-                                MyFolders.is_blacklist,
-                                MyFolders.parent_id == folder.id
-                            )
-                        ).order_by(MyFolders.created_at)
-                    ).all()
+            with Session(self.engine) as session:
+                # 获取所有一级文件夹：白名单文件夹 + 已转为黑名单的常用文件夹
+                root_folders = session.exec(
+                    select(MyFolders).where(
+                        and_(
+                            # 要么是白名单文件夹，要么是已转为黑名单的常用文件夹
+                            or_(
+                                not_(MyFolders.is_blacklist),
+                                and_(MyFolders.is_blacklist, MyFolders.is_common_folder)
+                            ),
+                            # 都是一级文件夹
+                            # * is_ 的用法理解不了
+                            or_(MyFolders.parent_id.is_(None), MyFolders.parent_id == 0)
+                        )
+                    ).order_by(MyFolders.created_at)
+                ).all()
                 
-                folder_data = {
-                    "id": folder.id,
-                    "path": folder.path,
-                    "alias": folder.alias,
-                    "is_blacklist": folder.is_blacklist,
-                    "is_common_folder": folder.is_common_folder,
-                    "created_at": folder.created_at.isoformat() if folder.created_at else None,
-                    "updated_at": folder.updated_at.isoformat() if folder.updated_at else None,
-                    "blacklist_children": [
-                        {
-                            "id": black_child.id,
-                            "path": black_child.path,
-                            "alias": black_child.alias,
-                            "is_blacklist": True,
-                            "parent_id": black_child.parent_id,
-                            "created_at": black_child.created_at.isoformat() if black_child.created_at else None,
-                            "updated_at": black_child.updated_at.isoformat() if black_child.updated_at else None,
-                        }
-                        for black_child in black_children
-                    ]
-                }
-                hierarchy.append(folder_data)
-            
-            return hierarchy
+                hierarchy = []
+                for folder in root_folders:
+                    # 获取此文件夹下的所有黑名单子文件夹（如果当前文件夹是白名单）
+                    black_children = []
+                    if not folder.is_blacklist:
+                        black_children = session.exec(
+                            select(MyFolders).where(
+                                and_(
+                                    MyFolders.is_blacklist,
+                                    MyFolders.parent_id == folder.id
+                                )
+                            ).order_by(MyFolders.created_at)
+                        ).all()
+                    
+                    folder_data = {
+                        "id": folder.id,
+                        "path": folder.path,
+                        "alias": folder.alias,
+                        "is_blacklist": folder.is_blacklist,
+                        "is_common_folder": folder.is_common_folder,
+                        "created_at": folder.created_at.isoformat() if folder.created_at else None,
+                        "updated_at": folder.updated_at.isoformat() if folder.updated_at else None,
+                        "blacklist_children": [
+                            {
+                                "id": black_child.id,
+                                "path": black_child.path,
+                                "alias": black_child.alias,
+                                "is_blacklist": True,
+                                "parent_id": black_child.parent_id,
+                                "created_at": black_child.created_at.isoformat() if black_child.created_at else None,
+                                "updated_at": black_child.updated_at.isoformat() if black_child.updated_at else None,
+                            }
+                            for black_child in black_children
+                        ]
+                    }
+                    hierarchy.append(folder_data)
+                
+                return hierarchy
             
         except Exception as e:
             logger.error(f"获取文件夹层级关系失败: {str(e)}")
@@ -736,8 +746,8 @@ class MyFoldersManager:
             query = select(BundleExtension)
             if active_only:
                 query = query.where(BundleExtension.is_active)
-            
-            return self.session.exec(query.order_by(BundleExtension.extension)).all()
+            with Session(self.engine) as session:
+                return session.exec(query.order_by(BundleExtension.extension)).all()
         except Exception as e:
             logger.error(f"获取Bundle扩展名失败: {str(e)}")
             return []
@@ -752,13 +762,13 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[BundleExtension, str]]: (成功标志, Bundle扩展名对象或错误消息)
         """
-        try:
-            # 标准化扩展名格式
-            if not extension.startswith('.'):
-                extension = '.' + extension
-            
-            # 检查是否已存在
-            existing = self.session.exec(
+        # 标准化扩展名格式
+        if not extension.startswith('.'):
+            extension = '.' + extension
+        
+        # 检查是否已存在
+        with Session(self.engine) as session:
+            existing = session.exec(
                 select(BundleExtension).where(BundleExtension.extension == extension)
             ).first()
             
@@ -771,28 +781,25 @@ class MyFoldersManager:
                     existing.updated_at = datetime.now()
                     if description:
                         existing.description = description
-                    self.session.add(existing)
-                    self.session.commit()
-                    self.session.refresh(existing)
+                    session.add(existing)
+                    session.commit()
+                    session.refresh(existing)
                     return True, existing
-            
-            # 创建新扩展名
+        
+        # 创建新扩展名
+        with Session(self.engine) as session:
             bundle_ext = BundleExtension(
                 extension=extension,
                 description=description or f"{extension} Bundle",
                 is_active=True
             )
             
-            self.session.add(bundle_ext)
-            self.session.commit()
-            self.session.refresh(bundle_ext)
+            session.add(bundle_ext)
+            session.commit()
+            session.refresh(bundle_ext)
             
             return True, bundle_ext
-            
-        except Exception as e:
-            logger.error(f"添加Bundle扩展名失败: {str(e)}")
-            self.session.rollback()
-            return False, f"添加Bundle扩展名失败: {str(e)}"
+
     
     def remove_bundle_extension(self, extension_id: int) -> Tuple[bool, str]:
         """删除Bundle扩展名（设为不活跃）
@@ -803,23 +810,18 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, str]: (成功标志, 消息)
         """
-        try:
-            bundle_ext = self.session.get(BundleExtension, extension_id)
+        with Session(self.engine) as session:
+            bundle_ext = session.get(BundleExtension, extension_id)
             if not bundle_ext:
                 return False, f"Bundle扩展名ID不存在: {extension_id}"
             
             bundle_ext.is_active = False
             bundle_ext.updated_at = datetime.now()
             
-            self.session.add(bundle_ext)
-            self.session.commit()
+            session.add(bundle_ext)
+            session.commit()
             
             return True, f"Bundle扩展名 {bundle_ext.extension} 已禁用"
-            
-        except Exception as e:
-            logger.error(f"删除Bundle扩展名失败: {str(e)}")
-            self.session.rollback()
-            return False, f"删除Bundle扩展名失败: {str(e)}"
     
     def get_bundle_extensions_for_rust(self) -> List[str]:
         """获取用于Rust端的Bundle扩展名列表
@@ -844,8 +846,8 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[BundleExtension, str]]: (成功标志, Bundle扩展名对象或错误消息)
         """
-        try:
-            bundle_ext = self.session.get(BundleExtension, extension_id)
+        with Session(self.engine) as session:
+            bundle_ext = session.get(BundleExtension, extension_id)
             if not bundle_ext:
                 return False, "Bundle扩展名不存在"
             
@@ -853,16 +855,11 @@ class MyFoldersManager:
             bundle_ext.is_active = not bundle_ext.is_active
             bundle_ext.updated_at = datetime.now()
             
-            self.session.add(bundle_ext)
-            self.session.commit()
-            self.session.refresh(bundle_ext)
+            session.add(bundle_ext)
+            session.commit()
+            session.refresh(bundle_ext)
             
             return True, bundle_ext
-            
-        except Exception as e:
-            logger.error(f"切换Bundle扩展名状态失败: {str(e)}")
-            self.session.rollback()
-            return False, f"切换Bundle扩展名状态失败: {str(e)}"
 
     # ========== 文件分类管理方法 ==========
     
@@ -873,26 +870,27 @@ class MyFoldersManager:
             List[Dict]: 文件分类列表，包含扩展名数量统计
         """
         try:
-            categories = self.session.exec(select(FileCategory).order_by(FileCategory.name)).all()
-            result = []
-            
-            for category in categories:
-                # 统计关联的扩展名数量
-                ext_count = len(self.session.exec(
-                    select(FileExtensionMap).where(FileExtensionMap.category_id == category.id)
-                ).all())
+            with Session(self.engine) as session:
+                categories = session.exec(select(FileCategory).order_by(FileCategory.name)).all()
+                result = []
                 
-                result.append({
-                    "id": category.id,
-                    "name": category.name,
-                    "description": category.description,
-                    "icon": category.icon,
-                    "extension_count": ext_count,
-                    "created_at": category.created_at,
-                    "updated_at": category.updated_at
-                })
-            
-            return result
+                for category in categories:
+                    # 统计关联的扩展名数量
+                    ext_count = len(session.exec(
+                        select(FileExtensionMap).where(FileExtensionMap.category_id == category.id)
+                    ).all())
+                    
+                    result.append({
+                        "id": category.id,
+                        "name": category.name,
+                        "description": category.description,
+                        "icon": category.icon,
+                        "extension_count": ext_count,
+                        "created_at": category.created_at,
+                        "updated_at": category.updated_at
+                    })
+                
+                return result
         except Exception as e:
             logger.error(f"获取文件分类失败: {str(e)}")
             return []
@@ -908,32 +906,28 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileCategory, str]]: (成功标志, 文件分类对象或错误消息)
         """
-        try:
-            # 检查名称是否已存在
-            existing = self.session.exec(
+        # 检查名称是否已存在
+        with Session(self.engine) as session:
+            existing = session.exec(
                 select(FileCategory).where(FileCategory.name == name)
             ).first()
             
             if existing:
                 return False, f"分类名称 '{name}' 已存在"
-            
-            # 创建新分类
+        
+        # 创建新分类
+        with Session(self.engine) as session:
             new_category = FileCategory(
                 name=name,
                 description=description,
                 icon=icon
             )
             
-            self.session.add(new_category)
-            self.session.commit()
-            self.session.refresh(new_category)
+            session.add(new_category)
+            session.commit()
+            session.refresh(new_category)
             
             return True, new_category
-            
-        except Exception as e:
-            logger.error(f"添加文件分类失败: {str(e)}")
-            self.session.rollback()
-            return False, f"添加文件分类失败: {str(e)}"
     
     def update_file_category(self, category_id: int, name: str = None, description: str = None, icon: str = None) -> Tuple[bool, Union[FileCategory, str]]:
         """更新文件分类信息
@@ -947,14 +941,14 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileCategory, str]]: (成功标志, 文件分类对象或错误消息)
         """
-        try:
-            category = self.session.get(FileCategory, category_id)
+        with Session(self.engine) as session:
+            category = session.get(FileCategory, category_id)
             if not category:
                 return False, "文件分类不存在"
             
             # 如果要更新名称，检查是否与其他分类重名
             if name and name != category.name:
-                existing = self.session.exec(
+                existing = session.exec(
                     select(FileCategory).where(FileCategory.name == name)
                 ).first()
                 if existing:
@@ -969,16 +963,11 @@ class MyFoldersManager:
             
             category.updated_at = datetime.now()
             
-            self.session.add(category)
-            self.session.commit()
-            self.session.refresh(category)
+            session.add(category)
+            session.commit()
+            session.refresh(category)
             
             return True, category
-            
-        except Exception as e:
-            logger.error(f"更新文件分类失败: {str(e)}")
-            self.session.rollback()
-            return False, f"更新文件分类失败: {str(e)}"
     
     def delete_file_category(self, category_id: int, force: bool = False) -> Tuple[bool, str]:
         """删除文件分类
@@ -990,13 +979,13 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, str]: (成功标志, 消息)
         """
-        try:
-            category = self.session.get(FileCategory, category_id)
+        with Session(self.engine) as session:
+            category = session.get(FileCategory, category_id)
             if not category:
                 return False, "文件分类不存在"
             
             # 检查是否有关联的扩展名映射
-            related_extensions = self.session.exec(
+            related_extensions = session.exec(
                 select(FileExtensionMap).where(FileExtensionMap.category_id == category_id)
             ).all()
             
@@ -1006,22 +995,17 @@ class MyFoldersManager:
             # 如果强制删除，先删除关联的扩展名映射
             if force and related_extensions:
                 for ext_map in related_extensions:
-                    self.session.delete(ext_map)
+                    session.delete(ext_map)
             
             # 删除分类
-            self.session.delete(category)
-            self.session.commit()
+            session.delete(category)
+            session.commit()
             
             message = f"文件分类 '{category.name}' 已删除"
             if force and related_extensions:
                 message += f"（同时删除了 {len(related_extensions)} 个关联的扩展名映射）"
             
             return True, message
-            
-        except Exception as e:
-            logger.error(f"删除文件分类失败: {str(e)}")
-            self.session.rollback()
-            return False, f"删除文件分类失败: {str(e)}"
 
     # ========== 扩展名映射管理方法 ==========
     
@@ -1035,30 +1019,31 @@ class MyFoldersManager:
             List[Dict]: 扩展名映射列表，包含分类信息
         """
         try:
-            query = select(FileExtensionMap, FileCategory).join(
-                FileCategory, FileExtensionMap.category_id == FileCategory.id
-            )
-            
-            if category_id:
-                query = query.where(FileExtensionMap.category_id == category_id)
-            
-            query = query.order_by(FileExtensionMap.extension)
-            results = self.session.exec(query).all()
-            
-            mappings = []
-            for ext_map, category in results:
-                mappings.append({
-                    "id": ext_map.id,
-                    "extension": ext_map.extension,
-                    "category_id": ext_map.category_id,
-                    "category_name": category.name,
-                    "description": ext_map.description,
-                    "priority": ext_map.priority,
-                    "created_at": ext_map.created_at,
-                    "updated_at": ext_map.updated_at
-                })
-            
-            return mappings
+            with Session(self.engine) as session:
+                query = select(FileExtensionMap, FileCategory).join(
+                    FileCategory, FileExtensionMap.category_id == FileCategory.id
+                )
+                
+                if category_id:
+                    query = query.where(FileExtensionMap.category_id == category_id)
+                
+                query = query.order_by(FileExtensionMap.extension)
+                results = session.exec(query).all()
+                
+                mappings = []
+                for ext_map, category in results:
+                    mappings.append({
+                        "id": ext_map.id,
+                        "extension": ext_map.extension,
+                        "category_id": ext_map.category_id,
+                        "category_name": category.name,
+                        "description": ext_map.description,
+                        "priority": ext_map.priority,
+                        "created_at": ext_map.created_at,
+                        "updated_at": ext_map.updated_at
+                    })
+                
+                return mappings
         except Exception as e:
             logger.error(f"获取扩展名映射失败: {str(e)}")
             return []
@@ -1075,18 +1060,18 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileExtensionMap, str]]: (成功标志, 扩展名映射对象或错误消息)
         """
-        try:
+        with Session(self.engine) as session:
             # 标准化扩展名（去掉点）
             if extension.startswith('.'):
                 extension = extension[1:]
             
             # 检查分类是否存在
-            category = self.session.get(FileCategory, category_id)
+            category = session.get(FileCategory, category_id)
             if not category:
                 return False, "指定的文件分类不存在"
             
             # 检查扩展名是否已存在
-            existing = self.session.exec(
+            existing = session.exec(
                 select(FileExtensionMap).where(FileExtensionMap.extension == extension)
             ).first()
             
@@ -1101,16 +1086,12 @@ class MyFoldersManager:
                 priority=priority
             )
             
-            self.session.add(new_mapping)
-            self.session.commit()
-            self.session.refresh(new_mapping)
+            session.add(new_mapping)
+            session.commit()
+            session.refresh(new_mapping)
             
             return True, new_mapping
-            
-        except Exception as e:
-            logger.error(f"添加扩展名映射失败: {str(e)}")
-            self.session.rollback()
-            return False, f"添加扩展名映射失败: {str(e)}"
+
     
     def update_extension_mapping(self, mapping_id: int, extension: str = None, category_id: int = None, description: str = None, priority: str = None) -> Tuple[bool, Union[FileExtensionMap, str]]:
         """更新扩展名映射
@@ -1125,8 +1106,8 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileExtensionMap, str]]: (成功标志, 扩展名映射对象或错误消息)
         """
-        try:
-            mapping = self.session.get(FileExtensionMap, mapping_id)
+        with Session(self.engine) as session:
+            mapping = session.get(FileExtensionMap, mapping_id)
             if not mapping:
                 return False, "扩展名映射不存在"
             
@@ -1135,7 +1116,7 @@ class MyFoldersManager:
                 if extension.startswith('.'):
                     extension = extension[1:]
                 
-                existing = self.session.exec(
+                existing = session.exec(
                     select(FileExtensionMap).where(FileExtensionMap.extension == extension)
                 ).first()
                 if existing:
@@ -1144,7 +1125,7 @@ class MyFoldersManager:
             
             # 如果要更新分类，检查分类是否存在
             if category_id and category_id != mapping.category_id:
-                category = self.session.get(FileCategory, category_id)
+                category = session.get(FileCategory, category_id)
                 if not category:
                     return False, "指定的文件分类不存在"
                 mapping.category_id = category_id
@@ -1157,16 +1138,11 @@ class MyFoldersManager:
             
             mapping.updated_at = datetime.now()
             
-            self.session.add(mapping)
-            self.session.commit()
-            self.session.refresh(mapping)
+            session.add(mapping)
+            session.commit()
+            session.refresh(mapping)
             
             return True, mapping
-            
-        except Exception as e:
-            logger.error(f"更新扩展名映射失败: {str(e)}")
-            self.session.rollback()
-            return False, f"更新扩展名映射失败: {str(e)}"
     
     def delete_extension_mapping(self, mapping_id: int) -> Tuple[bool, str]:
         """删除扩展名映射
@@ -1177,21 +1153,16 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, str]: (成功标志, 消息)
         """
-        try:
-            mapping = self.session.get(FileExtensionMap, mapping_id)
+        with Session(self.engine) as session:
+            mapping = session.get(FileExtensionMap, mapping_id)
             if not mapping:
                 return False, "扩展名映射不存在"
             
             extension = mapping.extension
-            self.session.delete(mapping)
-            self.session.commit()
+            session.delete(mapping)
+            session.commit()
             
             return True, f"扩展名映射 '{extension}' 已删除"
-            
-        except Exception as e:
-            logger.error(f"删除扩展名映射失败: {str(e)}")
-            self.session.rollback()
-            return False, f"删除扩展名映射失败: {str(e)}"
 
     # ========== 文件过滤规则管理方法 ==========
     
@@ -1215,7 +1186,8 @@ class MyFoldersManager:
                 query = query.where(not_(FileFilterRule.is_system))
             
             query = query.order_by(FileFilterRule.priority.desc(), FileFilterRule.name)
-            return self.session.exec(query).all()
+            with Session(self.engine) as session:
+                return session.exec(query).all()
         except Exception as e:
             logger.error(f"获取文件过滤规则失败: {str(e)}")
             return []
@@ -1239,9 +1211,9 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
         """
-        try:
+        with Session(self.engine) as session:
             # 检查规则名称是否已存在
-            existing = self.session.exec(
+            existing = session.exec(
                 select(FileFilterRule).where(FileFilterRule.name == name)
             ).first()
             
@@ -1250,7 +1222,7 @@ class MyFoldersManager:
             
             # 如果指定了分类ID，检查分类是否存在
             if category_id:
-                category = self.session.get(FileCategory, category_id)
+                category = session.get(FileCategory, category_id)
                 if not category:
                     return False, "指定的文件分类不存在"
             
@@ -1269,16 +1241,11 @@ class MyFoldersManager:
                 extra_data=extra_data
             )
             
-            self.session.add(new_rule)
-            self.session.commit()
-            self.session.refresh(new_rule)
+            session.add(new_rule)
+            session.commit()
+            session.refresh(new_rule)
             
             return True, new_rule
-            
-        except Exception as e:
-            logger.error(f"添加文件过滤规则失败: {str(e)}")
-            self.session.rollback()
-            return False, f"添加文件过滤规则失败: {str(e)}"
     
     def update_filter_rule(self, rule_id: int, **kwargs) -> Tuple[bool, Union[FileFilterRule, str]]:
         """更新文件过滤规则
@@ -1290,8 +1257,8 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
         """
-        try:
-            rule = self.session.get(FileFilterRule, rule_id)
+        with Session(self.engine) as session:
+            rule = session.get(FileFilterRule, rule_id)
             if not rule:
                 return False, "文件过滤规则不存在"
             
@@ -1301,7 +1268,7 @@ class MyFoldersManager:
             
             # 如果要更新名称，检查是否重复
             if 'name' in kwargs and kwargs['name'] != rule.name:
-                existing = self.session.exec(
+                existing = session.exec(
                     select(FileFilterRule).where(FileFilterRule.name == kwargs['name'])
                 ).first()
                 if existing:
@@ -1309,7 +1276,7 @@ class MyFoldersManager:
             
             # 如果要更新分类ID，检查分类是否存在
             if 'category_id' in kwargs and kwargs['category_id']:
-                category = self.session.get(FileCategory, kwargs['category_id'])
+                category = session.get(FileCategory, kwargs['category_id'])
                 if not category:
                     return False, "指定的文件分类不存在"
             
@@ -1323,16 +1290,11 @@ class MyFoldersManager:
             
             rule.updated_at = datetime.now()
             
-            self.session.add(rule)
-            self.session.commit()
-            self.session.refresh(rule)
+            session.add(rule)
+            session.commit()
+            session.refresh(rule)
             
             return True, rule
-            
-        except Exception as e:
-            logger.error(f"更新文件过滤规则失败: {str(e)}")
-            self.session.rollback()
-            return False, f"更新文件过滤规则失败: {str(e)}"
     
     def toggle_filter_rule_status(self, rule_id: int) -> Tuple[bool, Union[FileFilterRule, str]]:
         """切换文件过滤规则的启用状态
@@ -1343,8 +1305,8 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, Union[FileFilterRule, str]]: (成功标志, 文件过滤规则对象或错误消息)
         """
-        try:
-            rule = self.session.get(FileFilterRule, rule_id)
+        with Session(self.engine) as session:
+            rule = session.get(FileFilterRule, rule_id)
             if not rule:
                 return False, "文件过滤规则不存在"
             
@@ -1352,16 +1314,11 @@ class MyFoldersManager:
             rule.enabled = not rule.enabled
             rule.updated_at = datetime.now()
             
-            self.session.add(rule)
-            self.session.commit()
-            self.session.refresh(rule)
+            session.add(rule)
+            session.commit()
+            session.refresh(rule)
             
             return True, rule
-            
-        except Exception as e:
-            logger.error(f"切换文件过滤规则状态失败: {str(e)}")
-            self.session.rollback()
-            return False, f"切换文件过滤规则状态失败: {str(e)}"
     
     def delete_filter_rule(self, rule_id: int, force: bool = False) -> Tuple[bool, str]:
         """删除文件过滤规则
@@ -1373,8 +1330,8 @@ class MyFoldersManager:
         Returns:
             Tuple[bool, str]: (成功标志, 消息)
         """
-        try:
-            rule = self.session.get(FileFilterRule, rule_id)
+        with Session(self.engine) as session:
+            rule = session.get(FileFilterRule, rule_id)
             if not rule:
                 return False, "文件过滤规则不存在"
             
@@ -1383,24 +1340,18 @@ class MyFoldersManager:
                 return False, "系统规则不允许删除，请使用强制删除"
             
             rule_name = rule.name
-            self.session.delete(rule)
-            self.session.commit()
-            
+            session.delete(rule)
+            session.commit()
+
             return True, f"文件过滤规则 '{rule_name}' 已删除"
-            
-        except Exception as e:
-            logger.error(f"删除文件过滤规则失败: {str(e)}")
-            self.session.rollback()
-            return False, f"删除文件过滤规则失败: {str(e)}"
 
 
 if __name__ == '__main__':
     from sqlmodel import create_engine, Session
     from config import TEST_DB_PATH
     engine = create_engine(f"sqlite:///{TEST_DB_PATH}")
-    with Session(engine) as session:
-        mgr = MyFoldersManager(session)
-        categories = mgr.get_file_categories()
-        print(f'Found {len(categories)} categories:')
-        for cat in categories:
-            print(f'  {cat}')
+    mgr = MyFoldersManager(engine)
+    categories = mgr.get_file_categories()
+    print(f'Found {len(categories)} categories:')
+    for cat in categories:
+        print(f'  {cat}')
