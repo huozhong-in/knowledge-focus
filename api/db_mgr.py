@@ -434,7 +434,7 @@ class Tool(SQLModel, table=True):
     __tablename__ = "t_tools"
     id: int = Field(default=None, primary_key=True)
     name: str = Field(max_length=100, index=True, unique=True)
-    tool_type: ToolType = Field(default=ToolType.DIRECT)
+    tool_type: str = Field(sa_column=Column(Enum(ToolType, values_callable=lambda obj: [e.value for e in obj]), default=ToolType.DIRECT.value))
     description: str | None = Field(default=None, max_length=500)
     metadata_json: Dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)

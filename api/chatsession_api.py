@@ -4,11 +4,12 @@
 """
 
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
-from sqlmodel import select
+from sqlmodel import Session, select
 from sqlalchemy import Engine
 from typing import Dict, Any, Optional
 import logging
 from chatsession_mgr import ChatSessionMgr
+from models_mgr import ModelsMgr
 from db_mgr import Tool
 
 logger = logging.getLogger()
@@ -19,6 +20,9 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
 
     def get_chat_session_manager(engine: Engine = Depends(get_engine)) -> ChatSessionMgr:
         return ChatSessionMgr(engine=engine)
+    
+    def get_models_manager(engine: Engine = Depends(get_engine)) -> ModelsMgr:
+        return ModelsMgr(engine=engine, base_dir=base_dir)
 
     # ==================== 会话管理端点 ====================
 
@@ -52,7 +56,8 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     @router.post("/chat/sessions/smart", tags=["chat-sessions"])
     def create_smart_session(
         data: Dict[str, Any] = Body(...),
-        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager),
+        models_mgr: ModelsMgr = Depends(get_models_manager)
     ):
         """创建智能命名的聊天会话"""
         try:
@@ -63,8 +68,6 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 raise HTTPException(status_code=400, detail="first_message_content is required for smart session creation")
             
             # 使用LLM生成智能会话名称
-            from models_mgr import ModelsMgr
-            models_mgr = ModelsMgr(chat_mgr.session, base_dir=base_dir)
             smart_title = models_mgr.generate_session_title(first_message_content)
             
             # 创建会话
@@ -136,7 +139,8 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     @router.get("/chat/sessions/{session_id}", tags=["chat-sessions"])
     def get_session(
         session_id: int,
-        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager),
+        engine: Engine = Depends(get_engine)
     ):
         """获取指定会话详情"""
         try:
@@ -149,25 +153,24 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             # 恢复前端工具勾选所需：返回会话选择的工具列表
             selected_tools = session.selected_tool_names or []
 
-            # 可选：返回前端需要呈现的工具配置（例如 Tavily 的 api_key），用于预填 Dialog
-            # 仅示例性返回 search_use_tavily 的配置
+            # 可选：返回前端需要呈现的工具配置状态（例如 Tavily 是否已配置 api_key）
+            # 仅返回配置状态，不返回具体的 api_key 值（由独立接口提供）
             tool_configs: Dict[str, Any] = {}
             try:
-                tavily_tool = chat_mgr.session.exec(
-                    select(Tool).where(Tool.name == "search_use_tavily")
-                ).first()
-                tavily_api_key = ""
-                if tavily_tool and tavily_tool.metadata_json:
-                    tavily_api_key = tavily_tool.metadata_json.get("api_key", "") or ""
-                tool_configs["search_use_tavily"] = {
-                    "has_api_key": bool(tavily_api_key),
-                    "api_key": tavily_api_key,
-                }
+                with Session(engine) as s:
+                    tavily_tool = s.exec(
+                        select(Tool).where(Tool.name == "search_use_tavily")
+                    ).first()
+                    tavily_api_key = ""
+                    if tavily_tool and tavily_tool.metadata_json:
+                        tavily_api_key = tavily_tool.metadata_json.get("api_key", "") or ""
+                    tool_configs["search_use_tavily"] = {
+                        "has_api_key": bool(tavily_api_key),
+                    }
             except Exception:
                 # 安全兜底，不影响主流程
                 tool_configs["search_use_tavily"] = {
                     "has_api_key": False,
-                    "api_key": "",
                 }
             
             return {

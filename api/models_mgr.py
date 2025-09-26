@@ -472,10 +472,13 @@ Generate a title that best represents what this conversation will be about. Avoi
             logger.info(f"当前工具数: {len(tools)}, tools token数: {count_tokens_tools}")
             
             # 构建系统prompt
-            # TODO 要描述可选工具
             system_prompt = ["You are a helpful assistant."]
+            # 加载场景相关的系统prompt
             scenario_system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
-            system_prompt = scenario_system_prompt if scenario_system_prompt is not None else system_prompt
+            system_prompt.append(scenario_system_prompt) if scenario_system_prompt is not None else None
+            # 在系统提示词中描述工具用法
+            if len(tools) > 0:
+                system_prompt.append("Search Tavily for the given query and return the results.")
             count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
             logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
             
@@ -639,7 +642,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                 return None
 
             # 使用 agent.iter() 方法来逐个输出流中每个节点
-            async with agent.iter(user_prompt=user_prompt_final, deps=session_id) as run:
+            async with agent.iter(user_prompt=user_prompt_final, deps=self.engine) as run:
                 async for node in run:
                     # logger.info(f"Processing node type: {type(node)}")
                     if Agent.is_user_prompt_node(node):
@@ -1447,11 +1450,12 @@ Generate a title that best represents what this conversation will be about. Avoi
 
 # for testing
 if __name__ == "__main__":
+    import sys
     logging.basicConfig(
         level=logging.INFO,
         # format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler()]
+        handlers=[logging.StreamHandler(stream=sys.stdout)]
     )
 
     from config import TEST_DB_PATH
@@ -1489,14 +1493,19 @@ if __name__ == "__main__":
     # test stream
     async def test_stream():
         messages = [
-            {'role': 'user', 'content': '拜占庭将军问题是什么？'}
+            {'role': 'user', 'content': '今天的谷歌股价是多少？'}
         ]
         
         print('Testing Vercel AI SDK compatible stream protocol:')
         print('=' * 50)
-        
-        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=24):
-            print(chunk, end='')
+
+        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=1):
+            # print(chunk, end='')
+            try:
+                print(json.dumps(json.loads(chunk.lstrip('data: ')), ensure_ascii=False), end='')
+            except Exception as e:
+                print(f"Error processing chunk: {e}")
+                pass
     
     asyncio.run(test_stream())
 

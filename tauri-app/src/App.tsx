@@ -101,6 +101,9 @@ export default function App() {
     metadata?: Record<string, any>
   }>>([])
   
+  // 临时选择的工具状态（在会话创建前临时保存）
+  const [tempSelectedTools, setTempSelectedTools] = useState<string[]>([])
+  
   // 聊天重置触发器
   const [chatResetTrigger, setChatResetTrigger] = useState(0)
   
@@ -180,6 +183,9 @@ export default function App() {
       
       // 清空临时Pin文件（切换到已存在的会话）
       setTempPinnedFiles([])
+      
+      // 清空临时工具选择（切换到已存在的会话）
+      setTempSelectedTools([])
       
       // 加载会话的Pin文件并重建文件列表
       try {
@@ -299,6 +305,9 @@ export default function App() {
         }
         // 清空临时Pin文件
         setTempPinnedFiles([])
+        
+        // 清空临时工具选择（已经在AiSdkChat中处理了工具应用）
+        setTempSelectedTools([])
       }
       
       // 保存到Tauri Store
@@ -323,6 +332,21 @@ export default function App() {
   // 移除临时Pin文件
   const removeTempPinnedFile = (filePath: string) => {
     setTempPinnedFiles(prev => prev.filter(file => file.file_path !== filePath))
+  }
+
+  // 添加临时工具选择
+  const addTempSelectedTool = (toolName: string) => {
+    setTempSelectedTools(prev => {
+      if (!prev.includes(toolName)) {
+        return [...prev, toolName]
+      }
+      return prev
+    })
+  }
+
+  // 移除临时工具选择
+  const removeTempSelectedTool = (toolName: string) => {
+    setTempSelectedTools(prev => prev.filter(tool => tool !== toolName))
   }
 
   // 处理会话标题动画完成
@@ -542,9 +566,12 @@ export default function App() {
           currentSession={currentSession}
           currentSessionId={currentSessionId}
           tempPinnedFiles={tempPinnedFiles}
+          tempSelectedTools={tempSelectedTools}
           onCreateSessionFromMessage={createSessionFromMessage}
           onAddTempPinnedFile={addTempPinnedFile}
           onRemoveTempPinnedFile={removeTempPinnedFile}
+          onAddTempSelectedTool={addTempSelectedTool}
+          onRemoveTempSelectedTool={removeTempSelectedTool}
           chatResetTrigger={chatResetTrigger}
           onSessionUpdate={handleSessionUpdate}
         />          

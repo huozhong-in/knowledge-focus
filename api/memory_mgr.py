@@ -76,7 +76,7 @@ class MemoryMgr:
                 "description": tool.description,
                 "parameters": tool.function_schema.json_schema
             })
-            logger.info(log)
+            # logger.info(log)
             result += num_tokens_from_string(log)
         return result
 

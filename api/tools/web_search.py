@@ -1,37 +1,63 @@
 from sqlmodel import Session, select
-from db_mgr import Tool
+from sqlalchemy import Engine
+from db_mgr import Tool as ToolSpec
 from pydantic_ai import RunContext
-from pydantic_ai.common_tools.tavily import tavily_search_tool
+import httpx
 
-def search_use_tavily(ctx: RunContext[int], query: str, session: Session) -> str:
+async def search_use_tavily(ctx: RunContext[Engine], query: str) -> str:
     """
-    使用Tavily进行网络搜索
-
-    需要在metadata_json中配置api_key
+    使用Tavily进行网络搜索，将结果摘要返回
 
     Args:
-        query (str): 搜索查询字符串
-        api_key (str): Tavily API密钥
+        query (str): 搜索查询
 
     Returns:
         str: 搜索结果摘要
     """
-    tool = session.exec(
-        select(Tool).where(Tool.name == "search_use_tavily").first()
-    )
-    meta_data_json = tool.metadata_json if tool and tool.metadata_json else {}
-    api_key = meta_data_json.get("api_key", "")
-    if api_key == "":
-        return "Error: Tavily API key is not configured."
-    try:
-        results = tavily_search_tool(query, api_key=api_key)
-        if results and isinstance(results, list):
-            # 返回前3条结果的摘要
-            summaries = [result.get("snippet", "") for result in results[:3]]
-            return "\n".join(summaries) if summaries else "No relevant information found."
-        return "No relevant information found."
-    except Exception as e:
-        return f"Error during web search: {str(e)}"
+    with Session(ctx.deps) as session:
+        tool_spec = session.exec(
+            select(ToolSpec).where(ToolSpec.name == "search_use_tavily")
+        ).first()
+        meta_data_json = tool_spec.metadata_json if tool_spec and tool_spec.metadata_json else {}
+        api_key = meta_data_json.get("api_key", "")
+        if api_key == "":
+            return "Error: Tavily API key is not configured."
+        
+        # 直接调用Tavily API
+        try:
+            url = "https://api.tavily.com/search"
+            headers = {"Content-Type": "application/json"}
+            data = {
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "basic",
+                "include_answer": True,
+                "include_raw_content": False,
+                "max_results": 3,
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=data, headers=headers)
+                response.raise_for_status()
+                result = response.json()
+                
+                # 格式化搜索结果
+                if "results" in result and result["results"]:
+                    formatted_results = []
+                    for item in result["results"]:
+                        formatted_results.append(f"- {item.get('title', 'No title')}: {item.get('content', 'No content')[:200]}... (来源: {item.get('url', 'No URL')})")
+                    
+                    answer = result.get("answer", "")
+                    output = f"搜索结果:\n{chr(10).join(formatted_results)}"
+                    if answer:
+                        output = f"总结答案: {answer}\n\n{output}"
+                    
+                    return output
+                else:
+                    return "未找到相关搜索结果。"
+                    
+        except Exception as e:
+            return f"搜索时出现错误: {str(e)}"
 
 def test_api_key(api_key: str) -> bool:
     """

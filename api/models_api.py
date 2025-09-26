@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
+from sqlmodel import Session, select
 from sqlalchemy import Engine
 from typing import List, Dict, Any, Tuple
 import json
@@ -7,7 +8,7 @@ import uuid
 import logging
 from datetime import datetime
 from chatsession_mgr import ChatSessionMgr
-from db_mgr import ModelCapability, Scenario
+from db_mgr import ModelCapability, Scenario, ModelProvider
 from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
@@ -138,30 +139,32 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             return {"success": False, "message": str(e)}
 
     @router.get("/models/global_capability/{model_capability}", tags=["models"])
-    def get_model_for_global_capability(model_capability: str, config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    def get_model_for_global_capability(
+        model_capability: str, 
+        config_mgr: ModelConfigMgr = Depends(get_model_config_manager),
+        engine: Engine = Depends(get_engine)
+        ):
         """获取全局指定能力的模型分配"""
         try:
             capability = ModelCapability(model_capability)
             config = config_mgr.get_model_for_global_capability(capability)
             if config is not None:
-                from sqlmodel import select
-                from db_mgr import ModelProvider
-                provider = config_mgr.session.exec(
-                    select(ModelProvider).where(ModelProvider.id == config.provider_id)
-                ).first()
-                
-                if provider:
-                    provider_key = f"{provider.provider_type}-{provider.id}"
-                    return {
-                        "success": True, 
-                        "data": {
-                            "capability": model_capability,
-                            "provider_key": provider_key,
-                            "model_id": str(config.id)
+                with Session(engine) as session:
+                    provider = session.exec(
+                        select(ModelProvider).where(ModelProvider.id == config.provider_id)
+                    ).first()
+                    if provider:
+                        provider_key = f"{provider.provider_type}-{provider.id}"
+                        return {
+                            "success": True, 
+                            "data": {
+                                "capability": model_capability,
+                                "provider_key": provider_key,
+                                "model_id": str(config.id)
+                            }
                         }
-                    }
-                else:
-                    return {"success": False, "message": "Provider not found"}
+                    else:
+                        return {"success": False, "message": "Provider not found"}
             else:
                 return {"success": False, "message": "Model not found"}
         except ValueError:
@@ -233,7 +236,8 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
         request: AgentChatRequest,
         config_mgr: ModelConfigMgr = Depends(get_model_config_manager),
         models_mgr: ModelsMgr = Depends(get_models_manager),
-        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager)
+        chat_mgr: ChatSessionMgr = Depends(get_chat_session_manager),
+        engine: Engine = Depends(get_engine)
     ):
         """
         Handles agentic chat sessions that require tools and session context.
@@ -353,19 +357,20 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 if chat_session and chat_session.scenario_id:
                     logger.info(f"检测到场景模式，scenario_id: {chat_session.scenario_id}")
                     # 获取场景信息  
-                    scenario = chat_mgr.session.get(Scenario, chat_session.scenario_id)
-                    if scenario and scenario.name == "co_reading":
-                        logger.info("启动PDF共读模式")
-                        # 调用共读流协议处理函数
-                        async for sse_chunk in models_mgr.coreading_v5_compatible(
-                            messages=[last_user_message],
-                            session_id=request.session_id,
-                        ):
-                            yield sse_chunk
-                            # 解析SSE数据以便累积保存（用于持久化）
-                            accumulated_text_content_delta, accumulated_parts_delta = _accumulate_parts(sse_chunk)
-                            accumulated_text_content += accumulated_text_content_delta
-                            accumulated_parts.extend(accumulated_parts_delta)
+                    with Session(engine) as session:
+                        scenario = session.get(Scenario, chat_session.scenario_id)
+                        if scenario and scenario.name == "co_reading":
+                            logger.info("启动PDF共读模式")
+                            # 调用共读流协议处理函数
+                            async for sse_chunk in models_mgr.coreading_v5_compatible(
+                                messages=[last_user_message],
+                                session_id=request.session_id,
+                            ):
+                                yield sse_chunk
+                                # 解析SSE数据以便累积保存（用于持久化）
+                                accumulated_text_content_delta, accumulated_parts_delta = _accumulate_parts(sse_chunk)
+                                accumulated_text_content += accumulated_text_content_delta
+                                accumulated_parts.extend(accumulated_parts_delta)
                 else:
                     chunk_count = 0
                     async for sse_chunk in models_mgr.stream_agent_chat_v5_compatible(

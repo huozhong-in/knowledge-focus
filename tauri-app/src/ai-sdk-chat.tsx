@@ -15,7 +15,6 @@ import {
   getSessionMessages,
   getSession,
   changeSessionTools,
-  // getMcpToolApiKey,
   setMcpToolApiKey,
 } from "./lib/chat-session-api"
 import { useCoReadingTimer } from "./hooks/useCoReadingTimer"
@@ -45,13 +44,13 @@ import {
   PromptInputToolbar,
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input"
-// import {
-//   Tool,
-//   ToolContent,
-//   ToolHeader,
-//   ToolInput,
-//   ToolOutput,
-// } from '@/components/ai-elements/tool';
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from '@/components/ai-elements/tool';
 import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
@@ -59,6 +58,7 @@ import { Actions, Action } from '@/components/ai-elements/actions'
 import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
 import { Checkbox } from "./components/ui/checkbox"
 import { useTranslation } from "react-i18next"
+import { toast } from "@/tweakcn/hooks/use-toast"
 
 
 interface AiSdkChatProps {
@@ -71,6 +71,9 @@ interface AiSdkChatProps {
   imagePath?: string // 用于接收从文件列表传来的图片路径
   imageSelectionKey?: number // 用于强制触发图片选择更新的key
   onSessionUpdate?: (updatedSession: ChatSession) => void // 会话更新回调
+  tempSelectedTools?: string[] // 临时选择的工具列表
+  onAddTempSelectedTool?: (toolName: string) => void // 添加临时工具回调
+  onRemoveTempSelectedTool?: (toolName: string) => void // 移除临时工具回调
 }
 
 /**
@@ -85,6 +88,9 @@ export function AiSdkChat({
   imagePath,
   imageSelectionKey,
   onSessionUpdate,
+  tempSelectedTools,
+  onAddTempSelectedTool,
+  onRemoveTempSelectedTool,
 }: AiSdkChatProps) {
   const [effectiveSessionId, setEffectiveSessionId] = useState<
     string | undefined
@@ -232,6 +238,19 @@ export function AiSdkChat({
     console.log('🔗 [DEBUG] 会话更新回调已准备就绪, 当前会话:', currentSession?.id)
   }, [onSessionUpdate, currentSession?.id])
 
+  // 处理临时工具状态：当没有真实会话时，从临时工具列表中恢复UI状态
+  useEffect(() => {
+    if (!currentSession?.id && tempSelectedTools) {
+      const isTavilyTempSelected = tempSelectedTools.includes(TAVILY_TOOL_NAME)
+      setTavilyEnabled(isTavilyTempSelected)
+      setEnableWebSearch(isTavilyTempSelected)
+      console.log('📋 [DEBUG] 从临时工具状态恢复 UI:', {
+        tempSelectedTools,
+        tavilyEnabled: isTavilyTempSelected
+      })
+    }
+  }, [tempSelectedTools, currentSession?.id])
+
   // 当imagePath改变时，设置选中的图片
   // 使用imageSelectionKey来强制触发更新，解决取消后重新选择同一图片的bug
   useEffect(() => {
@@ -292,18 +311,12 @@ export function AiSdkChat({
         const session = await getSession(sessionIdNum)
         setCurrentSession(session)
         console.log("📋 会话信息加载完成:", session)
-        // 恢复 Tavily 勾选和API Key预填
+        // 恢复 Tavily 工具勾选状态
         try {
           const selected = session.selected_tools || []
-          setTavilyEnabled(selected.includes(TAVILY_TOOL_NAME))
-          const keyFromSession = session.tool_configs?.[TAVILY_TOOL_NAME]?.api_key || ""
-          if (keyFromSession) {
-            setTavilyApiKey(keyFromSession)
-          } else {
-            // // 兜底：从独立接口读取（兼容旧实现）
-            // const k = await getMcpToolApiKey(TAVILY_TOOL_NAME)
-            // if (k) setTavilyApiKey(k)
-          }
+          const isEnabled = selected.includes(TAVILY_TOOL_NAME)
+          setTavilyEnabled(isEnabled)
+          setEnableWebSearch(isEnabled) // 同步恢复 Search 按钮状态
         } catch (e) {
           console.warn('恢复Tavily状态失败', e)
         }
@@ -486,7 +499,7 @@ export function AiSdkChat({
     let currentSessionId = effectiveSessionId
     if (!effectiveSessionId && onCreateSessionFromMessage) {
       onCreateSessionFromMessage(userMessage || "Image Analysis Request")
-        .then((newSession) => {
+        .then(async (newSession) => {
           currentSessionId = String(newSession.id)
           setEffectiveSessionId(currentSessionId)
           console.log(
@@ -495,6 +508,23 @@ export function AiSdkChat({
             "Name:",
             newSession.name
           )
+
+          // 应用临时选择的工具到新创建的会话
+          if (tempSelectedTools && tempSelectedTools.length > 0) {
+            try {
+              await changeSessionTools(newSession.id, tempSelectedTools, [])
+              console.log("[AiSdkChat] Applied temp tools to new session:", tempSelectedTools)
+              
+              // 清空临时工具选择（通过移除所有临时工具）
+              if (onRemoveTempSelectedTool) {
+                tempSelectedTools.forEach(toolName => {
+                  onRemoveTempSelectedTool(toolName)
+                })
+              }
+            } catch (error) {
+              console.error("[AiSdkChat] Failed to apply temp tools:", error)
+            }
+          }
 
           // 创建会话后发送消息
           sendMessage(
@@ -588,52 +618,87 @@ export function AiSdkChat({
                             ) : (
                               <div key={index}>{part.text}</div>
                             )
-                        case "file":
-                          // 处理图片文件
-                          if (part.mediaType?.startsWith('image/')) {
-                            // 从file://或本地路径中提取实际路径
-                            const actualPath = part.url?.startsWith('file://') 
-                              ? part.url.replace('file://', '') 
-                              : part.url;
-                            
+                          case "file":
+                            // 处理图片文件
+                            if (part.mediaType?.startsWith('image/')) {
+                              // 从file://或本地路径中提取实际路径
+                              const actualPath = part.url?.startsWith('file://') 
+                                ? part.url.replace('file://', '') 
+                                : part.url;
+                              
+                              return (
+                                <div key={`${message.id}-${index}`} className="mt-2">
+                                  <img 
+                                    src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
+                                    alt={part.filename || 'Attached image'}
+                                    className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
+                                    onClick={() => {
+                                      // 点击时显示全尺寸图片
+                                      openUrl(`http://127.0.0.1:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`);
+                                    }}
+                                    onError={(e) => {
+                                      console.error('Failed to load image:', actualPath);
+                                      const target = e.target as HTMLImageElement;
+                                      target.alt = 'image load failed';
+                                      target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
+                                    }}
+                                  />
+                                  {/* <div className="text-xs text-muted-foreground mt-1">
+                                    {part.filename} (Click to view full image)
+                                  </div> */}
+                                </div>
+                              )
+                            }
+                            return null
+                          case "reasoning":
                             return (
-                              <div key={`${message.id}-${index}`} className="mt-2">
-                                <img 
-                                  src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
-                                  alt={part.filename || 'Attached image'}
-                                  className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
-                                  onClick={() => {
-                                    // 点击时显示全尺寸图片
-                                    openUrl(`http://127.0.0.1:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`);
-                                  }}
-                                  onError={(e) => {
-                                    console.error('Failed to load image:', actualPath);
-                                    const target = e.target as HTMLImageElement;
-                                    target.alt = 'image load failed';
-                                    target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
-                                  }}
-                                />
-                                {/* <div className="text-xs text-muted-foreground mt-1">
-                                  {part.filename} (Click to view full image)
-                                </div> */}
-                              </div>
+                              <Reasoning
+                                key={`${message.id}-${index}`}
+                                className="w-full"
+                                isStreaming={status === "streaming"}
+                              >
+                                <ReasoningTrigger />
+                                <ReasoningContent>{part.text}</ReasoningContent>
+                              </Reasoning>
                             )
-                          }
-                          return null
-                        case "reasoning":
-                          return (
-                            <Reasoning
-                              key={`${message.id}-${index}`}
-                              className="w-full"
-                              isStreaming={status === "streaming"}
-                            >
-                              <ReasoningTrigger />
-                              <ReasoningContent>{part.text}</ReasoningContent>
-                            </Reasoning>
-                          )
-                        default:
-                          return null
-                      }
+                          default:
+                            // 处理工具调用相关的part类型
+                            if (part.type.startsWith('tool-')) {
+                              // 根据工具状态决定是否默认展开
+                              const shouldDefaultOpen = part.state === 'output-available' || part.state === 'output-error'
+                              
+                              // 调试日志
+                              console.log('🔧 [DEBUG] Tool part detected:', {
+                                type: part.type,
+                                state: part.state,
+                                input: part.input,
+                                output: part.output,
+                                errorText: part.errorText,
+                                shouldDefaultOpen
+                              })
+                              
+                              return (
+                                <Tool key={`${message.id}-${index}`} defaultOpen={shouldDefaultOpen}>
+                                  <ToolHeader 
+                                    type={part.type} 
+                                    state={part.state || 'input-available'} 
+                                  />
+                                  <ToolContent>
+                                    {part.input && (
+                                      <ToolInput input={part.input} />
+                                    )}
+                                    {(part.output || part.errorText) && (
+                                      <ToolOutput
+                                        output={part.output}
+                                        errorText={part.errorText}
+                                      />
+                                    )}
+                                  </ToolContent>
+                                </Tool>
+                              )
+                            }
+                            return null
+                        }
                     })}
                   </MessageContent>
                   <MessageAvatar 
@@ -790,27 +855,44 @@ export function AiSdkChat({
                       checked={tavilyEnabled}
                       onCheckedChange={async (checked) => {
                         const enable = checked === true
-                        if (!currentSession?.id) return
+                        
                         if (enable) {
-                          // 检查是否已有key
-                          let key = tavilyApiKey
-                          // if (!key) {
-                          //   // 再试一次后端
-                          //   key = await getMcpToolApiKey(TAVILY_TOOL_NAME)
-                          // }
-                          if (!key) {
-                            // 先关闭下拉，再打开对话框，避免遮挡焦点
+                          // 检查是否已有 key
+                          if (!tavilyApiKey.trim()) {
+                            // 没有 key 时显示提示并关闭菜单
+                            toast({
+                              title: "需要配置 API Key",
+                              description: "请点击 'config' 配置 Tavily API Key",
+                              duration: 3000,
+                            })
                             setActionMenuOpen(false)
-                            setTavilyDialogOpen(true)
                             return
                           }
-                          await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
+                          
+                          // 如果有真实会话，直接更新服务端
+                          if (currentSession?.id) {
+                            await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
+                          } else {
+                            // 如果是新会话，添加到临时工具列表
+                            if (onAddTempSelectedTool) {
+                              onAddTempSelectedTool(TAVILY_TOOL_NAME)
+                            }
+                          }
+                          
                           setTavilyEnabled(true)
                           setEnableWebSearch(true)
-                          // 操作完成后收起下拉
                           setActionMenuOpen(false)
                         } else {
-                          await changeSessionTools(currentSession.id, [], [TAVILY_TOOL_NAME])
+                          // 如果有真实会话，直接更新服务端
+                          if (currentSession?.id) {
+                            await changeSessionTools(currentSession.id, [], [TAVILY_TOOL_NAME])
+                          } else {
+                            // 如果是新会话，从临时工具列表中移除
+                            if (onRemoveTempSelectedTool) {
+                              onRemoveTempSelectedTool(TAVILY_TOOL_NAME)
+                            }
+                          }
+                          
                           setTavilyEnabled(false)
                           setEnableWebSearch(false)
                           setActionMenuOpen(false)
@@ -819,7 +901,22 @@ export function AiSdkChat({
                     />
                     <img src="https://www.tavily.com/images/logo.svg" className="w-[50px] h-[20px]" />
                     <button type="button" className="text-xs text-muted-foreground underline"
-                      onClick={() => { setActionMenuOpen(false); setTavilyDialogOpen(true) }}
+                      onClick={async () => { 
+                        setActionMenuOpen(false)
+                        // 打开 Dialog 前先尝试加载现有的 API Key
+                        try {
+                          const response = await fetch(`http://127.0.0.1:60315/tools/mcp/get_api_key?tool_name=${encodeURIComponent(TAVILY_TOOL_NAME)}`)
+                          if (response.ok) {
+                            const json = await response.json()
+                            if (json?.success && json?.api_key) {
+                              setTavilyApiKey(json.api_key)
+                            }
+                          }
+                        } catch (error) {
+                          console.log('获取现有 API Key 失败:', error)
+                        }
+                        setTavilyDialogOpen(true)
+                      }}
                     >config</button>
                 </div>
                 </PromptInputActionMenuContent>
@@ -846,12 +943,12 @@ export function AiSdkChat({
             setActionMenuOpen(false)
           }
         }}>
-          <DialogContent className="search-command-dialog max-w-2xl">
+          <DialogContent className="max-w-2xl p-6">
             <DialogHeader>
-              <DialogTitle>配置 Tavily API Key</DialogTitle>
+              <DialogTitle>Setup Tavily API Key</DialogTitle>
               <DialogDescription>
-                输入你的 Tavily API Key。没有？
-                <a className="underline ml-1" href="#" onClick={() => openUrl('https://app.tavily.com/')}>去官网获取</a>
+                Input your Tavily API Key to enable web search capability.
+                <a className="underline ml-1" href="#" onClick={() => openUrl('https://app.tavily.com/')}>Go to Tavily</a>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">

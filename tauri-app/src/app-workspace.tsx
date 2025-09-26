@@ -22,9 +22,12 @@ interface AppWorkspaceProps {
     file_name: string
     metadata?: Record<string, any>
   }>
+  tempSelectedTools?: string[] // 临时选择的工具列表
   onCreateSessionFromMessage?: (firstMessageContent: string) => Promise<ChatSession>
   onAddTempPinnedFile?: (filePath: string, fileName: string, metadata?: Record<string, any>) => void
   onRemoveTempPinnedFile?: (filePath: string) => void
+  onAddTempSelectedTool?: (toolName: string) => void
+  onRemoveTempSelectedTool?: (toolName: string) => void
   chatResetTrigger?: number // 新增重置触发器
   onSessionUpdate?: (updatedSession: ChatSession) => void // 新增会话更新回调
 }
@@ -33,9 +36,12 @@ export function AppWorkspace({
   currentSession, 
   currentSessionId, 
   // tempPinnedFiles,
+  tempSelectedTools,
   onCreateSessionFromMessage,
   onAddTempPinnedFile,
   onRemoveTempPinnedFile,
+  onAddTempSelectedTool,
+  onRemoveTempSelectedTool,
   chatResetTrigger,
   onSessionUpdate
 }: AppWorkspaceProps) {
@@ -154,6 +160,9 @@ export function AppWorkspace({
               imagePath={selectedImagePath || undefined} // 传递选中的图片路径
               imageSelectionKey={imageSelectionCounter} // 传递选择计数器以强制更新
               onSessionUpdate={onSessionUpdate} // 传递会话更新回调
+              tempSelectedTools={tempSelectedTools} // 传递临时选择的工具
+              onAddTempSelectedTool={onAddTempSelectedTool} // 传递添加临时工具回调
+              onRemoveTempSelectedTool={onRemoveTempSelectedTool} // 传递移除临时工具回调
             />
           </div>
         </ResizablePanel>

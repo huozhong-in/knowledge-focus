@@ -55,16 +55,7 @@ class ToolProvider:
                         # 获取场景的预置工具
                         if chat_session.scenario_id:
                             tools.extend(self._get_scenario_tools(chat_session.scenario_id))
-                        
-                        # 获取用户为此会话选择的额外工具
-                            stmt = select(ChatSession).where(
-                                ChatSession.id == session_id
-                            )
-                            selected_tool_names = session.exec(stmt).first().selected_tool_names if session.exec(stmt).first() else []
-                            for selected_tool_name in selected_tool_names:
-                                tool_func = self._load_tool_function(selected_tool_name)
-                                if tool_func:
-                                    tools.append(tool_func)
+                
                 return tools
         except Exception as e:
             logger.error(f"获取会话工具失败: {e}")
@@ -138,13 +129,13 @@ class ToolProvider:
                     return None
                 
                 # 根据工具类型加载函数
-                if tool.tool_type == ToolType.CHANNEL.value:
+                if tool.tool_type == ToolType.CHANNEL:
                     # 工具通道类型 - 包装为异步调用前端的函数
                     return self._create_channel_tool_wrapper(tool)
-                elif tool.tool_type == ToolType.DIRECT.value:
+                elif tool.tool_type == ToolType.DIRECT:
                     # 直接调用类型 - 动态导入Python函数
                     return self._import_direct_tool(tool)
-                elif tool.tool_type == ToolType.MCP.value:
+                elif tool.tool_type == ToolType.MCP:
                     # MCP类型 - 返回调用器
                     return self.get_mcp_tool_caller(tool)
                 else:
