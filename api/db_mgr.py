@@ -763,16 +763,22 @@ class DBManager:
                 Tool.__table__.create(self.engine, checkfirst=True)
                 data = [
                     {
-                        "name": "local_file_serch",
+                        "name": "get_current_time",
+                        "description": "取得当前日期和时间，可选timezone参数指定时区",
+                        "tool_type": ToolType.DIRECT.value,
+                        "metadata_json": {"model_path": "tools.datetime_tools:get_current_time"}
+                    },
+                    {
+                        "name": "local_file_search",
                         "description": "本机文件搜索工具。参数是一个搜索关键词，返回匹配的文件路径列表。",
                         "tool_type": ToolType.DIRECT.value,  # 直接调用
-                        "metadata_json": {"model_path": "tools.local_file_search:local_file_search" }
+                        "metadata_json": {"model_path": "tools.local_file_search:local_file_search"}
                     },
                     {
                         "name": "multimodal_vectorize",
                         "description": "给文件进行多模态向量化，以便后续支持多模态检索",
                         "tool_type": ToolType.DIRECT.value,
-                        "metadata_json": {"model_path": "tools.vector_store:multimodal_vectorize" }
+                        "metadata_json": {"model_path": "tools.vector_store:multimodal_vectorize"}
                     },
                     {
                         "name": "search_use_tavily",

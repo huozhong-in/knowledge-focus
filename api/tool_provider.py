@@ -40,13 +40,14 @@ class ToolProvider:
             可供PydanticAI Agent使用的工具函数列表
         """
         try:
+            # 获取默认工具
+            tools = self._get_default_tools()
             if session_id:
-                tools = []
                 # 获取会话信息
                 with Session(self.engine) as session:
                     chat_session = session.get(ChatSession, session_id)
                     if chat_session:
-                        # 根据selected_tool_names字段加载用户选择的工具
+                        # 获取用户选择的工具
                         for tool_name in chat_session.selected_tool_names:
                             tool_func = self._load_tool_function(tool_name)
                             if tool_func:
@@ -56,7 +57,7 @@ class ToolProvider:
                         if chat_session.scenario_id:
                             tools.extend(self._get_scenario_tools(chat_session.scenario_id))
                 
-                return tools
+            return tools
         except Exception as e:
             logger.error(f"获取会话工具失败: {e}")
             return []
@@ -100,11 +101,9 @@ class ToolProvider:
         
         # 默认加载的工具ID列表
         default_tool_names = [
-            "calculator_add",
-            "calculator_multiply",
-            "calculator_bmi",
-            "file_search",  # 本机文件搜索工具
-            "memory_summary",  # 上下文工程(二期)：汇总会话历史记录
+            "get_current_time",  # 获取当前时间的工具
+            # "file_search",  # 本机文件搜索工具
+            # "memory_summary",  # 上下文工程(二期)：汇总会话历史记录
         ]
         
         for tool_name in default_tool_names:

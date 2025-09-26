@@ -863,13 +863,13 @@ export function AiSdkChat({
                     <Checkbox id="enable-web-search" className="mr-2"
                       checked={tavilyEnabled}
                       onCheckedChange={async (checked) => {
-                        console.log('🔍 [DEBUG] Tavily checkbox clicked:', {
-                          checked,
-                          currentSessionId: currentSession?.id,
-                          tavilyApiKey: tavilyApiKey.trim(),
-                          hasOnAddTempSelectedTool: !!onAddTempSelectedTool,
-                          hasOnRemoveTempSelectedTool: !!onRemoveTempSelectedTool
-                        })
+                        // console.log('🔍 [DEBUG] Tavily checkbox clicked:', {
+                        //   checked,
+                        //   currentSessionId: currentSession?.id,
+                        //   tavilyApiKey: tavilyApiKey.trim(),
+                        //   hasOnAddTempSelectedTool: !!onAddTempSelectedTool,
+                        //   hasOnRemoveTempSelectedTool: !!onRemoveTempSelectedTool
+                        // })
                         
                         const enable = checked === true
                         
@@ -877,7 +877,7 @@ export function AiSdkChat({
                           // 检查是否已有 key
                           if (!tavilyApiKey.trim()) {
                             // 没有 key 时显示提示并关闭菜单
-                            console.log('🔍 [DEBUG] No API key, showing toast')
+                            // console.log('🔍 [DEBUG] No API key, showing toast')
                             toast.warning('Please configure your Tavily API Key first.')
                             setActionMenuOpen(false)
                             return
@@ -885,11 +885,11 @@ export function AiSdkChat({
                           
                           // 如果有真实会话，直接更新服务端
                           if (currentSession?.id) {
-                            console.log('🔍 [DEBUG] Updating real session tools')
+                            // console.log('🔍 [DEBUG] Updating real session tools')
                             await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
                           } else {
                             // 如果是新会话，添加到临时工具列表
-                            console.log('🔍 [DEBUG] Adding to temp tools')
+                            // console.log('🔍 [DEBUG] Adding to temp tools')
                             if (onAddTempSelectedTool) {
                               onAddTempSelectedTool(TAVILY_TOOL_NAME)
                             }
@@ -901,11 +901,11 @@ export function AiSdkChat({
                         } else {
                           // 如果有真实会话，直接更新服务端
                           if (currentSession?.id) {
-                            console.log('🔍 [DEBUG] Removing from real session tools')
+                            // console.log('🔍 [DEBUG] Removing from real session tools')
                             await changeSessionTools(currentSession.id, [], [TAVILY_TOOL_NAME])
                           } else {
                             // 如果是新会话，从临时工具列表中移除
-                            console.log('🔍 [DEBUG] Removing from temp tools')
+                            // console.log('🔍 [DEBUG] Removing from temp tools')
                             if (onRemoveTempSelectedTool) {
                               onRemoveTempSelectedTool(TAVILY_TOOL_NAME)
                             }
