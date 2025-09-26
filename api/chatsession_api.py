@@ -154,7 +154,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             selected_tools = session.selected_tool_names or []
 
             # 可选：返回前端需要呈现的工具配置状态（例如 Tavily 是否已配置 api_key）
-            # 仅返回配置状态，不返回具体的 api_key 值（由独立接口提供）
+            # 返回配置状态和 API Key（用于前端预设）
             tool_configs: Dict[str, Any] = {}
             try:
                 with Session(engine) as s:
@@ -166,11 +166,13 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                         tavily_api_key = tavily_tool.metadata_json.get("api_key", "") or ""
                     tool_configs["search_use_tavily"] = {
                         "has_api_key": bool(tavily_api_key),
+                        "api_key": tavily_api_key,  # 返回实际 API Key 供前端使用
                     }
             except Exception:
                 # 安全兜底，不影响主流程
                 tool_configs["search_use_tavily"] = {
                     "has_api_key": False,
+                    "api_key": "",
                 }
             
             return {

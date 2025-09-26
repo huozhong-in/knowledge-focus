@@ -58,7 +58,7 @@ import { Actions, Action } from '@/components/ai-elements/actions'
 import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
 import { Checkbox } from "./components/ui/checkbox"
 import { useTranslation } from "react-i18next"
-import { toast } from "@/tweakcn/hooks/use-toast"
+import { toast } from 'sonner';
 
 
 interface AiSdkChatProps {
@@ -311,12 +311,21 @@ export function AiSdkChat({
         const session = await getSession(sessionIdNum)
         setCurrentSession(session)
         console.log("📋 会话信息加载完成:", session)
-        // 恢复 Tavily 工具勾选状态
+        // 恢复 Tavily 工具勾选状态和 API Key
         try {
           const selected = session.selected_tools || []
           const isEnabled = selected.includes(TAVILY_TOOL_NAME)
           setTavilyEnabled(isEnabled)
           setEnableWebSearch(isEnabled) // 同步恢复 Search 按钮状态
+          
+          // 从 tool_configs 中恢复 API Key
+          if (session.tool_configs && session.tool_configs.search_use_tavily) {
+            const tavilyConfig = session.tool_configs.search_use_tavily
+            if (tavilyConfig.api_key) {
+              setTavilyApiKey(tavilyConfig.api_key)
+              console.log('📋 从会话恢复 Tavily API Key')
+            }
+          }
         } catch (e) {
           console.warn('恢复Tavily状态失败', e)
         }
@@ -854,26 +863,33 @@ export function AiSdkChat({
                     <Checkbox id="enable-web-search" className="mr-2"
                       checked={tavilyEnabled}
                       onCheckedChange={async (checked) => {
+                        console.log('🔍 [DEBUG] Tavily checkbox clicked:', {
+                          checked,
+                          currentSessionId: currentSession?.id,
+                          tavilyApiKey: tavilyApiKey.trim(),
+                          hasOnAddTempSelectedTool: !!onAddTempSelectedTool,
+                          hasOnRemoveTempSelectedTool: !!onRemoveTempSelectedTool
+                        })
+                        
                         const enable = checked === true
                         
                         if (enable) {
                           // 检查是否已有 key
                           if (!tavilyApiKey.trim()) {
                             // 没有 key 时显示提示并关闭菜单
-                            toast({
-                              title: "需要配置 API Key",
-                              description: "请点击 'config' 配置 Tavily API Key",
-                              duration: 3000,
-                            })
+                            console.log('🔍 [DEBUG] No API key, showing toast')
+                            toast.warning('Please configure your Tavily API Key first.')
                             setActionMenuOpen(false)
                             return
                           }
                           
                           // 如果有真实会话，直接更新服务端
                           if (currentSession?.id) {
+                            console.log('🔍 [DEBUG] Updating real session tools')
                             await changeSessionTools(currentSession.id, [TAVILY_TOOL_NAME], [])
                           } else {
                             // 如果是新会话，添加到临时工具列表
+                            console.log('🔍 [DEBUG] Adding to temp tools')
                             if (onAddTempSelectedTool) {
                               onAddTempSelectedTool(TAVILY_TOOL_NAME)
                             }
@@ -885,9 +901,11 @@ export function AiSdkChat({
                         } else {
                           // 如果有真实会话，直接更新服务端
                           if (currentSession?.id) {
+                            console.log('🔍 [DEBUG] Removing from real session tools')
                             await changeSessionTools(currentSession.id, [], [TAVILY_TOOL_NAME])
                           } else {
                             // 如果是新会话，从临时工具列表中移除
+                            console.log('🔍 [DEBUG] Removing from temp tools')
                             if (onRemoveTempSelectedTool) {
                               onRemoveTempSelectedTool(TAVILY_TOOL_NAME)
                             }
@@ -903,17 +921,19 @@ export function AiSdkChat({
                     <button type="button" className="text-xs text-muted-foreground underline"
                       onClick={async () => { 
                         setActionMenuOpen(false)
-                        // 打开 Dialog 前先尝试加载现有的 API Key
-                        try {
-                          const response = await fetch(`http://127.0.0.1:60315/tools/mcp/get_api_key?tool_name=${encodeURIComponent(TAVILY_TOOL_NAME)}`)
-                          if (response.ok) {
-                            const json = await response.json()
-                            if (json?.success && json?.api_key) {
-                              setTavilyApiKey(json.api_key)
+                        // 如果当前没有 API Key，才从服务器获取
+                        if (!tavilyApiKey.trim()) {
+                          try {
+                            const response = await fetch(`http://127.0.0.1:60315/tools/mcp/get_api_key?tool_name=${encodeURIComponent(TAVILY_TOOL_NAME)}`)
+                            if (response.ok) {
+                              const json = await response.json()
+                              if (json?.success && json?.api_key) {
+                                setTavilyApiKey(json.api_key)
+                              }
                             }
+                          } catch (error) {
+                            console.log('获取现有 API Key 失败:', error)
                           }
-                        } catch (error) {
-                          console.log('获取现有 API Key 失败:', error)
                         }
                         setTavilyDialogOpen(true)
                       }}
