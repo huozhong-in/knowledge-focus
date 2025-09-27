@@ -8,7 +8,14 @@ SIGNING_IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
 # 取得脚本当前目录
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "Script directory: $SCRIPT_DIR"
-SIDECAR_PATHS=("$SCRIPT_DIR/src-tauri/target/release/uv" "$SCRIPT_DIR/src-tauri/target/release/uvx" "$SCRIPT_DIR/src-tauri/target/release/bun")
+SIDECAR_PATHS=(
+    "$SCRIPT_DIR/src-tauri/bin/uv-aarch64-apple-darwin" 
+    "$SCRIPT_DIR/src-tauri/bin/uv-x86_64-apple-darwin" 
+    "$SCRIPT_DIR/src-tauri/bin/uvx-aarch64-apple-darwin" 
+    "$SCRIPT_DIR/src-tauri/bin/uvx-x86_64-apple-darwin" 
+    "$SCRIPT_DIR/src-tauri/bin/bun-aarch64-apple-darwin"
+    "$SCRIPT_DIR/src-tauri/bin/bun-x86_64-apple-darwin"
+    )
 # 循环处理每个sidecar
 for SIDECAR_PATH in "${SIDECAR_PATHS[@]}"; do
     echo "Processing sidecar at: $SIDECAR_PATH"
