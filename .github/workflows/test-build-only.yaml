@@ -41,7 +41,7 @@ jobs:
           workspaces: './tauri-app/src-tauri -> target'
 
       - name: install frontend dependencies
-        run: bun install
+        run: pnpm install
         working-directory: ./tauri-app
 
       # 构建并发布版本（包含updater artifacts和latest.json）
@@ -50,7 +50,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: ./tauri-app
-          tauriScript: bun tauri
+          tauriScript: pnpm tauri
           tagName: app-v__VERSION__ # the action automatically replaces __VERSION__ with the app version.
           releaseName: 'KnowledgeFocus v__VERSION__'
           releaseBody: |
