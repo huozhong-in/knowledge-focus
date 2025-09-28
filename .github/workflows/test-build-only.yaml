@@ -1,4 +1,4 @@
-name: 'publish'
+name: 'Build and Release Tauri App'
 
 on:
   workflow_dispatch:
@@ -27,6 +27,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+          cache: 'pnpm'
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -34,20 +35,37 @@ jobs:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './tauri-app/src-tauri -> target'
+
       - name: install frontend dependencies
         run: bun install
         working-directory: ./tauri-app
 
-      # If tagName and releaseId are omitted tauri-action will only build the app and won't try to upload any assets.
+      # 构建并发布版本（包含updater artifacts和latest.json）
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: ./tauri-app
-          tauriScript: bun tauri build --bundles app
-          # tagName: app-v__VERSION__ # the action automatically replaces \_\_VERSION\_\_ with the app version.
-          # releaseName: 'v__VERSION__'
-          # releaseBody: 'See the assets to download this version and install.'
-          # releaseDraft: true
-          # prerelease: false
+          tauriScript: bun tauri
+          tagName: app-v__VERSION__ # the action automatically replaces __VERSION__ with the app version.
+          releaseName: 'KnowledgeFocus v__VERSION__'
+          releaseBody: |
+            ## 🚀 KnowledgeFocus v__VERSION__
+            
+            ### 📦 下载说明
+            - **Intel Mac**: 下载 `KnowledgeFocus_x64.app.tar.gz`
+            - **Apple Silicon Mac (M1/M2/M3)**: 下载 `KnowledgeFocus_aarch64.app.tar.gz`
+            
+            ### 🔄 自动更新
+            应用内置自动更新功能，首次安装后会自动检查更新。
+            
+            ### 📋 更新内容
+            - 请查看 commit 历史了解具体变更
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true # 自动生成latest.json
           args: ${{ matrix.args }}

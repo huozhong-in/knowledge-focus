@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "KnowledgeFocus",
-  "version": "0.3.3",
+  "version": "0.3.2",
   "identifier": "knowledge-focus.huozhong.in",
   "build": {
     "beforeDevCommand": "bun run dev",
