@@ -515,7 +515,7 @@ export default function App() {
         console.log(
           "App.tsx: Performing backup health check..."
         )
-        const max_retries = 300
+        const max_retries = 10000
         const retry_interval = 1000
         if (!isApiReady) {
           for (let attempt = 1; attempt <= max_retries; attempt++) {

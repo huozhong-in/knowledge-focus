@@ -3,6 +3,7 @@ import { useAppStore } from '@/main';
 import { Button } from "./components/ui/button";
 import { toast } from "sonner";
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { 
   checkFullDiskAccessPermission, 
   requestFullDiskAccessPermission 
@@ -22,6 +23,12 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(true);
   const [permissionRequested, setPermissionRequested] = useState(false);
+  
+  // API 启动日志相关状态
+  const [apiLogs, setApiLogs] = useState<string[]>([]);
+  const [hasApiError, setHasApiError] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  
   const { t } = useTranslation();
   
   // 检查完全磁盘访问权限
@@ -150,6 +157,74 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
     initPermissionCheck();
   }, []);
   
+  // 监听 API 启动日志
+  useEffect(() => {
+    let apiLogUnlisten: (() => void) | null = null;
+    let apiErrorUnlisten: (() => void) | null = null;
+    
+    const setupApiLogListeners = async () => {
+      try {
+        // 监听 API 日志
+        apiLogUnlisten = await listen<string>('api-log', (event) => {
+          const logLine = event.payload;
+          if (logLine && logLine.trim()) {
+            const trimmedLog = logLine.trim();
+            // 避免重复日志
+            setApiLogs(prev => {
+              if (prev[prev.length - 1] !== trimmedLog) {
+                return [...prev, trimmedLog];
+              }
+              return prev;
+            });
+            
+            // 根据日志内容更新状态消息
+            if (trimmedLog.includes('Syncing Python virtual environment') || trimmedLog.includes('sync')) {
+              setLoadingMessage('Syncing Python virtual environment...');
+              setShowLogs(true);
+            } else if (trimmedLog.includes('download') || trimmedLog.includes('install') || trimmedLog.includes('Downloading')) {
+              setLoadingMessage('Downloading and installing dependencies...');
+              setShowLogs(true);
+            } else if (trimmedLog.includes('FastAPI') || trimmedLog.includes('Uvicorn') || trimmedLog.includes('服务已启动')) {
+              setLoadingMessage('Starting API server...');
+              setShowLogs(true);
+            } else if (trimmedLog.includes('Python virtual environment sync completed')) {
+              setLoadingMessage('Python virtual environment sync completed, starting API...');
+            }
+          }
+        });
+        
+        // 监听 API 错误
+        apiErrorUnlisten = await listen<string>('api-error', (event) => {
+          const errorLine = event.payload;
+          if (errorLine && errorLine.trim()) {
+            const trimmedError = errorLine.trim();
+            // 避免重复错误日志
+            setApiLogs(prev => {
+              const errorMsg = `ERROR: ${trimmedError}`;
+              if (prev[prev.length - 1] !== errorMsg) {
+                return [...prev, errorMsg];
+              }
+              return prev;
+            });
+            setHasApiError(true);
+            setShowLogs(true);
+            setLoadingMessage('API 启动过程中出现错误，请查看详细日志');
+          }
+        });
+      } catch (error) {
+        console.error('设置 API 日志监听器失败:', error);
+      }
+    };
+    
+    setupApiLogListeners();
+    
+    return () => {
+      // 清理监听器
+      if (apiLogUnlisten) apiLogUnlisten();
+      if (apiErrorUnlisten) apiErrorUnlisten();
+    };
+  }, []);
+  
   useEffect(() => {
     // 只有在已经获取到权限且API就绪的情况下才启动后端扫描
     if (hasFullDiskAccess && isApiReady) {
@@ -234,6 +309,45 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
       }`}>
         {loadingMessage}
       </p>
+      
+      {/* API 启动日志显示区域 */}
+      {showLogs && (
+        <div className="w-full mb-4">
+          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 max-h-40 overflow-y-auto">
+            <div className="text-xs font-mono space-y-1">
+              {apiLogs.length > 0 ? (
+                apiLogs.slice(-20).map((log, index) => (
+                  <div 
+                    key={index} 
+                    className={`${log.startsWith('ERROR:') ? 'text-red-600' : 'text-gray-700'}`}
+                  >
+                    {log}
+                  </div>
+                ))
+              ) : (
+                <div className="text-gray-500 italic">Waiting for logs...</div>
+              )}
+            </div>
+          </div>
+          
+          {/* 如果有错误，显示文档链接 */}
+          {hasApiError && (
+            <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+              <p className="text-sm text-red-700 mb-2">
+                API 启动过程中出现错误，可能是网络连接问题导致依赖包下载失败。
+              </p>
+              <a 
+                href="https://kf.huozhong.in/doc" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-sm text-blue-600 hover:text-blue-800 underline font-medium"
+              >
+                📖 查看解决方案文档
+              </a>
+            </div>
+          )}
+        </div>
+      )}
       
       {/* 权限说明 */}
       {!hasFullDiskAccess && !checkingPermission && (

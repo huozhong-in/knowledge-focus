@@ -77,7 +77,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 Err(e) => {
                     eprintln!("无法获取当前工作目录: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-process-error", Some(format!("无法获取当前工作目录: {}", e)));
+                        let _ = window.emit("api-error", Some(format!("无法获取当前工作目录: {}", e)));
                     }
                     return;
                 }
@@ -88,7 +88,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 Err(e) => {
                     eprintln!("无法获取应用数据目录: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-process-error", Some(format!("无法获取应用数据目录: {}", e)));
+                        let _ = window.emit("api-error", Some(format!("无法获取应用数据目录: {}", e)));
                     }
                     return;
                 }
@@ -103,7 +103,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 Err(e) => {
                     eprintln!("无法解析资源路径: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-process-error", Some(format!("无法解析资源路径: {}", e)));
+                        let _ = window.emit("api-error", Some(format!("无法解析资源路径: {}", e)));
                     }
                     return;
                 }
@@ -116,7 +116,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             if let Err(e) = std::fs::copy(&pyproject_src_path, &pyproject_dest_path) {
                 eprintln!("复制pyproject.toml失败: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-process-error", Some(format!("复制pyproject.toml失败: {}", e)));
+                    let _ = window.emit("api-error", Some(format!("duplicate pyproject.toml failed: {}", e)));
                 }
                 return;
             }
@@ -130,12 +130,67 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
         .args([
             "sync", 
             "--index-strategy", "unsafe-best-match",
+            "--no-progress",
             "--directory", venv_parent_path.to_str().unwrap()
             ]);
         println!("Running command: {:?}", sidecar_command);
-        sidecar_command
-        .spawn()
-        .expect("Failed to create or update virtual environment");
+        
+        // 捕获 uv sync 的输出并发送到前端
+        match sidecar_command.spawn() {
+            Ok((mut sync_rx, _sync_child)) => {
+                println!("uv sync 进程已启动");
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.emit("api-log", Some("Syncing Python virtual environment...".to_string()));
+                }
+                
+                // 监听 uv sync 的输出
+                let app_handle_for_sync = app_handle.clone();
+                let sync_task = tauri::async_runtime::spawn(async move {
+                    while let Some(event) = sync_rx.recv().await {
+                        if let Some(window) = app_handle_for_sync.get_webview_window("main") {
+                            match event {
+                                CommandEvent::Stdout(line) => {
+                                    let line_str = String::from_utf8_lossy(&line);
+                                    let _ = window.emit("api-log", Some(line_str.to_string()));
+                                }
+                                CommandEvent::Stderr(line) => {
+                                    let line_str = String::from_utf8_lossy(&line);
+                                    // uv 命令将正常的进度信息输出到 stderr，所以我们需要区分真正的错误
+                                    // 只有包含明确错误关键词的才当作错误处理
+                                    if line_str.contains("error") || line_str.contains("Error") || line_str.contains("ERROR") ||
+                                       line_str.contains("failed") || line_str.contains("Failed") || line_str.contains("FAILED") {
+                                        let _ = window.emit("api-error", Some(line_str.to_string()));
+                                    } else {
+                                        // 其他 stderr 输出当作正常日志处理（如下载进度等）
+                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                                    }
+                                }
+                                CommandEvent::Terminated(status) => {
+                                    println!("uv sync 进程终止，状态码: {}", status.code.unwrap_or(-1));
+                                    if status.code.unwrap_or(-1) != 0 {
+                                        let _ = window.emit("api-error", Some(format!("uv sync failed，exit code: {}", status.code.unwrap_or(-1))));
+                                    } else {
+                                        let _ = window.emit("api-log", Some("Python virtual environment sync completed".to_string()));
+                                    }
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                });
+                
+                // 等待 uv sync 完成
+                sync_task.await.expect("uv sync 任务失败");
+            }
+            Err(e) => {
+                eprintln!("启动 uv sync 失败: {}", e);
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.emit("api-error", Some(format!("uv sync failed: {}", e)));
+                }
+                return;
+            }
+        }
 
         // 通过uv运行main.py
         // 如果是开发环境main.py在../api/main.py，否则在BaseDirectory::Resource/api/main.py
@@ -147,7 +202,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                 Err(e) => {
                     eprintln!("无法解析main.py路径: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-process-error", Some(format!("无法解析main.py路径: {}", e)));
+                        let _ = window.emit("api-error", Some(format!("无法解析main.py路径: {}", e)));
                     }
                     return;
                 }
@@ -186,7 +241,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                     let _ = window.emit(
                         "api-log",
                         Some(format!(
-                            "API服务已启动. Port: {}, Host: {}",
+                            "API service starting... Port: {}, Host: {}",
                             port_to_use, host_to_use
                         )),
                     );
@@ -194,35 +249,6 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
 
                 let app_handle_clone = app_handle.clone();
                 let api_state_mutex_clone = api_state_mutex.clone();
-                
-                // // 启动健康检查，在API准备好后发送信号
-                // let api_url = format!("http://{}:{}/health", host_to_use, port_to_use);
-                // let tx_for_health = Arc::clone(&tx);
-                
-                // tauri::async_runtime::spawn(async move {
-                //     // 尝试等待API启动并健康检查通过
-                //     let client = reqwest::Client::new();
-                //     let max_retries = 300;
-                //     let retry_interval = std::time::Duration::from_millis(500); // 每500ms检查一次
-                    
-                //     for _ in 0..max_retries {
-                //         match client.get(&api_url).timeout(std::time::Duration::from_secs(1)).send().await {
-                //             Ok(response) if response.status().is_success() => {
-                //                 println!("API健康检查成功，API准备就绪");
-                //                 // API准备好了，发送成功信号到内部通道
-                //                 // 不再向主窗口发送信号，统一由 lib.rs 处理
-                //                 if let Some(sender) = tx_for_health.lock().unwrap().take() {
-                //                     let _ = sender.send(true);
-                //                 }
-                //                 break;
-                //             }
-                //             _ => {
-                //                 // API尚未准备好，等待后重试
-                //                 tokio::time::sleep(retry_interval).await;
-                //             }
-                //         }
-                //     }
-                // });
                 
                 // 监听API进程事件
                 let event_buffer_clone = event_buffer.clone();
@@ -246,12 +272,21 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                                 }
                                 CommandEvent::Stderr(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
-                                    // eprintln!("Python API Debug: {}", line_str);
-                                    let _ = window.emit("api-error", Some(line_str.to_string()));
+                                    // Python/FastAPI 的 stderr 输出需要区分错误和正常信息
+                                    // 只有包含明确错误关键词的才当作错误处理
+                                    if line_str.contains("error") || line_str.contains("Error") || line_str.contains("ERROR") ||
+                                       line_str.contains("failed") || line_str.contains("Failed") || line_str.contains("FAILED") ||
+                                       line_str.contains("exception") || line_str.contains("Exception") || line_str.contains("EXCEPTION") ||
+                                       line_str.contains("traceback") || line_str.contains("Traceback") {
+                                        let _ = window.emit("api-error", Some(line_str.to_string()));
+                                    } else {
+                                        // 其他 stderr 输出当作正常日志处理（如启动信息等）
+                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                                    }
                                 }
                                 CommandEvent::Error(err) => {
                                     eprintln!("Python API进程错误: {}", err);
-                                    let _ = window.emit("api-process-error", Some(err.to_string()));
+                                    let _ = window.emit("api-error", Some(err.to_string()));
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;
                                     }
@@ -261,7 +296,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
                                         "API进程已终止，状态码: {}",
                                         status.code.unwrap_or(-1)
                                     );
-                                    let _ = window.emit("api-terminated", Some(status.code));
+                                    let _ = window.emit("api-log", Some(status.code));
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;
                                     }
@@ -275,7 +310,7 @@ pub fn start_python_api(app_handle: AppHandle, api_state_mutex: Arc<Mutex<crate:
             Err(e) => {
                 eprintln!("启动API服务失败: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-process-error", Some(format!("启动API服务失败: {}", e)));
+                    let _ = window.emit("api-error", Some(format!("启动API服务失败: {}", e)));
                 }
                 // API启动失败，发送失败信号
                 if let Some(sender) = tx.lock().unwrap().take() {
