@@ -25,6 +25,7 @@
     "window-state:default",
     "shell:allow-open",
     "screenshots:default",
+    "deep-link:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [
@@ -244,6 +245,9 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
+        {
+          "url": "http://127.0.0.1:5173/*"
+        },
         {
           "url": "https://*.huozhong.in/*"
         },

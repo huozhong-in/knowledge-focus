@@ -1,19 +1,19 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use tauri::{
     // Emitter,
-    Manager, 
+    Manager,
     // Window,
 };
-use serde::{Serialize, Deserialize};
 
 /// 刷新监控配置（重新获取文件夹配置和Bundle扩展名）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
 pub async fn refresh_monitoring_config(
-    state: tauri::State<'_, crate::AppState>
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
     println!("[CMD] refresh_monitoring_config 被调用");
-    
+
     // 获取文件监控器
     let monitor = {
         let guard = state.file_monitor.lock().unwrap();
@@ -22,12 +22,15 @@ pub async fn refresh_monitoring_config(
             None => return Err("文件监控器未初始化".to_string()),
         }
     };
-    
+
     // 刷新所有配置
     match monitor.refresh_all_configurations().await {
         Ok(()) => {
             let summary = monitor.get_configuration_summary();
-            println!("[CMD] refresh_monitoring_config 成功，配置摘要: {:?}", summary);
+            println!(
+                "[CMD] refresh_monitoring_config 成功，配置摘要: {:?}",
+                summary
+            );
             Ok(serde_json::json!({
                 "status": "success",
                 "message": "配置刷新成功",
@@ -44,10 +47,10 @@ pub async fn refresh_monitoring_config(
 /// 刷新简化配置（重新获取扩展名映射和Bundle配置）
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
 pub async fn refresh_simplified_config(
-    state: tauri::State<'_, crate::AppState>
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
     println!("[CMD] refresh_simplified_config 被调用");
-    
+
     match state.refresh_simplified_config().await {
         Ok(()) => {
             // 获取更新后的配置摘要
@@ -92,19 +95,19 @@ pub struct DirectoryEntry {
 #[tauri::command]
 pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String> {
     println!("[CMD] read_directory 被调用，路径: {}", path);
-    
+
     let path_obj = Path::new(&path);
-    
+
     if !path_obj.exists() {
         return Err("路径不存在".to_string());
     }
-    
+
     if !path_obj.is_dir() {
         return Err("路径不是文件夹".to_string());
     }
-    
+
     let mut entries = Vec::new();
-    
+
     match fs::read_dir(path_obj) {
         Ok(dir_entries) => {
             for entry in dir_entries {
@@ -112,7 +115,7 @@ pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
                     Ok(dir_entry) => {
                         let entry_path = dir_entry.path();
                         let is_directory = entry_path.is_dir();
-                        
+
                         // 只返回目录，忽略文件
                         if is_directory {
                             // 过滤掉隐藏文件夹（以.开头的）
@@ -140,10 +143,10 @@ pub async fn read_directory(path: String) -> Result<Vec<DirectoryEntry>, String>
             return Err(format!("无法读取目录: {}", e));
         }
     }
-    
+
     // 按名称排序
     entries.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     println!("[CMD] read_directory 成功读取 {} 个子目录", entries.len());
     Ok(entries)
 }
@@ -155,10 +158,13 @@ pub async fn queue_add_blacklist_folder(
     folder_path: String,
     folder_alias: Option<String>,
     state: tauri::State<'_, crate::AppState>,
-    _app_handle: tauri::AppHandle
+    _app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] queue_add_blacklist_folder 被调用，父ID: {}, 路径: {}", parent_id, folder_path);
-    
+    println!(
+        "[CMD] queue_add_blacklist_folder 被调用，父ID: {}, 路径: {}",
+        parent_id, folder_path
+    );
+
     // 添加到队列
     let change = crate::ConfigChangeRequest::AddBlacklist {
         parent_id,
@@ -166,13 +172,13 @@ pub async fn queue_add_blacklist_folder(
         folder_alias,
     };
     state.add_pending_config_change(change);
-    
+
     // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
         println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
         // 触发队列处理
         state.process_pending_config_changes();
-        
+
         Ok(serde_json::json!({
             "status": "queued_for_processing",
             "message": format!("黑名单文件夹 {} 已加入处理队列并即将执行", folder_path)
@@ -193,10 +199,13 @@ pub async fn queue_delete_folder(
     folder_path: String,
     is_blacklist: bool,
     state: tauri::State<'_, crate::AppState>,
-    _app_handle: tauri::AppHandle  // 使用下划线前缀表示故意不使用的参数
+    _app_handle: tauri::AppHandle, // 使用下划线前缀表示故意不使用的参数
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] queue_delete_folder 被调用，ID: {}, 路径: {}, 是否黑名单: {}", folder_id, folder_path, is_blacklist);
-    
+    println!(
+        "[CMD] queue_delete_folder 被调用，ID: {}, 路径: {}, 是否黑名单: {}",
+        folder_id, folder_path, is_blacklist
+    );
+
     // 检查文件监控器是否已初始化
     {
         let guard = state.file_monitor.lock().unwrap();
@@ -204,7 +213,7 @@ pub async fn queue_delete_folder(
             return Err("文件监控器未初始化".to_string());
         }
     }
-    
+
     // 即使初始扫描已完成，也应将变更放入队列，以确保操作按正确顺序执行
     // 添加到队列
     let change = crate::ConfigChangeRequest::DeleteFolder {
@@ -213,13 +222,13 @@ pub async fn queue_delete_folder(
         is_blacklist,
     };
     state.add_pending_config_change(change);
-    
+
     // 如果初始扫描已完成，立即处理队列
     if state.is_initial_scan_completed() {
         println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
         // 触发队列处理
         state.process_pending_config_changes();
-        
+
         Ok(serde_json::json!({
             "status": "queued_for_processing",
             "message": format!("文件夹 {} 删除操作已加入处理队列并即将执行", folder_path)
@@ -239,10 +248,13 @@ pub async fn queue_toggle_folder_status(
     folder_id: i32,
     folder_path: String,
     is_blacklist: bool,
-    state: tauri::State<'_, crate::AppState>
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] queue_toggle_folder_status 被调用，ID: {}, 路径: {}, 设为黑名单: {}", folder_id, folder_path, is_blacklist);
-    
+    println!(
+        "[CMD] queue_toggle_folder_status 被调用，ID: {}, 路径: {}, 设为黑名单: {}",
+        folder_id, folder_path, is_blacklist
+    );
+
     // 添加到队列
     let change = crate::ConfigChangeRequest::ToggleFolder {
         folder_id,
@@ -250,13 +262,13 @@ pub async fn queue_toggle_folder_status(
         folder_path: folder_path.clone(),
     };
     state.add_pending_config_change(change);
-    
+
     // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
         println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
         // 触发队列处理
         state.process_pending_config_changes();
-        
+
         Ok(serde_json::json!({
             "status": "queued_for_processing",
             "message": format!("文件夹 {} 状态切换已加入处理队列并即将执行", folder_path)
@@ -275,23 +287,26 @@ pub async fn queue_toggle_folder_status(
 pub async fn queue_add_whitelist_folder(
     folder_path: String,
     folder_alias: Option<String>,
-    state: tauri::State<'_, crate::AppState>
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
-    println!("[CMD] queue_add_whitelist_folder 被调用，路径: {}", folder_path);
-    
+    println!(
+        "[CMD] queue_add_whitelist_folder 被调用，路径: {}",
+        folder_path
+    );
+
     // 添加到队列
     let change = crate::ConfigChangeRequest::AddWhitelist {
         folder_path: folder_path.clone(),
         folder_alias,
     };
     state.add_pending_config_change(change);
-    
+
     // 检查初始扫描是否已完成
     if state.is_initial_scan_completed() {
         println!("[CONFIG_QUEUE] 初始扫描已完成，配置变更已加入队列，即将处理");
         // 触发队列处理
         state.process_pending_config_changes();
-        
+
         Ok(serde_json::json!({
             "status": "queued_for_processing",
             "message": format!("白名单文件夹 {} 已加入处理队列并即将执行", folder_path)
@@ -308,14 +323,14 @@ pub async fn queue_add_whitelist_folder(
 /// 获取配置变更队列状态
 #[tauri::command(rename_all = "snake_case")]
 pub fn queue_get_status(
-    state: tauri::State<'_, crate::AppState>
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<serde_json::Value, String> {
     // println!("[CMD] queue_get_status 被调用");
-    
+
     let initial_scan_completed = state.is_initial_scan_completed();
     let pending_changes_count = state.get_pending_config_changes_count();
     let has_pending_changes = state.has_pending_config_changes();
-    
+
     Ok(serde_json::json!({
         "initial_scan_completed": initial_scan_completed,
         "pending_changes_count": pending_changes_count,
@@ -338,7 +353,10 @@ pub async fn search_files_by_tags(
     operator: String,
     app_handle: tauri::AppHandle,
 ) -> Result<Vec<FileInfo>, String> {
-    println!("[CMD] search_files_by_tags called with tags: {:?}, operator: {}", tag_names, operator);
+    println!(
+        "[CMD] search_files_by_tags called with tags: {:?}, operator: {}",
+        tag_names, operator
+    );
 
     // Get API host and port from state
     let (api_host, api_port) = {
@@ -350,7 +368,7 @@ pub async fn search_files_by_tags(
     // Build the API request
     let client = reqwest::Client::new();
     let url = format!("http://{}:{}/tagging/search-files", api_host, api_port);
-    
+
     let request_data = serde_json::json!({
         "tag_names": tag_names,
         "operator": operator,
@@ -370,8 +388,14 @@ pub async fn search_files_by_tags(
                 }
             } else {
                 let status = response.status();
-                let error_text = response.text().await.unwrap_or_else(|_| "Could not read error response".to_string());
-                Err(format!("API request failed with status {}: {}", status, error_text))
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "Could not read error response".to_string());
+                Err(format!(
+                    "API request failed with status {}: {}",
+                    status, error_text
+                ))
             }
         }
         Err(e) => Err(format!("Failed to send request: {}", e)),
@@ -382,31 +406,31 @@ pub async fn search_files_by_tags(
 #[tauri::command(rename_all = "snake_case", async, async_runtime = "tokio")]
 pub async fn get_tag_cloud_data(
     limit: Option<u32>,
-    app_handle: tauri::AppHandle
+    app_handle: tauri::AppHandle,
 ) -> Result<serde_json::Value, String> {
     println!("[CMD] get_tag_cloud_data 被调用，limit: {:?}", limit);
-    
+
     // 获取API信息
     let (api_host, api_port) = {
         let api_state = app_handle.state::<crate::ApiState>();
         let api_state_guard = api_state.0.lock().unwrap();
-        
+
         if api_state_guard.process_child.is_none() {
             return Err("API服务未运行".to_string());
         }
-        
+
         (api_state_guard.host.clone(), api_state_guard.port)
     };
-    
+
     // 构建API请求
     let client = reqwest::Client::new();
     let mut url = format!("http://{}:{}/tagging/tag-cloud", api_host, api_port);
-    
+
     // 添加查询参数
     if let Some(lim) = limit {
         url = format!("{}?limit={}", url, lim);
     }
-    
+
     // 发送GET请求
     match client.get(&url).send().await {
         Ok(response) => {
@@ -416,14 +440,17 @@ pub async fn get_tag_cloud_data(
                         // println!("[CMD] get_tag_cloud_data 成功获取标签云响应: {:?}", response_data);
                         Ok(response_data)
                     }
-                    Err(e) => Err(format!("解析标签云数据失败: {}", e))
+                    Err(e) => Err(format!("解析标签云数据失败: {}", e)),
                 }
             } else {
                 let status = response.status();
-                let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误响应".to_string());
+                let error_text = response
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "无法读取错误响应".to_string());
                 Err(format!("API请求失败 [{}]: {}", status, error_text))
             }
         }
-        Err(e) => Err(format!("发送请求失败: {}", e))
+        Err(e) => Err(format!("发送请求失败: {}", e)),
     }
 }

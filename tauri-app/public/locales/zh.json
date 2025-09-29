@@ -92,7 +92,12 @@
             "save-proxy-success": "代理配置保存成功",
             "save-proxy-failed": "保存代理配置失败",
             "saving": "保存中...",
-            "save_button": "保存配置"
+            "save_button": "保存配置",
+            "account": "账户管理",
+            "account-description": "管理您的账户和订阅状态",
+            "login": "用户登录",
+            "login-description": "登录以同步设置和使用高级功能",
+            "logout": "退出登录"
         },
         "authorization": {
             "name": "授权管理",

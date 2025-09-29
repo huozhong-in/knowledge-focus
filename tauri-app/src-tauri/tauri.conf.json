@@ -104,6 +104,11 @@
         "https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json"
       ],
       "dangerousInsecureTransportProtocols": false
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["knowledge-focus"]
+      }
     }
   }
 }

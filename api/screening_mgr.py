@@ -119,21 +119,6 @@ class ScreeningManager:
             except Exception as e:
                 failed_count += 1
                 errors.append(f"处理文件出错: {data_item.get('file_path', 'unknown path')} - {str(e)}")
-        
-        if success_count > 0:
-            with Session(self.engine) as session:
-                try:
-                    session.commit() # Commit once after all additions
-                    for res in added_results_for_refresh:
-                        session.refresh(res) # Refresh all added objects
-                    logger.info(f"批量添加 {success_count} 条记录成功提交。")
-                except Exception as e:
-                    session.rollback()
-                    logger.error(f"批量提交失败: {str(e)}")
-                    # Mark all as failed if commit fails
-                    failed_count += success_count
-                    success_count = 0
-                    errors.append(f"批量提交数据库失败: {str(e)}")
 
         return {
             "success": success_count,

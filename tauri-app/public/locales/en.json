@@ -92,7 +92,12 @@
             "save-proxy-success": "Proxy configuration saved successfully.",
             "save-proxy-failed": "Failed to save proxy configuration.",
             "saving": "Saving...",
-            "save_button": "Save Configuration"
+            "save_button": "Save Configuration",
+            "account": "Account",
+            "account-description": "Manage your account and subscription status.",
+            "login": "Sign In",
+            "login-description": "Sign in to sync your settings and access premium features.",
+            "logout": "Sign Out"
         },
         "authorization": {
             "name": "Authorization Management",
