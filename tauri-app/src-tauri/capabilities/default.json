@@ -246,13 +246,10 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         {
-          "url": "http://127.0.0.1:5173/*"
+          "url": "http://*"
         },
         {
-          "url": "https://*.huozhong.in/*"
-        },
-        {
-          "url": "https://github.com/huozhong-in/*"
+          "url": "https://*"
         }
       ]
     },

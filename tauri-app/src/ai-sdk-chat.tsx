@@ -122,72 +122,10 @@ export function AiSdkChat({
     checkInterval: 3000 // 每3秒检查一次
   })
 
-  // // 调试日志：追踪状态变化
-  // useEffect(() => {
-  //   console.log('🔍 [DEBUG] AiSdkChat状态更新:', {
-  //     sessionId: currentSession?.id,
-  //     scenarioId: currentSession?.scenario_id,
-  //     pdfPath: currentSession?.metadata?.pdf_path,
-  //     timerActive: coReadingTimer.isActive,
-  //     pdfFocused: coReadingTimer.isPdfFocused,
-  //     pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
-  //     windowStatus: coReadingTimer.windowStatus
-  //   })
-  // }, [
-  //   currentSession?.id,
-  //   currentSession?.scenario_id, 
-  //   currentSession?.metadata?.pdf_path,
-  //   coReadingTimer.isActive,
-  //   coReadingTimer.isPdfFocused,
-  //   coReadingTimer.isPdfTrulyInvisible
-  // ])
-
   // 判断是否应该显示暂停Widget (只在PDF真正不可见时显示)
   const shouldShowPauseWidget = currentSession?.scenario_id && 
                                coReadingTimer.isActive && 
                                coReadingTimer.isPdfTrulyInvisible === true
-
-  // 调试日志：追踪Widget显示条件
-  // useEffect(() => {
-  //   console.log('🎯 [DEBUG] Widget显示条件检查:', {
-  //     hasScenarioId: !!currentSession?.scenario_id,
-  //     timerActive: coReadingTimer.isActive,
-  //     pdfTrulyInvisible: coReadingTimer.isPdfTrulyInvisible,
-  //     shouldShowPauseWidget,
-  //     '条件1-有scenarioId': !!currentSession?.scenario_id,
-  //     '条件2-定时器激活': coReadingTimer.isActive,
-  //     '条件3-PDF不可见': coReadingTimer.isPdfTrulyInvisible === true
-  //   })
-  // }, [currentSession?.scenario_id, coReadingTimer.isActive, coReadingTimer.isPdfTrulyInvisible, shouldShowPauseWidget])
-
-  // 调试日志：追踪PDF状态指示器显示条件
-  // const shouldShowPdfIndicator = currentSession?.scenario_id && currentSession?.metadata?.pdf_path
-  // useEffect(() => {
-  //   console.log('📱 [DEBUG] PDF状态指示器显示条件:', {
-  //     hasScenarioId: !!currentSession?.scenario_id,
-  //     hasPdfPath: !!currentSession?.metadata?.pdf_path,
-  //     shouldShowPdfIndicator,
-  //     pdfPath: currentSession?.metadata?.pdf_path
-  //   })
-  // }, [currentSession?.scenario_id, currentSession?.metadata?.pdf_path, shouldShowPdfIndicator])
-
-  // // 定时日志：让用户感受到定时器的存在
-  // useEffect(() => {
-  //   if (coReadingTimer.isActive) {
-  //     const logInterval = setInterval(() => {
-  //       console.log('⏰ [定时心跳] PDF共读监控运行中...', {
-  //         活跃状态: coReadingTimer.isActive,
-  //         PDF聚焦: coReadingTimer.isPdfFocused,
-  //         PDF隐藏: coReadingTimer.isPdfTrulyInvisible,
-  //         时间戳: new Date().toLocaleTimeString()
-  //       })
-  //     }, 5000) // 每5秒打印一次心跳日志
-
-  //     return () => {
-  //       clearInterval(logInterval)
-  //     }
-  //   }
-  // }, [coReadingTimer.isActive, coReadingTimer.isPdfFocused, coReadingTimer.isPdfTrulyInvisible])
 
   // Widget操作处理函数
   const handleContinueReading = async () => {
@@ -209,6 +147,10 @@ export function AiSdkChat({
       try {
         const updatedSession = await exitCoReadingMode(currentSession.id)
         setCurrentSession(updatedSession)
+        // 通知父组件会话已更新
+        if (onSessionUpdate) {
+          onSessionUpdate(updatedSession)
+        }
         console.log('已退出共读模式')
       } catch (error) {
         console.error('退出共读模式失败:', error)
@@ -221,22 +163,17 @@ export function AiSdkChat({
   // 处理外部传入的会话数据更新
   useEffect(() => {
     if (externalCurrentSession && externalCurrentSession.id === parseInt(sessionId || '0')) {
-      console.log('📥 [DEBUG] 接收到外部会话更新, 更新内部状态:', externalCurrentSession)
-      console.log('📥 [DEBUG] 会话详细信息:', {
-        id: externalCurrentSession.id,
-        scenario_id: externalCurrentSession.scenario_id,
-        metadata: externalCurrentSession.metadata,
-        'metadata.pdf_path': externalCurrentSession.metadata?.pdf_path,
-        'metadata全部内容': JSON.stringify(externalCurrentSession.metadata, null, 2)
-      })
+      // console.log('📥 [DEBUG] 接收到外部会话更新, 更新内部状态:', externalCurrentSession)
+      // console.log('📥 [DEBUG] 会话详细信息:', {
+      //   id: externalCurrentSession.id,
+      //   scenario_id: externalCurrentSession.scenario_id,
+      //   metadata: externalCurrentSession.metadata,
+      //   'metadata.pdf_path': externalCurrentSession.metadata?.pdf_path,
+      //   'metadata全部内容': JSON.stringify(externalCurrentSession.metadata, null, 2)
+      // })
       setCurrentSession(externalCurrentSession)
     }
   }, [externalCurrentSession, sessionId])
-
-  // 处理外部会话更新（比如从FileList组件进入共读模式）
-  useEffect(() => {
-    console.log('🔗 [DEBUG] 会话更新回调已准备就绪, 当前会话:', currentSession?.id)
-  }, [onSessionUpdate, currentSession?.id])
 
   // 处理临时工具状态：当没有真实会话时，从临时工具列表中恢复UI状态
   useEffect(() => {
@@ -244,10 +181,10 @@ export function AiSdkChat({
       const isTavilyTempSelected = tempSelectedTools.includes(TAVILY_TOOL_NAME)
       setTavilyEnabled(isTavilyTempSelected)
       setEnableWebSearch(isTavilyTempSelected)
-      console.log('📋 [DEBUG] 从临时工具状态恢复 UI:', {
-        tempSelectedTools,
-        tavilyEnabled: isTavilyTempSelected
-      })
+      // console.log('📋 [DEBUG] 从临时工具状态恢复 UI:', {
+      //   tempSelectedTools,
+      //   tavilyEnabled: isTavilyTempSelected
+      // })
     }
   }, [tempSelectedTools, currentSession?.id])
 
@@ -430,7 +367,7 @@ export function AiSdkChat({
           
           // 创建临时截图对象，用于本次消息发送
           currentScreenshotForMessage = { path: screenshotPath, metadata: fileMetadata }
-          console.log('🔍 [DEBUG] 新截图生成:', currentScreenshotForMessage)
+          // console.log('🔍 [DEBUG] 新截图生成:', currentScreenshotForMessage)
           
           // 设置截图预览状态（用于UI显示）
           setScreenshotPreview(currentScreenshotForMessage)
@@ -677,14 +614,14 @@ export function AiSdkChat({
                               const shouldDefaultOpen = part.state === 'output-available' || part.state === 'output-error'
                               
                               // 调试日志
-                              console.log('🔧 [DEBUG] Tool part detected:', {
-                                type: part.type,
-                                state: part.state,
-                                input: part.input,
-                                output: part.output,
-                                errorText: part.errorText,
-                                shouldDefaultOpen
-                              })
+                              // console.log('🔧 [DEBUG] Tool part detected:', {
+                              //   type: part.type,
+                              //   state: part.state,
+                              //   input: part.input,
+                              //   output: part.output,
+                              //   errorText: part.errorText,
+                              //   shouldDefaultOpen
+                              // })
                               
                               return (
                                 <Tool key={`${message.id}-${index}`} defaultOpen={shouldDefaultOpen}>

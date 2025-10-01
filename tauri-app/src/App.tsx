@@ -15,6 +15,7 @@ import Splash from "./splash"
 import { useBridgeEvents } from "@/hooks/useBridgeEvents"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
+import { useAuthStore } from "@/lib/auth-store"
 
 // 设置页面名称枚举常量
 export const SETTINGS_PAGES = {
@@ -86,6 +87,52 @@ export default function App() {
 
   const { openSettingsPage } = useSettingsStore()
   const [showSplash, setShowSplash] = useState(true)
+  
+  // 认证相关
+  const { checkAuth, initAuthListener } = useAuthStore()
+
+  // 监听来自Python后端的OAuth回调事件（替代better-auth-tauri）
+  useBridgeEvents({
+    'oauth-callback-success': async (payload: any) => {
+      console.log("收到OAuth成功回调:", payload);
+      toast.success("OAuth认证成功！正在完成登录...");
+      
+      try {
+        // 使用授权码完成认证流程
+        const { code, state } = payload;
+        
+        // 调用better-auth的token交换端点
+        const response = await fetch('http://127.0.0.1:60325/api/auth/callback/google', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code,
+            state,
+          }),
+          credentials: 'include', // 重要：包含cookies
+        });
+        
+        if (response.ok) {
+          console.log("Token交换成功");
+          toast.success("登录成功！");
+          // 重新检查认证状态
+          await checkAuth();
+        } else {
+          throw new Error('Token交换失败');
+        }
+      } catch (error) {
+        console.error("完成OAuth流程时出错:", error);
+        toast.error("登录完成失败，请重试");
+      }
+    },
+    
+    'oauth-callback-error': (payload: any) => {
+      console.error("收到OAuth错误回调:", payload);
+      toast.error(`OAuth认证失败: ${payload.error_description || payload.error}`);
+    }
+  }, { showToasts: false, logEvents: true });
 
   // 会话状态管理
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null)
@@ -161,6 +208,23 @@ export default function App() {
   useEffect(() => {
     if (isApiReady) {
       restoreLastUsedSession()
+      // 检查认证状态
+      checkAuth()
+      
+      // 初始化 OAuth 事件监听器
+      let unlistenOAuth: (() => void) | null = null
+      initAuthListener().then(unlisten => {
+        unlistenOAuth = unlisten
+      }).catch(err => {
+        console.error('Failed to init auth listener:', err)
+      })
+      
+      // 清理函数
+      return () => {
+        if (unlistenOAuth) {
+          unlistenOAuth()
+        }
+      }
     }
   }, [isApiReady])
 
@@ -359,13 +423,13 @@ export default function App() {
   // 添加键盘快捷键监听
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // 检测 Cmd+, (macOS) 或 Ctrl+, (Windows/Linux)
-      if ((event.metaKey || event.ctrlKey) && event.key === ',') {
+      // 检测 Cmd+, (macOS) 或 Alt+, (Windows/Linux)
+      if ((event.metaKey || event.altKey) && event.key === ',') {
         event.preventDefault()
         openSettingsPage(SETTINGS_PAGES.GENERAL)
       }
-      // 检测 Cmd+P (macOS) 或 Ctrl+P (Windows/Linux)
-      else if ((event.metaKey || event.ctrlKey) && event.key === 'p') {
+      // 检测 Cmd+P (macOS) 或 Alt+P (Windows/Linux)
+      else if ((event.metaKey || event.altKey) && event.key === 'p') {
         event.preventDefault()
         setSearchOpen(true)
       }
@@ -381,22 +445,41 @@ export default function App() {
   // 监听菜单事件
   useEffect(() => {
     let unlistenFn: (() => void) | undefined
+    let isMounted = true
 
-    listen("menu-settings", (event) => {
-      const page = event.payload as string
-      console.log("收到菜单设置事件，要打开的页面:", page)
-      openSettingsPage(page === SETTINGS_PAGES.ABOUT ? SETTINGS_PAGES.ABOUT : SETTINGS_PAGES.GENERAL)
-    })
-      .then((fn) => {
-        unlistenFn = fn
-      })
-      .catch((err) => {
-        console.error("监听菜单事件失败:", err)
-      })
+    const setupListener = async () => {
+      try {
+        const fn = await listen("menu-settings", (event) => {
+          if (!isMounted) return // 组件已卸载，忽略事件
+          
+          const page = event.payload as string
+          console.log("收到菜单设置事件，要打开的页面:", page)
+          openSettingsPage(page === SETTINGS_PAGES.ABOUT ? SETTINGS_PAGES.ABOUT : SETTINGS_PAGES.GENERAL)
+        })
+        
+        if (isMounted) {
+          unlistenFn = fn
+        } else {
+          // 如果组件已经卸载，立即清理
+          fn()
+        }
+      } catch (err) {
+        if (isMounted) {
+          console.error("监听菜单事件失败:", err)
+        }
+      }
+    }
+
+    setupListener()
 
     return () => {
+      isMounted = false
       if (unlistenFn) {
-        unlistenFn()
+        try {
+          unlistenFn()
+        } catch (error) {
+          // 忽略清理时的错误
+        }
       }
     }
   }, [openSettingsPage])

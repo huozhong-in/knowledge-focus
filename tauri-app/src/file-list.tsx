@@ -19,7 +19,7 @@ import { TaggedFile } from "@/types/file-types"
 import { FileService } from "@/api/file-service"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { fetch } from "@tauri-apps/plugin-http"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { VectorizationProgress } from "@/components/VectorizationProgress"
 import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { toast } from "sonner"
@@ -326,7 +326,7 @@ export function FileList({
   const { t } = useTranslation()
 
   const [screeningResultCount, setScreeningResultCount] = useState<number>(0)
-  const fetchScreeningResultCount = async () => {
+  const fetchScreeningResultCount = useCallback(async () => {
     // 调用API获取筛选结果数量
     const url = "http://127.0.0.1:60315/file-screening/total"
     const response = await fetch(url)
@@ -334,7 +334,7 @@ export function FileList({
     if (result.success) {
       setScreeningResultCount(result.total_count)
     }
-  }
+  }, [])
   useEffect(() => {
     fetchScreeningResultCount()
     // return () => {
@@ -354,8 +354,8 @@ export function FileList({
   // 添加键盘快捷键监听 - Cmd+K 聚焦搜索框
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // 检测 Cmd+K (macOS) 或 Ctrl+K (Windows/Linux)
-      if ((event.metaKey || event.ctrlKey) && event.key === "k") {
+      // 检测 Cmd+K (macOS) 或 Alt+K (Windows/Linux)
+      if ((event.metaKey || event.altKey) && event.key === "k") {
         event.preventDefault()
         // 聚焦到搜索输入框
         searchInputRef.current?.focus()

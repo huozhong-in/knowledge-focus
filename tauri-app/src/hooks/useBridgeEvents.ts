@@ -58,11 +58,11 @@ export function useBridgeEvents(
     logEvents?: boolean;  // 是否在控制台记录事件
   } = {}
 ) {
-  const { showToasts = false, logEvents = true } = options;
-  
-  // 使用 ref 来保持最新的 handlers 引用，避免频繁重建监听器
+  // 使用 ref 来保持最新的 handlers 和 options 引用，避免频繁重建监听器
   const handlersRef = useRef(handlers);
+  const optionsRef = useRef(options);
   handlersRef.current = handlers;
+  optionsRef.current = options;
 
   useEffect(() => {
     // 存储取消监听函数的数组
@@ -84,6 +84,8 @@ export function useBridgeEvents(
                 // 获取最新的 handler
                 const currentHandler = handlersRef.current[eventName];
                 if (!currentHandler) return;
+                
+                const { logEvents = true, showToasts = false } = optionsRef.current;
                 
                 if (logEvents) {
                   console.log(`[桥接事件] ${eventName}:`, payload);
@@ -157,7 +159,7 @@ export function useBridgeEvents(
         setTimeout(cleanup, 100);
       }
     };
-  }, [showToasts, logEvents]); // 移除 handlers 依赖，避免频繁重建
+  }, []); // 完全移除依赖，使用 ref 保持最新值，避免频繁重建
 }
 
 /**

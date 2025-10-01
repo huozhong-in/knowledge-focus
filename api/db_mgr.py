@@ -453,6 +453,20 @@ class Scenario(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
+# OAuth用户信息表
+class User(SQLModel, table=True):
+    __tablename__ = "t_users"
+    id: int = Field(default=None, primary_key=True)
+    oauth_provider: str = Field(max_length=50, index=True)  # google, github
+    oauth_id: str = Field(max_length=255, index=True, unique=True)  # OAuth提供商的用户唯一ID
+    email: str = Field(max_length=255, index=True)
+    name: str = Field(max_length=255)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    session_token: str | None = Field(default=None)  # JWT token
+    token_expires_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
 class DBManager:
     """数据库结构管理类，负责新建和后续维护各业务模块数据表结构、索引、触发器等
     从上层拿到session，自己不管理数据库连接"""
@@ -757,6 +771,15 @@ class DBManager:
             # 能力指派表
             if not inspector.has_table(CapabilityAssignment.__tablename__):
                 CapabilityAssignment.__table__.create(self.engine, checkfirst=True)
+            
+            # OAuth用户表
+            if not inspector.has_table(User.__tablename__):
+                User.__table__.create(self.engine, checkfirst=True)
+                print(f"Created table {User.__tablename__}")
+                # 创建索引
+                session.exec(text(f'CREATE UNIQUE INDEX IF NOT EXISTS idx_oauth_provider_id ON {User.__tablename__} (oauth_provider, oauth_id);'))
+                session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_email ON {User.__tablename__} (email);'))
+                session.commit()
         
             # 工具表
             if not inspector.has_table(Tool.__tablename__):

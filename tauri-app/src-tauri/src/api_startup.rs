@@ -80,8 +80,9 @@ pub fn start_python_api(
                 Err(e) => {
                     eprintln!("无法获取当前工作目录: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ =
-                            window.emit("api-error", Some(format!("无法获取当前工作目录: {}", e)));
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.emit("api-error", Some(format!("无法获取当前工作目录: {}", e)));
+                        }
                     }
                     return;
                 }
@@ -92,8 +93,9 @@ pub fn start_python_api(
                 Err(e) => {
                     eprintln!("无法获取应用数据目录: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ =
-                            window.emit("api-error", Some(format!("无法获取应用数据目录: {}", e)));
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.emit("api-error", Some(format!("无法获取应用数据目录: {}", e)));
+                        }
                     }
                     return;
                 }
@@ -109,7 +111,9 @@ pub fn start_python_api(
                 Err(e) => {
                     eprintln!("无法解析资源路径: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("api-error", Some(format!("无法解析资源路径: {}", e)));
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.emit("api-error", Some(format!("无法解析资源路径: {}", e)));
+                        }
                     }
                     return;
                 }
@@ -157,56 +161,73 @@ pub fn start_python_api(
                 let app_handle_for_sync = app_handle.clone();
                 let sync_task = tauri::async_runtime::spawn(async move {
                     while let Some(event) = sync_rx.recv().await {
+                        // 检查窗口是否仍然存在，避免向已销毁的窗口发送事件
                         if let Some(window) = app_handle_for_sync.get_webview_window("main") {
-                            match event {
-                                CommandEvent::Stdout(line) => {
-                                    let line_str = String::from_utf8_lossy(&line);
-                                    let _ = window.emit("api-log", Some(line_str.to_string()));
-                                }
-                                CommandEvent::Stderr(line) => {
-                                    let line_str = String::from_utf8_lossy(&line);
-                                    // uv 命令将正常的进度信息输出到 stderr，所以我们需要区分真正的错误
-                                    // 只有包含明确错误关键词的才当作错误处理
-                                    if line_str.contains("error")
-                                        || line_str.contains("Error")
-                                        || line_str.contains("ERROR")
-                                        || line_str.contains("failed")
-                                        || line_str.contains("Failed")
-                                        || line_str.contains("FAILED")
-                                    {
-                                        let _ =
-                                            window.emit("api-error", Some(line_str.to_string()));
-                                    } else {
-                                        // 其他 stderr 输出当作正常日志处理（如下载进度等）
-                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                            // 检查窗口是否真的可用（可能已经被销毁但引用仍存在）
+                            if window.is_visible().unwrap_or(false) {
+                                match event {
+                                    CommandEvent::Stdout(line) => {
+                                        let line_str = String::from_utf8_lossy(&line);
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.emit("api-log", Some(line_str.to_string()));
+                                        }
                                     }
-                                }
-                                CommandEvent::Terminated(status) => {
-                                    println!(
-                                        "uv sync 进程终止，状态码: {}",
-                                        status.code.unwrap_or(-1)
-                                    );
-                                    if status.code.unwrap_or(-1) != 0 {
-                                        let _ = window.emit(
-                                            "api-error",
-                                            Some(format!(
-                                                "uv sync failed，exit code: {}",
-                                                status.code.unwrap_or(-1)
-                                            )),
-                                        );
-                                    } else {
-                                        let _ = window.emit(
-                                            "api-log",
-                                            Some(
-                                                "Python virtual environment sync completed"
-                                                    .to_string(),
-                                            ),
-                                        );
+                                    CommandEvent::Stderr(line) => {
+                                        let line_str = String::from_utf8_lossy(&line);
+                                        // uv 命令将正常的进度信息输出到 stderr，所以我们需要区分真正的错误
+                                        // 只有包含明确错误关键词的才当作错误处理
+                                        if line_str.contains("error")
+                                            || line_str.contains("Error")
+                                            || line_str.contains("ERROR")
+                                            || line_str.contains("failed")
+                                            || line_str.contains("Failed")
+                                            || line_str.contains("FAILED")
+                                        {
+                                            if window.is_visible().unwrap_or(false) {
+                                                let _ = window.emit("api-error", Some(line_str.to_string()));
+                                            }
+                                        } else {
+                                            // 其他 stderr 输出当作正常日志处理（如下载进度等）
+                                            if window.is_visible().unwrap_or(false) {
+                                                let _ = window.emit("api-log", Some(line_str.to_string()));
+                                            }
+                                        }
                                     }
-                                    break;
+                                    CommandEvent::Terminated(status) => {
+                                        println!(
+                                            "uv sync 进程终止，状态码: {}",
+                                            status.code.unwrap_or(-1)
+                                        );
+                                        if status.code.unwrap_or(-1) != 0 {
+                                            let _ = window.emit(
+                                                "api-error",
+                                                Some(format!(
+                                                    "uv sync failed，exit code: {}",
+                                                    status.code.unwrap_or(-1)
+                                                )),
+                                            );
+                                        } else {
+                                            let _ = window.emit(
+                                                "api-log",
+                                                Some(
+                                                    "Python virtual environment sync completed"
+                                                        .to_string(),
+                                                ),
+                                            );
+                                        }
+                                        break;
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
+                            } else {
+                                // 窗口不可见，可能已被销毁，停止发送事件
+                                println!("主窗口不可见，停止发送 uv sync 日志事件");
+                                break;
                             }
+                        } else {
+                            // 窗口不存在，停止发送事件
+                            println!("主窗口不存在，停止发送 uv sync 日志事件");
+                            break;
                         }
                     }
                 });
@@ -217,7 +238,9 @@ pub fn start_python_api(
             Err(e) => {
                 eprintln!("启动 uv sync 失败: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-error", Some(format!("uv sync failed: {}", e)));
+                    if window.is_visible().unwrap_or(false) {
+                        let _ = window.emit("api-error", Some(format!("uv sync failed: {}", e)));
+                    }
                 }
                 return;
             }
@@ -236,8 +259,9 @@ pub fn start_python_api(
                 Err(e) => {
                     eprintln!("无法解析main.py路径: {}", e);
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ =
-                            window.emit("api-error", Some(format!("无法解析main.py路径: {}", e)));
+                        if window.is_visible().unwrap_or(false) {
+                            let _ = window.emit("api-error", Some(format!("无法解析main.py路径: {}", e)));
+                        }
                     }
                     return;
                 }
@@ -290,6 +314,12 @@ pub fn start_python_api(
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
                         if let Some(window) = app_handle_clone.get_webview_window("main") {
+                            // 检查窗口是否仍然可见/有效
+                            if !window.is_visible().unwrap_or(false) {
+                                println!("FastAPI事件处理: 窗口已不可见，停止发送事件");
+                                break;
+                            }
+
                             match event {
                                 CommandEvent::Stdout(line) => {
                                     let line_str = String::from_utf8_lossy(&line);
@@ -305,7 +335,9 @@ pub fn start_python_api(
                                     } else {
                                         // 普通的Python日志输出
                                         // println!("Python API: {}", line_str);
-                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.emit("api-log", Some(line_str.to_string()));
+                                        }
                                     }
                                 }
                                 CommandEvent::Stderr(line) => {
@@ -324,16 +356,21 @@ pub fn start_python_api(
                                         || line_str.contains("traceback")
                                         || line_str.contains("Traceback")
                                     {
-                                        let _ =
-                                            window.emit("api-error", Some(line_str.to_string()));
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.emit("api-error", Some(line_str.to_string()));
+                                        }
                                     } else {
                                         // 其他 stderr 输出当作正常日志处理（如启动信息等）
-                                        let _ = window.emit("api-log", Some(line_str.to_string()));
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.emit("api-log", Some(line_str.to_string()));
+                                        }
                                     }
                                 }
                                 CommandEvent::Error(err) => {
                                     eprintln!("Python API进程错误: {}", err);
-                                    let _ = window.emit("api-error", Some(err.to_string()));
+                                    if window.is_visible().unwrap_or(false) {
+                                        let _ = window.emit("api-error", Some(err.to_string()));
+                                    }
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;
                                     }
@@ -343,7 +380,9 @@ pub fn start_python_api(
                                         "API进程已终止，状态码: {}",
                                         status.code.unwrap_or(-1)
                                     );
-                                    let _ = window.emit("api-log", Some(status.code));
+                                    if window.is_visible().unwrap_or(false) {
+                                        let _ = window.emit("api-log", Some(status.code));
+                                    }
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;
                                     }
@@ -357,7 +396,9 @@ pub fn start_python_api(
             Err(e) => {
                 eprintln!("启动API服务失败: {}", e);
                 if let Some(window) = app_handle.get_webview_window("main") {
-                    let _ = window.emit("api-error", Some(format!("启动API服务失败: {}", e)));
+                    if window.is_visible().unwrap_or(false) {
+                        let _ = window.emit("api-error", Some(format!("启动API服务失败: {}", e)));
+                    }
                 }
                 // API启动失败，发送失败信号
                 if let Some(sender) = tx.lock().unwrap().take() {

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '@/main';
 import { Button } from "./components/ui/button";
@@ -161,11 +162,14 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
   useEffect(() => {
     let apiLogUnlisten: (() => void) | null = null;
     let apiErrorUnlisten: (() => void) | null = null;
+    let isMounted = true;
     
     const setupApiLogListeners = async () => {
       try {
         // 监听 API 日志
         apiLogUnlisten = await listen<string>('api-log', (event) => {
+          if (!isMounted) return; // 组件已卸载，忽略事件
+          
           const logLine = event.payload;
           if (logLine && logLine.trim()) {
             const trimmedLog = logLine.trim();
@@ -178,50 +182,68 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
             });
             
             // 根据日志内容更新状态消息
-            if (trimmedLog.includes('Syncing Python virtual environment') || trimmedLog.includes('sync')) {
-              setLoadingMessage('Syncing Python virtual environment...');
+            if (trimmedLog.includes('正在同步 Python 虚拟环境') || trimmedLog.includes('sync') || trimmedLog.includes('Syncing')) {
+              setLoadingMessage('正在同步 Python 环境...');
               setShowLogs(true);
             } else if (trimmedLog.includes('download') || trimmedLog.includes('install') || trimmedLog.includes('Downloading')) {
-              setLoadingMessage('Downloading and installing dependencies...');
+              setLoadingMessage('正在下载安装依赖包...');
               setShowLogs(true);
             } else if (trimmedLog.includes('FastAPI') || trimmedLog.includes('Uvicorn') || trimmedLog.includes('服务已启动')) {
-              setLoadingMessage('Starting API server...');
+              setLoadingMessage('正在启动 API 服务器...');
               setShowLogs(true);
-            } else if (trimmedLog.includes('Python virtual environment sync completed')) {
-              setLoadingMessage('Python virtual environment sync completed, starting API...');
+            } else if (trimmedLog.includes('虚拟环境同步完成') || trimmedLog.includes('sync completed')) {
+              setLoadingMessage('Python 环境准备完成，启动 API...');
             }
           }
         });
         
         // 监听 API 错误
-        apiErrorUnlisten = await listen<string>('api-error', (event) => {
-          const errorLine = event.payload;
-          if (errorLine && errorLine.trim()) {
-            const trimmedError = errorLine.trim();
-            // 避免重复错误日志
-            setApiLogs(prev => {
-              const errorMsg = `ERROR: ${trimmedError}`;
-              if (prev[prev.length - 1] !== errorMsg) {
-                return [...prev, errorMsg];
-              }
-              return prev;
-            });
-            setHasApiError(true);
-            setShowLogs(true);
-            setLoadingMessage('API 启动过程中出现错误，请查看详细日志');
-          }
-        });
+        if (isMounted) {
+          apiErrorUnlisten = await listen<string>('api-error', (event) => {
+            if (!isMounted) return; // 组件已卸载，忽略事件
+            
+            const errorLine = event.payload;
+            if (errorLine && errorLine.trim()) {
+              const trimmedError = errorLine.trim();
+              // 避免重复错误日志
+              setApiLogs(prev => {
+                const errorMsg = `ERROR: ${trimmedError}`;
+                if (prev[prev.length - 1] !== errorMsg) {
+                  return [...prev, errorMsg];
+                }
+                return prev;
+              });
+              setHasApiError(true);
+              setShowLogs(true);
+              setLoadingMessage('API 启动过程中出现错误，请查看详细日志');
+            }
+          });
+        }
       } catch (error) {
-        console.error('设置 API 日志监听器失败:', error);
+        if (isMounted) {
+          console.error('设置 API 日志监听器失败:', error);
+        }
       }
     };
     
     setupApiLogListeners();
     
     return () => {
+      console.log('[Splash] 组件卸载，清理 API 日志监听器');
+      isMounted = false;
       // 清理监听器
-      if (apiLogUnlisten) apiLogUnlisten();
-      if (apiErrorUnlisten) apiErrorUnlisten();
+      try {
+        if (apiLogUnlisten) {
+          apiLogUnlisten();
+          console.log('[Splash] API 日志监听器已清理');
+        }
+        if (apiErrorUnlisten) {
+          apiErrorUnlisten();
+          console.log('[Splash] API 错误监听器已清理');
+        }
+      } catch (error) {
+        console.error('[Splash] 清理监听器时出错:', error);
+      }
     };
   }, []);
   

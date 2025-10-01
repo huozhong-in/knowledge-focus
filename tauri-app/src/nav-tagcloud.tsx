@@ -74,7 +74,7 @@ export function NavTagCloud() {
       console.log('🔗 API就绪，尝试获取标签云数据');
       fetchTagCloud();
     }
-  }, [appStore.isApiReady, fetchTagCloud]);
+  }, [appStore.isApiReady]); // 移除 fetchTagCloud 依赖
   
   // 使用封装好的标签更新监听Hook（带API就绪状态检查）
   useTagsUpdateListenerWithApiCheck(

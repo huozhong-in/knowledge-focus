@@ -1,6 +1,7 @@
 import React from 'react';
 import { useState, useEffect } from 'react';
 import LanguageSwitcher from '@/language-switcher';
+import AuthSection from '@/components/AuthSection';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,8 @@ export default function SettingsGeneral() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
+      <AuthSection />
+      
       <Card className="w-full">
         <CardHeader>
           <CardTitle>UI Language</CardTitle>

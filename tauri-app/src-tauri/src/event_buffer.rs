@@ -74,6 +74,8 @@ impl EventBuffer {
         strategies.insert("multivector-started".to_string(), Immediate);
         strategies.insert("multivector-completed".to_string(), Immediate);
         strategies.insert("multivector-failed".to_string(), Immediate);
+        // OAuth 登录成功事件需要立即通知前端
+        strategies.insert("oauth-login-success".to_string(), Immediate);
 
         // === 延迟合并类（可缓冲，适合批量场景） ===
         // 标签更新：用户首次启动或大量文件处理时会频繁更新，5秒内合并

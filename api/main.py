@@ -264,6 +264,7 @@ async def lifespan(app: FastAPI):
             from search_api import get_router as get_search_router
             from unified_tools_api import get_router as get_tools_router
             from documents_api import get_router as get_documents_router
+            from user_api import get_router as get_user_router
             
             # 注册各个API路由
             models_router = get_models_router(get_engine=get_engine, base_dir=app.state.db_directory)
@@ -289,6 +290,10 @@ async def lifespan(app: FastAPI):
             
             documents_router = get_documents_router(get_engine=get_engine, base_dir=app.state.db_directory)
             app.include_router(documents_router, prefix="", tags=["documents"])
+            
+            # 用户认证相关路由
+            user_router = get_user_router(get_engine=get_engine)
+            app.include_router(user_router, prefix="", tags=["user", "auth"])
             
             logger.info("所有API路由注册完成")
         except Exception as router_err:
