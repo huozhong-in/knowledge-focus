@@ -71,8 +71,9 @@ jobs:
             ## 🚀 KnowledgeFocus v__VERSION__
             
             ### 🆕 更新内容
-            - 启动页增加启动过程观察视窗，可观察python包下载情况
-            - 增加Google和GitHub账号授权登录方式
+            - Google和GitHub账号授权登录方式-配合服务器端部署
+            - 取消deep-link功能
+            - 优化部分UI细节
             
             ### 📦 下载说明
             - **Intel Mac**: 下载 `KnowledgeFocus_x64.app.tar.gz`

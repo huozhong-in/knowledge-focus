@@ -55,7 +55,6 @@
     "@tanstack/react-query-devtools": "^5.81.2",
     "@tanstack/react-table": "^8.21.3",
     "@tauri-apps/api": "^2.7.0",
-    "@tauri-apps/plugin-deep-link": "~2",
     "@tauri-apps/plugin-dialog": "~2",
     "@tauri-apps/plugin-http": "~2",
     "@tauri-apps/plugin-log": "~2",

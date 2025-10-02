@@ -25,7 +25,6 @@
     "window-state:default",
     "shell:allow-open",
     "screenshots:default",
-    "deep-link:default",
     {
       "identifier": "fs:scope-appdata",
       "allow": [

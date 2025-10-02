@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "KnowledgeFocus",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "identifier": "knowledge-focus.huozhong.in",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -106,11 +106,6 @@
         "https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json"
       ],
       "dangerousInsecureTransportProtocols": false
-    },
-    "deep-link": {
-      "desktop": {
-        "schemes": ["knowledge-focus"]
-      }
     }
   }
 }
