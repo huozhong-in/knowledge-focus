@@ -237,7 +237,7 @@ export default {
           });
           
           // 生产环境的 Python API URL
-          const pythonApiUrl = env.PYTHON_API_URL || 'https://api.huozhong.in/api/auth/success';
+          const pythonApiUrl = env.PYTHON_API_URL || 'http://127.0.0.1:60315/api/auth/success';
           
           const params = new URLSearchParams({
             provider,
