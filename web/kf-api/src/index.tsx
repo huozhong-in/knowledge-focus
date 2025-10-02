@@ -103,7 +103,10 @@ app.post('/start-oauth', async (c) => {
     // 从表单获取参数
     const body = await c.req.parseBody();
     const provider = body.providerId as string || 'google';  // 改名为 provider
-    const callbackURL = body.callbackURL as string || '/auth-callback-bridge';
+    
+    // 🔧 修复: callbackURL 应该包含 provider 参数
+    const baseCallbackURL = body.callbackURL as string || '/auth-callback-bridge';
+    const callbackURL = `${baseCallbackURL}?provider=${encodeURIComponent(provider)}`;
     
     console.log('[Start OAuth] Params:', { provider, callbackURL });
     
@@ -228,6 +231,7 @@ app.post('/login-google', async (c) => {
 app.get('/auth-callback-bridge', async (c) => {
   try {
     console.log('[Auth Bridge] Processing OAuth callback...');
+    console.log('[Auth Bridge] Query params:', Object.fromEntries(new URL(c.req.url).searchParams));
     
     // 从better-auth获取当前session
     const authRequest = c.req.raw;
@@ -239,7 +243,18 @@ app.get('/auth-callback-bridge', async (c) => {
     
     if (session?.user) {
       const user = session.user;
-      const provider = c.req.query('provider') || 'google';
+      
+      // 🔧 修复: 从 URL query 获取 provider,如果没有则尝试从其他地方推断
+      // Better-Auth 标准回调不会自动在 URL 中包含 provider 参数
+      // 我们需要在启动 OAuth 流程时就传递这个参数
+      let provider = c.req.query('provider');
+      
+      if (!provider) {
+        // 如果 URL 中没有 provider,尝试从 session 数据推断
+        // 这是一个后备方案,不应该经常触发
+        console.warn('[Auth Bridge] No provider in URL query, defaulting to unknown');
+        provider = 'unknown';
+      }
       
       console.log('[Auth Bridge] User authenticated:', {
         provider,
@@ -278,10 +293,17 @@ app.get('/auth-callback-bridge', async (c) => {
 // OAuth成功页面 - 自动重定向到Python API
 app.get('/oauth-success', async (c) => {
   try {
-    // 直接重定向到桥接端点
-    return c.redirect('/auth-callback-bridge?provider=google');
+    // 🔧 修复: 从 URL query 获取 provider,不要硬编码
+    const provider = c.req.query('provider') || 'unknown';
+    console.log('[OAuth Success] Redirecting with provider:', provider);
+    
+    // 直接重定向到桥接端点,并传递 provider 参数
+    return c.redirect(`/auth-callback-bridge?provider=${encodeURIComponent(provider)}`);
   } catch (error) {
     console.error('[OAuth Success] Redirect error:', error);
+    
+    const provider = c.req.query('provider') || 'unknown';
+    
     return c.html(`
       <!DOCTYPE html>
       <html>
@@ -294,7 +316,7 @@ app.get('/oauth-success', async (c) => {
           <p>正在跳转...</p>
           <script>
             setTimeout(() => {
-              window.location.href = '/auth-callback-bridge?provider=google';
+              window.location.href = '/auth-callback-bridge?provider=${encodeURIComponent(provider)}';
             }, 1000);
           </script>
       </body>

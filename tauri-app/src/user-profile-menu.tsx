@@ -33,7 +33,7 @@ export function UserProfileMenu() {
           >
             <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
               {isAuthenticated && user ? (
-                <Avatar className="h-6 w-6">
+                <Avatar className="size-8 rounded-lg">
                   <AvatarImage src={user.avatar_url || ''} alt={user.name} />
                   <AvatarFallback className="text-xs">
                     {user.name.charAt(0).toUpperCase()}
@@ -51,15 +51,11 @@ export function UserProfileMenu() {
                   {isAuthenticated && user ? user.name : t('APPSIDEBAR.settings')}
                 </span>
                 <span className="truncate text-xs text-muted-foreground justify-self-end">
-                  {isAuthenticated && user ? (
-                    user.email
-                  ) : (
-                    <>Press{" "}
-                      <kbd className="bg-muted text-muted-foreground pointer-events-none inline-flex h-5 items-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium opacity-100 select-none">
-                        <span className="text-xs">⌘ ,</span>
-                      </kbd>
-                    </>
-                  )}
+                  <>Press{" "}
+                    <kbd className="bg-muted text-muted-foreground pointer-events-none inline-flex h-5 items-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium opacity-100 select-none">
+                      <span className="text-xs">⌘ ,</span>
+                    </kbd>
+                  </>
                 </span>
               </div>
             )}

@@ -20,7 +20,7 @@ export const UpdateBadge: React.FC<UpdateBadgeProps> = ({ className = '' }) => {
         <div className={`relative ${className}`}>
           <Badge 
             variant="destructive" 
-            className="h-2 w-2 p-0 absolute -top-1 -right-1 rounded-full animate-pulse border-2 border-background"
+            className="h-2 w-2 p-0 absolute -top-1 -right-1 rounded-full animate-pulse border-2 border-background red-600"
           >
             <span className="sr-only">New version available</span>
           </Badge>

@@ -86,7 +86,7 @@
             "description": "Configure basic application options.",
             "proxy-settings": "Proxy Settings",
             "proxy-settings-description": "Configure the proxy server address for model API requests.",
-            "proxy-settings-instruction": "Leave blank to not use a proxy. Supported formats:\n• HTTP Proxy: http://host:port\n• HTTPS Proxy: https://host:port\n• SOCKS5 Proxy: socks5://host:port\n• SOCKS5 Proxy (remote DNS): socks5h://host:port",
+            "proxy-settings-instruction": "Supported formats:\n• HTTP Proxy: http://host:port\n• HTTPS Proxy: https://host:port\n• SOCKS5 Proxy: socks5://host:port\n• SOCKS5 Proxy (remote DNS): socks5h://host:port",
             "proxy-url": "Proxy Server Address",
             "fetch-proxy-failed": "Failed to fetch proxy configuration.",
             "save-proxy-success": "Proxy configuration saved successfully.",

@@ -86,7 +86,7 @@
             "description": "配置应用的基本选项",
             "proxy-settings": "代理设置",
             "proxy-settings-description": "配置模型API请求使用的代理服务器地址",
-            "proxy-settings-instruction": "留空表示不使用代理。支持的格式:\n• HTTP代理: http://host:port\n• HTTPS代理: https://host:port\n• SOCKS5代理: socks5://host:port\n• SOCKS5代理(远程DNS): socks5h://host:port",
+            "proxy-settings-instruction": "支持的格式:\n• HTTP代理: http://host:port\n• HTTPS代理: https://host:port\n• SOCKS5代理: socks5://host:port\n• SOCKS5代理(远程DNS): socks5h://host:port",
             "proxy-url": "代理服务器地址",
             "fetch-proxy-failed": "获取代理配置失败",
             "save-proxy-success": "代理配置保存成功",

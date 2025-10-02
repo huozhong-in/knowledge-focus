@@ -43,7 +43,8 @@ def get_router(get_engine) -> APIRouter:
             # 从查询参数获取用户信息
             params = dict(request.query_params)
             
-            provider = params.get('provider', 'google')
+            # 🔧 修复: provider 不应该有默认值,如果缺失应该报错
+            provider = params.get('provider')
             oauth_id = params.get('oauth_id')
             email = params.get('email')
             name = params.get('name')
@@ -51,9 +52,10 @@ def get_router(get_engine) -> APIRouter:
             
             logger.info(f"收到OAuth成功回调: provider={provider}, email={email}")
             
-            if not all([oauth_id, email, name]):
+            # 验证所有必需参数
+            if not all([provider, oauth_id, email, name]):
                 logger.error(f"缺少必要参数: {params}")
-                raise HTTPException(status_code=400, detail="缺少必要的用户信息参数")
+                raise HTTPException(status_code=400, detail="缺少必要的用户信息参数(provider, oauth_id, email, name)")
             
             # 保存或更新用户信息
             user = user_mgr.get_or_create_user(
