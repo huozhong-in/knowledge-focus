@@ -1,5 +1,5 @@
 // 应用版本配置 - 自动生成，请勿手动编辑
-export const APP_VERSION = "0.3.5";
+export const APP_VERSION = "0.4.0";
 
 // 版本信息对象
 export const VERSION_INFO = {

@@ -70,15 +70,14 @@ jobs:
           releaseBody: |
             ## 🚀 KnowledgeFocus v__VERSION__
             
+            ### 🆕 更新内容
+            - 启动页增加启动过程观察视窗，可观察python包下载情况
+            - 增加Google和GitHub账号授权登录方式
+            
             ### 📦 下载说明
             - **Intel Mac**: 下载 `KnowledgeFocus_x64.app.tar.gz`
             - **Apple Silicon Mac (M1/M2/M3)**: 下载 `KnowledgeFocus_aarch64.app.tar.gz`
             
-            ### 🔄 自动更新
-            应用内置自动更新功能，首次安装后会自动检查更新。
-            
-            ### 📋 更新内容
-            - 请查看 commit 历史了解具体变更
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true # 自动生成latest.json
