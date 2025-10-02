@@ -5,6 +5,14 @@ import { listen } from "@tauri-apps/api/event";
 import { load } from "@tauri-apps/plugin-store";
 import { appDataDir, join } from "@tauri-apps/api/path";
 
+// 环境配置
+const isDevelopment = import.meta.env.MODE === 'development';
+const AUTH_BASE_URL = isDevelopment 
+  ? 'http://127.0.0.1:60325'  // 开发环境：本地 auth 服务器
+  : 'https://kf.huozhong.in'; // 生产环境：Cloudflare Pages 部署地址
+
+const API_BASE_URL = 'http://127.0.0.1:60315'
+
 // 创建自定义存储引擎 (使用与 App.tsx 相同的模式)
 const createTauriStorage = () => {
   return {
@@ -134,7 +142,7 @@ export const useAuthStore = create<AuthState>()(
             console.log('� Tauri 环境，使用外部浏览器 OAuth');
             
             // 在外部浏览器中打开 OAuth URL
-            const oauthUrl = `http://127.0.0.1:60325/start-oauth?provider=${provider}`;
+            const oauthUrl = `${AUTH_BASE_URL}/start-oauth?provider=${provider}`;
             console.log('🚀 打开 OAuth 页面:', oauthUrl);
             
             const { open } = await import("@tauri-apps/plugin-shell");
@@ -169,7 +177,7 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // 调用 Python API 登出
-          const response = await fetch('http://127.0.0.1:60315/api/user/logout', {
+          const response = await fetch(`${API_BASE_URL}/api/user/logout`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -238,7 +246,7 @@ export const useAuthStore = create<AuthState>()(
           console.log('✅ Token 未过期，调用 API 验证...');
           
           // 调用 API 验证 token (注意: 后端要求 POST 请求)
-          const response = await fetch('http://127.0.0.1:60315/api/user/validate-token', {
+          const response = await fetch(`${API_BASE_URL}/api/user/validate-token`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

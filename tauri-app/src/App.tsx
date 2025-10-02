@@ -17,6 +17,14 @@ import { useVectorizationStore } from "@/stores/useVectorizationStore"
 import { ChatSession, createSmartSession, pinFile, updateSession, deleteSession, getPinnedFiles } from "./lib/chat-session-api"
 import { useAuthStore } from "@/lib/auth-store"
 
+// 环境配置
+const isDevelopment = import.meta.env.MODE === 'development';
+const AUTH_BASE_URL = isDevelopment 
+  ? 'http://127.0.0.1:60325'  // 开发环境：本地 auth 服务器
+  : 'https://kf.huozhong.in'; // 生产环境：Cloudflare Pages 部署地址
+
+const API_BASE_URL = 'http://127.0.0.1:60315'
+
 // 设置页面名称枚举常量
 export const SETTINGS_PAGES = {
   GENERAL: "general",
@@ -99,10 +107,10 @@ export default function App() {
       
       try {
         // 使用授权码完成认证流程
-        const { code, state } = payload;
+        const { code, state, provider = 'google' } = payload; // 从 payload 获取 provider，默认为 google
         
         // 调用better-auth的token交换端点
-        const response = await fetch('http://127.0.0.1:60325/api/auth/callback/google', {
+        const response = await fetch(`${AUTH_BASE_URL}/api/auth/callback/${provider}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -608,7 +616,7 @@ export default function App() {
         const retry_interval = 1000
         if (!isApiReady) {
           for (let attempt = 1; attempt <= max_retries; attempt++) {
-            const response = await fetch("http://127.0.0.1:60315/health", {
+            const response = await fetch(`${API_BASE_URL}/health`, {
               method: "GET",
               signal: AbortSignal.timeout(2000),
             })
