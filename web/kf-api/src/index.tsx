@@ -28,7 +28,74 @@ app.on(['GET', 'POST'], '/api/auth/*', (c) => {
   return auth.handler(c.req.raw);
 })
 
-// OAuth 启动端点 - 处理表单提交并转发到 Better-Auth
+// OAuth 启动端点 - GET 版本,用于从 Tauri 外部浏览器直接打开
+app.get('/start-oauth', async (c) => {
+  const provider = c.req.query('provider') || 'google';
+  console.log('[Start OAuth GET] Rendering auto-submit form for provider:', provider);
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Starting OAuth...</title>
+        <style>
+          body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+          }
+          .container {
+            text-align: center;
+            padding: 2rem;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+          }
+          .spinner {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 1rem;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+          }
+          @keyframes spin {
+            to { transform: rotate(360deg); }
+          }
+          h1 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+          p { margin: 0; opacity: 0.9; font-size: 0.875rem; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="spinner"></div>
+          <h1>正在启动 OAuth 登录</h1>
+          <p>即将跳转到 ${provider === 'google' ? 'Google' : provider} 授权页面...</p>
+        </div>
+        
+        <form id="oauth-form" action="/start-oauth" method="POST" style="display: none;">
+          <input type="hidden" name="providerId" value="${provider}" />
+          <input type="hidden" name="callbackURL" value="/auth-callback-bridge" />
+        </form>
+        
+        <script>
+          // 自动提交表单
+          document.getElementById('oauth-form').submit();
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+// OAuth 启动端点 - POST 版本,处理表单提交并转发到 Better-Auth
 app.post('/start-oauth', async (c) => {
   try {
     console.log('[Start OAuth] Initiating OAuth flow...');

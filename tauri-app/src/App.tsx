@@ -208,8 +208,13 @@ export default function App() {
   useEffect(() => {
     if (isApiReady) {
       restoreLastUsedSession()
-      // 检查认证状态
-      checkAuth()
+      
+      // ⚠️ 延迟检查认证状态，等待 Zustand persist 完成数据水合
+      // Zustand persist 从 Tauri Store 加载数据是异步的,需要等待完成
+      const timer = setTimeout(() => {
+        console.log('🔍 延迟检查认证状态 (等待数据水合完成)...');
+        checkAuth();
+      }, 100); // 100ms 延迟足够让 persist 完成加载
       
       // 初始化 OAuth 事件监听器
       let unlistenOAuth: (() => void) | null = null
@@ -221,6 +226,7 @@ export default function App() {
       
       // 清理函数
       return () => {
+        clearTimeout(timer);
         if (unlistenOAuth) {
           unlistenOAuth()
         }

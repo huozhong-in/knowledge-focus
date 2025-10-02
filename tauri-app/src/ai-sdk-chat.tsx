@@ -932,7 +932,7 @@ export function AiSdkChat({
                     setTavilyDialogOpen(false)
                     setActionMenuOpen(false)
                   }}
-                >保存并启用</Button>
+                >Save and Enable</Button>
               </div>
             </div>
           </DialogContent>
