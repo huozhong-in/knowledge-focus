@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./components/ui/button";
 import {
@@ -54,7 +54,7 @@ import { useChat } from "@ai-sdk/react"
 import { Response } from "@/components/ai-elements/response"
 import { DefaultChatTransport } from "ai"
 import { Actions, Action } from '@/components/ai-elements/actions'
-import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon } from 'lucide-react'
+import { GlobeIcon, CopyIcon, CircleXIcon, SearchIcon, RotateCcwIcon } from 'lucide-react'
 import { Checkbox } from "./components/ui/checkbox"
 import { useTranslation } from "react-i18next"
 import { toast } from 'sonner';
@@ -73,6 +73,14 @@ interface AiSdkChatProps {
   tempSelectedTools?: string[] // 临时选择的工具列表
   onAddTempSelectedTool?: (toolName: string) => void // 添加临时工具回调
   onRemoveTempSelectedTool?: (toolName: string) => void // 移除临时工具回调
+}
+
+const createTempId = () => {
+  if (typeof window !== "undefined" && typeof window.crypto !== "undefined" && "randomUUID" in window.crypto) {
+    return window.crypto.randomUUID()
+  }
+
+  return `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
 /**
@@ -108,6 +116,10 @@ export function AiSdkChat({
   // 控制 Search 下拉菜单开关，避免遮挡输入框导致无法聚焦
   const [actionMenuOpen, setActionMenuOpen] = useState(false)
   const { t } = useTranslation()
+
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const pendingAssistantIdRef = useRef<string | null>(null)
 
   // PDF共读模式定时器
   const coReadingTimer = useCoReadingTimer({
@@ -208,6 +220,48 @@ export function AiSdkChat({
       console.error("[AiSdkChat] Chat error:", error)
     },
   })
+
+  const clearAssistantPlaceholder = useCallback(() => {
+    if (!pendingAssistantIdRef.current) return
+
+    const placeholderId = pendingAssistantIdRef.current
+    setMessages((prev: any[]) =>
+      prev.filter((msg: any) => msg.id !== placeholderId)
+    )
+    pendingAssistantIdRef.current = null
+  }, [setMessages])
+
+  const handleRefresh = useCallback(() => {
+    clearAssistantPlaceholder()
+    setRefreshKey((key) => key + 1)
+  }, [clearAssistantPlaceholder])
+
+  useEffect(() => {
+    if (!pendingAssistantIdRef.current) return
+
+    const hasRealAssistantMessage = messages.some(
+      (msg: any) =>
+        msg.role === "assistant" &&
+        msg.id !== pendingAssistantIdRef.current &&
+        msg?.metadata?.placeholder !== true
+    )
+
+    if (hasRealAssistantMessage) {
+      clearAssistantPlaceholder()
+    }
+  }, [messages, clearAssistantPlaceholder])
+
+  useEffect(() => {
+    if (status === "ready") {
+      clearAssistantPlaceholder()
+    }
+  }, [status, clearAssistantPlaceholder])
+
+  useEffect(() => {
+    if (error) {
+      clearAssistantPlaceholder()
+    }
+  }, [error, clearAssistantPlaceholder])
 
   // 当resetTrigger改变时，重置消息和输入框
   useEffect(() => {
@@ -310,9 +364,8 @@ export function AiSdkChat({
 
         setMessages(convertedMessages)
         setEffectiveSessionId(sessionId)
-        console.log("✅ 聊天记录加载完成，消息数量:", convertedMessages.length)
-        
-        // 🎯 加载新会话后自动滚动到底部
+        pendingAssistantIdRef.current = null
+        console.log("✅ 聊天记录加载完成，消息数量:", convertedMessages.length)        // 🎯 加载新会话后自动滚动到底部
         // 使用setTimeout确保DOM已更新
         setTimeout(() => {
           // 通过事件通知内部组件执行滚动
@@ -328,7 +381,7 @@ export function AiSdkChat({
     }
 
     loadSessionMessages()
-  }, [sessionId, setMessages])
+  }, [sessionId, setMessages, refreshKey])
 
   // 根据官方文档，需要手动管理输入状态
   const handleFormSubmit = async (_message: any, e: React.FormEvent<HTMLFormElement>) => {
@@ -426,6 +479,36 @@ export function AiSdkChat({
       parts: parts
     }
 
+    clearAssistantPlaceholder()
+
+    const assistantPlaceholderId = createTempId()
+
+    const assistantPlaceholderMessage = {
+      id: assistantPlaceholderId,
+      role: "assistant" as const,
+      parts: [
+        {
+          type: "text",
+          text: "AI is thinking..."
+        }
+      ],
+      metadata: { placeholder: true },
+      createdAt: new Date()
+    }
+
+    pendingAssistantIdRef.current = assistantPlaceholderId
+
+    setMessages((prev: any[]) => [
+      ...prev,
+      assistantPlaceholderMessage
+    ])
+
+    if (typeof window !== "undefined") {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("scrollToBottomAfterLoad"))
+      }, 0)
+    }
+
     // // 调试日志：输出消息内容
     // console.log('🔍 [DEBUG] 构建的消息内容:', JSON.stringify(messageContent, null, 2))
     // console.log('🔍 [DEBUG] parts数组:', JSON.stringify(parts, null, 2))
@@ -442,9 +525,23 @@ export function AiSdkChat({
 
     // 检查是否需要创建会话（延迟创建逻辑）
     let currentSessionId = effectiveSessionId
-    if (!effectiveSessionId && onCreateSessionFromMessage) {
-      onCreateSessionFromMessage(userMessage || "Image Analysis Request")
-        .then(async (newSession) => {
+    const executeSendMessage = async (sessionIdValue?: string | null) => {
+      await sendMessage(
+        messageContent,
+        {
+          body: {
+            session_id: sessionIdValue ? Number(sessionIdValue) : undefined,
+          },
+        }
+      )
+    }
+
+    try {
+      if (!effectiveSessionId && onCreateSessionFromMessage) {
+        try {
+          const newSession = await onCreateSessionFromMessage(
+            userMessage || "Image Analysis Request"
+          )
           currentSessionId = String(newSession.id)
           setEffectiveSessionId(currentSessionId)
           console.log(
@@ -458,46 +555,33 @@ export function AiSdkChat({
           if (tempSelectedTools && tempSelectedTools.length > 0) {
             try {
               await changeSessionTools(newSession.id, tempSelectedTools, [])
-              console.log("[AiSdkChat] Applied temp tools to new session:", tempSelectedTools)
-              
+              console.log(
+                "[AiSdkChat] Applied temp tools to new session:",
+                tempSelectedTools
+              )
+
               // 清空临时工具选择（通过移除所有临时工具）
               if (onRemoveTempSelectedTool) {
-                tempSelectedTools.forEach(toolName => {
+                tempSelectedTools.forEach((toolName) => {
                   onRemoveTempSelectedTool(toolName)
                 })
               }
-            } catch (error) {
-              console.error("[AiSdkChat] Failed to apply temp tools:", error)
+            } catch (toolError) {
+              console.error("[AiSdkChat] Failed to apply temp tools:", toolError)
             }
           }
 
-          // 创建会话后发送消息
-          sendMessage(
-            messageContent,
-            {
-              body: {
-                session_id: currentSessionId
-                  ? Number(currentSessionId)
-                  : undefined,
-              },
-            }
-          )
-        })
-        .catch((error) => {
-          console.error("[AiSdkChat] Failed to create session:", error)
-          // 如果会话创建失败，继续使用无会话ID的方式发送消息
-          sendMessage(messageContent)
-        })
-    } else {
-      // 直接发送消息
-      sendMessage(
-        messageContent,
-        {
-          body: {
-            session_id: currentSessionId ? Number(currentSessionId) : undefined,
-          },
+          await executeSendMessage(currentSessionId)
+        } catch (createError) {
+          console.error("[AiSdkChat] Failed to create session:", createError)
+          await executeSendMessage(undefined)
         }
-      )
+      } else {
+        await executeSendMessage(currentSessionId)
+      }
+    } catch (sendError) {
+      console.error("[AiSdkChat] Failed to send message:", sendError)
+      clearAssistantPlaceholder()
     }
 
     // 清空输入框和选中的图片/截图
@@ -557,6 +641,14 @@ export function AiSdkChat({
                                 >
                                   <CopyIcon className="size-4" />
                                 </Action>
+                                {error && (
+                                  <Action
+                                    onClick={handleRefresh}
+                                    label="Refresh"
+                                  >
+                                    <RotateCcwIcon className="size-4" />
+                                  </Action>
+                                )}
                               </Actions>
                             </div>                            
                           ) : (
@@ -654,27 +746,6 @@ export function AiSdkChat({
             ))}
             
             {/* AI回复占位符 - 当正在等待AI回复时显示 */}
-            {status === "streaming" && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-              <Message from="assistant">
-                <MessageContent>
-                  <div className="pl-2">
-                    <div className="flex items-center gap-2 text-muted-foreground">
-                      <div className="flex space-x-1">
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                        <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                      </div>
-                      <span className="text-sm">AI is thinking...</span>
-                    </div>
-                  </div>
-                </MessageContent>
-                <MessageAvatar 
-                  src="/bot.png"
-                  name="Assistant"
-                  className="size-6"
-                />
-              </Message>
-            )}
             </>
           )}
         </ConversationContent>
@@ -685,6 +756,11 @@ export function AiSdkChat({
       {error && (
         <div className="p-4 bg-red-50 border-t border-red-200">
           <div className="text-red-800">Sorry, an error occurred. Please try again later.</div>
+          <div className="mt-2">
+            <Button onClick={handleRefresh} size="sm" variant="outline">
+              Refresh
+            </Button>
+          </div>
         </div>
       )}
 
