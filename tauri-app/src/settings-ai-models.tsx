@@ -513,9 +513,14 @@ function GlobalCapabilitySection({
                           <Select
                             value={assignment?.model_id || ""}
                             onValueChange={(modelId) => {
-                              const model = models.find(m => m.id === modelId)
-                              if (model) {
-                                onUpdateGlobalCapability(capability, model.provider, modelId)
+                              if (modelId === "0") {
+                                // 取消关联：传递特殊值
+                                onUpdateGlobalCapability(capability, "", "0")
+                              } else {
+                                const model = models.find(m => m.id === modelId)
+                                if (model) {
+                                  onUpdateGlobalCapability(capability, model.provider, modelId)
+                                }
                               }
                             }}
                           >
@@ -523,6 +528,20 @@ function GlobalCapabilitySection({
                               <SelectValue placeholder={t("SETTINGS.aimodels.select-model")} />
                             </SelectTrigger>
                             <SelectContent>
+                              {/* 未分配选项 - 放在最顶部 */}
+                              <SelectItem value="0" className="text-muted-foreground italic">
+                                <div className="flex items-center gap-2">
+                                  <XCircle className="w-3 h-3" />
+                                  {t("SETTINGS.aimodels.unassigned")}
+                                </div>
+                              </SelectItem>
+                              
+                              {/* 分隔线 */}
+                              {availableModels.length > 0 && (
+                                <div className="border-t my-1" />
+                              )}
+                              
+                              {/* 可用模型列表 */}
                               {availableModels.map(model => (
                                 <SelectItem key={model.id} value={model.id}>
                                   <div className="flex items-center gap-2">

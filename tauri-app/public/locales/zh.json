@@ -262,6 +262,7 @@
             "required-capability-config": "所需能力配置",
             "please-configure-model-provider4": "需要先配置支持 {{capability}} 能力的模型",
             "select-model": "选择模型",
+            "unassigned": "未分配（不使用此能力）",
             "get-key": "获取密钥",
             "go-to-get-api-key": "前往获取 API Key",
             "use-proxy": "使用代理转发请求",

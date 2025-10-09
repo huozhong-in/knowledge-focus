@@ -181,7 +181,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
         """
         try:
             model_id = data.get("model_id")
-            if not model_id:
+            if model_id is None:
                 return {"success": False, "message": "Missing model_id"}
             
             try:

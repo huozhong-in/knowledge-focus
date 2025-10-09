@@ -262,6 +262,7 @@
             "required-capability-config": "Required Capability Configuration",
             "please-configure-model-provider4": "A model that supports the {{capability}} capability needs to be configured first.",
             "select-model": "Select Model",
+            "unassigned": "Unassigned (Don't use this capability)",
             "get-key": "Get API Key",
             "go-to-get-api-key": "Go to get API Key",
             "use-proxy": "Use proxy for requests",
