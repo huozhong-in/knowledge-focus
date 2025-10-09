@@ -44,3 +44,34 @@
         max-height: 300px !important;
     }
 }
+
+@layer utilities {
+    .conversation-scroll > div,
+    .conversation-scroll > div > div {
+        scrollbar-width: thin;
+        scrollbar-color: hsl(var(--border)) transparent;
+    }
+
+    .conversation-scroll > div::-webkit-scrollbar,
+    .conversation-scroll > div > div::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    .conversation-scroll > div::-webkit-scrollbar-track,
+    .conversation-scroll > div > div::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .conversation-scroll > div::-webkit-scrollbar-thumb,
+    .conversation-scroll > div > div::-webkit-scrollbar-thumb {
+        background: hsl(var(--border));
+        border-radius: 9999px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+
+    .conversation-scroll > div::-webkit-scrollbar-corner,
+    .conversation-scroll > div > div::-webkit-scrollbar-corner {
+        background: transparent;
+    }
+}

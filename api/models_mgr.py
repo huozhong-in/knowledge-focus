@@ -648,8 +648,9 @@ Generate a title that best represents what this conversation will be about. Avoi
                     if Agent.is_user_prompt_node(node):
                         # 用户输入节点 - 在v5协议中我们不需要发送user-prompt事件
                         # AI SDK v5协议中用户消息由前端直接处理，我们只处理AI响应
-                        logger.info(f"Processing user prompt node: {node.user_prompt}")
+                        # logger.info(f"Processing user prompt node: {node.user_prompt}")
                         # 跳过，不发送事件
+                        pass
                     elif Agent.is_model_request_node(node):
                         # 模型请求节点 - 可以流式获取模型的响应
                         async with node.stream(run.ctx) as request_stream:
@@ -1248,8 +1249,9 @@ Generate a title that best represents what this conversation will be about. Avoi
                     if Agent.is_user_prompt_node(node):
                         # 用户输入节点 - 在v5协议中我们不需要发送user-prompt事件
                         # AI SDK v5协议中用户消息由前端直接处理，我们只处理AI响应
-                        logger.info(f"Processing user prompt node: {node.user_prompt}")
+                        # logger.info(f"Processing user prompt node: {node.user_prompt}")
                         # 跳过，不发送事件
+                        pass
                     elif Agent.is_model_request_node(node):
                         # 模型请求节点 - 可以流式获取模型的响应
                         async with node.stream(run.ctx) as request_stream:

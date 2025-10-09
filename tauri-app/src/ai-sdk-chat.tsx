@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "./components/ui/button";
 import {
@@ -525,161 +524,159 @@ export function AiSdkChat({
           onExitCoReading={handleExitCoReading}
         />
       )}
-      <Conversation>
+      <Conversation className="flex-1 h-[calc(100vh-176px)]">
         <ConversationContent className="p-1">
-          <ScrollArea className="flex-1 pr-4 rounded-md h-[calc(100vh-176px)]">
-            {messages.length === 0 ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center text-muted-foreground">
-                  <h3 className="text-lg font-medium mb-2">
-                    Knowledge Focus {t("AISDKCHAT.conversation_placeholder")}
-                  </h3>
-                  <p>
-                    {t("AISDKCHAT.conversation_placeholder_2")}
-                  </p>
-                </div>
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center text-muted-foreground">
+                <h3 className="text-lg font-medium mb-2">
+                  Knowledge Focus {t("AISDKCHAT.conversation_placeholder")}
+                </h3>
+                <p>
+                  {t("AISDKCHAT.conversation_placeholder_2")}
+                </p>
               </div>
-            ) : (
-              <>
-                {messages.map((message) => (
-                  <Message key={message.id} from={message.role}>
-                    <MessageContent>
-                      {message.parts.map((part: any, index: number) => {
-                        switch (part.type) {
-                          case "text":
-                            return message.role === "assistant" ? (
-                              <div key={`${message.id}-${index}`}>
-                                <Response key={index} className="pl-2">{part.text}</Response>
-                                <Actions className="mt-2">
-                                  <Action
-                                    onClick={() =>
-                                      navigator.clipboard.writeText(part.text)
-                                    }
-                                    label="Copy"
-                                  >
-                                    <CopyIcon className="size-4" />
-                                  </Action>
-                                </Actions>
-                              </div>                            
-                            ) : (
-                              <div key={index}>{part.text}</div>
-                            )
-                          case "file":
-                            // 处理图片文件
-                            if (part.mediaType?.startsWith('image/')) {
-                              // 从file://或本地路径中提取实际路径
-                              const actualPath = part.url?.startsWith('file://') 
-                                ? part.url.replace('file://', '') 
-                                : part.url;
-                              
-                              return (
-                                <div key={`${message.id}-${index}`} className="mt-2">
-                                  <img 
-                                    src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
-                                    alt={part.filename || 'Attached image'}
-                                    className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
-                                    onClick={() => {
-                                      // 点击时显示全尺寸图片
-                                      openUrl(`http://127.0.0.1:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`);
-                                    }}
-                                    onError={(e) => {
-                                      console.error('Failed to load image:', actualPath);
-                                      const target = e.target as HTMLImageElement;
-                                      target.alt = 'image load failed';
-                                      target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
-                                    }}
-                                  />
-                                  {/* <div className="text-xs text-muted-foreground mt-1">
-                                    {part.filename} (Click to view full image)
-                                  </div> */}
-                                </div>
-                              )
-                            }
-                            return null
-                          case "reasoning":
-                            return (
-                              <Reasoning
-                                key={`${message.id}-${index}`}
-                                className="w-full"
-                                isStreaming={status === "streaming"}
-                              >
-                                <ReasoningTrigger />
-                                <ReasoningContent>{part.text}</ReasoningContent>
-                              </Reasoning>
-                            )
-                          default:
-                            // 处理工具调用相关的part类型
-                            if (part.type.startsWith('tool-')) {
-                              // 根据工具状态决定是否默认展开
-                              const shouldDefaultOpen = part.state === 'output-available' || part.state === 'output-error'
-                              
-                              // 调试日志
-                              // console.log('🔧 [DEBUG] Tool part detected:', {
-                              //   type: part.type,
-                              //   state: part.state,
-                              //   input: part.input,
-                              //   output: part.output,
-                              //   errorText: part.errorText,
-                              //   shouldDefaultOpen
-                              // })
-                              
-                              return (
-                                <Tool key={`${message.id}-${index}`} defaultOpen={shouldDefaultOpen}>
-                                  <ToolHeader 
-                                    type={part.type} 
-                                    state={part.state || 'input-available'} 
-                                  />
-                                  <ToolContent>
-                                    {part.input && (
-                                      <ToolInput input={part.input} />
-                                    )}
-                                    {(part.output || part.errorText) && (
-                                      <ToolOutput
-                                        output={part.output}
-                                        errorText={part.errorText}
-                                      />
-                                    )}
-                                  </ToolContent>
-                                </Tool>
-                              )
-                            }
-                            return null
-                        }
-                    })}
-                  </MessageContent>
-                  <MessageAvatar 
-                    src={message.role === 'user' ? '/user.png' : '/bot.png'}
-                    name={message.role === 'user' ? 'User' : 'Assistant'}
-                    className="size-6"
-                  />
-                </Message>
-              ))}
-              
-              {/* AI回复占位符 - 当正在等待AI回复时显示 */}
-              {status === "streaming" && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-                <Message from="assistant">
+            </div>
+          ) : (
+            <>
+              {messages.map((message) => (
+                <Message key={message.id} from={message.role}>
                   <MessageContent>
-                    <div className="pl-2">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                          <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                          <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
-                        </div>
-                        <span className="text-sm">AI is thinking...</span>
+                    {message.parts.map((part: any, index: number) => {
+                      switch (part.type) {
+                        case "text":
+                          return message.role === "assistant" ? (
+                            <div key={`${message.id}-${index}`}>
+                              <Response key={index} className="pl-2">{part.text}</Response>
+                              <Actions className="mt-2">
+                                <Action
+                                  onClick={() =>
+                                    navigator.clipboard.writeText(part.text)
+                                  }
+                                  label="Copy"
+                                >
+                                  <CopyIcon className="size-4" />
+                                </Action>
+                              </Actions>
+                            </div>                            
+                          ) : (
+                            <div key={index}>{part.text}</div>
+                          )
+                        case "file":
+                          // 处理图片文件
+                          if (part.mediaType?.startsWith('image/')) {
+                            // 从file://或本地路径中提取实际路径
+                            const actualPath = part.url?.startsWith('file://') 
+                              ? part.url.replace('file://', '') 
+                              : part.url;
+                            
+                            return (
+                              <div key={`${message.id}-${index}`} className="mt-2">
+                                <img 
+                                  src={`http://127.0.0.1:60315/image/thumbnail?file_path=${encodeURIComponent(actualPath || '')}&width=300&height=200`}
+                                  alt={part.filename || 'Attached image'}
+                                  className="max-w-xs max-h-48 rounded-lg border cursor-pointer"
+                                  onClick={() => {
+                                    // 点击时显示全尺寸图片
+                                    openUrl(`http://127.0.0.1:60315/image/full?file_path=${encodeURIComponent(actualPath || '')}`);
+                                  }}
+                                  onError={(e) => {
+                                    console.error('Failed to load image:', actualPath);
+                                    const target = e.target as HTMLImageElement;
+                                    target.alt = 'image load failed';
+                                    target.className = 'max-w-xs max-h-48 rounded-lg border bg-muted flex items-center justify-center text-muted-foreground text-sm p-4';
+                                  }}
+                                />
+                                {/* <div className="text-xs text-muted-foreground mt-1">
+                                  {part.filename} (Click to view full image)
+                                </div> */}
+                              </div>
+                            )
+                          }
+                          return null
+                        case "reasoning":
+                          return (
+                            <Reasoning
+                              key={`${message.id}-${index}`}
+                              className="w-full"
+                              isStreaming={status === "streaming"}
+                            >
+                              <ReasoningTrigger />
+                              <ReasoningContent>{part.text}</ReasoningContent>
+                            </Reasoning>
+                          )
+                        default:
+                          // 处理工具调用相关的part类型
+                          if (part.type.startsWith('tool-')) {
+                            // 根据工具状态决定是否默认展开
+                            const shouldDefaultOpen = part.state === 'output-available' || part.state === 'output-error'
+                            
+                            // 调试日志
+                            // console.log('🔧 [DEBUG] Tool part detected:', {
+                            //   type: part.type,
+                            //   state: part.state,
+                            //   input: part.input,
+                            //   output: part.output,
+                            //   errorText: part.errorText,
+                            //   shouldDefaultOpen
+                            // })
+                            
+                            return (
+                              <Tool key={`${message.id}-${index}`} defaultOpen={shouldDefaultOpen}>
+                                <ToolHeader 
+                                  type={part.type} 
+                                  state={part.state || 'input-available'} 
+                                />
+                                <ToolContent>
+                                  {part.input && (
+                                    <ToolInput input={part.input} />
+                                  )}
+                                  {(part.output || part.errorText) && (
+                                    <ToolOutput
+                                      output={part.output}
+                                      errorText={part.errorText}
+                                    />
+                                  )}
+                                </ToolContent>
+                              </Tool>
+                            )
+                          }
+                          return null
+                      }
+                  })}
+                </MessageContent>
+                <MessageAvatar 
+                  src={message.role === 'user' ? '/user.png' : '/bot.png'}
+                  name={message.role === 'user' ? 'User' : 'Assistant'}
+                  className="size-6"
+                />
+              </Message>
+            ))}
+            
+            {/* AI回复占位符 - 当正在等待AI回复时显示 */}
+            {status === "streaming" && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
+              <Message from="assistant">
+                <MessageContent>
+                  <div className="pl-2">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                        <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
                       </div>
+                      <span className="text-sm">AI is thinking...</span>
                     </div>
-                  </MessageContent>
-                  <MessageAvatar 
-                    src="/bot.png"
-                    name="Assistant"
-                    className="size-6"
-                  />
-                </Message>
-              )}
-              </>
+                  </div>
+                </MessageContent>
+                <MessageAvatar 
+                  src="/bot.png"
+                  name="Assistant"
+                  className="size-6"
+                />
+              </Message>
             )}
-          </ScrollArea>
+            </>
+          )}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>

@@ -116,11 +116,11 @@ export function VectorizationProgress({
             case 'queued':
               return t('FILELIST.VectorizationFileState.queued');
             case 'parsing':
-              return '解析中...';
+              return 'parsing...';
             case 'chunking':
-              return '分块中...';
+              return 'chunking...';
             case 'vectorizing':
-              return '向量化中...';
+              return 'vectorizing...';
             default:
               return stage + '...';
           }

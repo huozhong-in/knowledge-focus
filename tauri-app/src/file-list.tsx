@@ -190,17 +190,17 @@ function FileItem({
           // 构建title文本
           let titleText = t("FILELIST.co-reading")
           if (!isPinned) {
-            titleText += " (需要先Pin文件到当前会话)"
+            titleText += " (pin the file to enable)"
           } else if (!pdfVectorizationState) {
-            titleText += " (需要先进行向量化处理)"
+            titleText += " (not yet vectorized)"
           } else if (isProcessing) {
-            titleText += " (向量化处理中...)"
+            titleText += " (vectorization in progress...)"
           } else if (pdfVectorizationState.status === 'failed') {
-            titleText += " (向量化失败，请重试Pin)"
+            titleText += " (vectorization failed, please retry pinning)"
           } else if (canCoRead) {
-            titleText += " (已准备好共读)"
+            titleText += " (ready to co-read)"
           } else {
-            titleText += " (无法共读)"
+            titleText += " (unable to co-read)"
           }
           
           return (
