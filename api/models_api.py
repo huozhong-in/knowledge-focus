@@ -112,6 +112,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             config = await config_mgr.discover_models_from_provider(id=id)
             return {"success": True, "data": [model.model_dump() for model in config]}
         except Exception as e:
+            logger.error(f"Error discovering models from provider {id}: {e}")
             return {"success": False, "message": str(e)}
 
     @router.get("/models/provider/{id}", tags=["models"])
@@ -174,7 +175,10 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
     
     @router.post("/models/global_capability/{model_capability}", tags=["models"])
     def assign_global_capability_to_model(model_capability: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
-        """指定某个模型为全局的ModelCapability某项能力"""
+        """
+        指定某个模型为全局的ModelCapability某项能力
+        model_id为0表示取消全局分配
+        """
         try:
             model_id = data.get("model_id")
             if not model_id:

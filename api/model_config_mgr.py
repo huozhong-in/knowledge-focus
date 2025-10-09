@@ -361,15 +361,39 @@ class ModelConfigMgr:
                 # 刷新对象以获取数据库分配的 ID
                 for model in result:
                     session.refresh(model)
-        
+
         # API返回的结果中不再存在的模型从数据库删除
         with Session(self.engine) as session:
+            models_to_delete = []
             for model in session.exec(select(ModelConfiguration).where(
                 ModelConfiguration.provider_id == id,
             )).all():
                 if model.model_identifier not in all_model_identifiers:
+                    models_to_delete.append(model)
+
+            # 批量删除并一次性提交
+            if models_to_delete:
+                # 先删除这些模型的能力分配记录（外键依赖）
+                model_ids_to_delete = [model.id for model in models_to_delete]
+                session.exec(
+                    select(CapabilityAssignment).where(
+                        CapabilityAssignment.model_configuration_id.in_(model_ids_to_delete)
+                    )
+                ).all()  # 需要先查询出来
+                
+                # 删除能力分配
+                for assignment in session.exec(
+                    select(CapabilityAssignment).where(
+                        CapabilityAssignment.model_configuration_id.in_(model_ids_to_delete)
+                    )
+                ).all():
+                    session.delete(assignment)
+                
+                # 再删除模型配置
+                for model in models_to_delete:
                     session.delete(model)
-                    session.commit()
+                session.commit()
+        
         return result
 
     def get_model_capabilities(self, model_id: int) -> List[ModelCapability]:
@@ -399,6 +423,18 @@ class ModelConfigMgr:
     def assign_global_capability_to_model(self, model_config_id: int, capability: ModelCapability) -> bool:
         """指定某个模型为全局的ModelCapability某项能力"""
         with Session(self.engine) as session:
+            if model_config_id == 0:
+                # 如果model_config_id为0，表示取消该能力的全局模型配置
+                assignment = session.exec(
+                    select(CapabilityAssignment).where(
+                        CapabilityAssignment.capability_value == capability.value,
+                    )
+                ).first()
+                if assignment is not None:
+                    session.delete(assignment)
+                    session.commit()
+                return True
+            
             # 如果不存在就新增，否则更新
             assignment = session.exec(
                 select(CapabilityAssignment).where(
