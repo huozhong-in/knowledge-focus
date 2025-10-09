@@ -71,13 +71,13 @@ jobs:
             ## 🚀 KnowledgeFocus v__VERSION__
             
             ### 🆕 更新内容
-            - Google和GitHub账号授权登录方式-配合服务器端部署
-            - 取消deep-link功能
-            - 优化部分UI细节
+            - 修复聊天区消息滚动问题
+            - 修复lm-studio等删除模型后无法同步删除问题
+            - 可以取消场景和模型的关联
             
             ### 📦 下载说明
-            - **Intel Mac**: 下载 `KnowledgeFocus_x64.app.tar.gz`
-            - **Apple Silicon Mac (M1/M2/M3)**: 下载 `KnowledgeFocus_aarch64.app.tar.gz`
+            - **Intel Mac**: 下载 `KnowledgeFocus_0.4.1_aarch64.dmg`
+            - **Apple Silicon Mac (M1/M2/M3)**: 下载 `KnowledgeFocus_0.4.1_x64.dmg`
             
           releaseDraft: true
           prerelease: false
