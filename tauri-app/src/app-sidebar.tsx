@@ -10,7 +10,6 @@ import {
   EllipsisVertical,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -67,6 +66,21 @@ interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onDeleteSession?: (sessionId: number) => void // 删除会话回调
   searchOpen?: boolean // 外部控制搜索对话框状态
   onSearchOpenChange?: (open: boolean) => void // 外部搜索状态变化回调
+  // 重命名Dialog状态
+  renameDialogOpen?: boolean
+  onRenameDialogOpenChange?: (open: boolean) => void
+  // 删除Dialog状态
+  deleteDialogOpen?: boolean
+  onDeleteDialogOpenChange?: (open: boolean) => void
+  // 选中的会话（用于重命名/删除）
+  selectedSession?: {id: number, name: string} | null
+  onSelectedSessionChange?: (session: {id: number, name: string} | null) => void
+  // 新会话名称（用于重命名）
+  newSessionName?: string
+  onNewSessionNameChange?: (name: string) => void
+  // 确认操作回调
+  onConfirmRename?: () => void
+  onConfirmDelete?: () => void
 }
 
 export function AppSidebar({ 
@@ -80,6 +94,16 @@ export function AppSidebar({
   onDeleteSession,
   searchOpen: externalSearchOpen,
   onSearchOpenChange,
+  renameDialogOpen: externalRenameDialogOpen,
+  onRenameDialogOpenChange,
+  deleteDialogOpen: externalDeleteDialogOpen,
+  onDeleteDialogOpenChange,
+  selectedSession: externalSelectedSession,
+  onSelectedSessionChange,
+  newSessionName: externalNewSessionName,
+  onNewSessionNameChange,
+  onConfirmRename,
+  onConfirmDelete,
   ...props 
 }: AppSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false)
@@ -106,11 +130,29 @@ export function AppSidebar({
     }
   }
   
-  // Dialog 状态管理
-  const [renameDialogOpen, setRenameDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [selectedSession, setSelectedSession] = useState<{id: number, name: string} | null>(null)
-  const [newSessionName, setNewSessionName] = useState("")
+  const handleRenameDialogOpenChange = (open: boolean) => {
+    if (onRenameDialogOpenChange) {
+      onRenameDialogOpenChange(open)
+    }
+  }
+  
+  const handleDeleteDialogOpenChange = (open: boolean) => {
+    if (onDeleteDialogOpenChange) {
+      onDeleteDialogOpenChange(open)
+    }
+  }
+  
+  const handleSelectedSessionChange = (session: {id: number, name: string} | null) => {
+    if (onSelectedSessionChange) {
+      onSelectedSessionChange(session)
+    }
+  }
+  
+  const handleNewSessionNameChange = (name: string) => {
+    if (onNewSessionNameChange) {
+      onNewSessionNameChange(name)
+    }
+  }
   
   // 获取全局AppStore实例
   const appStore = useAppStore()
@@ -170,50 +212,15 @@ export function AppSidebar({
 
   // 重命名会话处理
   const handleRenameSession = async (sessionId: number, currentName: string) => {
-    setSelectedSession({id: sessionId, name: currentName})
-    setNewSessionName(currentName)
-    setRenameDialogOpen(true)
-  }
-
-  // 确认重命名
-  const confirmRename = async () => {
-    if (selectedSession && newSessionName.trim() && newSessionName !== selectedSession.name) {
-      try {
-        onRenameSession?.(selectedSession.id, newSessionName.trim())
-        // 刷新会话列表
-        await loadSessions()
-      } catch (error) {
-        console.error('Failed to rename session:', error)
-      }
-    }
-    setRenameDialogOpen(false)
-    setSelectedSession(null)
-    setNewSessionName("")
+    handleSelectedSessionChange({id: sessionId, name: currentName})
+    handleNewSessionNameChange(currentName)
+    handleRenameDialogOpenChange(true)
   }
 
   // 删除会话处理
   const handleDeleteSession = async (sessionId: number, sessionTitle: string) => {
-    setSelectedSession({id: sessionId, name: sessionTitle})
-    setDeleteDialogOpen(true)
-  }
-
-  // 确认删除
-  const confirmDelete = async () => {
-    if (selectedSession) {
-      try {
-        onDeleteSession?.(selectedSession.id)
-        // 如果是当前会话，切换到默认会话
-        if (selectedSession.id === currentSessionId) {
-          onSessionSwitch?.(null)
-        }
-        // 刷新会话列表
-        await loadSessions()
-      } catch (error) {
-        console.error('Failed to delete session:', error)
-      }
-    }
-    setDeleteDialogOpen(false)
-    setSelectedSession(null)
+    handleSelectedSessionChange({id: sessionId, name: sessionTitle})
+    handleDeleteDialogOpenChange(true)
   }
 
     // 将会话按时间分组
@@ -444,58 +451,6 @@ export function AppSidebar({
               </CommandGroup>
             </CommandList>
           </Command>
-        </DialogContent>
-      </Dialog>
-      
-      {/* 重命名会话Dialog */}
-      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('APPSIDEBAR.rename-chat')}</DialogTitle>
-            <DialogDescription>
-              {t('APPSIDEBAR.enter-new-chat-name')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <Input
-              value={newSessionName}
-              onChange={(e) => setNewSessionName(e.target.value)}
-              placeholder={t('APPSIDEBAR.chat-name')}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  confirmRename()
-                }
-              }}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
-              {t('APPSIDEBAR.cancel')}
-            </Button>
-            <Button onClick={confirmRename} disabled={!newSessionName.trim()}>
-              {t('APPSIDEBAR.confirm')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* 删除会话确认Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('APPSIDEBAR.delete-chat')}</DialogTitle>
-            <DialogDescription>
-              {t('APPSIDEBAR.confirm-delete-chat', { chatName: selectedSession?.name })}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              {t('APPSIDEBAR.cancel')}
-            </Button>
-            <Button variant="destructive" onClick={confirmDelete}>
-              {t('APPSIDEBAR.confirm')}
-            </Button>
-          </div>
         </DialogContent>
       </Dialog>
     </Sidebar>
