@@ -49,7 +49,6 @@ import {
 import {
   openUrl,
 } from "@tauri-apps/plugin-opener"
-import { BuiltinModelsTab } from "@/components/BuiltinModelsTab"
 
 const API_BASE_URL = "http://127.0.0.1:60315"
 
@@ -1313,10 +1312,20 @@ function SettingsAIModels() {
           return (
             <TabsContent key={provider.key} value={provider.key} className="m-0 mt-0">
               {isBuiltin ? (
-                <BuiltinModelsTab onModelDownloaded={(modelId) => {
-                  console.log('Model downloaded:', modelId);
-                  // TODO: 实现自动分配逻辑
-                }} />
+                <div className="p-6 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
+                    内置 MLX-VLM 模型
+                  </h3>
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
+                    内置模型 (mlx-community/Qwen3-VL-4B-Instruct-3bit) 已自动启用，支持本地视觉理解能力。
+                  </p>
+                  <ul className="text-sm text-blue-600 dark:text-blue-400 space-y-2">
+                    <li>✅ 按需加载：首次使用时自动加载模型</li>
+                    <li>✅ 智能卸载：所有能力切换到其他模型后自动卸载</li>
+                    <li>✅ 优先级队列：会话请求优先，批量任务排队</li>
+                    <li>✅ 图片预处理：自动压缩大图片，加快推理速度</li>
+                  </ul>
+                </div>
               ) : (
                 <ProviderDetailSection
                   provider={provider}
