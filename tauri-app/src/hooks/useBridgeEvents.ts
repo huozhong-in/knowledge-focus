@@ -42,6 +42,10 @@ interface EventHandlers {
   'tool-call-request'?: (payload: BridgeEventPayload) => void;
   'tool-call-response'?: (payload: BridgeEventPayload) => void;
   'tool-call-error'?: (payload: BridgeEventPayload) => void;
+  // 模型下载事件
+  'model-download-progress'?: (payload: BridgeEventPayload) => void;
+  'model-download-completed'?: (payload: BridgeEventPayload) => void;
+  'model-download-failed'?: (payload: BridgeEventPayload) => void;
   [eventName: string]: ((payload: BridgeEventPayload) => void) | undefined;
 }
 
@@ -242,6 +246,31 @@ function showEventToast(eventName: string, payload: BridgeEventPayload) {
       toast.error('RAG检索失败', {
         description: data.error_message || '检索过程中发生错误',
         duration: 5000
+      });
+      break;
+    
+    case 'model-download-progress':
+      // 进度事件一般不弹toast，由UI组件自己处理进度条
+      // 仅在特殊阶段（如开始、连接）显示简短提示
+      if (data.stage === 'starting' || data.stage === 'connecting') {
+        toast.info('模型下载', {
+          description: data.message || `正在下载 ${data.model_name}...`,
+          duration: 2000
+        });
+      }
+      break;
+      
+    case 'model-download-completed':
+      toast.success('模型下载完成', {
+        description: data.message || `${data.model_name} 已成功下载`,
+        duration: 4000
+      });
+      break;
+      
+    case 'model-download-failed':
+      toast.error('模型下载失败', {
+        description: data.error_message || `${data.model_name} 下载失败`,
+        duration: 6000
       });
       break;
       

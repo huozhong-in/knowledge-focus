@@ -13,6 +13,13 @@ from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
 from pydantic import BaseModel
+from models_builtin import BUILTIN_MODELS, ModelsBuiltin
+from builtin_openai_compat import (
+    MLXVLMModelManager,
+    OpenAIChatCompletionRequest,
+    RequestPriority,
+    get_vlm_manager,
+)
 
 logger = logging.getLogger()
 
@@ -30,6 +37,13 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
 
     def get_chat_session_manager(engine: Engine = Depends(get_engine)) -> ChatSessionMgr:
         return ChatSessionMgr(engine)
+
+    def get_models_builtin_manager(engine: Engine = Depends(get_engine)) -> ModelsBuiltin:
+        return ModelsBuiltin(engine, base_dir=base_dir)
+
+    def get_mlx_vlm_manager() -> MLXVLMModelManager:
+        """获取 MLX-VLM 模型管理器的全局单例"""
+        return get_vlm_manager()
 
     @router.get("/models/providers", tags=["models"])
     def get_all_provider_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
@@ -174,10 +188,19 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             return {"success": False, "message": str(e)}
     
     @router.post("/models/global_capability/{model_capability}", tags=["models"])
-    def assign_global_capability_to_model(model_capability: str, data: Dict[str, Any] = Body(...), config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
+    async def assign_global_capability_to_model(
+        model_capability: str, 
+        data: Dict[str, Any] = Body(...), 
+        config_mgr: ModelConfigMgr = Depends(get_model_config_manager),
+        engine: Engine = Depends(get_engine),
+        vlm_manager: MLXVLMModelManager = Depends(get_mlx_vlm_manager)
+    ):
         """
         指定某个模型为全局的ModelCapability某项能力
         model_id为0表示取消全局分配
+        
+        注意：此API会触发智能卸载逻辑，如果所有能力都切换到其他模型，
+        MLX-VLM 模型将自动卸载以释放内存。
         """
         try:
             model_id = data.get("model_id")
@@ -189,11 +212,21 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             except ValueError:
                 return {"success": False, "message": f"'{model_capability}' is not a valid ModelCapability"}
             
+            # 执行能力分配
             success = config_mgr.assign_global_capability_to_model(model_config_id=model_id, capability=capability)
-            if success:
-                return {"success": True}
-            else:
+            if not success:
                 return {"success": False, "message": "Failed to set model for global capability"}
+            
+            # 触发智能卸载检查
+            try:
+                unloaded = await vlm_manager.check_and_unload_if_unused(engine)
+                if unloaded:
+                    logger.info("MLX-VLM model auto-unloaded after capability reassignment")
+            except Exception as e:
+                # 卸载失败不应影响能力分配的成功
+                logger.error(f"Smart unload failed: {e}", exc_info=True)
+            
+            return {"success": True}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -506,6 +539,336 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             logger.error(f"管理会话场景失败: {e}")
             return {"success": False, "message": str(e)}
 
-
+    # ==================== 内置模型管理 API ====================
+    
+    @router.get("/models/builtin/list", tags=["models", "builtin"])
+    def list_builtin_models(models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """获取所有内置模型列表及下载状态"""
+        try:
+            models = models_builtin.get_supported_models()
+            return {"success": True, "data": models}
+        except Exception as e:
+            logger.error(f"获取内置模型列表失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.post("/models/builtin/initialize", tags=["models", "builtin"])
+    async def initialize_builtin_model(
+        request: Dict[str, Any] = Body(...),
+        models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)
+    ):
+        """
+        初始化内置模型（用于 Splash 页面）
+        
+        检查模型是否已下载，如果未下载则启动异步下载任务。
+        下载进度通过 bridge events 实时推送到前端。
+        
+        Args:
+            request: {"mirror": "huggingface" | "hf-mirror"}
+        
+        Returns:
+            {"status": "ready", "model_path": "..."}  # 模型已就绪
+            {"status": "downloading", "progress": 0}  # 正在下载
+            {"status": "error", "message": "..."}     # 出错
+        """
+        try:
+            model_id = "qwen3-vl-4b"  # 固定为默认模型
+            mirror = request.get("mirror", "huggingface")
+            
+            # 检查模型是否已下载
+            if models_builtin.is_model_downloaded(model_id):
+                model_path = models_builtin.get_model_path(model_id)
+                logger.info(f"Model {model_id} already downloaded at: {model_path}")
+                return {
+                    "status": "ready",
+                    "model_path": model_path,
+                    "message": "Model already downloaded"
+                }
+            
+            # 启动异步下载任务
+            import asyncio
+            asyncio.create_task(
+                models_builtin.download_model_async(model_id, mirror)
+            )
+            
+            logger.info(f"Started async download for {model_id} using mirror: {mirror}")
+            return {
+                "status": "downloading",
+                "progress": 0,
+                "message": f"Download started using {mirror}"
+            }
+            
+        except Exception as e:
+            logger.error(f"初始化内置模型失败: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+    
+    @router.get("/models/builtin/download-status", tags=["models", "builtin"])
+    def get_download_status(models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """
+        获取内置模型下载状态
+        
+        Returns:
+            {"downloaded": bool, "model_path": str | None}
+        """
+        try:
+            model_id = "qwen3-vl-4b"
+            
+            is_downloaded = models_builtin.is_model_downloaded(model_id)
+            model_path = models_builtin.get_model_path(model_id) if is_downloaded else None
+            
+            return {
+                "success": True,
+                "downloaded": is_downloaded,
+                "model_path": model_path
+            }
+        except Exception as e:
+            logger.error(f"获取下载状态失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.post("/models/builtin/{model_id}/download", tags=["models", "builtin"])
+    async def download_builtin_model(model_id: str, models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """
+        触发内置模型下载
+        
+        下载进度通过统一桥接器事件推送到前端：
+        - model-download-progress: 下载进度更新（节流，每秒最多1次）
+        - model-download-completed: 下载完成
+        - model-download-failed: 下载失败
+        
+        前端应该监听这些事件来更新UI。
+        """
+        try:
+            # 检查模型是否已下载
+            if models_builtin.is_model_downloaded(model_id):
+                return {"success": False, "message": "Model already downloaded"}
+            
+            # 启动异步下载任务
+            from threading import Thread
+            
+            def download_task():
+                try:
+                    # 下载进度会自动通过 bridge_events 推送到前端
+                    models_builtin.download_model(model_id)
+                    logger.info(f"Model {model_id} downloaded successfully in background thread")
+                except Exception as e:
+                    logger.error(f"Background download failed for {model_id}: {e}", exc_info=True)
+            
+            # 在后台线程中启动下载
+            thread = Thread(target=download_task, daemon=True)
+            thread.start()
+            
+            return {"success": True, "message": "Download started", "model_id": model_id}
+            
+        except Exception as e:
+            logger.error(f"启动模型下载失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.delete("/models/builtin/{model_id}", tags=["models", "builtin"])
+    def delete_builtin_model(model_id: str, models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """删除已下载的内置模型"""
+        try:
+            success = models_builtin.delete_model(model_id)
+            
+            if success:
+                return {"success": True, "message": "Model deleted successfully"}
+            else:
+                return {"success": False, "message": "Failed to delete model"}
+                
+        except Exception as e:
+            logger.error(f"删除内置模型失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.get("/models/builtin/server/status", tags=["models", "builtin"])
+    def get_builtin_server_status(models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """获取内置模型服务器状态"""
+        try:
+            status = models_builtin.get_server_status()
+            return {"success": True, "data": status}
+        except Exception as e:
+            logger.error(f"获取服务器状态失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.post("/models/builtin/server/start", tags=["models", "builtin"])
+    def start_builtin_server(data: Dict[str, Any] = Body(...), models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """启动内置模型服务器"""
+        try:
+            model_id = data.get("model_id")
+            if not model_id:
+                return {"success": False, "message": "model_id is required"}
+            
+            
+            # 检查模型是否已下载
+            if not models_builtin.is_model_downloaded(model_id):
+                return {"success": False, "message": f"Model {model_id} not downloaded"}
+            
+            success = models_builtin.start_mlx_server(model_id)
+            
+            if success:
+                status = models_builtin.get_server_status()
+                return {"success": True, "message": "Server started successfully", "data": status}
+            else:
+                return {"success": False, "message": "Failed to start server"}
+                
+        except Exception as e:
+            logger.error(f"启动服务器失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.post("/models/builtin/server/stop", tags=["models", "builtin"])
+    def stop_builtin_server(models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """停止内置模型服务器"""
+        try:
+            success = models_builtin.stop_mlx_server()
+            
+            if success:
+                return {"success": True, "message": "Server stopped successfully"}
+            else:
+                return {"success": False, "message": "Failed to stop server"}
+                
+        except Exception as e:
+            logger.error(f"停止服务器失败: {e}")
+            return {"success": False, "message": str(e)}
+    
+    @router.post("/models/builtin/{model_id}/auto-assign", tags=["models", "builtin"])
+    def auto_assign_builtin_model(model_id: str, models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager)):
+        """
+        自动分配内置模型到未配置的能力
+        
+        智能分配策略:
+        - 仅分配到未配置的能力 (新手友好)
+        - 不覆盖已配置的能力 (熟手尊重)
+        
+        Returns:
+            {
+                "success": bool,
+                "assigned_capabilities": List[str],  # 已分配的能力列表
+                "message": str
+            }
+        """
+        try:
+            # 检查模型是否已下载
+            if not models_builtin.is_model_downloaded(model_id):
+                return {
+                    "success": False,
+                    "assigned_capabilities": [],
+                    "message": f"Model {model_id} is not downloaded"
+                }
+            
+            # 执行自动分配
+            assigned = models_builtin.auto_assign_capabilities(
+                model_id=model_id,
+                base_dir=base_dir
+            )
+            
+            if len(assigned) > 0:
+                return {
+                    "success": True,
+                    "assigned_capabilities": assigned,
+                    "message": f"Successfully assigned {len(assigned)} capabilities"
+                }
+            else:
+                return {
+                    "success": True,
+                    "assigned_capabilities": [],
+                    "message": "No unassigned capabilities found"
+                }
+                
+        except Exception as e:
+            logger.error(f"自动分配失败: {e}", exc_info=True)
+            return {
+                "success": False,
+                "assigned_capabilities": [],
+                "message": str(e)
+            }
+    
+    # ==================== OpenAI 兼容 API ====================
+    
+    @router.post("/v1/chat/completions", tags=["models", "openai-compat"])
+    async def openai_chat_completions(
+        request: dict, 
+        models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager),
+        mlx_vlm_manager: MLXVLMModelManager = Depends(get_mlx_vlm_manager)
+    ):
+        """
+        OpenAI 兼容的 /v1/chat/completions 接口
+        
+        支持内置 MLX-VLM 模型，完全兼容 OpenAI API 格式
+        
+        使用方式:
+        ```python
+        from openai import OpenAI
+        
+        client = OpenAI(
+            base_url="http://127.0.0.1:60315/v1",
+            api_key="dummy"  # 内置模型不需要 API key
+        )
+        
+        response = client.chat.completions.create(
+            model="qwen3-vl-4b",  # 使用 model_id
+            messages=[
+                {"role": "user", "content": "Hello!"}
+            ]
+        )
+        ```
+        """
+        
+        try:
+            # 解析请求
+            openai_request = OpenAIChatCompletionRequest(**request)
+            
+            # 获取模型路径
+            model_id = openai_request.model
+            
+            # 支持两种模型标识符:
+            # 1. model_id (如 "qwen3-vl-4b")
+            # 2. hf_model_id (如 "mlx-community/Qwen2.5-VL-3B-Instruct-4bit")
+            model_path = None
+            
+            if model_id in BUILTIN_MODELS:
+                # 直接使用 model_id
+                model_path = models_builtin.get_model_path(model_id)
+            else:
+                # 尝试通过 hf_model_id 查找
+                for mid, config in BUILTIN_MODELS.items():
+                    if config["hf_model_id"] == model_id:
+                        model_path = models_builtin.get_model_path(mid)
+                        break
+            
+            # 检查模型是否已下载
+            if not model_path:
+                return {
+                    "error": {
+                        "message": f"Model {model_id} not found or not downloaded. Please download it first.",
+                        "type": "invalid_request_error",
+                        "code": "model_not_found"
+                    }
+                }
+            
+            # 使用队列系统调用生成逻辑
+            # 默认所有聊天请求都是高优先级 (priority=1)
+            # 如果未来需要支持批量任务,可以通过 Query 参数传入 priority=10
+            logger.info(f"Enqueueing completion request for model: {model_id}, path: {model_path}")
+            logger.info(f"Request stream mode: {openai_request.stream}")
+            
+            # 聊天请求使用 HIGH 优先级
+            response = await mlx_vlm_manager.enqueue_request(
+                request=openai_request,
+                model_path=model_path,
+                priority=RequestPriority.HIGH
+            )
+            
+            logger.info(f"Response type: {type(response)}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"OpenAI 兼容接口错误: {e}", exc_info=True)
+            return {
+                "error": {
+                    "message": str(e),
+                    "type": "internal_server_error",
+                    "code": "generation_failed"
+                }
+            }
 
     return router

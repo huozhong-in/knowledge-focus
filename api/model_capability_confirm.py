@@ -30,7 +30,7 @@ class ModelCapabilityConfirm:
 
     def get_sorted_capability_names(self) -> List[str]:
         """
-        返回排序的能力名枚举，供前端使用
+        返回排序的能力名枚举，供前端和“builtin模型是否该自动加载”使用
         # * 只返回ModelCapability的子集，也就是经过筛选的
         """
         return [

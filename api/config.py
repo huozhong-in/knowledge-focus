@@ -8,6 +8,9 @@ from uuid import uuid4
 EMBEDDING_DIMENSIONS = 768
 EMBEDDING_MODEL = "mlx-community/embeddinggemma-300m-4bit"
 
+# 视觉模型参数
+VLM_MODEL = "mlx-community/Qwen3-VL-4B-Instruct-3bit"
+
 # 测试用本地SQLite数据库路径
 TEST_DB_PATH = "/Users/dio/Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db"
 

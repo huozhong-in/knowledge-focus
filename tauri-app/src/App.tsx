@@ -629,7 +629,7 @@ export default function App() {
           }
         }
       } catch (error) {
-        console.error("App.tsx: Error during startup sequence:", error)
+        console.log("App.tsx: Error during startup sequence:", error)
         // const errorMessage = `API service is unavailable: ${
         //   error instanceof Error ? error.message : String(error)
         // }`

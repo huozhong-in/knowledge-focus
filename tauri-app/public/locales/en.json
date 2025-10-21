@@ -67,13 +67,13 @@
         "co-reading": "AI Co-Reading with You"
     },
     "RAGLOCAL": {
-        "file-observation-window": "Knowledge Observation Window",
-        "rag-retrieval-monitoring": "Real-time RAG monitoring",
-        "x-tensor-records": " vector records",
-        "waiting-rag-retrieval": "Waiting for RAG retrieval activity...",
-        "waiting-rag-retrieval-details": "When you send a message, relevant knowledge snippets will be displayed here."
+        "file-observation-window": "Observation Window",
+        "rag-retrieval-monitoring": "Log monitoring",
+        "x-tensor-records": " records",
+        "waiting-rag-retrieval": "Waiting for log...",
+        "waiting-rag-retrieval-details": ""
     },
-    "AISDKCHAT":{
+    "AISDKCHAT": {
         "input-message": "Input message...",
         "conversation_placeholder": "AI Assistant, unleash the knowledge value of your local files",
         "conversation_placeholder_2": "Start chatting with your documents"
@@ -290,13 +290,17 @@
                     "name": "File Auto-Tagging",
                     "description": "Automatically generate relevant tags based on file content to help with quick classification and retrieval."
                 },
-                "SCENE_TEXT_CHAT": {
-                    "name": "Text Chat",
-                    "description": "Engage in simple conversations based on user input text, but without access to local file knowledge."
-                },
                 "SCENE_MULTIVECTOR": {
-                    "name": "Multi-Modal Retrieval",
+                    "name": "Multi-Modal vectorization",
                     "description": "Supports intelligent retrieval and conversational association for multiple content modalities such as text and images."
+                },
+                "SCENE_MULTIMODAL_ANSWER_SYNTHESIS": {
+                    "name": "Multi-Modal Answer Synthesis",
+                    "description": "Synthesize answers from multiple modalities such as text and images."
+                },
+                "SCENE_KNOWLEDGE_FRAGMENT_DESENSITIZATION": {
+                    "name": "Knowledge Fragment Desensitization",
+                    "description": "Desensitize retrieved knowledge fragments to protect sensitive information"
                 }
             },
             "ModelCapability": {

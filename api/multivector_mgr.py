@@ -32,7 +32,6 @@ from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PictureDescriptionApiOptions,
     PdfPipelineOptions,
-    # RapidOcrOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import (
@@ -160,21 +159,7 @@ Give a concise summary of the image that is well optimized for retrieval.
 """.strip(),
                 timeout=180,
             )
-            
-            # 配置OCR选项 - 使用RapidOCR
-            # print("Downloading RapidOCR models")
-            # download_path = snapshot_download(repo_id="SWHL/RapidOCR") # from HuggingFace
-            # # Setup RapidOcrOptions for english detection
-            # det_model_path = os.path.join(download_path, "PP-OCRv4", "en_PP-OCRv3_det_infer.onnx")
-            # rec_model_path = os.path.join(download_path, "PP-OCRv4", "ch_PP-OCRv4_rec_server_infer.onnx")
-            # cls_model_path = os.path.join(download_path, "PP-OCRv3", "ch_ppocr_mobile_v2.0_cls_train.onnx")
-            # ocr_options = RapidOcrOptions(
-            #     det_model_path=det_model_path,
-            #     rec_model_path=rec_model_path,
-            #     cls_model_path=cls_model_path,
-            # )
-            # pipeline_options.do_ocr = True
-            # pipeline_options.ocr_options = ocr_options
+            pipeline_options.do_ocr = False  # 关闭OCR，依赖docling内置的简单OCR
             
             # 创建文档转换器
             self.converter = DocumentConverter(format_options={
@@ -199,7 +184,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             if model_path == "":
                 # 使用lancedb_mgr的base_dir作为缓存目录，它与SQLite数据库在同一父目录
                 cache_directory = self.lancedb_mgr.base_dir
-                model_path = self.models_mgr.download_embedding_model(EMBEDDING_MODEL, cache_directory)
+                model_path = self.models_mgr.download_huggingface_model(EMBEDDING_MODEL, cache_directory)
                 self.model_config_mgr.set_embeddings_model_path(model_path)  
             tokenizer = HuggingFaceTokenizer(
                 tokenizer=AutoTokenizer.from_pretrained(model_path),

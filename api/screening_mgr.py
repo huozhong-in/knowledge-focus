@@ -16,12 +16,11 @@ class ScreeningManager:
     def __init__(self, engine: Engine): # No change to __init__
         self.engine = engine
 
-    def add_screening_result(self, data: Dict[str, Any], commit_session: bool = True) -> FileScreeningResult | None:
+    def add_screening_result(self, data: Dict[str, Any]) -> FileScreeningResult | None:
         """添加一条文件粗筛结果
         
         Args:
             data: 包含文件元数据和初步分类信息的字典
-            commit_session: 是否在此方法内提交会话 (用于批量操作时设为False)
             
         Returns:
             添加成功返回记录对象，失败返回None
@@ -74,16 +73,14 @@ class ScreeningManager:
             try:
                 # 添加到数据库
                 session.add(result)
-                if commit_session: # Only commit if flag is true
-                    session.commit()
-                    session.refresh(result)
+                session.commit()
+                session.refresh(result)
                 
                 logger.info(f"添加文件粗筛结果成功: {result.file_path}")
                 return result
                 
             except Exception as e:
-                if commit_session: # Only rollback if we were supposed to commit
-                    session.rollback()
+                session.rollback()
                 logger.error(f"添加文件粗筛结果失败: {str(e)}")
                 return None
     
@@ -108,8 +105,7 @@ class ScreeningManager:
                 if task_id:
                     data_item['task_id'] = task_id
 
-                # Call add_screening_result with commit_session=False
-                result = self.add_screening_result(data_item, commit_session=False)
+                result = self.add_screening_result(data_item)
                 if result:
                     success_count += 1
                     added_results_for_refresh.append(result) # Add to list for refresh

@@ -67,11 +67,11 @@
         "co-reading": "AI和你一起读书、看文档"
     },
     "RAGLOCAL": {
-        "file-observation-window": "知识观察窗",
-        "rag-retrieval-monitoring": "RAG检索实时监控",
-        "x-tensor-records": "条向量记录",
-        "waiting-rag-retrieval": "等待RAG检索活动...",
-        "waiting-rag-retrieval-details": "当您发送消息时，相关知识片段将在这里显示"
+        "file-observation-window": "观察窗",
+        "rag-retrieval-monitoring": "日志监控",
+        "x-tensor-records": "条记录",
+        "waiting-rag-retrieval": "等待日志...",
+        "waiting-rag-retrieval-details": ""
     },
     "AISDKCHAT":{
         "input-message": "输入消息...",
@@ -290,13 +290,17 @@
                     "name": "文件自动打标签",
                     "description": "基于文件内容自动生成相关标签，帮助快速分类和检索文件"
                 },
-                "SCENE_TEXT_CHAT": {
-                    "name": "文本聊天",
-                    "description": "基于用户输入的文本进行简单对话，但无法使用本机文件知识库"
-                },
                 "SCENE_MULTIVECTOR": {
-                    "name": "多模态检索",
+                    "name": "多模态向量化",
                     "description": "支持本机文本、图像等多种模态文件内容的智能检索和关联对话"
+                },
+                "SCENE_MULTIMODAL_ANSWER_SYNTHESIS": {
+                    "name": "多模态答案合成",
+                    "description": "基于检索到的相关知识片段，生成更准确和详细的答案"
+                },
+                "SCENE_KNOWLEDGE_FRAGMENT_DESENSITIZATION": {
+                    "name": "知识片段脱敏",
+                    "description": "对检索到的知识片段进行脱敏处理，保护敏感信息"
                 }
             },
             "ModelCapability": {

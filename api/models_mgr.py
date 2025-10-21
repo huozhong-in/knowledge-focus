@@ -125,7 +125,7 @@ class ModelsMgr:
         """
         model_path = self.model_config_mgr.get_embeddings_model_path()
         if model_path == "":
-            model_path = self.download_embedding_model(EMBEDDING_MODEL, self.base_dir)
+            model_path = self.download_huggingface_model(EMBEDDING_MODEL, self.base_dir)
             self.model_config_mgr.set_embeddings_model_path(model_path)        
         try:
             model, tokenizer = load_embedding_model(model_path)
@@ -849,9 +849,9 @@ Generate a title that best represents what this conversation will be about. Avoi
             logger.error(f"Error in stream_agent_chat_v5_compatible: {e}")
             yield f'data: {json.dumps({"type": "error", "errorText": str(e)})}\n\n'
 
-    def download_embedding_model(self, model_id: str, cache_dir: str = None) -> str:
+    def download_huggingface_model(self, model_id: str, cache_dir: str = None) -> str:
         """
-        下载指定的embedding模型到本地
+        下载指定的huggingface模型到本地
         
         Args:
             model_id: HuggingFace模型ID，如 'BAAI/bge-small-zh-v1.5'

@@ -20,6 +20,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import List, Dict, Any
 import os
+from config import VLM_MODEL
     
 # 任务状态枚举
 class TaskStatus(str, PyEnum):
@@ -641,6 +642,16 @@ class DBManager:
                 # 初始化默认模型提供者
                 data = [
                     {
+                        "display_name": "[Builtin]", 
+                        "provider_type": "openai",
+                        "source_type": ModelSourceType.BUILTIN.value, 
+                        "base_url": "http://127.0.0.1:60315/v1", 
+                        "is_user_added": False,
+                        "get_key_url": "https://platform.openai.com/api-keys",
+                        "support_discovery": False,
+                        "use_proxy": False,
+                    },
+                    {
                         "display_name": "OpenAI", 
                         "provider_type": "openai",
                         "source_type": ModelSourceType.CONFIGURABLE.value, 
@@ -767,10 +778,45 @@ class DBManager:
                 session.exec(text(f"""
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_id_model_identifier ON {ModelConfiguration.__tablename__} (provider_id, model_identifier);
                 """))
+                data = [
+                    # 内置模型 - 直接运行在本地
+                    {
+                        "provider_id": 1,  # [Builtin]
+                        "model_identifier": VLM_MODEL,
+                        "display_name": "Qwen3-VL 4B (3-bit)", 
+                        "capabilities_json": [ModelCapability.VISION.value, ModelCapability.TEXT.value, ModelCapability.STRUCTURED_OUTPUT.value, ModelCapability.TOOL_USE.value],
+                        "max_context_length": 256*1024,
+                        "max_output_tokens": 1024,
+                        "is_enabled": True,
+                    }
+                ]
+                session.add_all([ModelConfiguration(**model) for model in data])
+                session.commit()
             
             # 能力指派表
             if not inspector.has_table(CapabilityAssignment.__tablename__):
                 CapabilityAssignment.__table__.create(self.engine, checkfirst=True)
+                # 将builtin模型指派给各能力
+                data = [
+                    {
+                        "capability_value": ModelCapability.VISION.value,
+                        "model_configuration_id": 1,  # Qwen3-VL 4B
+                    },
+                    {
+                        "capability_value": ModelCapability.TEXT.value,
+                        "model_configuration_id": 1,  # Qwen3-VL 4B
+                    },
+                    {
+                        "capability_value": ModelCapability.STRUCTURED_OUTPUT.value,
+                        "model_configuration_id": 1,  # Qwen3-VL 4B
+                    },
+                    {
+                        "capability_value": ModelCapability.TOOL_USE.value,
+                        "model_configuration_id": 1,  # Qwen3-VL 4B
+                    },
+                ]
+                session.add_all([CapabilityAssignment(**assignment) for assignment in data])
+                session.commit()
             
             # OAuth用户表
             if not inspector.has_table(User.__tablename__):

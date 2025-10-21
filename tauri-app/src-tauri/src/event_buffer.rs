@@ -115,6 +115,17 @@ impl EventBuffer {
             "multivector-progress".to_string(),
             Throttle(Duration::from_secs(1)),
         );
+        
+        // === 模型下载事件 ===
+        // 模型下载进度：节流处理，避免UI更新过于频繁，最多每秒1次
+        strategies.insert(
+            "model-download-progress".to_string(),
+            Throttle(Duration::from_secs(1)),
+        );
+        // 模型下载完成：立即通知用户
+        strategies.insert("model-download-completed".to_string(), Immediate);
+        // 模型下载失败：立即通知用户
+        strategies.insert("model-download-failed".to_string(), Immediate);
 
         // === 工具通道事件（立即转发，保证实时性） ===
         // 工具调用请求：需要立即传递给前端执行

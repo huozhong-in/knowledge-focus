@@ -299,9 +299,13 @@ pub fn start_python_api(
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.emit(
                         "api-log",
+                        Some("Starting Python API service (uv run)...".to_string()),
+                    );
+                    let _ = window.emit(
+                        "api-log",
                         Some(format!(
-                            "API service starting... Port: {}, Host: {}",
-                            port_to_use, host_to_use
+                            "Initializing FastAPI server on {}:{}",
+                            host_to_use, port_to_use
                         )),
                     );
                 }
@@ -381,7 +385,13 @@ pub fn start_python_api(
                                         status.code.unwrap_or(-1)
                                     );
                                     if window.is_visible().unwrap_or(false) {
-                                        let _ = window.emit("api-log", Some(status.code));
+                                        let _ = window.emit(
+                                            "api-log",
+                                            Some(format!(
+                                                "API process terminated with exit code: {}",
+                                                status.code.unwrap_or(-1)
+                                            ))
+                                        );
                                     }
                                     if let Ok(mut state) = api_state_mutex_clone.lock() {
                                         state.process_child = None;

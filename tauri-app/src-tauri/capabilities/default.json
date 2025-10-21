@@ -50,12 +50,22 @@
       "identifier": "shell:allow-execute",
       "allow": [
         {
-          "name": "bun",
+          "name": "uv",
           "sidecar": true,
           "args": true
         },
         {
           "name": "uvx",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "run-applescript",
+          "cmd": "osascript",
+          "args": true
+        },
+        {
+          "name": "bun",
           "sidecar": true,
           "args": true
         }
@@ -249,16 +259,6 @@
         },
         {
           "url": "https://*"
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "run-applescript",
-          "cmd": "osascript",
-          "args": true
         }
       ]
     }

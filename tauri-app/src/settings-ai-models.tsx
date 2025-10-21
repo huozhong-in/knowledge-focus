@@ -44,10 +44,12 @@ import {
   BadgeCheckIcon,
   SearchCheck,
   ExternalLinkIcon,
+  Cpu,
 } from "lucide-react"
 import {
   openUrl,
 } from "@tauri-apps/plugin-opener"
+import { BuiltinModelsTab } from "@/components/BuiltinModelsTab"
 
 const API_BASE_URL = "http://127.0.0.1:60315"
 
@@ -58,6 +60,7 @@ interface Provider {
   provider_type: string
   name: string
   description?: string
+  source_type?: string  // 模型来源类型: builtin, configurable, vip
   config: Record<string, any>
   is_enabled: boolean
   is_user_added?: boolean  // 是否为用户添加的提供商
@@ -92,8 +95,6 @@ interface GlobalCapability {
 
 interface BusinessScene {
   key: string
-  name: string
-  description: string
   required_capabilities: string[]
   icon?: React.ReactNode
 }
@@ -102,25 +103,24 @@ interface BusinessScene {
 const BUSINESS_SCENES: BusinessScene[] = [
   {
     key: "SCENE_FILE_TAGGING",
-    name: "",
-    description: "",
     required_capabilities: ["structured_output"],
     icon: <Settings className="w-4 h-4" />
   },
   {
-    key: "SCENE_TEXT_CHAT",
-    name: "",
-    description: "",
-    required_capabilities: ["text"],
+    key: "SCENE_MULTIVECTOR", 
+    required_capabilities: ["vision"],
     icon: <Settings className="w-4 h-4" />
   },
   {
-    key: "SCENE_MULTIVECTOR", 
-    name: "",
-    description: "",
-    required_capabilities: ["vision"],
-    icon: <Zap className="w-4 h-4" />
-  }
+    key: "SCENE_MULTIMODAL_ANSWER_SYNTHESIS",
+    required_capabilities: ["text", "vision", "tool_use"],
+    icon: <Settings className="w-4 h-4" />
+  },
+  {
+    key: "SCENE_KNOWLEDGE_FRAGMENT_DESENSITIZATION",
+    required_capabilities: ["text"],
+    icon: <Settings className="w-4 h-4" />
+  },
 ]
 
 // API 服务函数
@@ -156,6 +156,7 @@ class ModelSettingsAPI {
         provider_type: config.provider_type,
         name: config.display_name,
         description: config.source_type,
+        source_type: config.source_type,  // 添加 source_type 字段
         support_discovery: config.support_discovery,
         config: {
           base_url: config.base_url,
@@ -529,17 +530,17 @@ function GlobalCapabilitySection({
                             </SelectTrigger>
                             <SelectContent>
                               {/* 未分配选项 - 放在最顶部 */}
-                              <SelectItem value="0" className="text-muted-foreground italic">
+                              {/* <SelectItem value="0" className="text-muted-foreground italic">
                                 <div className="flex items-center gap-2">
                                   <XCircle className="w-3 h-3" />
                                   {t("SETTINGS.aimodels.unassigned")}
                                 </div>
-                              </SelectItem>
+                              </SelectItem> */}
                               
                               {/* 分隔线 */}
-                              {availableModels.length > 0 && (
+                              {/* {availableModels.length > 0 && (
                                 <div className="border-t my-1" />
-                              )}
+                              )} */}
                               
                               {/* 可用模型列表 */}
                               {availableModels.map(model => (
@@ -770,7 +771,7 @@ function ProviderDetailSection({
   provider,
   models,
   availableCapabilities,
-  onToggleProvider,
+  // onToggleProvider,
   onDiscoverModels,
   onConfirmModelCapability,
   onToggleModel,
@@ -808,7 +809,7 @@ function ProviderDetailSection({
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <CardTitle className="text-xl">{provider.name}</CardTitle>
-              <div className="flex items-center gap-2">
+              {/* <div className="flex items-center gap-2">
                 <Switch
                   checked={provider.is_enabled}
                   onCheckedChange={(checked) => onToggleProvider(provider.key, checked)}
@@ -822,7 +823,7 @@ function ProviderDetailSection({
                 <Badge variant="outline" className="text-xs">
                   {availableModels.length}/{models.length} Available
                 </Badge>
-              )}
+              )} */}
             </div>
             {provider.description && (
               <CardDescription>{provider.description}</CardDescription>
@@ -1262,7 +1263,7 @@ function SettingsAIModels() {
         globalCapabilities={globalCapabilities}
         onUpdateGlobalCapability={handleUpdateGlobalCapability}
       />
-      <Separator />
+      <Separator className="my-12" />
       <div>
         <p className="text-muted-foreground mt-1">
           {t('SETTINGS.aimodels.description3')}
@@ -1270,42 +1271,68 @@ function SettingsAIModels() {
       </div>
       <Tabs defaultValue={providers.length > 0 ? providers[0].key : "empty"} orientation="vertical" className="flex flex-row gap-1">
         <TabsList className="flex flex-col h-fit w-48 gap-1">
-          {providers.map(provider => (
+          {providers.map(provider => {
+            const isBuiltin = provider.source_type === 'builtin';
+            const providerModels = models.filter(m => m.provider === provider.key);
+            const availableModels = providerModels.filter(m => m.is_available);
+            const shouldBeBold = isBuiltin || availableModels.length > 0;
+            
+            return (
               <TabsTrigger 
                 key={provider.key}
                 value={provider.key} 
                 className="w-full justify-start text-left data-[state=active]:bg-background data-[state=active]:text-foreground"
               >
                 <div className="flex items-center gap-2 w-full">
-                  <Settings className="w-4 h-4 flex-shrink-0" />
+                  {isBuiltin ? (
+                    <Cpu className="w-4 h-4 flex-shrink-0 text-primary" />
+                  ) : (
+                    <Settings className="w-4 h-4 flex-shrink-0" />
+                  )}
                   <div className="flex-1 min-w-0">
-                    <div className={`${provider.is_enabled ? 'font-bold' : 'font-medium'} truncate`}>{provider.name}</div>
+                    <div className="flex items-center gap-1">
+                      <span className={`${shouldBeBold ? 'font-bold' : 'font-medium'} truncate`}>
+                        {provider.name}
+                      </span>
+                      {isBuiltin && (
+                        <Badge variant="secondary" className="text-xs px-1 py-0 h-4">Built-in</Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate">
-                      {provider.is_enabled ? t('SETTINGS.aimodels.enabled') : t('SETTINGS.aimodels.disabled')}
+                      {availableModels.length}/{providerModels.length} Available
                     </div>
                   </div>
                 </div>
               </TabsTrigger>
-            ))
-          }
+            );
+          })}
           <AddProviderEmptyState onAddProvider={handleAddProvider} />
         </TabsList>
-        {providers.map(provider => (
+        {providers.map(provider => {
+          const isBuiltin = provider.source_type === 'builtin';
+          return (
             <TabsContent key={provider.key} value={provider.key} className="m-0 mt-0">
-              <ProviderDetailSection
-                provider={provider}
-                models={models.filter(m => m.provider === provider.key)}
-                availableCapabilities={availableCapabilities}
-                onToggleProvider={handleToggleProvider}
-                onDiscoverModels={handleDiscoverModels}
-                onConfirmModelCapability={handleConfirmModelCapability}
-                onToggleModel={handleToggleModel}
-                onDeleteProvider={handleDeleteProvider}
-                isLoading={isLoading}
-              />
+              {isBuiltin ? (
+                <BuiltinModelsTab onModelDownloaded={(modelId) => {
+                  console.log('Model downloaded:', modelId);
+                  // TODO: 实现自动分配逻辑
+                }} />
+              ) : (
+                <ProviderDetailSection
+                  provider={provider}
+                  models={models.filter(m => m.provider === provider.key)}
+                  availableCapabilities={availableCapabilities}
+                  onToggleProvider={handleToggleProvider}
+                  onDiscoverModels={handleDiscoverModels}
+                  onConfirmModelCapability={handleConfirmModelCapability}
+                  onToggleModel={handleToggleModel}
+                  onDeleteProvider={handleDeleteProvider}
+                  isLoading={isLoading}
+                />
+              )}
             </TabsContent>
-          ))
-        }
+          );
+        })}
       </Tabs>
     </div>
   )
