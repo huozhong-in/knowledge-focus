@@ -146,7 +146,7 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
         apiLogUnlisten = await listen<string>('api-log', (event) => {
           if (!isMounted) return;
           
-          console.log('[Splash] 收到 api-log 事件:', event.payload);
+          // console.log('[Splash] 收到 api-log 事件:', event.payload);
           
           // 收到任何 API 日志就显示日志窗口
           if (event.payload) {
@@ -160,7 +160,7 @@ const Splash: React.FC<SplashProps> = ({setShowSplash: setShowSplash }) => {
         apiErrorUnlisten = await listen<string>('api-error', (event) => {
           if (!isMounted) return;
           
-          console.log('[Splash] 收到 api-error 事件:', event.payload);
+          // console.log('[Splash] 收到 api-error 事件:', event.payload);
           
           if (event.payload && event.payload.trim()) {
             setHasApiError(true);

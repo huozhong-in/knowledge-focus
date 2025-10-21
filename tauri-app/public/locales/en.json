@@ -69,7 +69,7 @@
     "RAGLOCAL": {
         "file-observation-window": "Observation Window",
         "rag-retrieval-monitoring": "Log monitoring",
-        "x-tensor-records": " records",
+        "x-tensor-records": " items",
         "waiting-rag-retrieval": "Waiting for log...",
         "waiting-rag-retrieval-details": ""
     },

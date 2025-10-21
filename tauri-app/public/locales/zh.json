@@ -69,7 +69,7 @@
     "RAGLOCAL": {
         "file-observation-window": "观察窗",
         "rag-retrieval-monitoring": "日志监控",
-        "x-tensor-records": "条记录",
+        "x-tensor-records": "个条目",
         "waiting-rag-retrieval": "等待日志...",
         "waiting-rag-retrieval-details": ""
     },

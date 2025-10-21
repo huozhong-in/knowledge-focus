@@ -482,8 +482,10 @@ class TaggingMgr:
         final_tag_ids = [tag.id for tag in tag_objects]
         file_result = self.link_tags_to_file(file_result, final_tag_ids)
         with Session(self.engine) as session:
-            session.add(FileScreeningResult(**file_result))
             try:
+                # 使用merge而不是add，自动判断是插入还是更新
+                # merge会根据主键判断记录是否存在，存在则更新，不存在则插入
+                session.merge(FileScreeningResult(**file_result))
                 session.commit()
             except Exception as e:
                 logger.error(f"Failed to link tags to file {file_result.get('file_path', 'unknown')}: {e}")

@@ -394,8 +394,9 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
     if task.task_type == TaskType.TAGGING.value:
         # 检查模型可用性
         if not file_tagging_mgr.check_file_tagging_model_availability():
-            logger.error("相关模型不可用，无法处理文件打标签任务")
-            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="模型不可用")
+            logger.warning(f"文件打标签模型暂不可用（可能正在下载或加载中），任务 {task.id} 将保持 PENDING 状态等待重试")
+            # 不更新任务状态，保持为 PENDING，让任务处理线程稍后重试
+            # 这样可以等待内置模型下载和加载完成
             return
         
         # 高优先级任务: 单个文件处理
@@ -425,8 +426,9 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
     
     elif task.task_type == TaskType.MULTIVECTOR.value:
         if not multivector_mgr.check_multivector_model_availability():
-            logger.error("相关模型不可用，无法处理多模态向量化任务")
-            task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE, message="模型不可用")
+            logger.warning(f"多模态向量化模型暂不可用（可能正在下载或加载中），任务 {task.id} 将保持 PENDING 状态等待重试")
+            # 不更新任务状态，保持为 PENDING，让任务处理线程稍后重试
+            # 这样可以等待内置模型下载和加载完成
             return
         
         # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）

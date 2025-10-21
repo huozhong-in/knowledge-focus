@@ -61,7 +61,7 @@ export function RagLocal({
       };
       
       setEvents(prev => [...prev.slice(-19), newEvent]); // 保持最近20条记录
-      console.log('RagLocal: 收到RAG检索结果', newEvent);
+      // console.log('RagLocal: 收到RAG检索结果', newEvent);
     },
     'rag-progress': (payload: any) => {
       const newEvent: LogEvent = {
@@ -74,7 +74,7 @@ export function RagLocal({
       };
       
       setEvents(prev => [...prev.slice(-19), newEvent]);
-      console.log('RagLocal: 收到RAG进度', newEvent);
+      // console.log('RagLocal: 收到RAG进度', newEvent);
     },
     'rag-error': (payload: any) => {
       const newEvent: LogEvent = {
@@ -87,7 +87,7 @@ export function RagLocal({
       };
       
       setEvents(prev => [...prev.slice(-19), newEvent]);
-      console.log('RagLocal: 收到RAG错误', newEvent);
+      // console.log('RagLocal: 收到RAG错误', newEvent);
     },
     // API 日志事件（用于 Splash 启动日志）
     'api-log': (payload: any) => {
@@ -99,7 +99,7 @@ export function RagLocal({
         message: logMessage.trim()
       };
       
-      console.log('RagLocal: 收到API日志', newEvent);
+      // console.log('RagLocal: 收到API日志', newEvent);
       setEvents(prev => [...prev.slice(-49), newEvent]); // API日志保留50条
     },
     'api-error': (payload: any) => {
@@ -111,9 +111,7 @@ export function RagLocal({
         error_message: errorMessage.trim()
       };
       
-      console.log('RagLocal: 收到API错误', newEvent);
-      
-      console.log('RagLocal: 收到API错误', newEvent);
+      // console.log('RagLocal: 收到API错误', newEvent);
       setEvents(prev => [...prev.slice(-49), newEvent]); // API日志保留50条
     },
     // 模型下载进度事件

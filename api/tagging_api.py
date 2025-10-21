@@ -76,15 +76,8 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
         - **min_weight**: 最小权重阈值，只返回权重大于此值的标签 (默认: 1)
         """
         try:
-            # 检查文件标签模型是否可用
-            if not file_tagging_mgr.check_file_tagging_model_availability():
-                return {
-                    "success": False,
-                    "data": [],
-                    "error_type": "model_not_configured",
-                    "message": "model for file tagging is not configured"
-                }
-
+            # 内置模型已配置，直接获取标签云数据
+            # 如果模型正在加载中，标签可能为空，但不是错误状态
             logger.info(f"获取标签云数据，limit: {limit}, min_weight: {min_weight}")
             tag_cloud_data = tagging_mgr.get_tag_cloud_data(limit=limit, min_weight=min_weight)
             return {

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { 
   Tags,
-  BadgeCheckIcon,
 } from "lucide-react"
 import {
 } from "@/components/ui/dropdown-menu"
@@ -19,15 +18,13 @@ import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 
 import { useTagCloudStore } from "@/lib/tagCloudStore"; // 引入标签云全局状态
 import { useFileListStore } from "@/lib/fileListStore"; // 引入文件列表状态
 import { FileService } from "@/api/file-service"; // 引入文件服务
-import { useSettingsStore, SETTINGS_PAGES } from "./App"; // 引入设置相关常量和状态
 
 export function NavTagCloud() {
   const { t } = useTranslation();
   const appStore = useAppStore(); // 获取全局AppStore实例
-  const { openSettingsPage } = useSettingsStore(); // 获取设置页面打开函数
   
   // 使用全局标签云状态
-  const { tags, loading, error, errorType, fetchTagCloud } = useTagCloudStore();
+  const { tags, loading, fetchTagCloud } = useTagCloudStore();
   
   // 使用文件列表状态
   const { setFiles, setLoading, setError } = useFileListStore();
@@ -144,26 +141,8 @@ export function NavTagCloud() {
               <Skeleton className="h-6 w-26 rounded-full" />
               <Skeleton className="h-6 w-15 rounded-full" />
             </>
-          ) : error && errorType === 'model_not_configured' ? (
-            // 状态4: 加载错误 - 模型未配置
-            <div className="text-sm text-destructive text-center cursor-pointer hover:underline"
-                 onClick={() => openSettingsPage(SETTINGS_PAGES.AI_MODELS)}
-                 title="Open AI Models Settings">
-              {error}
-              <br />
-              <span className="text-xs text-muted-foreground">
-                {t('APPSIDEBAR.goto-config')}: 
-                <Badge 
-                  variant="default"
-                  className={`text-xs rounded-full px-2 py-0.5 font-semibold bg-primary text-primary-foreground`}
-                >
-                  <BadgeCheckIcon />
-                  {t(`SETTINGS.aimodels.ModelCapability.STRUCTURED_OUTPUT`)}
-                </Badge>
-              </span>
-            </div>
           ) : tags.length === 0 ? (
-            // 状态3: 无标签 - 数据为空但模型已配置
+            // 状态2: 无标签 - 数据为空（内置模型加载中或尚未生成标签）
             <div className="text-sm text-muted-foreground text-center w-full">
               no tags available
               <br />
