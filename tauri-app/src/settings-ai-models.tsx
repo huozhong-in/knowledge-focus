@@ -1314,16 +1314,16 @@ function SettingsAIModels() {
               {isBuiltin ? (
                 <div className="p-6 bg-blue-50 dark:bg-blue-950/20 rounded-lg border border-blue-200 dark:border-blue-800">
                   <h3 className="text-lg font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                    内置 MLX-VLM 模型
+                    Built-in MLX-VLM Models
                   </h3>
                   <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
-                    内置模型 (mlx-community/Qwen3-VL-4B-Instruct-3bit) 已自动启用，支持本地视觉理解能力。
+                    Built-in model (mlx-community/Qwen3-VL-4B-Instruct-3bit) is automatically enabled, supporting local visual understanding capabilities.
                   </p>
                   <ul className="text-sm text-blue-600 dark:text-blue-400 space-y-2">
-                    <li>✅ 按需加载：首次使用时自动加载模型</li>
-                    <li>✅ 智能卸载：所有能力切换到其他模型后自动卸载</li>
-                    <li>✅ 优先级队列：会话请求优先，批量任务排队</li>
-                    <li>✅ 图片预处理：自动压缩大图片，加快推理速度</li>
+                    <li>✅ On-demand loading: Automatically loads the model upon first use</li>
+                    <li>✅ Intelligent unloading: Automatically unloads after switching all capabilities to other models</li>
+                    <li>✅ Priority queue: Session requests take precedence, batch tasks are queued</li>
+                    <li>✅ Image preprocessing: Automatically compresses large images to speed up inference</li>
                   </ul>
                 </div>
               ) : (

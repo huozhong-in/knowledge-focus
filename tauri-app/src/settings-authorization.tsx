@@ -652,7 +652,7 @@ function SettingsAuthorization() {
                     <div className="font-medium">{folder.alias || folder.path}</div>
                     <div className="text-sm text-gray-500">{folder.path}</div>
                     <div className="text-xs text-gray-400">
-                      {folder.is_common_folder ? t('common-folders') : t('custom-folders')}
+                      {folder.is_common_folder ? t('SETTINGS.authorization.common-folders') : t('SETTINGS.authorization.custom-folders')}
                     </div>
                   </div>
                 </div>

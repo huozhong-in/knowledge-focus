@@ -9,9 +9,10 @@ from sqlmodel import Session, select
 from sqlalchemy import Engine
 from pydantic import BaseModel, Field
 from typing import List, Dict
-from pydantic_ai import Agent, BinaryContent, RunContext
+from pydantic_ai import Agent, BinaryContent, RunContext, PromptedOutput
 # from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr, ModelUseInterface
+from config import VLM_MODEL
 import logging
 
 logger = logging.getLogger()
@@ -212,7 +213,8 @@ class ModelCapabilityConfirm:
         try:
             agent = Agent(
                 model=model,
-                output_type=CityLocation,
+                # mlx_vlm加载模型使用 PromptedOutput 强制 prompt-based 模式，避免 tool calling
+                output_type=PromptedOutput(CityLocation) if model_interface.model_identifier == VLM_MODEL else CityLocation,
             )
             result = await agent.run('Where were the olympics held in 2012?')
             # logger.info(f"Structured output result: {result}")
@@ -280,15 +282,14 @@ if __name__ == "__main__":
     
     async def main():
         engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
-        with Session(bind=engine) as session:
-            mgr = ModelCapabilityConfirm(session, base_dir=Path(TEST_DB_PATH).parent)
-            logger.info(await mgr.confirm_text_capability(9))
-            logger.info(await mgr.confirm_tooluse_capability(9))
-            logger.info(await mgr.confirm_structured_output_capability(9))
-            logger.info(await mgr.confirm_vision_capability(9))
+        mgr = ModelCapabilityConfirm(engine, base_dir=Path(TEST_DB_PATH).parent)
+        logger.info(await mgr.confirm_text_capability(1))
+        logger.info(await mgr.confirm_tooluse_capability(1))
+        logger.info(await mgr.confirm_structured_output_capability(1))
+        logger.info(await mgr.confirm_vision_capability(1))
 
-            # logger.info(await mgr.confirm_embedding_capability())
+        # logger.info(await mgr.confirm_embedding_capability())
 
-            # logger.info(await mgr.confirm_model_capability_dict(2, save_config=False))
+        # logger.info(await mgr.confirm_model_capability_dict(2, save_config=False))
 
     asyncio.run(main())

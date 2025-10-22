@@ -31,14 +31,14 @@ export default function SettingsAbout() {
   } = useUpdater();
 
   const formatLastCheckTime = (timestamp: number | null) => {
-    if (!timestamp) return '从未检查';
+    if (!timestamp) return 'Never Checked';
     return new Date(timestamp).toLocaleString('zh-CN');
   };
 
   // 测试网络连接
   const testConnection = async () => {
     try {
-      console.log(`[网络测试] 使用代理: ${useProxy ? proxyUrl : '无'}`);
+      console.log(`[Network Test] Using Proxy: ${useProxy ? proxyUrl : 'None'}`);
       
       // 使用 Tauri HTTP 插件（支持代理配置）
       const fetchOptions: any = {
@@ -57,15 +57,15 @@ export default function SettingsAbout() {
       
       if (response.ok) {
         const data = await response.text();
-        console.log('网络测试成功:', data.substring(0, 200) + '...');
-        toast.success(`网络连接正常！${useProxy ? `(通过代理 ${proxyUrl})` : ''}`);
+        console.log('Network Test Successful:', data.substring(0, 200) + '...');
+        toast.success(`Network Test Successful${useProxy ? `(via Proxy ${proxyUrl})` : ''}`);
       } else {
-        toast.error(`网络测试失败: HTTP ${response.status}`);
+        toast.error(`Network Test Failed: HTTP ${response.status}`);
       }
     } catch (error) {
-      console.error('网络测试失败:', error);
-      const errorMsg = error instanceof Error ? error.message : '未知错误';
-      toast.error(`网络测试失败: ${errorMsg}`);
+      console.error('Network Test Failed:', error);
+      const errorMsg = error instanceof Error ? error.message : 'Unknown Error';
+      toast.error(`Network Test Failed: ${errorMsg}`);
     }
   };
 
@@ -169,11 +169,11 @@ export default function SettingsAbout() {
           {/* 更新检查部分 */}
           <div className="space-y-3 pt-2 border-t">
             <div className="flex items-center justify-between">
-              <h4 className="text-sm font-medium">软件更新</h4>
+              <h4 className="text-sm font-medium">Software Update</h4>
               <div className="flex items-center gap-2">
                 {updateAvailable && (
                   <Badge variant="destructive" className="text-xs">
-                    新版本可用
+                    New Version Available
                   </Badge>
                 )}
               </div>
@@ -184,7 +184,7 @@ export default function SettingsAbout() {
               <div className="space-y-2 p-3 bg-muted/50 rounded-md">
                 <div className="flex items-center gap-2">
                   <CheckCircle className="h-4 w-4 text-green-500" />
-                  <span className="text-sm font-medium">发现新版本 {updateVersion}</span>
+                  <span className="text-sm font-medium">New Version: {updateVersion}</span>
                 </div>
                 {updateNotes && (
                   <p className="text-xs text-muted-foreground pl-6">
@@ -199,7 +199,7 @@ export default function SettingsAbout() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm">正在下载更新...</span>
+                  <span className="text-sm">Downloading update...</span>
                   <span className="text-xs text-muted-foreground">{downloadProgress}%</span>
                 </div>
                 <Progress value={downloadProgress} className="h-2" />
@@ -212,17 +212,17 @@ export default function SettingsAbout() {
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
                   <div className="space-y-1 flex-1">
-                    <span className="text-sm text-destructive font-medium">检查更新失败</span>
+                    <span className="text-sm text-destructive font-medium">failed to check for updates</span>
                     <p className="text-xs text-destructive/80 break-all">{updateError}</p>
                     <details className="text-xs">
                       <summary className="cursor-pointer text-destructive/60 hover:text-destructive/80">
-                        调试信息 (点击展开)
+                        Debug Information (Click to Expand)
                       </summary>
                       <div className="mt-2 p-2 bg-destructive/5 rounded border text-xs font-mono break-all">
-                        <p><strong>更新检查 URL:</strong></p>
+                        <p><strong>Update Check URL:</strong></p>
                         <p className="mb-2">https://github.com/huozhong-in/knowledge-focus/releases/latest/download/latest.json</p>
-                        <p><strong>当前版本:</strong> {VERSION_INFO.version}</p>
-                        <p><strong>检查时间:</strong> {formatLastCheckTime(lastUpdateCheck)}</p>
+                        <p><strong>Current Version:</strong> {VERSION_INFO.version}</p>
+                        <p><strong>Last Check Time:</strong> {formatLastCheckTime(lastUpdateCheck)}</p>
                       </div>
                     </details>
                   </div>
@@ -232,7 +232,7 @@ export default function SettingsAbout() {
 
             {/* 代理设置 */}
             <div className="space-y-3 p-3 bg-muted/30 rounded-md">
-              <h5 className="text-xs font-medium text-muted-foreground">网络设置</h5>
+              <h5 className="text-xs font-medium text-muted-foreground">Network Settings</h5>
               <div className="flex items-center space-x-2">
                 <input
                   type="checkbox"
@@ -241,11 +241,11 @@ export default function SettingsAbout() {
                   onChange={(e) => setUseProxy(e.target.checked)}
                   className="rounded"
                 />
-                <Label htmlFor="useProxy" className="text-sm">使用代理服务器</Label>
+                <Label htmlFor="useProxy" className="text-sm">Use Proxy</Label>
               </div>
               {useProxy && (
                 <div className="space-y-2">
-                  <Label htmlFor="proxyUrl" className="text-xs">代理地址</Label>
+                  <Label htmlFor="proxyUrl" className="text-xs">Proxy URL</Label>
                   <Input
                     id="proxyUrl"
                     value={proxyUrl}
@@ -259,7 +259,7 @@ export default function SettingsAbout() {
 
             {/* 上次检查时间 */}
             <div className="text-xs text-muted-foreground">
-              上次检查: {formatLastCheckTime(lastUpdateCheck)}
+              Last Check: {formatLastCheckTime(lastUpdateCheck)}
             </div>
 
             {/* 操作按钮 */}
@@ -271,7 +271,7 @@ export default function SettingsAbout() {
                   variant="default"
                 >
                   <RefreshCw className="h-4 w-4 mr-2" />
-                  重启应用
+                  Restart App
                 </Button>
               ) : updateAvailable && !isDownloading ? (
                 <Button 
@@ -280,7 +280,7 @@ export default function SettingsAbout() {
                   variant="default"
                 >
                   <Download className="h-4 w-4 mr-2" />
-                  下载更新
+                  Download Update
                 </Button>
               ) : (
                 <Button 
@@ -294,7 +294,7 @@ export default function SettingsAbout() {
                   ) : (
                     <RefreshCw className="h-4 w-4 mr-2" />
                   )}
-                  检查更新
+                  Check for Updates
                 </Button>
               )}
               
@@ -305,7 +305,7 @@ export default function SettingsAbout() {
                 size="sm"
               >
                 <Wifi className="h-4 w-4 mr-1" />
-                测试到GitHub的网络连接
+                Test Connection to GitHub
               </Button>
               
               {/* <Button 
@@ -336,7 +336,7 @@ export default function SettingsAbout() {
           </div>
           
           <div className="space-y-2">
-            <h4 className="text-sm font-medium">Architecture</h4>
+            <h4 className="text-sm font-medium">Technical Stacks</h4>
             <div className="flex gap-2 flex-wrap">
               <Badge variant="outline">Tauri/Rust</Badge>
               <Badge variant="outline">React/TypeScript/Vite/Bun</Badge>

@@ -5,6 +5,10 @@ from typing import Dict, Any, List
 import os
 import logging
 import warnings
+
+# 禁用 tokenizers 并行化警告（在导入其他模块前设置）
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
 from tagging_mgr import TaggingMgr
 from db_mgr import FileScreeningResult
 from markitdown import MarkItDown
@@ -326,14 +330,14 @@ if __name__ == "__main__":
     engine = create_engine(f'sqlite:///{TEST_DB_PATH}')
 
     # 测试文件路径
-    # import pathlib
-    # user_home = pathlib.Path.home()
-    # test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
-    # if not test_file_path.exists():
-    #     test_logger.error(f"测试文件不存在: {test_file_path}")
-    #     raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
+    import pathlib
+    user_home = pathlib.Path.home()
+    test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
+    if not test_file_path.exists():
+        test_logger.error(f"测试文件不存在: {test_file_path}")
+        raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
     
-    # test_logger.info(f"测试文件: {test_file_path}")
+    test_logger.info(f"测试文件: {test_file_path}")
     
     # 创建解析管理器实例进行测试
     db_directory = os.path.dirname(TEST_DB_PATH)
@@ -343,20 +347,20 @@ if __name__ == "__main__":
     print(file_tagging_mgr.check_file_tagging_model_availability())
     
     # 测试示例：
-    # 1. 测试内容提取
-    # extracted_content = file_tagging_mgr._extract_content(test_file_path)
+    # # 1. 测试内容提取
+    # extracted_content = file_tagging_mgr._extract_content(test_file_path.as_posix())
     # test_logger.info(f"提取内容长度: {len(extracted_content) if extracted_content else 0}")
     
     # 2. 测试文件解析和标签生成
-    # from screening_mgr import ScreeningManager
-    # screening_mgr = ScreeningManager(session)
-    # result: FileScreeningResult = screening_mgr.get_by_path(test_file_path)
-    # if result:
-    #     test_logger.info(f"找到粗筛结果ID: {result.id}")
-    #     success = await file_tagging_mgr.parse_and_tag_file(result)
-    #     file_tagging_mgr.session.commit()
-    #     test_logger.info(f"解析和标签生成结果: {success}")
-    # else:
-    #     test_logger.warning("未找到对应的粗筛结果")
+    from screening_mgr import ScreeningManager
+    screening_mgr = ScreeningManager(engine)
+    result: FileScreeningResult = screening_mgr.get_by_path(test_file_path.as_posix())
+    if result:
+        test_logger.info(f"找到粗筛结果ID: {result.id}")
+        success = file_tagging_mgr.process_single_file_task(result.id)
+        # file_tagging_mgr.session.commit()
+        test_logger.info(f"解析和标签生成结果: {success}")
+    else:
+        test_logger.warning("未找到对应的粗筛结果")
     
     test_logger.info("解析管理器功能测试完成")

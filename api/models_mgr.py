@@ -1,4 +1,4 @@
-from config import singleton, EMBEDDING_MODEL
+from config import singleton, EMBEDDING_MODEL, VLM_MODEL
 import os
 import re
 import json
@@ -9,7 +9,7 @@ import logging
 from typing import List, Dict, Any
 from sqlalchemy import Engine
 from pydantic import BaseModel, Field, ValidationError
-from pydantic_ai import Agent, Tool, BinaryContent
+from pydantic_ai import Agent, Tool, BinaryContent, RunContext, PromptedOutput, ModelSettings
 from pydantic_ai.messages import (
     FunctionToolCallEvent,
     FunctionToolResultEvent,
@@ -175,8 +175,20 @@ class ModelsMgr:
             logger.error(f"Failed to get structured output model config: {e}")
             return []
         model = self.model_config_mgr.model_adapter(model_interface)
+        # System prompt 明确要求返回纯 JSON，不要 markdown 代码块
         system_prompt = """
 You are an expert AI data curator for a desktop knowledge management app named "KnowledgeFocus". Your mission is to analyze file information and generate a refined, consistent, and structured set of tags that are optimized for future retrieval and organization.
+
+# CRITICAL OUTPUT REQUIREMENT
+YOU MUST ONLY OUTPUT RAW JSON WITHOUT ANY MARKDOWN CODE BLOCKS.
+DO NOT wrap your response in ```json or ``` tags.
+DO NOT include ANY explanatory text before or after the JSON.
+ONLY output the JSON object itself.
+
+# ABSOLUTELY CRITICAL TAG LIMITS
+- You MUST generate EXACTLY 3 to 7 tags. NO MORE, NO LESS.
+- NEVER repeat the same tag multiple times.
+- Each tag must be UNIQUE and DISTINCT.
 
 # CONTEXT PROVIDED
 
@@ -214,7 +226,8 @@ After curating the candidates, identify any core conceptual gaps. If a major the
 ### Step 4: Finalization & Formatting
 Assemble the final list of tags from Step 2 and Step 3. Before outputting, ensure the list adheres to these strict final rules:
 
-* **Quantity**: The final list must contain between 3 and 7 tags.
+* **Quantity**: The final list must contain between 3 and 7 tags. NEVER MORE THAN 7 TAGS.
+* **Uniqueness**: Each tag MUST be unique. NEVER repeat the same tag multiple times. Check for duplicates before finalizing.
 * **Language & Terminology**:
     * The tag language MUST match the dominant language of the `Content Summary`.
     * If Chinese characters are present, all tags MUST be in Chinese.
@@ -227,15 +240,16 @@ Assemble the final list of tags from Step 2 and Step 3. Before outputting, ensur
 
 # OUTPUT FORMAT
 
-You MUST ONLY respond with a single, valid JSON object that strictly adheres to the `TagResponse` model. Do not include any explanatory text, markdown code blocks, or any other content outside of the JSON object.
+YOU MUST respond ONLY with raw JSON. NO MARKDOWN CODE BLOCKS.
+Do not wrap your output in ```json or ```.
+Do not include ANY explanatory text before or after the JSON.
 
 **Example Input (User Prompt):**
 * File Path: `/Users/Admin/Work/Project_KF/specs/2025-09-02_后端API设计草案.md`
 * Content Summary: `# KF 后端 API 规范 (草案)... 主要实体是文件(Files), 标签(Tags)... 我们将使用 FastAPI...`
 * Candidate Tags: `["API", "Knowledge-Focus", "Database", "草稿"]`
 
-**Your Correct and ONLY Output:**
-```json
+**Your Correct and ONLY Output (RAW JSON, NO MARKDOWN):**
 {
   "tags": [
     "API设计",
@@ -244,25 +258,60 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
     "草稿"
   ]
 }
-```
 """.strip()
         user_prompt = self._build_tagging_prompt(file_path, file_summary, candidate_tags)
+        
+        # 用于记录每次验证尝试的原始响应
+        validation_attempts = []
+        
         agent = Agent(
             model=model,
             system_prompt=system_prompt,
-            output_type=TagResponse,
+            # mlx_vlm加载模型使用 PromptedOutput 强制 prompt-based 模式，避免 tool calling
+            output_type=PromptedOutput(TagResponse) if model_interface.model_identifier == VLM_MODEL else TagResponse,
+            retries=3,  # 允许最多3次重试，给小模型更多纠错机会
         )
+        
+        # 添加输出验证器来记录原始响应
+        @agent.output_validator
+        async def log_validation_attempt(ctx: RunContext, result: TagResponse) -> TagResponse:
+            """记录每次验证尝试，帮助调试"""
+            validation_attempts.append({
+                'attempt': len(validation_attempts) + 1,
+                'tags': result.tags,
+                'tags_count': len(result.tags)
+            })
+            logger.info(f"Validation attempt #{len(validation_attempts)}: Got {len(result.tags)} tags: {result.tags}")
+            return result
+        
         try:
             response = agent.run_sync(
                 user_prompt=user_prompt,
+                model_settings=ModelSettings(max_tokens=200),  # 限制标签生成的最大token数,防止重复生成
                 # usage_limits=UsageLimits(output_tokens_limit=250), # 限制标签生成的最大token数，主要考虑thinking占用token
             )
-            # print(response.output)
+            logger.info(f"Tag generation successful: {response.output.tags}")
         except UsageLimitExceeded as e:
-            print(e)
+            logger.error(f"Usage limit exceeded during tag generation: {e}")
             return []
         except ValidationError as e:
-            print(e)
+            logger.error(f"Validation error during tag generation: {e}")
+            logger.error("This usually happens when the model output contains markdown code blocks or invalid JSON format")
+            # 记录详细的验证错误信息
+            import traceback
+            logger.error(f"Validation details:\n{traceback.format_exc()}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error during tag generation: {e}")
+            import traceback
+            logger.error(f"Error details:\n{traceback.format_exc()}")
+            # 记录所有验证尝试
+            if validation_attempts:
+                logger.error(f"Validation attempts made: {len(validation_attempts)}")
+                for attempt in validation_attempts:
+                    logger.error(f"  Attempt {attempt['attempt']}: {attempt['tags_count']} tags - {attempt['tags']}")
+            else:
+                logger.error("No validation attempts were recorded (model may not have returned valid JSON)")
             return []
 
         # # 把每个tag中间可能的空格替换为下划线，因为要避开英语中用连字符作为合成词的情况
@@ -302,7 +351,8 @@ You MUST ONLY respond with a single, valid JSON object that strictly adheres to 
         agent = Agent(
             model=model,
             system_prompt=messages[0]['content'],
-            output_type=SessionTitleResponse,
+            # mlx_vlm加载模型使用 PromptedOutput 强制 prompt-based 模式，避免 tool calling
+            output_type=PromptedOutput(SessionTitleResponse) if model_interface.model_identifier == VLM_MODEL else SessionTitleResponse,
         )
         try:
             response = agent.run_sync(
@@ -392,6 +442,7 @@ Generate a title that best represents what this conversation will be about. Avoi
         model = self.model_config_mgr.model_adapter(model_interface)
         try:
             system_prompt = [msg['content'] for msg in messages if msg['role'] == 'system']
+            # logger.info(f"System prompt for chat completion: {system_prompt}")
             agent = Agent(
                 model=model,
                 system_prompt=system_prompt[0] if system_prompt else "",
@@ -1469,7 +1520,6 @@ if __name__ == "__main__":
     # model_interface = mgr.model_config_mgr.get_text_model_config()
     # print(model_interface.model_dump())
     
-    import asyncio
 
     # Test embedding generation
     # embedding = mgr.get_embedding("北京是中国的首都，拥有丰富的历史和文化。")
@@ -1483,33 +1533,33 @@ if __name__ == "__main__":
     # title = mgr.generate_session_title('你好，我想了解一下人工智能的发展历史')
     # print('Generated title:', title)
     
-    # # Test chat completion
-    # try:
-    #     chat_response = mgr.get_chat_completion([
-    #         {"role": "user", "content": "尽量列举一些首都城市的名字"}
-    #     ])
-    #     print("Chat Response:", chat_response)
-    # except Exception as e:
-    #     print("Chat Error:", e)
+    # Test chat completion
+    try:
+        chat_response = mgr.get_chat_completion([
+            {"role": "user", "content": "尽量列举一些首都城市的名字"}
+        ])
+        print("Chat Response:", chat_response)
+    except Exception as e:
+        print("Chat Error:", e)
 
-    # test stream
-    async def test_stream():
-        messages = [
-            {'role': 'user', 'content': '今天的谷歌股价是多少？'}
-        ]
+    # # test stream
+    # import asyncio
+    # async def test_stream():
+    #     messages = [
+    #         {'role': 'user', 'content': '今天的谷歌股价是多少？'}
+    #     ]
         
-        print('Testing Vercel AI SDK compatible stream protocol:')
-        print('=' * 50)
+    #     print('Testing Vercel AI SDK compatible stream protocol:')
+    #     print('=' * 50)
 
-        async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=1):
-            # print(chunk, end='')
-            try:
-                print(json.dumps(json.loads(chunk.lstrip('data: ')), ensure_ascii=False), end='')
-            except Exception as e:
-                print(f"Error processing chunk: {e}")
-                pass
-    
-    asyncio.run(test_stream())
+    #     async for chunk in mgr.stream_agent_chat_v5_compatible(messages, session_id=1):
+    #         # print(chunk, end='')
+    #         try:
+    #             print(json.dumps(json.loads(chunk.lstrip('data: ')), ensure_ascii=False), end='')
+    #         except Exception as e:
+    #             print(f"Error processing chunk: {e}")
+    #             pass
+    # asyncio.run(test_stream())
 
     # # 下载MLX优化的Qwen3 Embedding模型
     # import os

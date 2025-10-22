@@ -82,7 +82,7 @@ export const useUpdater = () => {
       console.error('[更新检查] 检查更新失败:', error);
       
       // 提取更详细的错误信息
-      let errorMessage = '检查更新失败';
+      let errorMessage = 'error while checking for updates';
       if (error instanceof Error) {
         errorMessage = error.message;
         
@@ -104,7 +104,7 @@ export const useUpdater = () => {
       setUpdateError(errorMessage);
       
       if (manual) {
-        toast.error(`检查更新失败: ${errorMessage}`);
+        toast.error(`failed to check for updates: ${errorMessage}`);
       }
       
       return null;

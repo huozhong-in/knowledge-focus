@@ -768,19 +768,19 @@ export default function App() {
         const { file_path, task_id, error_message, help_link, error_code } = payload
         if (file_path) {
           vectorizationStore.setFileFailed(file_path, task_id, {
-            message: error_message || '向量化失败',
+            message: error_message || 'Vectorization failed',
             helpLink: help_link,
             errorCode: error_code
           })
           
           // 显示错误toast
           toast.error(
-            `文档向量化失败`,
+            `Document Vectorization Failed`,
             {
               description: `${file_path.split('/').pop()}: ${error_message}`,
               duration: 6000,
               action: help_link ? {
-                label: "获取帮助",
+                label: "Get Help",
                 onClick: () => window.open(help_link, '_blank')
               } : undefined
             }

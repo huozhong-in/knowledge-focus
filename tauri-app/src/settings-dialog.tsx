@@ -136,13 +136,25 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
     {
       label: t('SETTINGS.online-documents.name'),
       icon: Globe,
-      url: "https://knowledge-focus.huozhong.in",
+      url: "https://kf.huozhong.in",
       group: "help",
     },
     {
       label: t('SETTINGS.feedback.name'),
       icon: Globe,
       url: "https://github.com/huozhong-in/knowledge-focus/issues",
+      group: "help",
+    },
+    {
+      label: t('SETTINGS.privacy-policy.name'),
+      icon: Globe,
+      url: "https://kf.huozhong.in/privacy-policy",
+      group: "help",
+    },
+    {
+      label: t('SETTINGS.terms-of-service.name'),
+      icon: Globe,
+      url: "https://kf.huozhong.in/terms-of-service",
       group: "help",
     },
   ]
@@ -262,9 +274,8 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
         {children && <div onClick={() => setSettingsOpen(true)}>{children}</div>}
 
         <DialogContent
-          className="overflow-hidden p-0 h-[85vh] w-[85vw] flex"
+          className="overflow-hidden p-0 h-[85vh] w-[85vw] max-w-[85vw] flex"
           aria-describedby="settings-description"
-          showCloseButton={true}
         >
           <DialogHeader className="sr-only">
             <DialogTitle>{t('SETTINGS.name')}</DialogTitle>

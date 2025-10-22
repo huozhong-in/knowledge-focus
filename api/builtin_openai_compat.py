@@ -11,7 +11,6 @@ import json
 import uuid
 import base64
 import io
-from pathlib import Path
 from config import singleton
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Literal
@@ -22,6 +21,9 @@ from mlx_vlm.generate import stream_generate, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load
 from PIL import Image
+
+# 🔒 导入 Metal GPU 互斥锁
+from multivector_mgr import acquire_metal_lock_async, release_metal_lock_async
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ class OpenAIChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = Field(default=512, ge=1)
     top_p: float = Field(default=1.0, ge=0, le=1)
     stream: bool = Field(default=False, description="是否流式返回")
+    response_format: Optional[Dict[str, Any]] = Field(default=None, description="响应格式配置（接受任何格式，主要用于兼容性）")
     # 扩展字段（非 OpenAI 标准）
     images: Optional[List[str]] = Field(default=None, description="图片路径列表（用于向后兼容）")
 
@@ -100,7 +103,6 @@ class MLXVLMModelManager:
         self._processing_task: Optional[asyncio.Task] = None
         self._is_processing = False
         self._request_counter = 0  # 用于打破优先级平局
-        logger.info("MLXVLMModelManager initialized with priority queue")
     
     async def ensure_loaded(self, model_path: str):
         """
@@ -117,11 +119,11 @@ class MLXVLMModelManager:
             
             # 清理旧模型
             if self._model_cache:
-                logger.info("Clearing old model from cache...")
+                # logger.info("Clearing old model from cache...")
                 await self._unload_model_internal()
             
             # 加载新模型
-            logger.info(f"Loading model: {model_path}")
+            # logger.info(f"Loading model: {model_path}")
             
             # 在线程池中执行同步的 load 操作
             loop = asyncio.get_event_loop()
@@ -138,7 +140,7 @@ class MLXVLMModelManager:
                 "config": config
             }
             
-            logger.info(f"Model loaded successfully: {model_path}")
+            # logger.info(f"Model loaded successfully: {model_path}")
             
             # 启动队列处理器（如果还没启动）
             if not self._is_processing:
@@ -161,9 +163,15 @@ class MLXVLMModelManager:
         Returns:
             响应结果（阻塞等待）
         """
+        # # 验证 response_format 参数（宽容处理，仅记录）
+        # if request.response_format:
+        #     response_type = request.response_format.get("type", "text")
+            # logger.info(f"Response format requested: {response_type}")
+            # 注意：本地模型无法强制执行 JSON schema，依赖系统提示词指导
+        
         # 确保队列处理器已启动
         if not self._is_processing:
-            logger.info("Starting queue processor (first request)")
+            # logger.info("Starting queue processor (first request)")
             self._processing_task = asyncio.create_task(self._process_queue())
         
         future = asyncio.Future()
@@ -184,7 +192,7 @@ class MLXVLMModelManager:
         空闲 60 秒后自动退出。
         """
         self._is_processing = True
-        logger.info("Queue processor started")
+        # logger.info("Queue processor started")
         
         try:
             while True:
@@ -195,7 +203,7 @@ class MLXVLMModelManager:
                         timeout=60.0
                     )
                     
-                    logger.info(f"Processing request #{counter} with priority {priority.name} (queue size: {self._request_queue.qsize()})")
+                    # logger.info(f"Processing request #{counter} with priority {priority.name} (queue size: {self._request_queue.qsize()})")
                     
                     try:
                         # 确保模型已加载
@@ -211,12 +219,12 @@ class MLXVLMModelManager:
                     
                 except asyncio.TimeoutError:
                     # 队列空闲超时，退出处理器
-                    logger.info("Queue idle for 60s, stopping processor")
+                    # logger.info("Queue idle for 60s, stopping processor")
                     break
                     
         finally:
             self._is_processing = False
-            logger.info("Queue processor stopped")
+            # logger.info("Queue processor stopped")
     
     async def _generate_completion_internal(
         self,
@@ -233,43 +241,56 @@ class MLXVLMModelManager:
         processor = self._model_cache["processor"]
         config = self._model_cache["config"]
         
-        # 🔍 调试：查看收到的原始 messages 格式
-        logger.info(f"📨 收到 {len(request.messages)} 条消息")
-        for i, msg in enumerate(request.messages):
-            logger.info(f"  消息[{i}] role={msg.role}, content类型={type(msg.content).__name__}")
-            if isinstance(msg.content, list):
-                logger.info(f"    content长度={len(msg.content)}")
-                # 打印每个元素的类型和内容摘要
-                for j, item in enumerate(msg.content):
-                    if isinstance(item, dict):
-                        item_type = item.get('type', 'unknown')
-                        if item_type == 'text':
-                            text_preview = item.get('text', '')[:50]
-                            logger.info(f"      [{j}] type=text, preview={text_preview}")
-                        elif item_type == 'image_url':
-                            url_obj = item.get('image_url', {})
-                            if isinstance(url_obj, dict):
-                                url = url_obj.get('url', '')
-                                # 只显示前50字符，避免打印整个base64
-                                url_preview = url[:50] + ('...' if len(url) > 50 else '')
-                                logger.info(f"      [{j}] type=image_url, url={url_preview}")
-                            else:
-                                logger.info(f"      [{j}] type=image_url, url={url_obj}")
-                        else:
-                            logger.info(f"      [{j}] type={item_type}, keys={list(item.keys())}")
-                    else:
-                        logger.info(f"      [{j}] 非dict类型: {type(item).__name__}")
-            elif isinstance(msg.content, str):
-                logger.info(f"    content前50字符: {msg.content[:50]}")
+        # # 🔍 调试：查看收到的原始 messages 格式
+        # logger.info(f"📨 收到 {len(request.messages)} 条消息")
+        # for i, msg in enumerate(request.messages):
+        #     logger.info(f"  消息[{i}] role={msg.role}, content类型={type(msg.content).__name__}")
+        #     if isinstance(msg.content, list):
+        #         logger.info(f"    content长度={len(msg.content)}")
+        #         # 打印每个元素的类型和内容摘要
+        #         for j, item in enumerate(msg.content):
+        #             if isinstance(item, dict):
+        #                 item_type = item.get('type', 'unknown')
+        #                 if item_type == 'text':
+        #                     text_preview = item.get('text', '')[:50]
+        #                     logger.info(f"      [{j}] type=text, preview={text_preview}")
+        #                 elif item_type == 'image_url':
+        #                     url_obj = item.get('image_url', {})
+        #                     if isinstance(url_obj, dict):
+        #                         url = url_obj.get('url', '')
+        #                         # 只显示前50字符，避免打印整个base64
+        #                         url_preview = url[:50] + ('...' if len(url) > 50 else '')
+        #                         logger.info(f"      [{j}] type=image_url, url={url_preview}")
+        #                     else:
+        #                         logger.info(f"      [{j}] type=image_url, url={url_obj}")
+        #                 else:
+        #                     logger.info(f"      [{j}] type={item_type}, keys={list(item.keys())}")
+        #             else:
+        #                 logger.info(f"      [{j}] 非dict类型: {type(item).__name__}")
+            # elif isinstance(msg.content, str):
+                # 对于结构化JSON数据（如标签），显示完整内容；其他情况限制长度
+                # if msg.content.strip().startswith('{') or msg.content.strip().startswith('['):
+                    # JSON格式，显示完整内容（最多1000字符，标签数据通常很小）
+                    # content_display = msg.content if len(msg.content) <= 1000 else msg.content[:1000] + '...'
+                    # logger.info(f"    content(JSON完整): {content_display}")
+                # else:
+                    # 非JSON，只显示前50字符
+                    # logger.info(f"    content前50字符: {msg.content[:50]}")
         
         # 提取图片和文本（返回字典列表，用于 apply_chat_template）
         message_dicts, image_urls = _extract_images_from_messages(request.messages)
         
-        logger.info(f"Extracted {len(message_dicts)} messages and {len(image_urls)} images")
-        logger.info(f"📝 Message dicts for apply_chat_template:")
-        for i, msg_dict in enumerate(message_dicts):
-            content_preview = msg_dict['content'][:50] if len(msg_dict['content']) > 50 else msg_dict['content']
-            logger.info(f"  [{i}] role={msg_dict['role']}, content={content_preview}...")
+        # logger.info(f"Extracted {len(message_dicts)} messages and {len(image_urls)} images")
+        # logger.info("📝 Message dicts for apply_chat_template:")
+        # for i, msg_dict in enumerate(message_dicts):
+            # 对于JSON格式显示完整内容
+            # content = msg_dict['content']
+            # if content.strip().startswith('{') or content.strip().startswith('['):
+                # content_display = content if len(content) <= 1000 else content[:1000] + '...'
+                # logger.info(f"  [{i}] role={msg_dict['role']}, content={content_display}")
+            # else:
+            #     content_preview = content[:50] if len(content) > 50 else content
+                # logger.info(f"  [{i}] role={msg_dict['role']}, content={content_preview}...")
         
         # 应用聊天模板（直接使用字典列表）
         formatted_prompt = apply_chat_template(
@@ -280,9 +301,9 @@ class MLXVLMModelManager:
             num_audios=0
         )
         
-        logger.info(f"🔤 Formatted prompt preview (first 200 chars): {formatted_prompt[:200]}")
-        logger.info(f"🔤 Formatted prompt contains '<|vision_start|>': {'<|vision_start|>' in formatted_prompt}")
-        logger.info(f"🔤 Formatted prompt contains '<|image_pad|>': {'<|image_pad|>' in formatted_prompt}")
+        # logger.info(f"🔤 Formatted prompt preview (first 200 chars): {formatted_prompt[:200]}")
+        # logger.info(f"🔤 Formatted prompt contains '<|vision_start|>': {'<|vision_start|>' in formatted_prompt}")
+        # logger.info(f"🔤 Formatted prompt contains '<|image_pad|>': {'<|image_pad|>' in formatted_prompt}")
         
         # 执行推理
         if request.stream:
@@ -307,8 +328,10 @@ class MLXVLMModelManager:
         created_at = int(time.time())
         
         async def stream_generator():
+            # 🔒 获取 Metal GPU 锁
+            await acquire_metal_lock_async("MLX-VLM streaming")
             try:
-                logger.info("Starting streaming generation")
+                # logger.info("Starting streaming generation")
                 token_iterator = stream_generate(
                     model=model,
                     processor=processor,
@@ -339,7 +362,7 @@ class MLXVLMModelManager:
                         yield f"data: {chunk_data.model_dump_json()}\n\n"
                         await asyncio.sleep(0.01)
                 
-                logger.info(f"Streaming completed: {chunk_count} chunks")
+                # logger.info(f"Streaming completed: {chunk_count} chunks")
                 
                 # 发送结束标记
                 final_chunk = ChatCompletionChunk(
@@ -359,6 +382,9 @@ class MLXVLMModelManager:
                 logger.error(f"Streaming error: {e}", exc_info=True)
                 error_chunk = {"error": {"message": str(e), "type": "internal_error"}}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
+            finally:
+                # 🔓 释放 Metal GPU 锁
+                await release_metal_lock_async("MLX-VLM streaming")
         
         return StreamingResponse(
             stream_generator(),
@@ -375,26 +401,32 @@ class MLXVLMModelManager:
         response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_at = int(time.time())
         
-        logger.info("Starting non-streaming generation")
+        # logger.info("Starting non-streaming generation")
         
-        # 构造参数字典,只在有图片时传递 image 参数
-        generate_kwargs = {
-            "model": model,
-            "processor": processor,
-            "prompt": prompt,
-            "temperature": request.temperature,
-            "max_tokens": request.max_tokens or 512,
-            "top_p": request.top_p,
-            "verbose": False
-        }
-        if images:
-            generate_kwargs["image"] = images
-        
-        # 使用 generate 函数进行非流式推理
-        result = generate(**generate_kwargs)
-        
-        result_text = result.text if hasattr(result, 'text') else str(result)
-        logger.info(f"Generation completed: {len(result_text)} chars")
+        # 🔒 获取 Metal GPU 锁
+        await acquire_metal_lock_async("MLX-VLM non-streaming")
+        try:
+            # 构造参数字典,只在有图片时传递 image 参数
+            generate_kwargs = {
+                "model": model,
+                "processor": processor,
+                "prompt": prompt,
+                "temperature": request.temperature,
+                "max_tokens": request.max_tokens or 512,
+                "top_p": request.top_p,
+                "verbose": False
+            }
+            if images:
+                generate_kwargs["image"] = images
+            
+            # 使用 generate 函数进行非流式推理
+            result = generate(**generate_kwargs)
+            
+            result_text = result.text if hasattr(result, 'text') else str(result)
+            # logger.info(f"Generation completed: {len(result_text)} chars")
+        finally:
+            # 🔓 释放 Metal GPU 锁
+            await release_metal_lock_async("MLX-VLM non-streaming")
         
         # 构造 OpenAI 格式响应
         response = OpenAIChatCompletionResponse(
@@ -420,11 +452,11 @@ class MLXVLMModelManager:
         if not self._model_cache:
             return
         
-        logger.info(f"Unloading model: {self._model_cache.get('model_path')}")
+        # logger.info(f"Unloading model: {self._model_cache.get('model_path')}")
         self._model_cache = {}
         gc.collect()
         mx.clear_cache()
-        logger.info("Model unloaded and cache cleared")
+        # logger.info("Model unloaded and cache cleared")
     
     async def unload_model(self):
         """公共卸载方法（带锁保护）"""
@@ -460,16 +492,16 @@ class MLXVLMModelManager:
                 ).first()
                 
                 if model_config and model_config.model_identifier == MLX_VLM_MODEL_IDENTIFIER:
-                    logger.info(
-                        f"Capability {assignment.capability_value} still using MLX-VLM, "
-                        f"skipping unload"
-                    )
+                    # logger.info(
+                    #     f"Capability {assignment.capability_value} still using MLX-VLM, "
+                    #     f"skipping unload"
+                    # )
                     return False
             
             # 所有能力都已切换到其他模型，卸载 MLX-VLM
-            logger.info("All capabilities switched away from MLX-VLM, unloading model...")
+            # logger.info("All capabilities switched away from MLX-VLM, unloading model...")
             await self.unload_model()
-            logger.info("MLX-VLM model unloaded successfully")
+            # logger.info("MLX-VLM model unloaded successfully")
             return True
     
     def is_model_loaded(self, model_path: str) -> bool:
@@ -512,12 +544,12 @@ def _preprocess_image(image_url: str, max_size: int = 1920, quality: int = 85) -
             return image_url
         
         # 检查原始大小
-        original_size = len(image_data)
+        # original_size = len(image_data)
         
         # 打开图片
         img = Image.open(io.BytesIO(image_data))
-        original_format = img.format
-        original_dimensions = img.size
+        # original_format = img.format
+        # original_dimensions = img.size
         
         # 检查是否需要调整大小
         width, height = img.size
@@ -533,7 +565,7 @@ def _preprocess_image(image_url: str, max_size: int = 1920, quality: int = 85) -
                 new_width = int(width * max_size / height)
             
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            logger.info(f"Resized image from {original_dimensions} to {img.size}")
+            # logger.info(f"Resized image from {original_dimensions} to {img.size}")
         
         # 转换为 RGB（去除 alpha 通道）
         if img.mode in ("RGBA", "LA", "P"):
@@ -549,20 +581,20 @@ def _preprocess_image(image_url: str, max_size: int = 1920, quality: int = 85) -
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=quality, optimize=True)
         compressed_data = buffer.getvalue()
-        compressed_size = len(compressed_data)
+        # compressed_size = len(compressed_data)
         
         # 编码为 base64
         encoded_data = base64.b64encode(compressed_data).decode("utf-8")
         result_url = f"data:image/jpeg;base64,{encoded_data}"
         
-        # 日志
-        compression_ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
-        logger.info(
-            f"Image preprocessing: {original_format} {original_dimensions} "
-            f"({original_size / 1024 / 1024:.1f}MB) → "
-            f"JPEG {img.size} ({compressed_size / 1024 / 1024:.1f}MB, "
-            f"compressed {compression_ratio:.1f}%)"
-        )
+        # # 日志
+        # compression_ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+        # logger.info(
+        #     f"Image preprocessing: {original_format} {original_dimensions} "
+        #     f"({original_size / 1024 / 1024:.1f}MB) → "
+        #     f"JPEG {img.size} ({compressed_size / 1024 / 1024:.1f}MB, "
+        #     f"compressed {compression_ratio:.1f}%)"
+        # )
         
         return result_url
         

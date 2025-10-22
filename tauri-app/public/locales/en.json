@@ -331,6 +331,12 @@
         },
         "feedback": {
             "name": "Feedback"
+        },
+        "privacy-policy": {
+            "name": "Privacy Policy"
+        },
+        "terms-of-service": {
+            "name": "Terms of Service"
         }
     }
 }

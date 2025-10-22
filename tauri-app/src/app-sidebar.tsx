@@ -399,10 +399,10 @@ export function AppSidebar({
                   </SidebarMenu>
                 </SidebarGroup>
               ))}
-              <Button variant="ghost" className={cn("w-full justify-center mb-2", {"hidden": sessionsByTime.length === 0})} size="sm">
+              {/* <Button variant="ghost" className={cn("w-full justify-center mb-2", {"hidden": sessionsByTime.length === 0})} size="sm">
                 <span className="text-xs">{t('APPSIDEBAR.more')}</span>
                 <MoreHorizontal className="h-4 w-4" />
-              </Button>
+              </Button> */}
             </div>
           </ScrollArea>
         )}

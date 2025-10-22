@@ -331,6 +331,12 @@
         },
         "feedback": {
             "name": "反馈建议"
+        },
+        "privacy-policy": {
+            "name": "隐私政策"
+        },
+        "terms-of-service": {
+            "name": "服务条款"
         }
     }
 }

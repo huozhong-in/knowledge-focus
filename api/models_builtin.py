@@ -83,7 +83,7 @@ class ModelsBuiltin:
             self._save_downloaded_models_cache()
             return False
         
-        logger.info(f"Model {model_id} is downloaded at: {model_path}")
+        # logger.info(f"Model {model_id} is downloaded at: {model_path}")
         return True
     
     def get_model_path(self, model_id: str) -> Optional[str]:
