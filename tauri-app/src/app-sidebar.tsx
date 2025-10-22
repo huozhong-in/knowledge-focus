@@ -4,7 +4,7 @@ import {
   Plus,
   Search,
   PanelLeftOpenIcon,
-  MoreHorizontal,
+  // MoreHorizontal,
   Edit3,
   Trash2,
   EllipsisVertical,
@@ -53,7 +53,7 @@ import { useAppStore } from "./main"
 import { AnimatedSessionTitle } from "./components/animated-session-title"
 import { useTranslation } from "react-i18next"
 import { CollapsedQuickAccess } from "./collapsed-quick-access"
-import { cn } from "@/lib/utils"
+// import { cn } from "@/lib/utils"
 
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   currentSessionId?: number
