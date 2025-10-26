@@ -9,9 +9,8 @@ import gc
 import time
 import json
 import uuid
-import base64
-import io
 from config import singleton
+from utils import preprocess_image
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Literal
 from pydantic import BaseModel, Field
@@ -20,10 +19,9 @@ import mlx.core as mx
 from mlx_vlm.generate import stream_generate, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load
-from PIL import Image
 
 # 🔒 导入 Metal GPU 互斥锁
-from multivector_mgr import acquire_metal_lock_async, release_metal_lock_async
+# from multivector_mgr import acquire_metal_lock_async, release_metal_lock_async
 
 logger = logging.getLogger(__name__)
 
@@ -329,7 +327,7 @@ class MLXVLMModelManager:
         
         async def stream_generator():
             # 🔒 获取 Metal GPU 锁
-            await acquire_metal_lock_async("MLX-VLM streaming")
+            # await acquire_metal_lock_async("MLX-VLM streaming")
             try:
                 # logger.info("Starting streaming generation")
                 token_iterator = stream_generate(
@@ -382,9 +380,9 @@ class MLXVLMModelManager:
                 logger.error(f"Streaming error: {e}", exc_info=True)
                 error_chunk = {"error": {"message": str(e), "type": "internal_error"}}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-            finally:
+            # finally:
                 # 🔓 释放 Metal GPU 锁
-                await release_metal_lock_async("MLX-VLM streaming")
+                # await release_metal_lock_async("MLX-VLM streaming")
         
         return StreamingResponse(
             stream_generator(),
@@ -404,7 +402,7 @@ class MLXVLMModelManager:
         # logger.info("Starting non-streaming generation")
         
         # 🔒 获取 Metal GPU 锁
-        await acquire_metal_lock_async("MLX-VLM non-streaming")
+        # await acquire_metal_lock_async("MLX-VLM non-streaming")
         try:
             # 构造参数字典,只在有图片时传递 image 参数
             generate_kwargs = {
@@ -426,7 +424,8 @@ class MLXVLMModelManager:
             # logger.info(f"Generation completed: {len(result_text)} chars")
         finally:
             # 🔓 释放 Metal GPU 锁
-            await release_metal_lock_async("MLX-VLM non-streaming")
+            # await release_metal_lock_async("MLX-VLM non-streaming")
+            pass
         
         # 构造 OpenAI 格式响应
         response = OpenAIChatCompletionResponse(
@@ -513,96 +512,6 @@ class MLXVLMModelManager:
         return self._request_queue.qsize()
 
 
-# ==================== 图片预处理 ====================
-
-def _preprocess_image(image_url: str, max_size: int = 1920, quality: int = 85) -> str:
-    """
-    预处理图片：压缩大图片以节省内存和加快推理速度
-    
-    Args:
-        image_url: 图片URL（支持 file:// 和 data:image/jpeg;base64,... 格式）
-        max_size: 最大边长（宽或高）
-        quality: JPEG压缩质量（1-100）
-    
-    Returns:
-        处理后的图片URL（data:image/jpeg;base64,... 格式）
-    """
-    try:
-        # 解析图片数据
-        if image_url.startswith("data:image/"):
-            # Base64 格式
-            header, encoded = image_url.split(",", 1)
-            image_data = base64.b64decode(encoded)
-        elif image_url.startswith("file://"):
-            # 文件路径
-            file_path = image_url[7:]  # 移除 file:// 前缀
-            with open(file_path, "rb") as f:
-                image_data = f.read()
-        else:
-            # 不支持的格式，返回原始URL
-            logger.warning(f"Unsupported image URL format: {image_url[:50]}")
-            return image_url
-        
-        # 检查原始大小
-        # original_size = len(image_data)
-        
-        # 打开图片
-        img = Image.open(io.BytesIO(image_data))
-        # original_format = img.format
-        # original_dimensions = img.size
-        
-        # 检查是否需要调整大小
-        width, height = img.size
-        needs_resize = width > max_size or height > max_size
-        
-        if needs_resize:
-            # 等比例缩放
-            if width > height:
-                new_width = max_size
-                new_height = int(height * max_size / width)
-            else:
-                new_height = max_size
-                new_width = int(width * max_size / height)
-            
-            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            # logger.info(f"Resized image from {original_dimensions} to {img.size}")
-        
-        # 转换为 RGB（去除 alpha 通道）
-        if img.mode in ("RGBA", "LA", "P"):
-            background = Image.new("RGB", img.size, (255, 255, 255))
-            if img.mode == "P":
-                img = img.convert("RGBA")
-            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
-            img = background
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-        
-        # 保存为 JPEG（压缩）
-        buffer = io.BytesIO()
-        img.save(buffer, format="JPEG", quality=quality, optimize=True)
-        compressed_data = buffer.getvalue()
-        # compressed_size = len(compressed_data)
-        
-        # 编码为 base64
-        encoded_data = base64.b64encode(compressed_data).decode("utf-8")
-        result_url = f"data:image/jpeg;base64,{encoded_data}"
-        
-        # # 日志
-        # compression_ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
-        # logger.info(
-        #     f"Image preprocessing: {original_format} {original_dimensions} "
-        #     f"({original_size / 1024 / 1024:.1f}MB) → "
-        #     f"JPEG {img.size} ({compressed_size / 1024 / 1024:.1f}MB, "
-        #     f"compressed {compression_ratio:.1f}%)"
-        # )
-        
-        return result_url
-        
-    except Exception as e:
-        logger.error(f"Image preprocessing failed: {e}", exc_info=True)
-        return image_url  # 失败时返回原始URL
-
-
 # ==================== 请求转换逻辑 ====================
 
 def _extract_images_from_messages(messages: List[ChatMessage]) -> tuple[List[Dict[str, Any]], List[str]]:
@@ -656,7 +565,7 @@ def _extract_images_from_messages(messages: List[ChatMessage]) -> tuple[List[Dic
                         url = part.get("image_url", {}).get("url") or part.get("image_url")
                         if url:
                             # 预处理图片（压缩大图片）
-                            processed_url = _preprocess_image(url, max_size=1920, quality=85)
+                            processed_url = preprocess_image(url, max_size=1920, quality=85)
                             image_urls.append(processed_url)
             
             # 合并文本部分并保存为字典

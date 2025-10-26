@@ -18,8 +18,6 @@ jobs:
         include:
           - platform: 'macos-latest' # for Arm based macs (M1 and above).
             args: '--target aarch64-apple-darwin'
-          # - platform: 'macos-latest' # for Intel based macs.
-          #   args: '--target x86_64-apple-darwin'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -39,7 +37,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           # Those targets are only used on macos runners so it's in an `if` to slightly speed up windows and linux builds.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -70,15 +68,13 @@ jobs:
           releaseBody: |
             ## 🚀 KnowledgeFocus v__VERSION__
             
-            ### 🆕 更新内容
-            - 修复聊天区消息滚动问题
-            - 修复lm-studio等删除模型后无法同步删除问题
-            - 可以取消场景和模型的关联
-            
-            ### 📦 下载说明
-            - **Intel Mac**: 下载 `KnowledgeFocus_0.4.1_aarch64.dmg`
-            - **Apple Silicon Mac (M1/M2/M3)**: 下载 `KnowledgeFocus_0.4.1_x64.dmg`
-            
+            ### 🆕 Updates
+            - <!-- Please fill in the release notes here -->
+
+            ### 📦 Download Instructions
+            - **Intel chip Mac**: DO NOT support.
+            - **Apple Silicon Mac (M series chip)**: Download `KnowledgeFocus_x.x.x_aarch64.dmg`
+
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true # 自动生成latest.json
