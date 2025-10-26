@@ -15,5 +15,5 @@ echo $DB_PATH
 
 uv run main.py \
 --port 60315 \
---host 0.0.0.0 \
+--host 127.0.0.1 \
 --db-path "$DB_PATH" \
