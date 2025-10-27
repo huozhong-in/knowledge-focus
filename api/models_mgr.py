@@ -588,32 +588,26 @@ Generate a title that best represents what this conversation will be about. Avoi
                 for image_path in image_files:
                     try:
                         if os.path.exists(image_path):
-                            # 获取文件扩展名来确定MIME类型
-                            file_ext = Path(image_path).suffix.lower()
-                            if file_ext in ['.jpg', '.jpeg']:
-                                mime_type = 'image/jpeg'
-                            elif file_ext == '.png':
-                                mime_type = 'image/png'
-                            elif file_ext == '.gif':
-                                mime_type = 'image/gif'
-                            elif file_ext == '.webp':
-                                mime_type = 'image/webp'
-                            else:
-                                mime_type = 'image/png'  # 默认
+                            # 导入压缩函数
+                            from utils import compress_image_to_binary
                             
-                            # 读取图片数据并创建BinaryContent
-                            image_data = Path(image_path).read_bytes()
-                            # TODO : 考虑图片大小限制
+                            # 压缩图片并获取二进制数据
+                            compressed_data, compressed_mime = compress_image_to_binary(
+                                image_path,
+                                max_size=1920,  # 最大边长1920像素
+                                quality=85      # JPEG质量85
+                            )
+                            
                             binary_content = BinaryContent(
-                                data=image_data, 
-                                media_type=mime_type
+                                data=compressed_data, 
+                                media_type=compressed_mime
                             )
                             user_prompt_multimodal.append(binary_content)
-                            # logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
+                            logger.info(f"成功添加压缩图片: {image_path} ({len(compressed_data)} bytes, {compressed_mime})")
                         else:
                             logger.warning(f"图片文件不存在: {image_path}")
                     except Exception as e:
-                        logger.error(f"读取图片文件失败: {image_path}, 错误: {e}")
+                        logger.error(f"处理图片文件失败: {image_path}, 错误: {e}")
                 
                 user_prompt_final = user_prompt_multimodal
             else:

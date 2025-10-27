@@ -242,7 +242,7 @@ pub fn start_python_api(
                         let _ = window.emit("api-error", Some(format!("uv sync failed: {}", e)));
                     }
                 }
-                return;
+                // return; 如果异常，比如断网，继续尝试启动API服务
             }
         }
 
@@ -272,6 +272,7 @@ pub fn start_python_api(
         // 通过uv运行Python脚本
         let sidecar_command = app_handle.shell().sidecar("uv").unwrap().args([
             "run",
+            "--offline", // 离线模式运行，因为之前已经进行过uv sync了
             "--directory",
             venv_parent_path.to_str().unwrap(),
             script_path.to_str().unwrap(),

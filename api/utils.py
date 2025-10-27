@@ -488,4 +488,92 @@ def preprocess_image(image_url: str, max_size: int = 1920, quality: int = 85) ->
         
     except Exception as e:
         logger.error(f"Image preprocessing failed: {e}", exc_info=True)
-        return image_url  # 失败时返回原始URL
+        return image_url
+
+
+def compress_image_to_binary(image_path: str, max_size: int = 1920, quality: int = 85) -> tuple[bytes, str]:
+    """
+    压缩图片并返回二进制数据，用于BinaryContent
+    
+    Args:
+        image_path: 图片文件路径
+        max_size: 最大边长（宽或高）
+        quality: JPEG压缩质量（1-100）
+    
+    Returns:
+        tuple: (compressed_data, media_type) 压缩后的字节数据和MIME类型
+    """
+    try:
+        # 读取图片
+        with open(image_path, "rb") as f:
+            image_data = f.read()
+        
+        original_size = len(image_data)
+        
+        # 打开图片
+        img = Image.open(io.BytesIO(image_data))
+        original_dimensions = img.size
+        
+        # 检查是否需要调整大小
+        width, height = img.size
+        needs_resize = width > max_size or height > max_size
+        
+        if needs_resize:
+            # 等比例缩放
+            if width > height:
+                new_width = max_size
+                new_height = int(height * max_size / width)
+            else:
+                new_height = max_size
+                new_width = int(width * max_size / height)
+            
+            img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            logger.info(f"图片缩放: {original_dimensions} -> {img.size}")
+        
+        # 转换为 RGB（去除 alpha 通道）
+        if img.mode in ("RGBA", "LA", "P"):
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        
+        # 保存为 JPEG（压缩）
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=quality, optimize=True)
+        compressed_data = buffer.getvalue()
+        compressed_size = len(compressed_data)
+        
+        # 日志
+        compression_ratio = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+        logger.info(
+            f"图片压缩: {os.path.basename(image_path)} "
+            f"{original_dimensions} ({original_size / 1024 / 1024:.2f}MB) -> "
+            f"{img.size} ({compressed_size / 1024 / 1024:.2f}MB, "
+            f"压缩率 {compression_ratio:.1f}%)"
+        )
+        
+        return compressed_data, "image/jpeg"
+        
+    except Exception as e:
+        logger.error(f"图片压缩失败: {image_path}, 错误: {e}", exc_info=True)
+        # 压缩失败时返回原始数据
+        try:
+            with open(image_path, "rb") as f:
+                original_data = f.read()
+            # 尝试推断原始MIME类型
+            file_ext = os.path.splitext(image_path)[1].lower()
+            mime_map = {
+                '.jpg': 'image/jpeg',
+                '.jpeg': 'image/jpeg', 
+                '.png': 'image/png',
+                '.gif': 'image/gif',
+                '.webp': 'image/webp'
+            }
+            mime_type = mime_map.get(file_ext, 'image/png')
+            return original_data, mime_type
+        except Exception as read_error:
+            logger.error(f"读取原始图片也失败: {read_error}")
+            raise  # 失败时返回原始URL
