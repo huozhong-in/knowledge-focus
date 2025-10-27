@@ -7,7 +7,6 @@ import json
 import uuid
 import logging
 from datetime import datetime
-from utils import preprocess_image
 from chatsession_mgr import ChatSessionMgr
 from db_mgr import ModelCapability, Scenario, ModelProvider
 from model_config_mgr import ModelConfigMgr
