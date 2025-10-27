@@ -74,8 +74,10 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "http://*/**" },
-        { "url": "https://*/**" }
+        { "url": "http://*" },
+        { "url": "http://*:*" },
+        { "url": "https://*" },
+        { "url": "https://*:*" }
       ]
     },
     {
@@ -245,7 +247,13 @@
           "url": "http://*"
         },
         {
+          "url": "http://*:*"
+        },
+        {
           "url": "https://*"
+        },
+        {
+          "url": "https://*:*"
         }
       ]
     }
