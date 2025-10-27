@@ -69,6 +69,8 @@
         "Resources/api/db_mgr.py": "../../api/db_mgr.py",
         "Resources/api/documents_api.py": "../../api/documents_api.py",
         "Resources/api/dog.png": "../../api/dog.png",
+        "Resources/api/download-model.sh": "../../api/download-model.sh",
+        "Resources/api/download_model_cli.py": "../../api/download_model_cli.py",
         "Resources/api/file_tagging_mgr.py": "../../api/file_tagging_mgr.py",
         "Resources/api/lancedb_mgr.py": "../../api/lancedb_mgr.py",
         "Resources/api/main.py": "../../api/main.py",

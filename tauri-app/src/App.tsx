@@ -820,7 +820,7 @@ export default function App() {
             
             // 只在最后一次尝试时输出警告
             if (attempt === max_retries) {
-              console.warn(`App.tsx: API health check failed after ${max_retries} attempts`)
+              console.log(`App.tsx: API health check failed after ${max_retries} attempts`)
               setApiReady(false)
             }
           }

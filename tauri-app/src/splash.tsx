@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '@/main';
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
@@ -56,39 +56,43 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
   const [phases, setPhases] = useState<StartupPhase[]>([
     {
       id: 'env-setup',
-      title: 'Python 环境',
+      title: t('INTRO.phase-env-title'),
       icon: <Package className="w-6 h-6" />,
       status: 'running',
       progress: 0,
-      message: '正在初始化...'
+      message: t('INTRO.status-initializing')
     },
     {
       id: 'api-start',
-      title: 'API 服务',
+      title: t('INTRO.phase-api-title'),
       icon: <Server className="w-6 h-6" />,
       status: 'pending',
-      message: '等待中...'
+      message: t('INTRO.status-waiting')
     },
     {
       id: 'model-download',
-      title: '全能小模型',
+      title: t('INTRO.phase-model-title'),
       icon: <Download className="w-6 h-6" />,
       status: 'pending',
-      message: '等待中...'
+      message: t('INTRO.status-waiting')
     }
   ]);
   
   // 日志相关
   const [logs, setLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
   
   // 权限相关
   const [hasFullDiskAccess, setHasFullDiskAccess] = useState(false);
   const [checkingPermission, setCheckingPermission] = useState(false);
   const [permissionRequested, setPermissionRequested] = useState(false);
   
-  // 模型下载
-  const [selectedMirror, setSelectedMirror] = useState<'huggingface' | 'hf-mirror'>('huggingface');
+  // 防止重复初始化模型
+  const [modelInitialized, setModelInitialized] = useState(false);
+  
+  // 防止下载失败后继续处理 progress 事件
+  const [modelDownloadFailed, setModelDownloadFailed] = useState(false);
   
   // 更新某个阶段的状态
   const updatePhase = (id: string, updates: Partial<StartupPhase>) => {
@@ -114,8 +118,15 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
   const copyLogs = () => {
     const text = logs.join('\n');
     navigator.clipboard.writeText(text);
-    toast.success('日志已复制到剪贴板');
+    toast.success(t('INTRO.log-copied'));
   };
+  
+  // 日志自动滚动到底部
+  useEffect(() => {
+    if (showLogs && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, showLogs]);
   
   // ============ 事件监听 ============
   
@@ -135,21 +146,38 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
           // 解析日志判断阶段
           // Phase 1: Python 环境初始化
           if (log.includes('uv sync') || log.includes('Resolved ') || log.includes('Prepared ')) {
-            updatePhase('env-setup', { status: 'running', message: 'Python 依赖同步中...' });
+            updatePhase('env-setup', { status: 'running', message: t('INTRO.status-syncing-deps') });
           } 
           // Phase 1 完成标志
           else if (log.includes('Python virtual environment sync completed')) {
-            updatePhase('env-setup', { status: 'success', message: 'Python 环境就绪' });
-            updatePhase('api-start', { status: 'running', message: '正在启动 FastAPI...' });
+            updatePhase('env-setup', { status: 'success', message: t('INTRO.status-env-ready') });
+            updatePhase('api-start', { status: 'running', message: t('INTRO.status-starting-api') });
           }
           // Phase 2: FastAPI 启动
           else if (log.includes('Starting Python API service') || log.includes('Initializing FastAPI')) {
-            updatePhase('api-start', { status: 'running', message: '正在启动 FastAPI...' });
+            updatePhase('api-start', { status: 'running', message: t('INTRO.status-starting-api') });
           }
           // Phase 2 完成标志
           else if (log.includes('Uvicorn running') || log.includes('Application startup complete')) {
-            updatePhase('api-start', { status: 'success', message: 'API 服务已启动' });
-            updatePhase('model-download', { status: 'running', message: '准备下载模型...' });
+            // 如果 API 成功启动，说明环境没问题（即使 uv sync 失败）
+            // 先确保第一步是成功的
+            updatePhase('env-setup', { 
+              status: 'success', 
+              message: t('INTRO.status-env-ready')
+            });
+            updatePhase('api-start', { status: 'success', message: t('INTRO.status-api-started') });
+            updatePhase('model-download', { status: 'running', message: t('INTRO.status-preparing-model') });
+          }
+          // Phase 3: 模型下载失败（从日志中检测）
+          else if (log.includes('下载模型') && log.includes('失败')) {
+            // 提取错误信息
+            const errorMatch = log.match(/失败.*?: (.+)/);
+            const errorMsg = errorMatch ? errorMatch[1] : log;
+            updatePhase('model-download', {
+              status: 'error',
+              error: errorMsg
+            });
+            addLog(`[MODEL ERROR] ${errorMsg}`);
           }
         });
         
@@ -195,13 +223,20 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
           stage?: string;
         }>('model-download-progress', (event) => {
           if (!isMounted) return;
+          
+          // ⚠️ 如果已经失败，忽略后续的 progress 事件（防止 tqdm 残留事件）
+          if (modelDownloadFailed) {
+            console.log('[DEBUG] 忽略失败后的 progress 事件');
+            return;
+          }
+          
           const { current, total, message } = event.payload;
           const progress = total > 0 ? Math.round((current / total) * 100) : 0;
           
           updatePhase('model-download', {
             status: 'running',
             progress,
-            message: message || `下载中 ${progress}%`
+            message: message || `${t('INTRO.status-downloading')} ${progress}%`
           });
           
           if (message) {
@@ -214,14 +249,18 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
           updatePhase('model-download', {
             status: 'success',
             progress: 100,
-            message: '模型下载完成'
+            message: t('INTRO.status-model-completed')
           });
-          addLog('[MODEL] 模型下载完成');
+          addLog(`[MODEL] ${t('INTRO.status-model-completed')}`);
         });
         
         unlistenFailed = await listen<{error_message: string}>('model-download-failed', (event) => {
           if (!isMounted) return;
-          const error = event.payload.error_message || '下载失败';
+          
+          // ⚠️ 标记下载失败，防止后续 progress 事件覆盖错误状态
+          setModelDownloadFailed(true);
+          
+          const error = event.payload.error_message || t('INTRO.status-download-failed');
           updatePhase('model-download', {
             status: 'error',
             error
@@ -243,18 +282,19 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
     };
   }, []);
   
-  // API 就绪后初始化模型
+  // API 就绪后初始化模型（只执行一次）
   useEffect(() => {
-    if (!isApiReady) return;
+    if (!isApiReady || modelInitialized) return;
     
     const initModel = async () => {
       try {
+        setModelInitialized(true);  // 标记已初始化，防止重复调用
         addLog('[MODEL] 开始检查和下载模型...');
         
         const response = await fetch('http://127.0.0.1:60315/models/builtin/initialize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mirror: selectedMirror })
+          body: JSON.stringify({ mirror: 'huggingface' })
         });
         
         const result = await response.json();
@@ -262,27 +302,35 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
         if (result.status === 'ready') {
           updatePhase('model-download', {
             status: 'success',
-            message: '模型已就绪'
+            message: t('INTRO.status-model-ready')
           });
-          addLog('[MODEL] 模型已存在');
+          addLog(`[MODEL] ${t('INTRO.status-model-ready')}`);
         } else if (result.status === 'downloading') {
           updatePhase('model-download', {
             status: 'running',
-            message: '正在下载模型...'
+            message: t('INTRO.status-downloading-model')
           });
-          addLog('[MODEL] 开始下载模型');
+          addLog(`[MODEL] ${t('INTRO.status-downloading-model')}`);
+        } else if (result.status === 'error') {
+          // API 初始化失败（比如环境变量问题）
+          updatePhase('model-download', {
+            status: 'error',
+            error: result.message || t('INTRO.status-init-failed')
+          });
+          addLog(`[MODEL ERROR] ${result.message || t('INTRO.status-init-failed')}`);
         }
       } catch (error) {
         console.error('初始化模型失败:', error);
         updatePhase('model-download', {
           status: 'error',
-          error: '无法连接到 API'
+          error: t('INTRO.status-api-unreachable')
         });
+        addLog(`[MODEL ERROR] ${t('INTRO.status-api-unreachable')}`);
       }
     };
     
     initModel();
-  }, [isApiReady, selectedMirror]);
+  }, [isApiReady, modelInitialized]);
   
   // 模型下载完成后检查权限
   useEffect(() => {
@@ -358,7 +406,7 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
         <h1 className="text-3xl font-bold mb-2">{t('INTRO.welcome')}</h1>
         <p className="text-muted-foreground">{t('INTRO.description')}</p>
         <p className="text-sm text-muted-foreground mt-2">
-          预计需要 3-5 分钟（首次启动）
+          {t('INTRO.estimated-time')}
         </p>
       </motion.div>
       
@@ -399,7 +447,7 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
               "w-4 h-4 transition-transform",
               showLogs && "rotate-180"
             )} />
-            {showLogs ? '隐藏' : '查看'}详细日志
+            {showLogs ? t('INTRO.log-hide') : t('INTRO.log-show')}{t('INTRO.log-details')}
           </span>
           <Badge variant="secondary">{logs.length}</Badge>
         </Button>
@@ -416,12 +464,13 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
                 {logs.map((log, i) => (
                   <div key={i} className="py-0.5">{log}</div>
                 ))}
+                <div ref={logsEndRef} />
               </ScrollArea>
               
               <div className="mt-3 flex gap-2">
                 <Button size="sm" variant="secondary" onClick={copyLogs}>
                   <Copy className="w-4 h-4 mr-2" />
-                  复制日志
+                  {t('INTRO.log-copy')}
                 </Button>
                 <Button
                   size="sm"
@@ -433,7 +482,7 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
                   }}
                 >
                   <ExternalLink className="w-4 h-4 mr-2" />
-                  报告问题
+                  {t('INTRO.log-report-issue')}
                 </Button>
               </div>
             </div>
@@ -445,9 +494,6 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
       {phases.some(p => p.status === 'error') && (
         <ErrorRecoveryPanel 
           phases={phases}
-          selectedMirror={selectedMirror}
-          setSelectedMirror={setSelectedMirror}
-          onRetry={() => window.location.reload()}
         />
       )}
       
@@ -543,45 +589,120 @@ const PhaseIndicator: React.FC<{ phase: StartupPhase; index: number }> = ({ phas
 // 错误恢复面板
 const ErrorRecoveryPanel: React.FC<{
   phases: StartupPhase[];
-  selectedMirror: string;
-  setSelectedMirror: (mirror: 'huggingface' | 'hf-mirror') => void;
-  onRetry: () => void;
-}> = ({ phases, selectedMirror, setSelectedMirror, onRetry }) => {
-  const errorPhase = phases.find(p => p.status === 'error');
+}> = ({ phases }) => {
+  const { t } = useTranslation();
+  
+  // 找到所有错误的阶段，按优先级排序（Phase 3 > Phase 2 > Phase 1）
+  const errorPhases = phases.filter(p => p.status === 'error');
+  if (errorPhases.length === 0) return null;
+  
+  // 优先显示模型下载错误，其次是 API 启动错误，最后是环境设置错误
+  const priorityOrder = ['model-download', 'api-start', 'env-setup'];
+  const errorPhase = errorPhases.sort((a, b) => {
+    return priorityOrder.indexOf(a.id) - priorityOrder.indexOf(b.id);
+  })[0];
+  
   if (!errorPhase) return null;
+  
+  // 下载脚本的固定路径
+  const DOWNLOAD_SCRIPT_PATH = '/Applications/KnowledgeFocus.app/Contents/Resources/api/download-model.sh';
+  const DOWNLOAD_COMMAND = `sh "${DOWNLOAD_SCRIPT_PATH}"`;
+  
+  // 复制命令到剪贴板
+  const copyCommand = () => {
+    navigator.clipboard.writeText(DOWNLOAD_COMMAND);
+    toast.success(t('INTRO.error-command-copied'));
+  };
   
   return (
     <div className="w-full max-w-4xl mt-4">
       <Alert variant="destructive">
         <AlertTriangle className="h-4 w-4" />
-        <AlertTitle>启动失败</AlertTitle>
+        <AlertTitle>
+          {errorPhase.id === 'model-download' ? t('INTRO.error-model-download-failed') : t('INTRO.error-startup-failed')}
+        </AlertTitle>
         <AlertDescription>
-          <p className="mb-3">{errorPhase.error}</p>
+          <p className="mb-4 text-sm">{errorPhase.error}</p>
           
+          {/* 模型下载失败的特殊处理 */}
           {errorPhase.id === 'model-download' && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <label className="text-sm">切换镜像:</label>
-                <select
-                  value={selectedMirror}
-                  onChange={(e) => setSelectedMirror(e.target.value as 'huggingface' | 'hf-mirror')}
-                  className="text-sm border rounded px-2 py-1 bg-background"
-                >
-                  <option value="huggingface">HuggingFace (全球)</option>
-                  <option value="hf-mirror">HF-Mirror (国内)</option>
-                </select>
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-sm font-semibold text-red-900 mb-2">
+                  {t('INTRO.error-solution-title')}
+                </p>
+                <ol className="text-sm text-red-800 space-y-2 ml-4 list-decimal">
+                  <li>{t('INTRO.error-solution-step-1')}</li>
+                  <li>{t('INTRO.error-solution-step-2')}</li>
+                  <li>{t('INTRO.error-solution-step-3')}</li>
+                  <li>{t('INTRO.error-solution-step-4')}</li>
+                </ol>
               </div>
+              
+              <div className="bg-gray-50 border border-gray-200 rounded-md p-3">
+                <p className="text-xs text-gray-600 mb-2">{t('INTRO.error-command-label')}</p>
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded block overflow-x-auto">
+                  {DOWNLOAD_COMMAND}
+                </code>
+              </div>
+              
+              <Button 
+                onClick={copyCommand}
+                className="w-full bg-red-600 hover:bg-red-700"
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                {t('INTRO.error-copy-command')}
+              </Button>
+              
+              <details className="text-xs text-red-700">
+                <summary className="cursor-pointer font-medium mb-2">
+                  {t('INTRO.error-why-manual')}
+                </summary>
+                <p className="text-red-600">
+                  {t('INTRO.error-why-manual-detail')}
+                </p>
+              </details>
             </div>
           )}
           
-          <Button onClick={onRetry} className="w-full mt-3">
-            重试
-          </Button>
-          
-          {errorPhase.id === 'env-setup' && (
-            <p className="text-xs mt-2">
-              如果重试仍然失败，请检查网络连接或查看详细日志排查问题。
-            </p>
+          {/* 其他错误的通用处理 */}
+          {errorPhase.id !== 'model-download' && (
+            <div className="space-y-3">
+              <p className="text-sm">
+                {t('INTRO.error-general-instruction')}
+              </p>
+              <ul className="text-sm space-y-1 ml-4 list-disc">
+                <li>{t('INTRO.error-check-network')}</li>
+                <li>{t('INTRO.error-check-logs')}</li>
+                <li>{t('INTRO.error-check-docs')}</li>
+              </ul>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    invoke('open_url', {
+                      url: 'https://kf.huozhong.in/doc'
+                    });
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  {t('INTRO.error-view-docs')}
+                </Button>
+                <Button
+                  onClick={() => {
+                    invoke('open_url', {
+                      url: 'https://github.com/huozhong-in/knowledge-focus/issues/new'
+                    });
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  {t('INTRO.log-report-issue')}
+                </Button>
+              </div>
+            </div>
           )}
         </AlertDescription>
       </Alert>

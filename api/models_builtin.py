@@ -206,14 +206,9 @@ class ModelsBuiltin:
                             "total": self.total
                         })
         
-        # 尝试多个镜像站点
-        max_attempts_per_endpoint = 3
-        endpoints = ['https://huggingface.co', 'https://hf-mirror.com']
-        last_exception = None
-        
         # 发送开始下载事件
         bridge_events.model_download_progress(
-            model_name=model_id,  # 使用 model_id
+            model_name=model_id,
             current=0,
             total=100,
             message=f"准备下载模型 {model_config['display_name']}...",
@@ -227,101 +222,89 @@ class ModelsBuiltin:
                 "message": f"准备下载模型 {model_config['display_name']}..."
             })
         
-        for endpoint in endpoints:
-            for attempt in range(max_attempts_per_endpoint):
-                try:
-                    logger.info(f"尝试从 {endpoint} 下载 (第 {attempt + 1}/{max_attempts_per_endpoint} 次)")
-                    
-                    bridge_events.model_download_progress(
-                        model_name=model_id,  # 使用 model_id
-                        current=0,
-                        total=100,
-                        message=f"连接到 {endpoint}...",
-                        stage="connecting"
-                    )
-                    
-                    if progress_callback:
-                        progress_callback({
-                            "progress": 0,
-                            "status": "connecting",
-                            "message": f"连接到 {endpoint}..."
-                        })
-                    
-                    # 使用 snapshot_download 下载模型
-                    local_path = snapshot_download(
-                        repo_id=hf_model_id,
-                        cache_dir=str(self.builtin_models_dir),
-                        tqdm_class=ProgressReporter,
-                        allow_patterns=["*.safetensors", "*.json", "*.txt", "*.npz"],  # 下载必要文件
-                        endpoint=endpoint,
-                    )
-                    
-                    logger.info(f"模型下载成功: {local_path}")
-                    
-                    # 保存实际路径到缓存
-                    self.downloaded_models_paths[model_id] = str(local_path)
-                    self._save_downloaded_models_cache()
-                    logger.info(f"Saved model path to cache: {model_id} -> {local_path}")
-                    
-                    # 通过统一桥接器发送完成事件
-                    bridge_events.model_download_completed(
-                        model_name=model_id,  # 使用 model_id
-                        local_path=str(local_path),
-                        message=f"模型 {model_config['display_name']} 下载完成"
-                    )
-                    
-                    # 发送完成事件(回调)
-                    if progress_callback:
-                        progress_callback({
-                            "progress": 100,
-                            "status": "completed",
-                            "message": f"模型 {model_config['display_name']} 下载完成",
-                            "path": local_path
-                        })
-                    
-                    return local_path
-                    
-                except Exception as e:
-                    last_exception = e
-                    error_msg = f"下载失败 (尝试 {attempt + 1}/{max_attempts_per_endpoint}，镜像: {endpoint}): {str(e)}"
-                    logger.warning(error_msg, exc_info=True)
-                    
-                    if progress_callback:
-                        progress_callback({
-                            "progress": 0,
-                            "status": "failed_attempt",
-                            "message": error_msg,
-                            "attempt": attempt + 1,
-                            "max_attempts": max_attempts_per_endpoint,
-                            "endpoint": endpoint
-                        })
-                    
-                    # 短暂等待后重试
-                    if attempt < max_attempts_per_endpoint - 1:
-                        time.sleep(2)
+        # 使用环境变量 HF_ENDPOINT 或默认的 huggingface.co
+        # 镜像切换和重试逻辑由外部脚本控制
+        import os
+        endpoint = os.environ.get('HF_ENDPOINT', 'https://huggingface.co')
+        
+        try:
+            logger.info(f"从 {endpoint} 下载模型")
             
-            logger.error(f"镜像站 {endpoint} 所有尝试均失败")
-        
-        # 所有尝试都失败了
-        final_error_msg = f"所有镜像站下载模型 {model_id} 均失败: {str(last_exception)}"
-        logger.error(final_error_msg, exc_info=True)
-        
-        # 通过统一桥接器发送失败事件
-        bridge_events.model_download_failed(
-            model_name=model_id,  # 使用 model_id
-            error_message=final_error_msg,
-            details={"last_error": str(last_exception)}
-        )
-        
-        if progress_callback:
-            progress_callback({
-                "progress": 0,
-                "status": "failed",
-                "message": final_error_msg,
-                "error": str(last_exception)
-            })
-        
-        raise Exception(final_error_msg)
+            bridge_events.model_download_progress(
+                model_name=model_id,
+                current=0,
+                total=100,
+                message=f"连接到 {endpoint}...",
+                stage="connecting"
+            )
+            
+            if progress_callback:
+                progress_callback({
+                    "progress": 0,
+                    "status": "connecting",
+                    "message": f"连接到 {endpoint}..."
+                })
+            
+            # 使用 snapshot_download 下载模型
+            local_path = snapshot_download(
+                repo_id=hf_model_id,
+                cache_dir=str(self.builtin_models_dir),
+                tqdm_class=ProgressReporter,
+                allow_patterns=["*.safetensors", "*.json", "*.txt", "*.npz"],
+                endpoint=endpoint,
+            )
+            
+            logger.info(f"模型下载成功: {local_path}")
+            
+            # 保存实际路径到缓存
+            self.downloaded_models_paths[model_id] = str(local_path)
+            self._save_downloaded_models_cache()
+            logger.info(f"Saved model path to cache: {model_id} -> {local_path}")
+            
+            # 通过统一桥接器发送完成事件
+            bridge_events.model_download_completed(
+                model_name=model_id,
+                local_path=str(local_path),
+                message=f"模型 {model_config['display_name']} 下载完成"
+            )
+            
+            # 发送完成事件(回调)
+            if progress_callback:
+                progress_callback({
+                    "progress": 100,
+                    "status": "completed",
+                    "message": f"模型 {model_config['display_name']} 下载完成",
+                    "path": local_path
+                })
+            
+            return local_path
+            
+        except Exception as e:
+            # 清理错误信息，移除重复的前缀
+            raw_error = str(e)
+            # HuggingFace 错误通常以 "(huggingface):" 开头，去掉这个前缀
+            if raw_error.startswith("(huggingface):"):
+                raw_error = raw_error[15:].strip()
+            
+            error_msg = f"下载模型失败: {raw_error}"
+            logger.error(f"模型 {model_id} 下载失败 (端点: {endpoint}): {raw_error}", exc_info=True)
+            
+            # 通过统一桥接器发送失败事件
+            bridge_events.model_download_failed(
+                model_name=model_id,
+                error_message=error_msg,
+                details={"endpoint": endpoint, "error": raw_error}
+            )
+            
+            if progress_callback:
+                progress_callback({
+                    "progress": 0,
+                    "status": "failed",
+                    "message": error_msg,
+                    "error": raw_error
+                })
+            
+            raise Exception(error_msg)
     
     async def download_model_async(
         self, 
@@ -358,12 +341,12 @@ class ModelsBuiltin:
         from bridge_events import BridgeEventSender
         bridge_events = BridgeEventSender(source="models_builtin")
         
-        # 镜像站点映射
-        endpoint_map = {
-            "huggingface": "https://huggingface.co",
-            "hf-mirror": "https://hf-mirror.com"
-        }
-        endpoint = endpoint_map.get(mirror, endpoint_map["huggingface"])
+        # 使用环境变量 HF_ENDPOINT 或默认镜像
+        # 忽略 mirror 参数，镜像切换由外部脚本控制
+        import os
+        endpoint = os.environ.get('HF_ENDPOINT', 'https://huggingface.co')
+        
+        logger.info(f"异步下载模型: {model_id} (镜像: {endpoint})")
         
         # 节流状态（每秒最多发送1次进度事件）
         last_progress_time = [0.0]  # 使用列表以便在闭包中修改
@@ -456,14 +439,20 @@ class ModelsBuiltin:
             return local_path
             
         except Exception as e:
-            error_msg = f"下载模型 {model_id} 失败 (镜像: {mirror}): {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            # 清理错误信息，移除重复的前缀
+            raw_error = str(e)
+            # HuggingFace 错误通常以 "(huggingface):" 开头，去掉这个前缀
+            if raw_error.startswith("(huggingface):"):
+                raw_error = raw_error[15:].strip()
+            
+            error_msg = f"下载模型失败: {raw_error}"
+            logger.error(f"模型 {model_id} 下载失败 (端点: {endpoint}): {raw_error}", exc_info=True)
             
             # 发送失败事件
             bridge_events.model_download_failed(
                 model_name=model_id,
                 error_message=error_msg,
-                details={"mirror": mirror, "error": str(e)}
+                details={"endpoint": endpoint, "error": raw_error}
             )
             
             if progress_callback:
@@ -471,7 +460,7 @@ class ModelsBuiltin:
                     "progress": 0,
                     "status": "failed",
                     "message": error_msg,
-                    "error": str(e)
+                    "error": raw_error
                 })
             
             raise Exception(error_msg)

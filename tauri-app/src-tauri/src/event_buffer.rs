@@ -151,6 +151,13 @@ impl EventBuffer {
 
     /// 处理incoming事件
     pub async fn handle_event(&self, event_data: BridgeEventData) {
+        // ⚠️ 特殊处理：如果是模型下载失败/完成事件，清除缓冲区中的 progress 事件
+        if event_data.event == "model-download-failed" 
+            || event_data.event == "model-download-completed" {
+            self.clear_buffered_event("model-download-progress").await;
+            println!("🧹 已清除缓冲区中的 model-download-progress 事件");
+        }
+        
         let strategy = self.strategies.get(&event_data.event).copied().unwrap_or(
             EventBufferStrategy::DelayedMerge(Duration::from_millis(500)),
         ); // 默认策略
@@ -254,6 +261,12 @@ impl EventBuffer {
                     .len()
             );
         }
+    }
+    
+    /// 清除缓冲区中特定类型的事件
+    async fn clear_buffered_event(&self, event_key: &str) {
+        let mut events = self.buffered_events.write().await;
+        events.remove(event_key);
     }
 
     /// 启动定期flush任务
