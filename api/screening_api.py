@@ -319,6 +319,31 @@ def get_router(get_engine: Engine) -> APIRouter:
                 "success": False,
                 "message": f"获取失败: {str(e)}"
             }
+    
+    @router.get("/file-screening/tagging-stats")
+    def get_tagging_stats(
+        screening_mgr: ScreeningManager = Depends(get_screening_manager)
+    ):
+        """获取打标签统计信息
+        
+        返回:
+        - total_count: 粗筛结果总数
+        - tagged_count: 已打标签的文件数
+        """
+        try:
+            total_count = screening_mgr.get_all_results_count()
+            tagged_count = screening_mgr.get_tagged_files_count()
+            return {
+                "success": True,
+                "total_count": total_count,
+                "tagged_count": tagged_count
+            }
+        except Exception as e:
+            logger.error(f"获取打标签统计失败: {str(e)}")
+            return {
+                "success": False,
+                "message": f"获取失败: {str(e)}"
+            }
 
     @router.get("/file-screening/by-path-hash")
     def get_screening_by_path_and_hash(

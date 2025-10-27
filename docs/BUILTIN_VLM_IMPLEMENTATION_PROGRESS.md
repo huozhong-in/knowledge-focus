@@ -79,12 +79,7 @@ App 启动
 进入主界面 ✨
 ```
 
-**RagLocal 集成要点**：
-- **统一组件**: `<RagLocal mode="startup-only" showHeader={false} />`
-- **事件类型**: 监听 `api-log`, `api-error`, `model-download-progress`
-- **自动显示**: Splash 监听 `api-log` 事件，收到后设置 `showLogs=true`
-- **高度限制**: `max-h-48 overflow-y-auto` 避免占用过多空间
-- **错误处理**: 出错时显示文档链接引导用户解决
+
 
 ### 4. 模型生命周期管理
 

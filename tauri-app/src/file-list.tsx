@@ -10,6 +10,11 @@ import {
   ArrowDownRightIcon,
   DramaIcon,
 } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -815,16 +820,23 @@ export function FileList({
       <div className="h-[45px] flex flex-row w-full items-center justify-between p-2 gap-2 border-b border-border/50 bg-gradient-to-r from-background to-muted/20">
         <div className="flex items-center gap-2">
           {/* 文件数量展示 - 简洁可爱的徽章样式 */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
-            <span className="text-xs font-medium text-primary">
-              {files.length}
-            </span>
-            <span className="text-xs text-muted-foreground/60">of</span>
-            <span className="text-xs text-muted-foreground font-medium">
-              {screeningResultCount.toLocaleString()}
-            </span>
-          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 cursor-help">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></div>
+                <span className="text-xs font-medium text-primary">
+                  {files.length}
+                </span>
+                <span className="text-xs text-muted-foreground/60">of</span>
+                <span className="text-xs text-muted-foreground font-medium">
+                  {screeningResultCount.toLocaleString()}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <span className="font-medium">current list / total files</span>
+            </TooltipContent>
+          </Tooltip>
         </div>
         <div className="flex flex-row items-center gap-2 justify-end">
           <Input

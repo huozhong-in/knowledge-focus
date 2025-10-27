@@ -63,7 +63,7 @@
    3. “共读”是针对某一文件的交互式精读(电子书/报告/PPT等)，在技术上跟“非共读”的对话比，上下文设置以及使用的工具均有所区别。
 5. Rust端作为前端TypeScript和后端Python FastAPI的“统一桥接器”
    1. 前端向后端发起的请求，经由Rust处理和中转，尤其对敏感的各类API key。
-   2. Python端的任务处理结果(包括进度情况)通过Rust监控其stdout方式拿到，并通过Tauri的IPC机制传递给前端TypeScript。
+   2. Python端的任务处理结果(包括各种进度情况)通过Rust监控其stdout方式拿到，并通过Tauri的IPC机制传递给前端TypeScript。
 
 总之，这种三方协同的设计兼顾了性能和质量：
 

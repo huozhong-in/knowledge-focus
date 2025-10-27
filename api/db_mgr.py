@@ -567,6 +567,8 @@ class DBManager:
                 session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_modified_time ON {FileScreeningResult.__tablename__} (modified_time);'))
                 # 创建索引 - 为task_id创建索引，便于查询关联任务
                 session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_task_id ON {FileScreeningResult.__tablename__} (task_id);'))
+                # 创建索引 - 为tags_display_ids创建索引，便于统计已打标签的文件
+                session.exec(text(f'CREATE INDEX IF NOT EXISTS idx_tags_display_ids ON {FileScreeningResult.__tablename__} (tags_display_ids);'))
 
             # 创建 FTS5 虚拟表和触发器
             if not inspector.has_table('t_files_fts'):

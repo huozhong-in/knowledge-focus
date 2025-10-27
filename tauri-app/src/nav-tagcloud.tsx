@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { 
   Tags,
 } from "lucide-react"
@@ -11,10 +11,15 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/main"; // 引入AppStore以获取API就绪状态
 import { Skeleton } from "@/components/ui/skeleton";
-import { useTagsUpdateListenerWithApiCheck } from "@/hooks/useBridgeEvents"; // 引入封装好的桥接事件Hook
+import { useTagsUpdateListenerWithApiCheck, useScreeningResultUpdated } from "@/hooks/useBridgeEvents"; // 引入封装好的桥接事件Hook
 import { useTagCloudStore } from "@/lib/tagCloudStore"; // 引入标签云全局状态
 import { useFileListStore } from "@/lib/fileListStore"; // 引入文件列表状态
 import { FileService } from "@/api/file-service"; // 引入文件服务
@@ -29,8 +34,38 @@ export function NavTagCloud() {
   // 使用文件列表状态
   const { setFiles, setLoading, setError } = useFileListStore();
   
+  // 标签统计状态
+  const [taggedCount, setTaggedCount] = useState<number>(0);
+  const [totalCount, setTotalCount] = useState<number>(0);
+  const [statsLoading, setStatsLoading] = useState<boolean>(false);
+  
   // 防抖定时器引用
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // 获取标签统计数据
+  const fetchTaggingStats = useCallback(async () => {
+    if (!appStore.isApiReady) {
+      console.log('🏷️ API未就绪，跳过标签统计获取');
+      return;
+    }
+    
+    try {
+      setStatsLoading(true);
+      const url = "http://127.0.0.1:60315/file-screening/tagging-stats";
+      const response = await fetch(url);
+      const result = await response.json();
+      
+      if (result.success) {
+        setTaggedCount(result.tagged_count || 0);
+        setTotalCount(result.total_count || 0);
+        console.log(`📊 标签统计更新: ${result.tagged_count}/${result.total_count}`);
+      }
+    } catch (error) {
+      console.error('获取标签统计失败:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [appStore.isApiReady]);
   
   // 防抖版本的数据获取函数
   const debouncedFetchTagCloud = () => {
@@ -43,6 +78,7 @@ export function NavTagCloud() {
     debounceTimerRef.current = setTimeout(() => {
       console.log('⏰ 防抖延迟后执行标签云数据获取');
       fetchTagCloud();
+      fetchTaggingStats(); // 同时更新统计数据
     }, 1000); // 1秒防抖延迟
   };
   
@@ -54,6 +90,7 @@ export function NavTagCloud() {
     if (appStore.isApiReady) {
       console.log('🚀 组件挂载时尝试获取标签云数据');
       fetchTagCloud();
+      fetchTaggingStats(); // 同时获取统计数据
     }
     
     return () => {
@@ -70,8 +107,9 @@ export function NavTagCloud() {
     if (appStore.isApiReady) {
       console.log('🔗 API就绪，尝试获取标签云数据');
       fetchTagCloud();
+      fetchTaggingStats(); // 同时获取统计数据
     }
-  }, [appStore.isApiReady]); // 移除 fetchTagCloud 依赖
+  }, [appStore.isApiReady, fetchTaggingStats]); // 添加 fetchTaggingStats 依赖
   
   // 使用封装好的标签更新监听Hook（带API就绪状态检查）
   useTagsUpdateListenerWithApiCheck(
@@ -86,6 +124,16 @@ export function NavTagCloud() {
     appStore.isApiReady,
     { showToasts: false } // 不显示toast，避免过多通知
   );
+  
+  // 监听筛选结果更新事件（也会影响统计）
+  useScreeningResultUpdated(() => {
+    try {
+      console.log('收到筛选结果更新事件，刷新标签统计');
+      fetchTaggingStats();
+    } catch (error) {
+      console.error('处理筛选结果更新事件时出错:', error);
+    }
+  });
   
   // 处理标签点击
   const handleTagClick = async (tagId: number) => {
@@ -118,9 +166,36 @@ export function NavTagCloud() {
   //  shadow-sm border border-border
   return (
     <SidebarGroup className=" bg-background rounded-md pr-0">
-      <SidebarGroupLabel>
-        <Tags className="mr-2 h-4 w-4" />
-        {t('APPSIDEBAR.file-tags')}
+      <SidebarGroupLabel className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Tags className="h-4 w-4" />
+          <span>{t('APPSIDEBAR.file-tags')}</span>
+        </div>
+        
+        {/* 标签统计指示器 - 在标题右侧 */}
+        {statsLoading ? (
+          <Skeleton className="h-6 w-20 rounded-full" />
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20 cursor-help">
+                <div className="w-1 h-1 rounded-full bg-primary animate-pulse"></div>
+                <span className="text-[10px] font-medium text-primary">
+                  {taggedCount}
+                </span>
+                <span className="text-[10px] text-muted-foreground/60">/</span>
+                <span className="text-[10px] text-muted-foreground font-medium">
+                  {totalCount}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">
+                <span className="font-medium">tagged / total files</span>
+              </p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </SidebarGroupLabel>
       
       <ScrollArea className="h-[calc(22vh)] p-0 m-0">

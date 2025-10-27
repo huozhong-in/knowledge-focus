@@ -248,6 +248,26 @@ class ScreeningManager:
             logger.error(f"获取所有文件粗筛结果数失败: {str(e)}")
             return 0
 
+    def get_tagged_files_count(self) -> int:
+        """
+        获取已打标签的文件数量
+        判断标准: tags_display_ids IS NOT NULL AND tags_display_ids != ''
+        """
+        try:
+            query = text("""
+                SELECT COUNT(*) 
+                FROM t_file_screening_results 
+                WHERE tags_display_ids IS NOT NULL 
+                AND tags_display_ids != ''
+            """)
+            with Session(self.engine) as session:
+                query_result = session.exec(query)
+                matching_rows = query_result.scalar_one()
+                return matching_rows if matching_rows else 0
+        except Exception as e:
+            logger.error(f"获取已打标签文件数失败: {str(e)}")
+            return 0
+
     def update_screening_result(self, result_id: int, data: Dict[str, Any]) -> FileScreeningResult | None:
         """更新粗筛结果
         
