@@ -106,11 +106,16 @@ class MLXVLMModelManager:
         """
         确保模型已加载（按需加载 + 并发保护）
         
+        优化设计：
+        - 优先使用本地路径，避免联网（支持离线使用）
+        - 如果是 HuggingFace ID，mlx_vlm.load 会尝试联网下载
+        - 通过缓存避免重复加载
+        
         Args:
-            model_path: 模型路径
+            model_path: 模型路径（本地绝对路径或 HuggingFace model ID）
         """
         async with self._lock:
-            # 检查是否已加载
+            # 检查是否已加载（避免重复加载）
             if self._model_cache.get("model_path") == model_path:
                 logger.debug(f"Model already loaded: {model_path}")
                 return
@@ -121,24 +126,45 @@ class MLXVLMModelManager:
                 await self._unload_model_internal()
             
             # 加载新模型
-            # logger.info(f"Loading model: {model_path}")
+            logger.info(f"Loading model from: {model_path}")
+            
+            # 检查是否是本地路径
+            import os
+            is_local_path = os.path.isabs(model_path) and os.path.exists(model_path)
+            
+            if is_local_path:
+                logger.info(f"✅ Loading from local path (offline-capable): {model_path}")
+            else:
+                logger.warning(f"⚠️  Loading from HuggingFace ID (requires internet): {model_path}")
             
             # 在线程池中执行同步的 load 操作
+            # mlx_vlm.load 行为：
+            # - 如果 model_path 是本地路径 → 直接加载，不联网
+            # - 如果是 HF model ID → 尝试联网下载/更新
             loop = asyncio.get_event_loop()
-            model, processor = await loop.run_in_executor(
-                None,
-                lambda: load(model_path, trust_remote_code=True)
-            )
-            config = model.config
-            
-            self._model_cache = {
-                "model_path": model_path,
-                "model": model,
-                "processor": processor,
-                "config": config
-            }
-            
-            # logger.info(f"Model loaded successfully: {model_path}")
+            try:
+                model, processor = await loop.run_in_executor(
+                    None,
+                    lambda: load(model_path, trust_remote_code=True)
+                )
+                config = model.config
+                
+                self._model_cache = {
+                    "model_path": model_path,
+                    "model": model,
+                    "processor": processor,
+                    "config": config
+                }
+                
+                logger.info(f"✅ Model loaded successfully: {model_path}")
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to load model from {model_path}: {e}")
+                if not is_local_path:
+                    logger.error(
+                        "提示：如果断网，请确保传递本地模型路径而不是 HuggingFace model ID"
+                    )
+                raise
             
             # 启动队列处理器（如果还没启动）
             if not self._is_processing:
@@ -326,8 +352,6 @@ class MLXVLMModelManager:
         created_at = int(time.time())
         
         async def stream_generator():
-            # � 移除Metal锁：优先级队列已保证串行化，无需额外锁保护
-            # 如果持有Metal锁，会导致Multivector任务调用HTTP API时死锁
             try:
                 # logger.info("Starting streaming generation")
                 token_iterator = stream_generate(
@@ -398,8 +422,6 @@ class MLXVLMModelManager:
         
         # logger.info("Starting non-streaming generation")
         
-        # � 移除Metal锁：优先级队列已保证串行化，无需额外锁保护
-        # 如果持有Metal锁，会导致Multivector任务调用HTTP API时死锁
         try:
             # 构造参数字典,只在有图片时传递 image 参数
             generate_kwargs = {
@@ -420,7 +442,6 @@ class MLXVLMModelManager:
             result_text = result.text if hasattr(result, 'text') else str(result)
             # logger.info(f"Generation completed: {len(result_text)} chars")
         finally:
-            # � 移除finally块中的Metal锁释放（锁已经不再获取）
             pass
         
         # 构造 OpenAI 格式响应

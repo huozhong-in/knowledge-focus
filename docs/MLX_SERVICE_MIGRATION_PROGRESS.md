@@ -338,15 +338,166 @@ return await self._stream_response(
 
 ---
 
+### ❌ Bug 修复: Chunker 被错误清理 ✅
+
+**时间**: 2025-10-28
+
+**文件**: `api/multivector_mgr.py` line 269
+
+**问题**: 连续两次 pin 文件时第二次失败
+
+**根因分析**:
+```
+AttributeError: 'NoneType' object has no attribute 'chunk'
+```
+
+- 第一次 pin 文件后，`_release_docling_resources()` 清理了 `self.chunker = None`
+- 第二次 pin 文件时，`_generate_chunks()` 尝试使用 `self.chunker.chunk()`，但 chunker 已是 None
+- **关键发现**：chunker 只使用 CPU tokenizer，不涉及 Metal GPU，不需要清理
+
+**修复内容**:
+```python
+# 旧代码
+def _release_docling_resources_without_lock(self):
+    # 1. 销毁converter实例
+    if hasattr(self, 'converter') and self.converter is not None:
+        self.converter = None
+    
+    # 2. 销毁chunker实例  ❌ 导致第二次调用失败
+    if hasattr(self, 'chunker') and self.chunker is not None:
+        self.chunker = None
+
+# 新代码
+def _release_docling_resources_without_lock(self):
+    # 1. 销毁converter实例（持有 Metal GPU 资源）
+    if hasattr(self, 'converter') and self.converter is not None:
+        self.converter = None
+    
+    # 2. ✅ 保留chunker实例
+    # chunker 只使用 CPU tokenizer，不涉及 Metal GPU
+    # 保留它可以支持多次文档处理而无需重新初始化
+```
+
+**额外优化**：移除了不再需要的 Metal 锁
+
+由于 MLX 服务已独立到 60316 进程：
+- Metal 上下文完全隔离（进程级别）
+- 不再需要锁来协调 Docling 和 MLX-VLM
+- 优先级队列已串行化 60316 的所有请求
+- 向量化通过 HTTP 调用，无 Metal 冲突
+
+移除的锁调用：
+- `multivector_mgr.py` 中的所有 `acquire_metal_lock` / `release_metal_lock`
+- 简化了代码逻辑，提升了可读性
+
+---
+
+### ❌ Bug 修复: 离线模型加载优化 ✅
+
+**时间**: 2025-10-28
+
+**文件**: 
+- `api/mlx_service.py` 
+- `api/builtin_openai_compat.py`
+- `api/models_builtin.py`
+
+**问题**: 每次请求都尝试从 HuggingFace 拉取模型，断网时会失败
+
+**根因分析**:
+```
+mlx_service.py 传递 HuggingFace model ID
+    ↓
+builtin_openai_compat.py 调用 mlx_vlm.utils.load()
+    ↓
+mlx_vlm 尝试联网检查更新
+    ↓
+断网时失败 ❌
+```
+
+**关键发现**：
+- `models_builtin.py` 已经下载模型到本地路径
+- 但 `mlx_service.py` 传递的是 HuggingFace ID 而不是本地路径
+- `mlx_vlm.utils.load()` 行为：
+  * 如果传入本地路径 → 直接加载，**不联网** ✅
+  * 如果传入 HF ID → 尝试联网下载/更新 ❌
+
+**修复内容**:
+
+1. **mlx_service.py** - 优先解析为本地路径：
+```python
+# 新增逻辑：尝试从 ModelsBuiltin 获取本地路径
+try:
+    from models_builtin import ModelsBuiltin, BUILTIN_MODELS
+    
+    models_builtin = ModelsBuiltin(engine=engine, base_dir=base_dir)
+    
+    if model_id in BUILTIN_MODELS:
+        # 尝试获取本地路径（优先）
+        local_path = models_builtin.get_model_path(model_id)
+        if local_path:
+            model_path = local_path  # ✅ 使用本地路径
+            logger.info(f"✅ Using local model path: {model_path}")
+        else:
+            model_path = BUILTIN_MODELS[model_id]["hf_model_id"]  # 回退到 HF ID
+            logger.warning(f"⚠️  Not downloaded, using HF ID: {model_path}")
+except Exception as e:
+    logger.error(f"Failed to resolve model path: {e}")
+    model_path = model_id  # 回退
+```
+
+2. **builtin_openai_compat.py** - 智能加载逻辑：
+```python
+async def ensure_loaded(self, model_path: str):
+    # 检查是否是本地路径
+    is_local_path = os.path.isabs(model_path) and os.path.exists(model_path)
+    
+    if is_local_path:
+        logger.info(f"✅ Loading from local path (offline-capable)")
+    else:
+        logger.warning(f"⚠️  Loading from HF ID (requires internet)")
+    
+    try:
+        model, processor = await loop.run_in_executor(
+            None,
+            lambda: load(model_path, trust_remote_code=True)
+        )
+    except Exception as e:
+        if not is_local_path:
+            logger.error("提示：如果断网，请确保传递本地模型路径")
+        raise
+```
+
+3. **models_builtin.py** - 传递 base_dir 参数：
+```python
+cmd = [
+    sys.executable,
+    str(mlx_service_script),
+    "--port", "60316",
+    "--base_dir", str(self.base_dir)  # ✅ 新增：传递 base_dir
+]
+```
+
+**优化效果**：
+- ✅ 离线情况下可以正常使用已下载的模型
+- ✅ 避免每次请求都尝试联网
+- ✅ 提升响应速度（无网络延迟）
+- ✅ 保持回退机制（未下载时仍尝试从 HF 下载）
+
+---
+
 ## 测试计划
 
 ### 1. 基础功能测试
 - [x] 启动主服务，检查 60316 是否自动启动
 - [x] 前端聊天界面发送消息（✅ 已修复流式响应bug）
-- [x] 检查调用链：60315 → 60316
-- [x] 检查响应正常
+- [ ] 检查调用链：60315 → 60316
+- [ ] 检查响应正常
 
-**已解决问题**: ✅ 流式响应方法名错误（`_generate_streaming_response` → `_stream_response`）
+**已解决问题**: 
+- ✅ 流式响应方法名错误（`_generate_streaming_response` → `_stream_response`）
+- ✅ Chunker 被错误清理导致第二次调用失败
+- ✅ 移除了不必要的 Metal 锁
+- ✅ 离线模型加载优化（优先使用本地路径）
 
 **MLX 服务日志位置**:
 ```bash

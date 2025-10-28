@@ -158,6 +158,13 @@ impl EventBuffer {
             println!("🧹 已清除缓冲区中的 model-download-progress 事件");
         }
         
+        // ⚠️ 特殊处理：如果是多模态向量化完成/失败事件，清除缓冲区中的 progress 事件
+        if event_data.event == "multivector-completed" 
+            || event_data.event == "multivector-failed" {
+            self.clear_buffered_event("multivector-progress").await;
+            println!("🧹 已清除缓冲区中的 multivector-progress 事件");
+        }
+        
         let strategy = self.strategies.get(&event_data.event).copied().unwrap_or(
             EventBufferStrategy::DelayedMerge(Duration::from_millis(500)),
         ); // 默认策略

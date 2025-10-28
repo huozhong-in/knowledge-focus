@@ -632,7 +632,7 @@ export function FileList({
         // 通知父组件会话已创建
         onSessionUpdate?.(newSession)
         
-        toast.success("已自动创建新会话用于PDF共读")
+        toast.success("A new session has been automatically created for PDF co-reading")
       } catch (error) {
         console.error("创建会话失败:", error)
         toast.error("Failed to create session. Unable to enter co-reading mode.")

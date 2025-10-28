@@ -696,7 +696,8 @@ class ModelsBuiltin:
             cmd = [
                 sys.executable,  # 使用当前 Python 解释器
                 str(mlx_service_script),
-                "--port", "60316"
+                "--port", "60316",
+                "--base-dir", str(self.base_dir)  # 传递 base_dir 以便访问数据库和本地模型
             ]
             
             # 打开日志文件（行缓冲，确保实时写入）

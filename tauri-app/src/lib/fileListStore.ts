@@ -36,16 +36,25 @@ export const useFileListStore = create<FileListState>((set, get) => ({
   error: null,
 
   setFiles: (files: TaggedFile[]) => set((state) => {
+    // 获取已固定文件的路径集合（用于去重）
+    const pinnedFilePaths = new Set(
+      state.files
+        .filter(file => state.pinnedFiles.has(file.id) && file.pinned)
+        .map(file => file.path)
+    );
+    
     // 合并新文件和已固定的文件
     const pinnedFiles = state.files.filter(file => 
       state.pinnedFiles.has(file.id) && file.pinned
     );
     
-    // 标记新文件中的固定状态
-    const updatedFiles = files.map(file => ({
-      ...file,
-      pinned: state.pinnedFiles.has(file.id)
-    }));
+    // 标记新文件中的固定状态，同时过滤掉已经在pinned列表中的文件（按路径去重）
+    const updatedFiles = files
+      .filter(file => !pinnedFilePaths.has(file.path)) // 🎯 关键修复：过滤掉路径重复的文件
+      .map(file => ({
+        ...file,
+        pinned: state.pinnedFiles.has(file.id)
+      }));
     
     // 合并并去重（优先保留最新的文件信息）
     const fileMap = new Map<number, TaggedFile>();
