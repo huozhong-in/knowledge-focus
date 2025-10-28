@@ -16,6 +16,33 @@ from typing import Dict, Any
 logger = logging.getLogger()
 
 
+def is_port_in_use(port: int) -> bool:
+    """
+    检查指定端口是否被占用
+    
+    Args:
+        port: 端口号
+        
+    Returns:
+        True 如果端口被占用，False 如果端口空闲
+    """
+    try:
+        # 检测操作系统类型
+        system_platform = platform.system()
+        
+        if system_platform == "Windows":
+            cmd = f"netstat -ano | findstr :{port} | findstr LISTENING"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            return result.returncode == 0 and result.stdout.strip() != ""
+        else:  # macOS 或 Linux
+            cmd = f"lsof -i :{port} -sTCP:LISTEN -t"
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            return result.returncode == 0 and result.stdout.strip() != ""
+    except Exception as e:
+        logger.error(f"检查端口 {port} 时发生错误: {str(e)}")
+        return False
+
+
 def kill_process_on_port(port):
     # 检测操作系统类型
     system_platform = platform.system()

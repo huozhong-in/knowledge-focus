@@ -30,7 +30,7 @@ from sqlmodel import Session, select
 from sqlalchemy import Engine
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
-    PictureDescriptionApiOptions,
+    PictureDescriptionApiOptions,  # 在方法内部按需导入，避免未使用时报错
     PdfPipelineOptions,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -55,44 +55,44 @@ import torch
 # # 🔒 全局 Metal GPU 互斥锁
 # # 用于确保 Docling (子进程) 和 MLX-VLM (主进程) 不会同时使用 Metal GPU
 # # 关键: 使用 multiprocessing.Lock() 而非 threading.Lock，因为 Docling 运行在子进程中
-# from multiprocessing import Lock as ProcessLock
-# import asyncio
+from multiprocessing import Lock as ProcessLock
+import asyncio
 
 logger = logging.getLogger()
 # # 创建进程级锁 (必须在模块级别创建，以便子进程继承)
-# _metal_gpu_lock = ProcessLock()
+_metal_gpu_lock = ProcessLock()
 
-# def acquire_metal_lock(operation: str):
-#     """获取 Metal GPU 锁 (同步版本)"""
-#     logger.info(f"[METAL_LOCK] Acquiring lock for: {operation}")
-#     _metal_gpu_lock.acquire()
-#     logger.info(f"[METAL_LOCK] Lock acquired for: {operation}")
+def acquire_metal_lock(operation: str):
+    """获取 Metal GPU 锁 (同步版本)"""
+    logger.info(f"[METAL_LOCK] Acquiring lock for: {operation}")
+    _metal_gpu_lock.acquire()
+    logger.info(f"[METAL_LOCK] Lock acquired for: {operation}")
 
-# def release_metal_lock(operation: str):
-#     """释放 Metal GPU 锁 (同步版本)"""
-#     _metal_gpu_lock.release()
-#     logger.info(f"[METAL_LOCK] Lock released for: {operation}")
+def release_metal_lock(operation: str):
+    """释放 Metal GPU 锁 (同步版本)"""
+    _metal_gpu_lock.release()
+    logger.info(f"[METAL_LOCK] Lock released for: {operation}")
 
-# # 异步版本 (用于 async/await 上下文)
-# async def acquire_metal_lock_async(operation: str):
-#     """获取 Metal GPU 锁 (异步版本)"""
-#     logger.info(f"[METAL_LOCK] Acquiring lock for: {operation}")
-#     # 在异步上下文中等待锁
-#     loop = asyncio.get_event_loop()
-#     await loop.run_in_executor(None, _metal_gpu_lock.acquire)
-#     logger.info(f"[METAL_LOCK] Lock acquired for: {operation}")
+# 异步版本 (用于 async/await 上下文)
+async def acquire_metal_lock_async(operation: str):
+    """获取 Metal GPU 锁 (异步版本)"""
+    logger.info(f"[METAL_LOCK] Acquiring lock for: {operation}")
+    # 在异步上下文中等待锁
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _metal_gpu_lock.acquire)
+    logger.info(f"[METAL_LOCK] Lock acquired for: {operation}")
 
-# async def release_metal_lock_async(operation: str):
-#     """释放 Metal GPU 锁 (异步版本)"""
-#     _metal_gpu_lock.release()
-#     logger.info(f"[METAL_LOCK] Lock released for: {operation}")
+async def release_metal_lock_async(operation: str):
+    """释放 Metal GPU 锁 (异步版本)"""
+    _metal_gpu_lock.release()
+    logger.info(f"[METAL_LOCK] Lock released for: {operation}")
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-# ============================================================================
-# 模块级函数：用于子进程执行（避免嵌套函数序列化问题）
-# ============================================================================
+# # ============================================================================
+# # 模块级函数：用于子进程执行（避免嵌套函数序列化问题）
+# # ============================================================================
 
 # def _docling_worker_func(file_path: str, ocr_options: dict, use_proxy: bool, proxy_value: str, result_queue):
 #     """
@@ -151,19 +151,19 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # 当 Docling 和 MLX-VLM 在同一进程中运行时，即使 Docling 使用 CPU，
 # Metal 框架的某些内部状态仍可能导致冲突
 os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-# os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"  # 完全禁用 MPS 内存分配
+os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"  # 完全禁用 MPS 内存分配
 
 torch.set_num_threads(1)
 if torch.backends.mps.is_available():
     torch.backends.mps.is_built = lambda: False
 
 # # 禁用 MLX 的某些 Metal 优化，避免与 PyTorch 冲突
-# try:
-#     import mlx.core as mx
-#     # 设置 MLX 使用更保守的内存管理策略
-#     mx.set_memory_limit(4 * 1024 * 1024 * 1024)  # 4GB 限制
-# except Exception:
-#     pass  # MLX 可能还未导入
+try:
+    import mlx.core as mx
+    # 设置 MLX 使用更保守的内存管理策略
+    mx.set_memory_limit(4 * 1024 * 1024 * 1024)  # 4GB 限制
+except Exception:
+    pass  # MLX 可能还未导入
 # 不同业务场景所需模型能力的组合
 SCENE_MULTIVECTOR: List[ModelCapability] = [ModelCapability.TEXT, ModelCapability.VISION]
 
@@ -237,21 +237,33 @@ class MultiVectorMgr:
         """初始化docling文档转换器"""
 
         try:
-            # 获取当前视觉模型配置
+            # 🔧 强制 Docling 的 PyTorch 使用 CPU，避免与 MLX-VLM 的 Metal GPU 冲突
+            import os
+            os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
+            os.environ["PYTORCH_MPS_HIGH_WATERMARK_RATIO"] = "0.0"
+            # 注意: torch.set_default_device("cpu") 可能不够，因为 docling 内部可能有显式的设备指定
+            
+            # 🔧 现在可以启用 vision API！MLX 服务已经完全隔离，不会冲突
+            # 获取 vision 模型配置
             model_interface = self.model_config_mgr.get_vision_model_config()
+            self.use_proxy = model_interface.use_proxy
             vision_model_id = model_interface.model_identifier
             vision_base_url = model_interface.base_url
-            vision_api_key = model_interface.api_key
-            self.use_proxy = model_interface.use_proxy
+            vision_api_key = model_interface.api_key or "dummy-key"
 
             # 配置PDF处理选项
             pipeline_options = PdfPipelineOptions()
             pipeline_options.generate_picture_images = True
             # pipeline_options.generate_page_images = True
             pipeline_options.images_scale = 2.0  # 图片分辨率scale
-            pipeline_options.do_picture_description = True
-            pipeline_options.enable_remote_services = True  # 启用远程服务用于图片描述
-            params=dict(
+            
+            # ✅ 启用 Docling 内部的图片描述
+            # MLX 服务已经分离到独立进程（60316端口），不再有 Metal 冲突
+            pipeline_options.do_picture_description = True  # 启用！
+            pipeline_options.enable_remote_services = True  # 使用非内嵌的服务——“本地 API”
+            
+            # 配置图片描述选项（调用 MLX 服务）
+            params = dict(
                 model=vision_model_id,
                 seed=42,
                 temperature=0.2,
@@ -268,6 +280,7 @@ Give a concise summary of the image that is well optimized for retrieval.
 """.strip(),
                 timeout=180,
             )
+
             pipeline_options.do_ocr = False  # 关闭OCR，依赖docling内置的简单OCR
             
             # 创建文档转换器
@@ -282,6 +295,73 @@ Give a concise summary of the image that is well optimized for retrieval.
         except Exception as e:
             logger.error(f"Failed to initialize docling converter: {e}")
             raise
+    
+    def _release_docling_resources(self):
+        """
+        完全释放Docling和PyTorch资源（带锁版本，用于独立调用）
+        
+        在向量化前调用此方法，确保PyTorch Metal上下文完全清理
+        这样MLX-VLM就可以独占Metal GPU
+        
+        🔒 此方法会获取Metal锁
+        """
+        # 🔒 获取Metal锁，确保资源释放期间没有其他Metal操作
+        acquire_metal_lock("Docling resource cleanup")
+        
+        try:
+            self._release_docling_resources_without_lock()
+        finally:
+            # 🔓 释放Metal锁
+            release_metal_lock("Docling resource cleanup")
+    
+    def _release_docling_resources_without_lock(self):
+        """
+        完全释放Docling和PyTorch资源（无锁版本，内部使用）
+        
+        ⚠️ 注意：调用此方法前应确保已持有Metal锁
+        """
+        try:
+            logger.info("[METAL_CLEANUP] Starting comprehensive resource cleanup...")
+            
+            # 1. 销毁converter实例
+            if hasattr(self, 'converter') and self.converter is not None:
+                logger.info("[METAL_CLEANUP] Destroying converter instance...")
+                self.converter = None
+            
+            # 2. 销毁chunker实例（也可能持有tokenizer引用）
+            if hasattr(self, 'chunker') and self.chunker is not None:
+                logger.info("[METAL_CLEANUP] Destroying chunker instance...")
+                self.chunker = None
+            
+            # 3. 强制Python垃圾回收
+            import gc
+            logger.info("[METAL_CLEANUP] Running garbage collection...")
+            gc.collect()
+            gc.collect()  # 运行两次确保循环引用也被清理
+            
+            # 4. 清理PyTorch MPS缓存
+            try:
+                import torch
+                if torch.backends.mps.is_available():
+                    logger.info("[METAL_CLEANUP] Clearing PyTorch MPS cache...")
+                    torch.mps.empty_cache()
+                    torch.mps.synchronize()  # 等待所有MPS操作完成
+                    logger.info("[METAL_CLEANUP] PyTorch MPS synchronization completed")
+            except Exception as torch_err:
+                logger.warning(f"[METAL_CLEANUP] Failed to clear PyTorch cache: {torch_err}")
+            
+            # 5. 额外的垃圾回收
+            gc.collect()
+            
+            # 6. 给Metal GPU一点时间完全切换上下文
+            import time
+            time.sleep(0.5)  # 等待500ms让Metal完全稳定
+            
+            logger.info("[METAL_CLEANUP] Resource cleanup completed successfully")
+            
+        except Exception as e:
+            logger.error(f"[METAL_CLEANUP] Failed to release resources: {e}")
+            # 不抛出异常，尽最大努力继续
     
     def _init_chunker(self):
         """初始化Docling原生chunker，基于最佳实践配置"""
@@ -379,7 +459,7 @@ Give a concise summary of the image that is well optimized for retrieval.
                                                    "chunking", "创建文档记录...")
             document = self._create_or_update_document(file_path, file_hash, docling_json_path)
             
-            # 7. 生成父块和子块
+            # 7. 生成父块和子块（不生成摘要）
             self.bridge_events.multivector_progress(file_path, task_id or "", 60, 100, 
                                                    "chunking", "生成内容块...")
             parent_chunks, child_chunks = self._generate_chunks(document.id, docling_result.document)
@@ -407,10 +487,28 @@ Give a concise summary of the image that is well optimized for retrieval.
                 parent_chunks = all_parent_chunks
                 child_chunks = all_child_chunks
             
-            # 9. 向量化和存储
-            self.bridge_events.multivector_progress(file_path, task_id or "", 90, 100, 
-                                                   "vectorizing", "向量化和存储...")
-            self._vectorize_and_store(parent_chunks, child_chunks)
+            # � 关键设计：从资源释放到向量化完成，持续持有Metal锁
+            # 这样可以确保：
+            # 1. 资源释放期间没有其他Metal操作
+            # 2. Metal上下文完全切换后才开始向量化
+            # 3. 向量化期间独占Metal GPU
+            logger.info("[MULTIVECTOR] Acquiring Metal lock for cleanup and vectorization...")
+            acquire_metal_lock("Multivector cleanup + vectorization")
+            
+            try:
+                # 🔧 步骤1：完全释放Docling/PyTorch资源
+                logger.info("[MULTIVECTOR] Releasing Docling/PyTorch resources...")
+                self._release_docling_resources_without_lock()  # 使用不加锁的版本
+                
+                # 🔧 步骤2：向量化和存储（此时PyTorch Metal已完全释放）
+                self.bridge_events.multivector_progress(file_path, task_id or "", 90, 100, 
+                                                       "vectorizing", "向量化和存储...")
+                self._vectorize_and_store_without_lock(parent_chunks, child_chunks)  # 使用不加锁的版本
+                
+            finally:
+                # 🔓 释放Metal锁
+                logger.info("[MULTIVECTOR] Releasing Metal lock after vectorization...")
+                release_metal_lock("Multivector cleanup + vectorization")
             
             # 10. 更新文档状态
             document.status = "done"
@@ -978,7 +1076,9 @@ Give a concise summary of the image that is well optimized for retrieval.
         )
         
         # 生成检索友好的子块内容
-        retrieval_content = self._generate_retrieval_summary(contextualized_content, chunk_type)
+        # 🔧 关键修改：chunking阶段不生成摘要，避免调用MLX-VLM与Docling冲突
+        # 摘要将在向量化前生成（此时PyTorch已完全释放）
+        retrieval_content = contextualized_content  # 暂时使用上下文化内容
         
         # 创建子块
         child_chunk = ChildChunk(
@@ -1064,6 +1164,9 @@ Give a concise summary of the image that is well optimized for retrieval.
         """
         使用LLM为chunk内容生成检索友好的摘要
         
+        注意: 此方法在chunking阶段调用，应该避免使用Metal GPU
+        实际上我们已经在向量化前释放了所有Docling资源
+        
         Args:
             content: 完整的chunk内容
             chunk_type: chunk类型
@@ -1075,19 +1178,6 @@ Give a concise summary of the image that is well optimized for retrieval.
             # 如果内容太短，直接返回原内容
             if len(content.strip()) < 50:
                 return content.strip()
-            
-            # 🔧 在调用 LLM 前清理 PyTorch Metal 状态
-            # 确保 Docling 完全释放了 Metal 资源
-            try:
-                import torch
-                import gc
-                if torch.backends.mps.is_available():
-                    # 清理 PyTorch MPS 缓存
-                    torch.mps.empty_cache()
-                # 强制垃圾回收
-                gc.collect()
-            except Exception:
-                pass  # 忽略清理错误
             
             # 根据chunk类型选择合适的提示词
             if chunk_type == "table":
@@ -1213,13 +1303,12 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
                     if not surrounding_texts:
                         continue
                     
-                    # 生成周围文本的摘要
-                    context_summary = self._generate_context_summary(surrounding_texts)
-                    if not context_summary:
-                        continue
+                    # 🔧 关键修改：chunking阶段不生成摘要，避免调用MLX-VLM与Docling冲突
+                    # 暂时直接合并周围文本，摘要将在向量化前生成
+                    context_text = "\n\n".join(surrounding_texts)
                     
-                    # 创建组合内容：图片描述 + 周围文本摘要
-                    combined_content = f"图像内容：{image_description}\n\n相关文本背景：{context_summary}"
+                    # 创建组合内容：图片描述 + 周围文本（未摘要）
+                    combined_content = f"图像内容：{image_description}\n\n相关文本背景：{context_text}"
                     
                     # 创建额外的父块（图像上下文块）
                     context_parent = ParentChunk(
@@ -1234,8 +1323,9 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
                         })
                     )
                     
-                    # 生成检索友好的子块内容
-                    retrieval_content = self._generate_retrieval_summary(combined_content, "image_context")
+                    # 🔧 关键修改：chunking阶段不生成摘要
+                    # 暂时使用组合内容，摘要将在向量化前生成
+                    retrieval_content = combined_content
                     
                     # 创建对应的子块
                     context_child = ChildChunk(
@@ -1379,14 +1469,42 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
             logger.info(f"[MULTIVECTOR] Stored {len(child_chunks)} child chunks")
     
     def _vectorize_and_store(self, parent_chunks: List[ParentChunk], child_chunks: List[ChildChunk]):
-        """向量化子块并存储到LanceDB（父块不需要向量化）"""
+        """
+        向量化子块并存储到LanceDB（带锁版本，用于独立调用）
+        
+        🔧 关键设计：在此阶段为子块生成摘要
+        - 此时Docling/PyTorch已完全释放
+        - MLX-VLM可以独占Metal GPU
+        
+        🔒 此方法会获取Metal锁
+        """
+        acquire_metal_lock("Vectorization and storage")
         try:
-            # 确保vectors表已初始化
+            self._vectorize_and_store_without_lock(parent_chunks, child_chunks)
+        finally:
+            release_metal_lock("Vectorization and storage")
+    
+    def _vectorize_and_store_without_lock(self, parent_chunks: List[ParentChunk], child_chunks: List[ChildChunk]):
+        """
+        向量化子块并存储到LanceDB（无锁版本，内部使用）
+        
+        ⚠️ 注意：调用此方法前应确保已持有Metal锁
+        
+        🔧 关键设计：在此阶段为子块生成摘要
+        - 此时Docling/PyTorch已完全释放
+        - MLX-VLM可以独占Metal GPU
+        """
+        try:
+            # 🔧 步骤1：为所有子块生成摘要（此时PyTorch Metal已释放）
+            logger.info("[MULTIVECTOR] Generating summaries for child chunks...")
+            self._generate_summaries_for_chunks(parent_chunks, child_chunks)
+            
+            # 🔧 步骤2：确保vectors表已初始化
             self.lancedb_mgr.init_vectors_table()
             
             vector_records = []
             
-            # 只处理子块向量化（父块不需要向量化，它们是用于答案合成的原始内容）
+            # 🔧 步骤3：向量化子块
             for i, child_chunk in enumerate(child_chunks):
                 try:
                     # 调用embedding模型进行向量化
@@ -1424,6 +1542,65 @@ IMPORTANT: Output ONLY the summary content, without any prefixes like "Here's a 
         except Exception as e:
             logger.error(f"Failed to vectorize and store: {e}")
             raise
+    
+    def _generate_summaries_for_chunks(self, parent_chunks: List[ParentChunk], child_chunks: List[ChildChunk]):
+        """
+        为所有子块生成摘要（在Docling释放后调用）
+        
+        🔧 关键设计：此方法假设调用者已持有Metal锁
+        - 但摘要生成是通过HTTP调用内置MLX服务
+        - HTTP调用不需要Metal锁保护（内置MLX有自己的队列）
+        - 因此持有Metal锁期间可以安全调用HTTP API
+        
+        Args:
+            parent_chunks: 父块列表（用于获取chunk_type）
+            child_chunks: 子块列表（需要生成摘要）
+        """
+        try:
+            logger.info(f"[SUMMARY] Generating summaries for {len(child_chunks)} child chunks...")
+            
+            # 🔧 性能优化：批量计数
+            total_chunks = len(child_chunks)
+            processed_count = 0
+            skipped_count = 0
+            failed_count = 0
+            
+            for i, (parent, child) in enumerate(zip(parent_chunks, child_chunks)):
+                try:
+                    # 如果retrieval_content已经是摘要（长度较短），跳过
+                    if len(child.retrieval_content) < 100:
+                        logger.debug(f"[SUMMARY] Chunk {i}: content too short, skipping summary")
+                        skipped_count += 1
+                        continue
+                    
+                    # 根据父块类型选择摘要策略
+                    chunk_type = parent.chunk_type
+                    content = child.retrieval_content
+                    
+                    # 生成摘要（HTTP调用，不需要Metal锁）
+                    summary = self._generate_retrieval_summary(content, chunk_type)
+                    
+                    # 更新子块的retrieval_content
+                    child.retrieval_content = summary
+                    processed_count += 1
+                    
+                    # 每10个chunk输出一次进度
+                    if (i + 1) % 10 == 0:
+                        logger.info(f"[SUMMARY] Progress: {i + 1}/{total_chunks} chunks processed")
+                    
+                    logger.debug(f"[SUMMARY] Chunk {i} ({chunk_type}): generated summary of {len(summary)} chars")
+                    
+                except Exception as e:
+                    logger.error(f"[SUMMARY] Failed to generate summary for chunk {i}: {e}")
+                    failed_count += 1
+                    # 保持原内容，继续处理其他chunks
+                    continue
+            
+            logger.info(f"[SUMMARY] Summary generation completed: {processed_count} processed, {skipped_count} skipped, {failed_count} failed")
+            
+        except Exception as e:
+            logger.error(f"[SUMMARY] Failed to generate summaries: {e}")
+            # 不抛出异常，允许使用原始内容进行向量化
 
 
 # 为了测试和调试使用
@@ -1455,12 +1632,11 @@ def test_multivector_file():
     logger.info("✅ 组件初始化完成")
 
     # 2. 找一个测试文档
-    # file_path = "/Users/dio/Downloads/Context Engineering for AI Agents_ Lessons from Building Manus.pdf"
-    file_path = "/Users/dio/Downloads/AI代理的上下文工程：构建Manus的经验教训.pdf"
-    file_path = "/Users/dio/Downloads/纳瓦尔宝典：财富与幸福指南.pdf"
-    file_path = "/Users/dio/Downloads/死神永生.pdf"
-    file_path = "/Users/dio/Downloads/9-《高效能人士的七个习惯》(中文版)..pdf"
-    file_path = "/Users/dio/Downloads/寻找Alpha：量化交易策略.pdf"
+    file_path = "/Users/dio/Downloads/Context Engineering for AI Agents_ Lessons from Building Manus.pdf"
+    # file_path = "/Users/dio/Downloads/AI代理的上下文工程：构建Manus的经验教训.pdf"
+    # file_path = "/Users/dio/Downloads/纳瓦尔宝典：财富与幸福指南.pdf"
+    # file_path = "/Users/dio/Downloads/9-《高效能人士的七个习惯》(中文版)..pdf"
+    # file_path = "/Users/dio/Downloads/寻找Alpha：量化交易策略.pdf"
     
     # # 3. 从process_document()中拆分出的方法进行独立测试
     # logger.info("🧪 测试基本方法...")

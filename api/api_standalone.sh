@@ -10,7 +10,7 @@ if [ ! -d "$DB_FOLDER" ]; then
 fi
 
 DB_PATH="$DB_FOLDER"/knowledge-focus.db
-echo $DB_PATH
+# echo $DB_PATH
 
 
 uv run main.py \

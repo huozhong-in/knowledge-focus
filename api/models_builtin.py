@@ -617,6 +617,122 @@ class ModelsBuiltin:
         logger.info("Unloading current builtin model")
         return self.stop_mlx_server()
     
+    def ensure_mlx_service_running(self) -> bool:
+        """
+        根据配置自动启动或停止 MLX 服务进程（60316 端口）
+        
+        实现智能进程管理：
+        - 如果任何能力配置为使用内置 MLX → 确保 60316 服务运行
+        - 如果所有能力都不用内置 MLX → 停止 60316 服务
+        
+        Returns:
+            True 如果服务正在运行或已启动
+            False 如果服务已停止或无需启动
+        """
+        from utils import is_port_in_use, kill_process_on_port
+        
+        should_load, model_id = self.should_auto_load(base_dir=self.base_dir)
+        
+        MLX_SERVICE_PORT = 60316
+        
+        if should_load:
+            # 需要 MLX 服务
+            if not is_port_in_use(MLX_SERVICE_PORT):
+                logger.info(f"启动 MLX 服务进程（模型: {model_id}, 端口: {MLX_SERVICE_PORT}）")
+                success = self._start_mlx_service_process()
+                if success:
+                    logger.info(f"MLX 服务进程已启动在端口 {MLX_SERVICE_PORT}")
+                else:
+                    logger.error("MLX 服务进程启动失败")
+                return success
+            else:
+                logger.debug(f"MLX 服务已在端口 {MLX_SERVICE_PORT} 运行")
+                return True
+        else:
+            # 不需要 MLX 服务
+            if is_port_in_use(MLX_SERVICE_PORT):
+                logger.info(f"停止 MLX 服务进程（所有能力已切换到其他模型，端口: {MLX_SERVICE_PORT}）")
+                success = kill_process_on_port(MLX_SERVICE_PORT)
+                if success:
+                    logger.info("MLX 服务进程已停止")
+                else:
+                    logger.warning("MLX 服务进程停止失败")
+                return False
+            else:
+                logger.debug("MLX 服务无需运行")
+                return False
+    
+    def _start_mlx_service_process(self) -> bool:
+        """
+        启动独立的 MLX 服务进程
+        
+        Returns:
+            True 如果成功启动
+        """
+        import subprocess
+        import sys
+        from pathlib import Path
+        
+        try:
+            # 获取 mlx_service.py 的路径（与当前文件在同一目录）
+            current_dir = Path(__file__).parent
+            mlx_service_script = current_dir / "mlx_service.py"
+            
+            if not mlx_service_script.exists():
+                logger.error(f"MLX 服务脚本不存在: {mlx_service_script}")
+                return False
+            
+            # 准备日志文件（与主服务日志在同一目录）
+            log_dir = Path(self.base_dir) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d")
+            mlx_log_file = log_dir / f"mlx_service_{timestamp}.log"
+            
+            logger.info(f"MLX 服务日志将写入: {mlx_log_file}")
+            
+            # 构建启动命令（使用当前 Python 环境）
+            cmd = [
+                sys.executable,  # 使用当前 Python 解释器
+                str(mlx_service_script),
+                "--port", "60316"
+            ]
+            
+            # 打开日志文件（行缓冲，确保实时写入）
+            log_file_handle = open(mlx_log_file, 'a', buffering=1)
+            
+            # 启动子进程（后台运行，日志输出到文件）
+            process = subprocess.Popen(
+                cmd,
+                cwd=str(current_dir),
+                stdout=log_file_handle,
+                stderr=subprocess.STDOUT,  # 合并 stderr 到 stdout
+                start_new_session=True  # 创建新会话，避免信号传播
+            )
+            
+            logger.info(f"MLX 服务进程已启动，PID: {process.pid}")
+            logger.info(f"查看 MLX 服务日志: tail -f {mlx_log_file}")
+            
+            # 等待短暂时间确保服务启动
+            time.sleep(3)
+            
+            # 验证进程是否还在运行
+            if process.poll() is not None:
+                # 进程已退出，读取日志文件
+                log_file_handle.close()
+                with open(mlx_log_file, 'r') as f:
+                    log_content = f.read()
+                logger.error(f"MLX 服务进程启动后立即退出，日志:\n{log_content}")
+                return False
+            
+            # 注意：不关闭 log_file_handle，让子进程继续写入
+            return True
+            
+        except Exception as e:
+            logger.error(f"启动 MLX 服务进程失败: {e}", exc_info=True)
+            return False
+    
     
 
 if __name__ == "__main__":

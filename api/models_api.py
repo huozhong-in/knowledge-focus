@@ -13,13 +13,7 @@ from model_config_mgr import ModelConfigMgr
 from models_mgr import ModelsMgr
 from model_capability_confirm import ModelCapabilityConfirm
 from pydantic import BaseModel
-from models_builtin import BUILTIN_MODELS, ModelsBuiltin
-from builtin_openai_compat import (
-    MLXVLMModelManager,
-    OpenAIChatCompletionRequest,
-    RequestPriority,
-    get_vlm_manager,
-)
+from models_builtin import ModelsBuiltin
 
 logger = logging.getLogger()
 
@@ -40,10 +34,6 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
 
     def get_models_builtin_manager(engine: Engine = Depends(get_engine)) -> ModelsBuiltin:
         return ModelsBuiltin(engine, base_dir=base_dir)
-
-    def get_mlx_vlm_manager() -> MLXVLMModelManager:
-        """获取 MLX-VLM 模型管理器的全局单例"""
-        return get_vlm_manager()
 
     @router.get("/models/providers", tags=["models"])
     def get_all_provider_configs(config_mgr: ModelConfigMgr = Depends(get_model_config_manager)):
@@ -193,14 +183,14 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
         data: Dict[str, Any] = Body(...), 
         config_mgr: ModelConfigMgr = Depends(get_model_config_manager),
         engine: Engine = Depends(get_engine),
-        vlm_manager: MLXVLMModelManager = Depends(get_mlx_vlm_manager)
+        builtin_mgr: ModelsBuiltin = Depends(get_models_builtin_manager)
     ):
         """
         指定某个模型为全局的ModelCapability某项能力
         model_id为0表示取消全局分配
         
-        注意：此API会触发智能卸载逻辑，如果所有能力都切换到其他模型，
-        MLX-VLM 模型将自动卸载以释放内存。
+        注意：此API会触发智能进程管理，自动启动或停止 MLX 服务进程（60316）。
+        如果所有能力都切换到其他模型，MLX 服务将自动停止以释放资源。
         """
         try:
             model_id = data.get("model_id")
@@ -217,14 +207,16 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             if not success:
                 return {"success": False, "message": "Failed to set model for global capability"}
             
-            # 触发智能卸载检查
+            # 触发智能进程管理
             try:
-                unloaded = await vlm_manager.check_and_unload_if_unused(engine)
-                if unloaded:
-                    logger.info("MLX-VLM model auto-unloaded after capability reassignment")
+                is_running = builtin_mgr.ensure_mlx_service_running()
+                if is_running:
+                    logger.info("MLX 服务进程已确保运行")
+                else:
+                    logger.info("MLX 服务进程已停止或无需运行")
             except Exception as e:
-                # 卸载失败不应影响能力分配的成功
-                logger.error(f"Smart unload failed: {e}", exc_info=True)
+                # 进程管理失败不应影响能力分配的成功
+                logger.error(f"MLX 服务进程管理失败: {e}", exc_info=True)
             
             return {"success": True}
         except Exception as e:
@@ -782,93 +774,4 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 "message": str(e)
             }
     
-    # ==================== OpenAI 兼容 API ====================
-    
-    @router.post("/v1/chat/completions", tags=["models", "openai-compat"])
-    async def openai_chat_completions(
-        request: dict, 
-        models_builtin: ModelsBuiltin = Depends(get_models_builtin_manager),
-        mlx_vlm_manager: MLXVLMModelManager = Depends(get_mlx_vlm_manager)
-    ):
-        """
-        OpenAI 兼容的 /v1/chat/completions 接口
-        
-        支持内置 MLX-VLM 模型，完全兼容 OpenAI API 格式
-        
-        使用方式:
-        ```python
-        from openai import OpenAI
-        
-        client = OpenAI(
-            base_url="http://127.0.0.1:60315/v1",
-            api_key="dummy"  # 内置模型不需要 API key
-        )
-        
-        response = client.chat.completions.create(
-            model="qwen3-vl-4b",  # 使用 model_id
-            messages=[
-                {"role": "user", "content": "Hello!"}
-            ]
-        )
-        ```
-        """
-        
-        try:
-            # 解析请求
-            openai_request = OpenAIChatCompletionRequest(**request)
-            
-            # 获取模型路径
-            model_id = openai_request.model
-            
-            # 支持两种模型标识符:
-            # 1. model_id (如 "qwen3-vl-4b")
-            # 2. hf_model_id (如 "mlx-community/Qwen2.5-VL-3B-Instruct-4bit")
-            model_path = None
-            
-            if model_id in BUILTIN_MODELS:
-                # 直接使用 model_id
-                model_path = models_builtin.get_model_path(model_id)
-            else:
-                # 尝试通过 hf_model_id 查找
-                for mid, config in BUILTIN_MODELS.items():
-                    if config["hf_model_id"] == model_id:
-                        model_path = models_builtin.get_model_path(mid)
-                        break
-            
-            # 检查模型是否已下载
-            if not model_path:
-                return {
-                    "error": {
-                        "message": f"Model {model_id} not found or not downloaded. Please download it first.",
-                        "type": "invalid_request_error",
-                        "code": "model_not_found"
-                    }
-                }
-            
-            # 使用队列系统调用生成逻辑
-            # 默认所有聊天请求都是高优先级 (priority=1)
-            # 如果未来需要支持批量任务,可以通过 Query 参数传入 priority=10
-            logger.info(f"Enqueueing completion request for model: {model_id}, path: {model_path}")
-            logger.info(f"Request stream mode: {openai_request.stream}")
-            
-            # 聊天请求使用 HIGH 优先级
-            response = await mlx_vlm_manager.enqueue_request(
-                request=openai_request,
-                model_path=model_path,
-                priority=RequestPriority.HIGH
-            )
-            
-            logger.info(f"Response type: {type(response)}")
-            return response
-            
-        except Exception as e:
-            logger.error(f"OpenAI 兼容接口错误: {e}", exc_info=True)
-            return {
-                "error": {
-                    "message": str(e),
-                    "type": "internal_server_error",
-                    "code": "generation_failed"
-                }
-            }
-
     return router

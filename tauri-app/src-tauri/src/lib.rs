@@ -155,8 +155,9 @@ impl ApiProcessManager {
             let cleanup_patterns = [
                 "uv run --directory",
                 "main.py --host 127.0.0.1 --port 60315",
-                "/api/main.py",
-                "knowledge-focus.db",
+                // "/api/main.py",
+                // "knowledge-focus.db",
+                "mlx_service.py --port 60316",
             ];
 
             for pattern in &cleanup_patterns {

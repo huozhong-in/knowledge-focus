@@ -20,8 +20,8 @@ from mlx_vlm.generate import stream_generate, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load
 
-# 🔒 导入 Metal GPU 互斥锁
-# from multivector_mgr import acquire_metal_lock_async, release_metal_lock_async
+# � 移除Metal锁导入：内置MLX服务通过优先级队列保证串行化，无需Metal锁
+# 如果使用Metal锁，会导致Multivector任务调用HTTP API时死锁
 
 logger = logging.getLogger(__name__)
 
@@ -306,7 +306,7 @@ class MLXVLMModelManager:
         # 执行推理
         if request.stream:
             # 流式响应
-            return await self._generate_streaming_response(
+            return await self._stream_response(
                 request, model, processor, formatted_prompt, image_urls
             )
         else:
@@ -315,7 +315,7 @@ class MLXVLMModelManager:
                 request, model, processor, formatted_prompt, image_urls
             )
     
-    async def _generate_streaming_response(
+    async def _stream_response(
         self,
         request: "OpenAIChatCompletionRequest",
         model, processor, prompt, images
@@ -326,8 +326,8 @@ class MLXVLMModelManager:
         created_at = int(time.time())
         
         async def stream_generator():
-            # 🔒 获取 Metal GPU 锁
-            # await acquire_metal_lock_async("MLX-VLM streaming")
+            # � 移除Metal锁：优先级队列已保证串行化，无需额外锁保护
+            # 如果持有Metal锁，会导致Multivector任务调用HTTP API时死锁
             try:
                 # logger.info("Starting streaming generation")
                 token_iterator = stream_generate(
@@ -380,9 +380,6 @@ class MLXVLMModelManager:
                 logger.error(f"Streaming error: {e}", exc_info=True)
                 error_chunk = {"error": {"message": str(e), "type": "internal_error"}}
                 yield f"data: {json.dumps(error_chunk)}\n\n"
-            # finally:
-                # 🔓 释放 Metal GPU 锁
-                # await release_metal_lock_async("MLX-VLM streaming")
         
         return StreamingResponse(
             stream_generator(),
@@ -401,8 +398,8 @@ class MLXVLMModelManager:
         
         # logger.info("Starting non-streaming generation")
         
-        # 🔒 获取 Metal GPU 锁
-        # await acquire_metal_lock_async("MLX-VLM non-streaming")
+        # � 移除Metal锁：优先级队列已保证串行化，无需额外锁保护
+        # 如果持有Metal锁，会导致Multivector任务调用HTTP API时死锁
         try:
             # 构造参数字典,只在有图片时传递 image 参数
             generate_kwargs = {
@@ -423,8 +420,7 @@ class MLXVLMModelManager:
             result_text = result.text if hasattr(result, 'text') else str(result)
             # logger.info(f"Generation completed: {len(result_text)} chars")
         finally:
-            # 🔓 释放 Metal GPU 锁
-            # await release_metal_lock_async("MLX-VLM non-streaming")
+            # � 移除finally块中的Metal锁释放（锁已经不再获取）
             pass
         
         # 构造 OpenAI 格式响应

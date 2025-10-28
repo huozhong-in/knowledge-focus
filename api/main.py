@@ -300,6 +300,20 @@ async def lifespan(app: FastAPI):
             logger.error(f"注册API路由失败: {str(router_err)}", exc_info=True)
             raise
 
+        # 启动 MLX 服务进程（如果需要）
+        try:
+            from models_builtin import ModelsBuiltin
+            logger.info("检查是否需要启动 MLX 服务...")
+            builtin_mgr = ModelsBuiltin(engine=app.state.engine, base_dir=app.state.db_directory)
+            is_running = builtin_mgr.ensure_mlx_service_running()
+            if is_running:
+                logger.info("MLX 服务已确保运行在端口 60316")
+            else:
+                logger.info("MLX 服务无需运行或已停止")
+        except Exception as mlx_err:
+            logger.error(f"MLX 服务启动检查失败: {str(mlx_err)}", exc_info=True)
+            # 不中断启动流程
+
         # 正式开始服务
         logger.info("应用初始化完成，开始提供服务...")
         yield
@@ -345,6 +359,20 @@ async def lifespan(app: FastAPI):
             kill_orphaned_processes("Python", "high_priority_task_processor")
         except Exception as cleanup_err:
             logger.error(f"清理残留进程失败: {str(cleanup_err)}", exc_info=True)
+        
+        # 停止 MLX 服务进程（如果在运行）
+        try:
+            from utils import is_port_in_use, kill_process_on_port
+            MLX_SERVICE_PORT = 60316
+            if is_port_in_use(MLX_SERVICE_PORT):
+                logger.info(f"停止 MLX 服务进程（端口 {MLX_SERVICE_PORT}）...")
+                success = kill_process_on_port(MLX_SERVICE_PORT)
+                if success:
+                    logger.info("MLX 服务进程已停止")
+                else:
+                    logger.warning("MLX 服务进程停止失败")
+        except Exception as mlx_cleanup_err:
+            logger.error(f"停止 MLX 服务失败: {str(mlx_cleanup_err)}", exc_info=True)
         
         # 在应用关闭时执行清理操作
         try:
