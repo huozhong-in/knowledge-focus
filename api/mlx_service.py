@@ -186,4 +186,6 @@ def main():
     )
 
 if __name__ == "__main__":
+    from utils import kill_process_on_port
+    kill_process_on_port(60316)
     main()

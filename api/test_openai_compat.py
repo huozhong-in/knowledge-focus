@@ -11,7 +11,7 @@ def test_openai_compat_api():
     
     # 创建 OpenAI 客户端（指向本地 API）
     client = OpenAI(
-        base_url="http://127.0.0.1:60315/v1",
+        base_url="http://127.0.0.1:60316/v1",
         api_key="dummy"  # 内置模型不需要真实 API key
     )
     

@@ -37,11 +37,11 @@ import {
   PromptInputActionMenuContent,
   PromptInputActionMenuTrigger,
   PromptInputBody,
-  // PromptInputButton,
   PromptInputSubmit,
   PromptInputTextarea,
-  PromptInputToolbar,
+  PromptInputFooter,
   PromptInputTools,
+  type PromptInputMessage,
 } from "@/components/ai-elements/prompt-input"
 import {
   Tool,
@@ -263,6 +263,31 @@ export function AiSdkChat({
     }
   }, [error, clearAssistantPlaceholder])
 
+  // 去除 SDK 自动添加的重复用户消息
+  useEffect(() => {
+    // 检查是否有重复的用户消息(相同内容且连续)
+    const userMessages = messages.filter((msg: any) => msg.role === 'user')
+    if (userMessages.length < 2) return
+    
+    // 查找最后两条用户消息
+    const lastUserMsg = userMessages[userMessages.length - 1]
+    const secondLastUserMsg = userMessages[userMessages.length - 2]
+    
+    // 如果最后两条用户消息的内容相同(parts相同),删除其中一条
+    if (lastUserMsg && secondLastUserMsg) {
+      const lastContent = JSON.stringify(lastUserMsg.parts)
+      const secondLastContent = JSON.stringify(secondLastUserMsg.parts)
+      
+      if (lastContent === secondLastContent) {
+        console.log('[Debug] 检测到重复的用户消息,移除 SDK 自动添加的')
+        // 保留较早的那条(我们手动添加的),删除较晚的(SDK添加的)
+        setMessages((prev: any[]) => 
+          prev.filter((msg: any) => msg.id !== lastUserMsg.id)
+        )
+      }
+    }
+  }, [messages, setMessages])
+
   // 当resetTrigger改变时，重置消息和输入框
   useEffect(() => {
     if (resetTrigger !== undefined) {
@@ -384,12 +409,12 @@ export function AiSdkChat({
   }, [sessionId, setMessages, refreshKey])
 
   // 根据官方文档，需要手动管理输入状态
-  const handleFormSubmit = async (_message: any, e: React.FormEvent<HTMLFormElement>) => {
+  const handleFormSubmit = async (message: PromptInputMessage, e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    
+    const userMessage = message.text?.trim() || input.trim()
 
-    if ((!input.trim() && !selectedImage && !screenshotPreview) || status !== "ready") return
-
-    const userMessage = input.trim()
+    if ((!userMessage && !selectedImage && !screenshotPreview) || status !== "ready") return
 
     // 用于在本次消息发送中临时存储截图信息
     let currentScreenshotForMessage = screenshotPreview
@@ -479,10 +504,20 @@ export function AiSdkChat({
       parts: parts
     }
 
+    // 清理之前的占位符
     clearAssistantPlaceholder()
 
-    const assistantPlaceholderId = createTempId()
+    // 手动添加用户消息(立即显示)
+    const userMessageId = createTempId()
+    const userMessageObject = {
+      id: userMessageId,
+      role: "user" as const,
+      parts: parts,
+      createdAt: new Date()
+    }
 
+    // 创建 AI 占位符
+    const assistantPlaceholderId = createTempId()
     const assistantPlaceholderMessage = {
       id: assistantPlaceholderId,
       role: "assistant" as const,
@@ -498,8 +533,10 @@ export function AiSdkChat({
 
     pendingAssistantIdRef.current = assistantPlaceholderId
 
+    // 同时添加用户消息和AI占位符
     setMessages((prev: any[]) => [
       ...prev,
+      userMessageObject,
       assistantPlaceholderMessage
     ])
 
@@ -861,7 +898,7 @@ export function AiSdkChat({
               placeholder={selectedImage ? "Describe what you want to know about this image..." : t("AISDKCHAT.input-message")}
             />
           </PromptInputBody>
-          <PromptInputToolbar>
+          <PromptInputFooter>
             <PromptInputTools>
               <PromptInputActionMenu open={actionMenuOpen} onOpenChange={setActionMenuOpen}>
                 <PromptInputActionMenuTrigger variant={enableWebSearch ? "outline" : "ghost"}>
@@ -957,7 +994,7 @@ export function AiSdkChat({
               disabled={(!input.trim() && !selectedImage) || status !== "ready"}
               status={status}
             />
-          </PromptInputToolbar>
+          </PromptInputFooter>
         </PromptInput>
 
         {/* Tavily API Key 配置 Dialog */}

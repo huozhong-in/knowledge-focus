@@ -787,7 +787,7 @@ class DBManager:
                         "model_identifier": VLM_MODEL,
                         "display_name": "Qwen3-VL 4B (3-bit)", 
                         "capabilities_json": [ModelCapability.VISION.value, ModelCapability.TEXT.value, ModelCapability.STRUCTURED_OUTPUT.value, ModelCapability.TOOL_USE.value],
-                        "max_context_length": 256*1024,
+                        "max_context_length": 262144,
                         "max_output_tokens": 1024,
                         "is_enabled": True,
                     }

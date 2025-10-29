@@ -3,17 +3,18 @@
 """
 import requests
 import json
+from openai import AsyncOpenAI, OpenAI
 
 def test_basic():
     """最基本的测试"""
-    url = "http://127.0.0.1:60315/v1/chat/completions"
+    url = "http://127.0.0.1:60316/v1/chat/completions"
     
     payload = {
         "model": "qwen3-vl-4b",
         "messages": [
-            {"role": "user", "content": "Say hello"}
+            {"role": "user", "content": "Hi, how are you doing today?"}
         ],
-        "max_tokens": 20,
+        "max_tokens": 512,
         "temperature": 0.7,
         "stream": False
     }
@@ -30,7 +31,7 @@ def test_basic():
         
         print(f"\n响应状态码: {response.status_code}")
         print(f"响应头: {dict(response.headers)}")
-        print(f"\n响应体:")
+        print("\n响应体:")
         
         if response.status_code == 200:
             result = response.json()
@@ -48,7 +49,52 @@ def test_basic():
         traceback.print_exc()
         return False
 
+async def run_openai_sdk_async_test():
+    """使用 OpenAI SDK 测试"""
+    print("=" * 80)
+    print("使用 OpenAI SDK 测试")
+    print("=" * 80)
+    
+    client = AsyncOpenAI(base_url="http://127.0.0.1:60316/v1", api_key="test-api-key")
+    response = await client.chat.completions.create(
+        model="qwen3-vl-4b",
+        messages=[
+            {"role": "user", "content": "说说拜占庭将军问题"}
+        ],
+        max_tokens=512,
+        temperature=0.7,
+        stream=True
+    )
+    print("\n响应流:")
+    async for chunk in response:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+        # print(chunk.model_dump_json(), flush=True)  # 打印完整的 chunk JSON 数据
+    print("\n\n✅ SDK 测试完成！")
+
+def run_openai_sdk_sync_test():
+    """使用 OpenAI SDK 测试（同步版）"""
+    print("=" * 80)
+    print("使用 OpenAI SDK 测试（同步版）")
+    print("=" * 80)
+    
+    client = OpenAI(base_url="http://127.0.0.1:60316/v1", api_key="test-api-key")
+    response = client.chat.completions.create(
+        model="qwen3-vl-4b",
+        messages=[
+            {"role": "user", "content": "说说拜占庭将军问题"}
+        ],
+        max_tokens=512,
+        temperature=0.7,
+        stream=False
+    )
+    print(response.model_dump_json(indent=2, ensure_ascii=False))
+
 if __name__ == "__main__":
-    import sys
-    success = test_basic()
-    sys.exit(0 if success else 1)
+    # import sys
+    # success = test_basic()
+    # sys.exit(0 if success else 1)
+    
+    import asyncio
+    asyncio.run(run_openai_sdk_async_test())
+    
+    # run_openai_sdk_sync_test()

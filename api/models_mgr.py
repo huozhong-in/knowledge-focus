@@ -21,7 +21,7 @@ from pydantic_ai.messages import (
     FinalResultEvent,
 )
 from pydantic_ai.exceptions import UsageLimitExceeded
-# from pydantic_ai.usage import UsageLimits
+from pydantic_ai.usage import UsageLimits
 from model_config_mgr import ModelConfigMgr, ModelUseInterface
 from tool_provider import ToolProvider
 from memory_mgr import MemoryMgr
@@ -31,7 +31,7 @@ from tqdm import tqdm
 from mlx_embeddings.utils import load as load_embedding_model
 import mlx.core as mx
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 
 # 定义一个可以在运行时创建的 BridgeProgressReporter 类
 def create_bridge_progress_reporter(bridge_events, model_name):
@@ -687,7 +687,14 @@ Generate a title that best represents what this conversation will be about. Avoi
                 return None
 
             # 使用 agent.iter() 方法来逐个输出流中每个节点
-            async with agent.iter(user_prompt=user_prompt_final, deps=self.engine) as run:
+            async with agent.iter(
+                user_prompt=user_prompt_final, 
+                deps=self.engine,
+                usage_limits=UsageLimits(output_tokens_limit=512),
+                ) as run:
+                # 记录初始状态
+                logger.info("[Token Usage] Agent run started")
+                
                 async for node in run:
                     # logger.info(f"Processing node type: {type(node)}")
                     if Agent.is_user_prompt_node(node):
@@ -704,7 +711,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                             async for event in request_stream:
                                 # logger.info(f"Received event type: {type(event)}")
                                 if isinstance(event, PartStartEvent):
-                                    logger.info("Processing PartStartEvent")
+                                    # logger.info("Processing PartStartEvent")
                                     # 在AI SDK v5中，我们不需要发送通用的start事件
                                     # 文本部分会在TextPartDelta事件中自动开始
                                     # logger.info("Skipping PartStartEvent - will start parts when content arrives")
@@ -825,6 +832,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     logger.error(f"Error in final result text streaming: {e}")
                             else:
                                 logger.info("final_result_found is False, skipping text streaming")
+
                     elif Agent.is_call_tools_node(node):
                         # 工具调用节点 - 处理工具的调用和响应
                         async with node.stream(run.ctx) as handle_stream:
@@ -874,10 +882,11 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     }
                                     yield f'data: {json.dumps(data)}\n\n'
                     elif Agent.is_end_node(node):
-                        # 结束最后的部分（如果有的话）
+                        # 结束最后的部分(如果有的话)
                         end_event = end_current_part()
                         if end_event:
                             yield end_event
+                        
                         
                         # 结束节点 - agent 运行完成
                         data = {
@@ -888,7 +897,17 @@ Generate a title that best represents what this conversation will be about. Avoi
                         break
                     else:
                         # 其他未处理的节点类型
-                        logging.warning(f"Unhandled node type: {type(node)}")
+                        logger.warning(f"Unhandled node type: {type(node)}")
+                
+                # 记录最终的 token usage
+                final_usage = run.usage()
+                logger.info(
+                    f"[Token Usage] stream_agent_chat_v5 completed - "
+                    f"Input tokens: {final_usage.input_tokens}, "
+                    f"Output tokens: {final_usage.output_tokens}, "
+                    f"Total tokens: {final_usage.total_tokens}, "
+                    f"Requests: {final_usage.requests}"
+                )
             
         except Exception as e:
             logger.error(f"Error in stream_agent_chat_v5_compatible: {e}")
@@ -1305,7 +1324,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                             async for event in request_stream:
                                 # logger.info(f"Received event type: {type(event)}")
                                 if isinstance(event, PartStartEvent):
-                                    logger.info("Processing PartStartEvent")
+                                    # logger.info("Processing PartStartEvent")
                                     # 在AI SDK v5中，我们不需要发送通用的start事件
                                     # 文本部分会在TextPartDelta事件中自动开始
                                     # logger.info("Skipping PartStartEvent - will start parts when content arrives")
@@ -1475,10 +1494,20 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     }
                                     yield f'data: {json.dumps(data)}\n\n'
                     elif Agent.is_end_node(node):
-                        # 结束最后的部分（如果有的话）
+                        # 结束最后的部分(如果有的话)
                         end_event = end_current_part()
                         if end_event:
                             yield end_event
+                        
+                        # 记录最终的 token usage
+                        final_usage = run.usage()
+                        logger.info(
+                            f"[Token Usage] coreading_v5 completed - "
+                            f"Input tokens: {final_usage.input_tokens}, "
+                            f"Output tokens: {final_usage.output_tokens}, "
+                            f"Total tokens: {final_usage.total_tokens}, "
+                            f"Requests: {final_usage.requests}"
+                        )
                         
                         # 结束节点 - agent 运行完成
                         data = {
@@ -1489,7 +1518,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                         break
                     else:
                         # 其他未处理的节点类型
-                        logging.warning(f"Unhandled node type: {type(node)}")
+                        logger.warning(f"Unhandled node type: {type(node)}")
             
         except Exception as e:
             logger.error(f"Error in coreading_v5_compatible: {e}")
