@@ -115,7 +115,7 @@ class ToolProvider:
         return tools
     
     def _load_tool_function(self, tool_name: str) -> Optional[Callable]:
-        """根据工具ID动态加载工具函数"""
+        """根据工具名字(唯一)动态加载工具函数"""
         try:
             # 从数据库获取工具信息
             with Session(self.engine) as session:
@@ -411,19 +411,19 @@ if __name__ == "__main__":
     #     print(f" - {tool.__name__}: {tool.__doc__}")
     
     # 为指定会话获取工具列表
-    # tools = tool_provider.get_tools_for_session(session_id=1)
-    # print("聊天会话ID对应的工具列表:")
-    # for tool in tools:
-    #     print(f" - {tool.__name__}: {tool.__doc__}")
+    tools = tool_provider.get_tools_for_session(session_id=14)
+    print("聊天会话ID对应的工具列表:")
+    for tool in tools:
+        print(f" - {tool.__name__}: {tool.__doc__}")
 
     # # 获取聊天会话ID对应的场景system_prompt
     # system_prompt = tool_provider.get_session_scenario_system_prompt(session_id=1)
     # print(f"聊天会话ID对应的场景system_prompt: {system_prompt}")
 
-    # 测试MCP工具的api_key设置和获取
-    tool_name = "search_use_tavily"
-    print(f"原始MCP工具 {tool_name} 的api_key:", tool_provider.get_mcp_tool_api_key(tool_name))
-    success = tool_provider.set_mcp_tool_api_key(tool_name, "test_api_key_123")
-    print(f"设置MCP工具 {tool_name} 的api_key结果:", success)
-    print(f"更新后MCP工具 {tool_name} 的api_key:", tool_provider.get_mcp_tool_api_key(tool_name))
+    # # 测试MCP工具的api_key设置和获取
+    # tool_name = "search_use_tavily"
+    # print(f"原始MCP工具 {tool_name} 的api_key:", tool_provider.get_mcp_tool_api_key(tool_name))
+    # success = tool_provider.set_mcp_tool_api_key(tool_name, "test_api_key_123")
+    # print(f"设置MCP工具 {tool_name} 的api_key结果:", success)
+    # print(f"更新后MCP工具 {tool_name} 的api_key:", tool_provider.get_mcp_tool_api_key(tool_name))
     
