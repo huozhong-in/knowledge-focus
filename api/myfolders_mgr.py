@@ -106,7 +106,7 @@ class MyFoldersManager:
             if new_records:
                 session.add_all(new_records)
                 session.commit()
-                logger.info(f"已初始化 {len(new_records)} 个默认文件夹")
+                logger.info(f"Initialized {len(new_records)} default directories")
             
             return len(new_records)
     
@@ -235,7 +235,7 @@ class MyFoldersManager:
                 from screening_mgr import ScreeningManager
                 screening_mgr = ScreeningManager(self.engine)
                 deleted_count = screening_mgr.delete_screening_results_by_path_prefix(deleted_path)
-                logger.info(f"已删除文件夹'{deleted_path}'相关的 {deleted_count} 条粗筛记录")
+                logger.info(f"Deleted {deleted_count} preliminary screening records related to the folder '{deleted_path}'")
             except Exception as e:
                 logger.error(f"删除文件夹'{deleted_path}'相关的粗筛记录时出错: {str(e)}")
                 # 继续执行删除目录操作，即使清理粗筛记录失败

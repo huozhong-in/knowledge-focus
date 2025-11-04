@@ -36,7 +36,7 @@ class ScreeningManager:
             # 检查文件内容是否有变化
             if existing_record.file_hash != file_hash:
                 # 文件内容已变化，需要重新处理
-                logger.info(f"文件内容已变化: {file_path}, 旧哈希: {existing_record.file_hash}, 新哈希: {file_hash}, 更新记录并重置为pending")
+                logger.info(f"File content has changed: {file_path}, Old hash: {existing_record.file_hash}, New hash: {file_hash}, Updating record and resetting to pending")
                 update_data = data.copy()
                 update_data["status"] = FileScreenResult.PENDING.value  # 重置为pending状态
                 return self.update_screening_result(existing_record.id, update_data)
@@ -44,12 +44,12 @@ class ScreeningManager:
                 # 文件内容未变化，检查是否需要更新其他字段（如task_id）
                 if data.get("task_id") and existing_record.task_id != data.get("task_id"):
                     # 需要更新task_id但保持原有状态
-                    logger.info(f"文件内容未变化但需要更新task_id: {file_path}")
+                    logger.info(f"Task ID needs to be updated but file content has not changed: {file_path}")
                     update_data = {"task_id": data.get("task_id")}
                     return self.update_screening_result(existing_record.id, update_data)
                 else:
                     # 完全无需更新
-                    logger.info(f"文件内容未变化且无需更新: {file_path}, 保持现有记录")
+                    logger.info(f"File content has not changed and no update is needed: {file_path}, Keeping existing record")
                     return existing_record
         
         # 将字典转换为FileScreeningResult对象
@@ -75,13 +75,13 @@ class ScreeningManager:
                 session.add(result)
                 session.commit()
                 session.refresh(result)
-                
-                logger.info(f"添加文件粗筛结果成功: {result.file_path}")
+
+                logger.info(f"Successfully added file screening result: {result.file_path}")
                 return result
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"添加文件粗筛结果失败: {str(e)}")
+                logger.error(f"Failed to add file screening result: {str(e)}")
                 return None
     
     def add_batch_screening_results(self, results_data: List[Dict[str, Any]], task_id: int = None) -> Dict[str, Any]:
@@ -174,14 +174,14 @@ class ScreeningManager:
             with Session(self.engine) as session:
                 results = session.exec(statement).all()
                 if results:
-                    logger.info(f"获取到 {len(results)} 个待处理粗筛结果")
+                    logger.info(f"Retrieved {len(results)} pending screening results")
                     return results
                 else:
-                    logger.info("当前没有待处理的粗筛结果")
+                    logger.info("No pending screening results found")
                     return []
             
         except Exception as e:
-            logger.error(f"获取待处理粗筛结果失败: {str(e)}")
+            logger.error(f"Failed to retrieve pending screening results: {str(e)}")
             return []
     
     def get_results_by_category(self, category_id: int, limit: int = 100) -> List[FileScreeningResult]:
@@ -298,14 +298,14 @@ class ScreeningManager:
         if "status" in data and data["status"] == FileScreenResult.PENDING.value:
             # 明确设置为pending
             result.status = FileScreenResult.PENDING.value
-            logger.info(f"文件粗筛结果状态由 {original_status} 明确重置为 {result.status}")
+            logger.info(f"File screening result status explicitly reset from {original_status} to {result.status}")
         
         # 如果是文件路径变更的情况（如文件重命名），需要重新进行精炼处理
         # 因为文件名包含的语义信息可能影响聚类结果
         elif result.status != FileScreenResult.PENDING.value and "file_path" in data and data["file_path"] != result.file_path:
             # 对于文件名/路径变更的情况，需要重新处理
             result.status = FileScreenResult.PENDING.value
-            logger.info(f"检测到文件路径变更，将状态由 {original_status} 重置为 {result.status}")
+            logger.info(f"Detected file path change, resetting status from {original_status} to {result.status}")
         
         # 更新时间戳
         result.updated_at = datetime.now()
@@ -314,13 +314,13 @@ class ScreeningManager:
                 session.add(result)
                 session.commit()
                 session.refresh(result)
-                
-                logger.info(f"更新文件粗筛结果成功: ID {result_id}")
+
+                logger.info(f"Successfully updated file screening result: ID {result_id}")
                 return result
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"更新文件粗筛结果失败: {str(e)}")
+                logger.error(f"Failed to update file screening result: {str(e)}")
                 return None
     
     def update_status(self, result_id: int, status: FileScreenResult, error_message: str = None) -> bool:
@@ -337,7 +337,7 @@ class ScreeningManager:
         
         result = self.get_by_id(result_id)
         if not result:
-            logger.warning(f"更新粗筛结果状态失败: ID {result_id} 不存在")
+            logger.warning(f"Failed to update screening result status: ID {result_id} does not exist")
             return False
         
         result.status = status.value
@@ -349,13 +349,13 @@ class ScreeningManager:
             try:
                 session.add(result)
                 session.commit()
-                
-                logger.info(f"更新文件粗筛结果状态成功: ID {result_id} -> {status.value}")
+
+                logger.info(f"Successfully updated file screening result status: ID {result_id} -> {status.value}")
                 return True
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"更新文件粗筛结果状态失败: {str(e)}")
+                logger.error(f"Failed to update file screening result status: {str(e)}")
                 return False
     
     def bulk_update_status(self, result_ids: List[int], status: FileScreenResult) -> Dict[str, Any]:
@@ -381,12 +381,12 @@ class ScreeningManager:
                 session.commit()
 
                 success_count = len(result_ids)  # 假设全部成功
-                logger.info(f"批量更新文件粗筛结果状态成功: {success_count} 条记录")
+                logger.info(f"Successfully batch updated file screening result status: {success_count} records")
                     
             except Exception as e:
                 session.rollback()
                 failed_count = len(result_ids)
-                logger.error(f"批量更新文件粗筛结果状态失败: {str(e)}")
+                logger.error(f"Failed to batch update file screening result status: {str(e)}")
         
         return {
             "success": success_count,
@@ -404,18 +404,18 @@ class ScreeningManager:
         """
         result = self.get_by_id(result_id)
         if not result:
-            logger.warning(f"删除粗筛结果失败: ID {result_id} 不存在")
+            logger.warning(f"Failed to delete screening result: ID {result_id} does not exist")
             return False
         with Session(self.engine) as session:
             try:
                 session.delete(result)
                 session.commit()
-                logger.info(f"删除文件粗筛结果成功: ID {result_id}")
+                logger.info(f"Successfully deleted file screening result: ID {result_id}")
                 return True
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"删除文件粗筛结果失败: {str(e)}")
+                logger.error(f"Failed to delete file screening result: {str(e)}")
                 return False
     
     def clear_old_results(self, days: int = 30) -> int:
@@ -441,12 +441,12 @@ class ScreeningManager:
                 session.commit()
                 
                 deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
-                logger.info(f"清理旧粗筛结果成功: 删除了 {deleted_count} 条记录")
+                logger.info(f"Successfully cleaned up old screening results: Deleted {deleted_count} records")
                 return deleted_count
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"清理旧粗筛结果失败: {str(e)}")
+                logger.error(f"Failed to clean up old screening results: {str(e)}")
                 return 0
 
     def delete_screening_results_by_path_prefix(self, path_prefix: str) -> int:
@@ -461,7 +461,7 @@ class ScreeningManager:
         with Session(self.engine) as session:
             try:
                 if not path_prefix:
-                    logger.warning("路径前缀为空，无法执行删除操作")
+                    logger.warning("Path prefix is empty, unable to perform delete operation")
                     return 0
                     
                 # 标准化路径（统一分隔符、去除多余的分隔符等）
@@ -479,7 +479,7 @@ class ScreeningManager:
                 if matching_count > 0:
                     # 记录前5个匹配的路径，帮助调试
                     sample_paths = [row[1] for row in matching_rows[:5]]
-                    logger.info(f"找到 {matching_count} 条匹配路径 '{normalized_path}' 的粗筛结果记录，样例: {sample_paths}")
+                    logger.info(f"Found {matching_count} matching screening result records for path '{normalized_path}', examples: {sample_paths}")
                     
                     # 获取所有匹配的ID
                     ids_to_delete = [row[0] for row in matching_rows]
@@ -495,16 +495,16 @@ class ScreeningManager:
                         session.commit()
                         batch_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
                         total_deleted += batch_deleted
-                        
-                    logger.info(f"成功删除了 {total_deleted} 条匹配路径 '{normalized_path}' 的粗筛结果记录")
+
+                    logger.info(f"Successfully deleted {total_deleted} matching screening result records for path '{normalized_path}'")
                     return total_deleted
                 else:
-                    logger.info(f"未找到匹配路径 '{normalized_path}' 的粗筛结果记录")
+                    logger.info(f"Failed to find matching path '{normalized_path}' screening result records")
                     return 0
                 
             except Exception as e:
                 session.rollback()
-                logger.error(f"删除路径前缀为'{path_prefix}'的粗筛结果失败: {str(e)}")
+                logger.error(f"Failed to delete screening results with path prefix '{path_prefix}': {str(e)}")
                 return 0
 
     def find_similar_files_by_hash(self, file_hash: str, exclude_path: str = None, limit: int = 10) -> List[FileScreeningResult]:
@@ -832,7 +832,7 @@ class ScreeningManager:
         if not normalized_path.endswith("/"):
             normalized_path = f"{normalized_path}/"
             
-        logger.info(f"黑名单文件夹添加操作，开始清理路径 '{normalized_path}' 下的粗筛结果")
+        logger.info(f"Blacklist folder added, starting to clean up screening results under path '{normalized_path}'")
         
         # 直接使用SQL执行，可以更精确地控制LIKE语句
         # 转义LIKE中的特殊字符: % 和 _
@@ -844,7 +844,7 @@ class ScreeningManager:
             count_result = session.exec(count_query, params={"path_prefix": escaped_path}).scalar()
         
         if count_result > 0:
-            logger.info(f"找到 {count_result} 条匹配路径 '{normalized_path}' 的粗筛结果记录，准备删除")
+            logger.info(f"Found {count_result} matching screening result records for path '{normalized_path}', preparing to delete")
             
             # 对于大量记录，使用分批删除
             if count_result > 10000:
@@ -867,9 +867,9 @@ class ScreeningManager:
                         session.commit()
                         batch_deleted = result.rowcount if hasattr(result, 'rowcount') else 0
                         total_deleted += batch_deleted
-                        logger.info(f"已删除第 {i//batch_size + 1} 批，共 {batch_deleted} 条记录")
-                
-                logger.info(f"文件夹 {normalized_path} 变为黑名单，已分批清理 {total_deleted} 条相关粗筛结果")
+                        logger.info(f"Successfully deleted batch {i//batch_size + 1}: {batch_deleted} records")
+
+                logger.info(f"Folder {normalized_path} has been blacklisted, successfully cleaned up {total_deleted} related screening results")
                 return total_deleted
             else:
                 # 对于少量记录，直接执行删除
@@ -879,10 +879,10 @@ class ScreeningManager:
                     session.commit()
 
                     deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
-                    logger.info(f"文件夹 {normalized_path} 变为黑名单，已清理 {deleted_count} 条相关粗筛结果")
+                    logger.info(f"Folder {normalized_path} has been blacklisted, successfully cleaned up {deleted_count} related screening results")
                     return deleted_count
         else:
-            logger.info(f"文件夹 {normalized_path} 变为黑名单，未找到需要清理的粗筛结果")
+            logger.info(f"Folder {normalized_path} has been blacklisted, failed to find related screening results")
             return 0
             
         
@@ -914,9 +914,9 @@ if __name__ == "__main__":
 
     # 测试取得所有记录数
     total_count = mgr.get_all_results_count()
-    logger.info(f"粗筛结果总数: {total_count}")
+    logger.info(f"Total screening results count: {total_count}")
 
     # test delete_screening_results_by_path_prefix()
     folder_path = "/Users/dio/Downloads/CleanShot 2025-09-03 at 11.42.17@2x.png"
     deleted_count = mgr.delete_screening_results_by_path_prefix(folder_path)
-    logger.info(f"删除文件夹 {folder_path} 下的粗筛结果: {deleted_count} 条")
+    logger.info(f"Deleted screening results under folder {folder_path}: {deleted_count} records")

@@ -54,9 +54,9 @@ class TaggingMgr:
             self._tag_name_cache = {tag.name: tag.id for tag in tags}
             self._tag_id_cache = {tag.id: tag for tag in tags}
             self._cache_timestamp = time.time()
-            logger.info(f"标签缓存预热成功，共加载 {len(tags)} 个标签")
+            logger.info(f"Tag cache warmed successfully, loaded {len(tags)} tags in total")
         except Exception as e:
-            logger.error(f"标签缓存预热失败: {e}")
+            logger.error(f"Failed to warm up tag cache: {e}")
     
     def _refresh_cache_if_needed(self) -> None:
         """检查缓存是否过期，需要刷新"""
@@ -529,7 +529,7 @@ class TaggingMgr:
                         session.exec(sql)
                 
                 session.commit()
-                logger.info(f"成功重建FTS索引，共处理 {len(file_results)} 条记录")
+                logger.info(f"Successfully rebuilt FTS index, processed {len(file_results)} records in total")
                 return True
         except Exception as e:
             logger.error(f"重建FTS索引失败: {e}")

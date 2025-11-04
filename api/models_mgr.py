@@ -520,7 +520,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 准备工具
             tools = [Tool(tool, takes_ctx=True) for tool in self.tool_provider.get_tools_for_session(session_id)]
             count_tokens_tools = self.memory_mgr.calculate_tools_tokens(tools)
-            logger.info(f"当前工具数: {len(tools)}, tools token数: {count_tokens_tools}")
+            logger.info(f"Current tool count: {len(tools)}, tools token count: {count_tokens_tools}")
             
             # 构建系统prompt
             system_prompt = ["You are a helpful assistant."]
@@ -531,7 +531,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             if len(tools) > 0:
                 system_prompt.append("Search Tavily for the given query and return the results.")
             count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
-            logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
+            logger.info(f"Current system prompt token count: {count_tokens_system_prompt}")
             
             # 处理用户输入 - 兼容AI SDK v5的parts格式
             user_prompt: List[str] = []
@@ -558,7 +558,7 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     image_files.append(file_path)
                                     # logger.info(f'图片文件: {media_type} {filename} {file_path}')
                                 else:
-                                    logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
+                                    logger.info(f'Unknown file type: {media_type} {filename} {file_url}')
                             else:
                                 logger.info(f'Unknown part type: {part.get("type", "unknown")}')
                     # 备用：检查传统的content字段
@@ -575,7 +575,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 构建包含文本和图片的消息内容
             if image_files:
                 # 如果有图片，需要构建多模态消息
-                logger.info(f"处理 {len(image_files)} 个图片文件: {image_files}")
+                logger.info(f"Processing {len(image_files)} image files: {image_files}")
                 
                 # 构建pydantic-ai格式的用户输入 - 使用List[Any]支持BinaryContent
                 user_prompt_multimodal: List[Any] = []
@@ -603,12 +603,12 @@ Generate a title that best represents what this conversation will be about. Avoi
                                 media_type=compressed_mime
                             )
                             user_prompt_multimodal.append(binary_content)
-                            logger.info(f"成功添加压缩图片: {image_path} ({len(compressed_data)} bytes, {compressed_mime})")
+                            logger.info(f"Successfully added compressed image: {image_path} ({len(compressed_data)} bytes, {compressed_mime})")
                         else:
-                            logger.warning(f"图片文件不存在: {image_path}")
+                            logger.warning(f"Image file does not exist: {image_path}")
                     except Exception as e:
-                        logger.error(f"处理图片文件失败: {image_path}, 错误: {e}")
-                
+                        logger.error(f"Failed to process image file: {image_path}, error: {e}")
+
                 user_prompt_final = user_prompt_multimodal
             else:
                 # 只有文本的情况，也用list保持一致
@@ -625,27 +625,27 @@ Generate a title that best represents what this conversation will be about. Avoi
             #     logger.info(f"最终用户提示词: {user_prompt_final[:200]}...")  # 只显示前200字符
 
             count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)]))
-            logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
+            logger.info(f"Current user prompt token count: {count_tokens_user_prompt}")
             
             # 留给会话历史记录的token数
             available_tokens = max_context_length - max_output_tokens - count_tokens_tools - count_tokens_system_prompt - count_tokens_user_prompt
-            logger.info(f"当前可用历史消息token数: {available_tokens}")
+            logger.info(f"Current available history message token count: {available_tokens}")
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
             
             # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
             user_query = "\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)])  # 合并用户输入作为查询
             rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
             if rag_context:
-                user_prompt_final = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
-                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
+                user_prompt_final = ["## Relevant Knowledge Background:"] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
+                logger.info(f"RAG retrieved {len(rag_sources)} relevant fragments")
                 
                 # 通过桥接器发送RAG数据到知识观察窗
                 self._send_rag_to_observation_window(rag_sources, user_query)
             
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
-                user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
-            logger.info(f"当前用户提示词: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
+                user_prompt_final = ["## Chat History: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
+            logger.info(f"Current user prompt: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
             
             # 创建agent
             agent = Agent(
@@ -1057,12 +1057,12 @@ Generate a title that best represents what this conversation will be about. Avoi
                     'metadata': result.get('metadata', {})
                 }
                 
-                context_parts.append(f"**来源**: {result.get('file_path', '未知文件')}\n{content}")
+                context_parts.append(f"**Source**: {result.get('file_path', 'Unknown file')}\n{content}")
                 sources.append(source_info)
             
             rag_context = "\n\n".join(context_parts)
             
-            logger.info(f"RAG成功检索 {len(sources)} 个片段，总长度: {len(rag_context)} 字符")
+            logger.info(f"RAG successfully retrieved {len(sources)} fragments, total length: {len(rag_context)} characters")
             return rag_context, sources
             
         except Exception as e:
@@ -1162,7 +1162,7 @@ Generate a title that best represents what this conversation will be about. Avoi
             # 构建系统prompt
             system_prompt = self.tool_provider.get_session_scenario_system_prompt(session_id)
             count_tokens_system_prompt = self.memory_mgr.calculate_string_tokens("\n".join(system_prompt))
-            logger.info(f"当前系统prompt token数: {count_tokens_system_prompt}")
+            logger.info(f"Current system prompt token count: {count_tokens_system_prompt}")
             
             # 处理用户输入 - 兼容AI SDK v5的parts格式
             user_prompt: List[str] = []
@@ -1187,9 +1187,9 @@ Generate a title that best represents what this conversation will be about. Avoi
                                     else:
                                         file_path = file_url
                                     image_files.append(file_path)
-                                    logger.info(f'图片文件: {media_type} {filename} {file_path}')
+                                    logger.info(f'Image file: {media_type} {filename} {file_path}')
                                 else:
-                                    logger.info(f'未知文件类型: {media_type} {filename} {file_url}')
+                                    logger.info(f'Unknown file type: {media_type} {filename} {file_url}')
                             else:
                                 logger.info(f'Unknown part type: {part.get("type", "unknown")}')
                     # 备用：检查传统的content字段
@@ -1239,35 +1239,35 @@ Generate a title that best represents what this conversation will be about. Avoi
                         user_prompt_multimodal.append(binary_content)
                         # logger.info(f"成功添加图片: {image_path} ({len(image_data)} bytes, {mime_type})")
                     else:
-                        logger.warning(f"图片文件不存在: {image_path}")
+                        logger.warning(f"Image file does not exist: {image_path}")
                 except Exception as e:
-                    logger.error(f"读取图片文件失败: {image_path}, 错误: {e}")
-            
+                    logger.error(f"Failed to read image file: {image_path}, error: {e}")
+
             user_prompt_final = user_prompt_multimodal
             
             count_tokens_user_prompt = self.memory_mgr.calculate_string_tokens("\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)]))
-            logger.info(f"当前用户prompt token数: {count_tokens_user_prompt}")
-            
+            logger.info(f"Current user prompt token count: {count_tokens_user_prompt}")
+
             # 留给会话历史记录的token数
             available_tokens = max_context_length - max_output_tokens - count_tokens_system_prompt - count_tokens_user_prompt
-            logger.info(f"当前可用历史消息token数: {available_tokens}")
+            logger.info(f"Current available history message token count: {available_tokens}")
             chat_history: List[str] = self.memory_mgr.trim_messages_to_fit(session_id, available_tokens)
             
             # RAG：将pin文件关联的知识片段召回并插到用户提示词上方
             user_query = "\n".join([prompt for prompt in user_prompt_final if isinstance(prompt, str)])  # 合并用户输入作为查询
             rag_context, rag_sources = self._get_rag_context(session_id, user_query, available_tokens)
             if rag_context:
-                user_prompt_final = ["## 相关知识背景："] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
-                logger.info(f"RAG检索到 {len(rag_sources)} 个相关片段")
-                
+                user_prompt_final = ["## Related Knowledge Background:"] + [rag_context] + ['\n\n---\n\n'] + user_prompt_final
+                logger.info(f"RAG retrieved {len(rag_sources)} relevant fragments")
+
                 # 通过桥接器发送RAG数据到知识观察窗
                 self._send_rag_to_observation_window(rag_sources, user_query)
             
             # 将会话历史记录插到用户提示词上方
             if chat_history != []:
-                user_prompt_final = ["## 会话历史: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
-            logger.info(f"当前用户提示词: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
-            
+                user_prompt_final = ["## Related Conversation History: "] + chat_history + ['\n\n---\n\n'] + user_prompt_final
+            logger.info(f"Current user prompt: {[prompt for prompt in user_prompt_final if isinstance(prompt, str)]}")
+
             # 创建agent
             agent = Agent(
                 model=model,

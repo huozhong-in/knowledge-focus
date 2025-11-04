@@ -33,7 +33,7 @@ def get_router(get_engine: Engine) -> APIRouter:
         """
         try:
             # 从请求体中提取数据和参数
-            logger.info(f"接收到批量文件粗筛结果，请求体键名: {list(request.keys())}")
+            logger.info(f"Received batch file screening results, request body keys: {list(request.keys())}")
             
             # 适配Rust客户端发送的格式: {data_list: [...], auto_create_tasks: true}
             if "data_list" in request:
@@ -89,7 +89,7 @@ def get_router(get_engine: Engine) -> APIRouter:
                 priority=TaskPriority.MEDIUM,
                 extra_data={"file_count": len(data_list)}
             )
-            logger.info(f"已创建标记任务 ID: {task.id}，准备处理 {len(data_list)} 个文件")
+            logger.info(f"Created tagging task ID: {task.id}, preparing to process {len(data_list)} files")
 
             # 2. 批量添加粗筛结果，并关联 task_id
             result = screening_mgr.add_batch_screening_results(data_list, task_id=task.id)
@@ -282,14 +282,13 @@ def get_router(get_engine: Engine) -> APIRouter:
             
             # 记录操作结果
             if deleted_count > 0:
-                logger.info(f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条")
+                logger.info(f"Successfully deleted screening records for file '{normalized_path}', total {deleted_count} records")
             else:
-                logger.info(f"未找到文件 '{normalized_path}' 的粗筛记录，无需删除")
-            
+                logger.info(f"No screening records found for file '{normalized_path}', no deletion needed")
             return {
                 "success": True,
                 "deleted_count": deleted_count,
-                "message": f"成功删除文件 '{normalized_path}' 的粗筛记录，共 {deleted_count} 条"
+                "message": f"Successfully deleted screening records for file '{normalized_path}', total {deleted_count} records"
             }
             
         except Exception as e:
@@ -299,7 +298,7 @@ def get_router(get_engine: Engine) -> APIRouter:
             return {
                 "success": False,
                 "deleted_count": 0,
-                "message": f"删除失败: {str(e)}"
+                "message": f"Delete failed: {str(e)}"
             }
     
     @router.get("/file-screening/total")

@@ -116,7 +116,7 @@ def get_router(get_engine: Engine) -> APIRouter:
         前端执行完工具后，通过此API将结果返回给Python后端
         """
         try:
-            logger.info(f"收到工具响应: call_id={response.call_id}, success={response.success}")
+            logger.info(f"Received tool response: call_id={response.call_id}, success={response.success}")
             
             # 将响应传递给工具调用器
             g_backend_tool_caller.handle_tool_response(response.model_dump())
@@ -162,7 +162,7 @@ def get_router(get_engine: Engine) -> APIRouter:
             # 提取除tool_name之外的所有参数作为kwargs
             kwargs = {k: v for k, v in test_request.items() if k != "tool_name"}
             
-            logger.info(f"测试工具调用: {tool_name}, 参数: {kwargs}")
+            logger.info(f"Testing tool call: {tool_name}, parameters: {kwargs}")
             
             # 根据工具名称调用对应的Python包装函数，其内部会利用“工具通道”调用前端工具
             if tool_name == "handle_pdf_reading":

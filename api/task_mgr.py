@@ -43,7 +43,7 @@ class TaskManager:
         Returns:
             添加的任务对象
         """
-        logger.info(f"添加任务: {task_name}, 类型: {task_type.value}, 优先级: {priority.value}")
+        logger.info(f"Adding task: {task_name}, Type: {task_type.value}, Priority: {priority.value}")
         
         task = Task(
             task_name=task_name,
@@ -115,7 +115,7 @@ class TaskManager:
                 task.updated_at = datetime.now()
                 session.add(task)
                 session.commit()
-                logger.info(f"高优先级任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
+                logger.info(f"High-priority task processor locked task: ID={task.id}, Name='{task.task_name}'")
                 return task
             else:
                 return None
@@ -138,7 +138,7 @@ class TaskManager:
                 task.updated_at = datetime.now()
                 session.add(task)
                 session.commit()
-                logger.info(f"普通任务处理器锁定任务: ID={task.id}, Name='{task.task_name}'")
+                logger.info(f"Regular task processor locked task: ID={task.id}, Name='{task.task_name}'")
                 return task
             else:
                 return None
@@ -156,7 +156,7 @@ class TaskManager:
         Returns:
             更新是否成功
         """
-        logger.info(f"更新任务 {task_id} 状态: {status.name}")
+        logger.info(f"Updating task {task_id} status: {status.name}")
         
         try:
             with Session(self.engine) as session:
@@ -374,9 +374,9 @@ class TaskManager:
             
                 result = task is not None
                 if result:
-                    logger.info(f"文件 {file_path} 在最近{hours}小时内被pin过，最后任务ID: {task.id}")
+                    logger.info(f"The file {file_path} has been pinned successfully within the last {hours} hours, last task ID: {task.id}")
                 else:
-                    logger.info(f"文件 {file_path} 在最近{hours}小时内未被pin过")
+                    logger.info(f"The file {file_path} has not been pinned successfully within the last {hours} hours")
                 return result
             
         except Exception as e:

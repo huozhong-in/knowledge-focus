@@ -71,7 +71,7 @@ def kill_process_on_port_windows(port):
                 except psutil.NoSuchProcess:
                     process_name = "未知进程"
                 
-                logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
+                logger.info(f"Port {port} is occupied by process {pid} ({process_name}), attempting to terminate...")
 
                 # 终止所有子进程
                 kill_all_child_processes(pid)
@@ -81,7 +81,7 @@ def kill_process_on_port_windows(port):
                 kill_result = subprocess.run(kill_cmd, shell=True)
                 
                 if kill_result.returncode == 0:
-                    logger.info(f"已终止占用端口 {port} 的进程")
+                    logger.info(f"Successfully terminated the process occupying port {port}")
                     # 等待短暂时间确保端口释放
                     import time
                     time.sleep(1)
@@ -120,7 +120,7 @@ def kill_process_on_port_unix(port):
             except psutil.NoSuchProcess:
                 process_name = "未知进程"
             
-            logger.info(f"发现端口 {port} 被进程 {pid} ({process_name}) 占用，正在终止...")
+            logger.info(f"Port {port} is occupied by process {pid} ({process_name}), attempting to terminate...")
             
             # 终止所有子进程
             kill_all_child_processes(pid)
@@ -130,26 +130,26 @@ def kill_process_on_port_unix(port):
             kill_result = subprocess.run(kill_cmd, shell=True)
             
             if kill_result.returncode == 0:
-                logger.info(f"已终止占用端口 {port} 的进程")
+                logger.info(f"Successfully terminated the process occupying port {port}")
                 return True
             else:
                 # 如果普通终止失败，可以尝试强制终止
-                logger.info("进程没有响应终止信号，尝试强制终止...")
+                logger.info("The process did not respond to the termination signal, attempting to force terminate...")
                 force_kill_cmd = f"kill -9 {pid}"
                 force_kill_result = subprocess.run(force_kill_cmd, shell=True)
                 
                 if force_kill_result.returncode == 0:
-                    logger.info(f"已强制终止占用端口 {port} 的进程")
+                    logger.info(f"Successfully forced termination of the process occupying port {port}")
                     return True
                 else:
-                    logger.info(f"无法终止进程 {pid}，可能需要管理员权限")
+                    logger.info(f"Unable to terminate process {pid}, administrative privileges might be required.")
         else:
             # 如果lsof没有找到占用端口的进程
             # 尝试查找并终止所有Python进程中的潜在子进程
             kill_orphaned_processes("python", "task_processor")
             return False
     except Exception as e:
-        logger.info(f"检查端口时发生错误: {str(e)}")
+        logger.info(f"Error occurred while checking the port: {str(e)}")
     
     return False
 
@@ -162,14 +162,14 @@ def kill_all_child_processes(parent_pid):
         for child in children:
             try:
                 # 记录子进程信息
-                logger.info(f"终止子进程: {child.pid} ({child.name()})")
+                logger.info(f"Terminating child process: {child.pid} ({child.name()})")
                 # 先尝试正常终止
                 child.terminate()
             except psutil.NoSuchProcess:
                 pass
             try:
                 # 如果正常终止失败，强制终止
-                logger.info(f"强制终止子进程: {child.pid}")
+                logger.info(f"Forcefully terminating child process: {child.pid}")
                 child.kill()
             except psutil.NoSuchProcess:
                     logger.error(f"无法终止子进程 {child.pid}")
@@ -196,7 +196,7 @@ def kill_orphaned_processes(process_name, function_name=None):
         function_name: 可选参数，进程中可能包含的函数名 (例如: "task_processor")
     """
     try:
-        logger.info(f"查找可能的孤立 {process_name} 进程（函数: {function_name}）...")
+        logger.info(f"Searching for potential orphaned {process_name} processes (function: {function_name})...")
         count = 0
         current_pid = os.getpid()
         
@@ -223,20 +223,20 @@ def kill_orphaned_processes(process_name, function_name=None):
                             'knowledge-focus',
                             'main.py --host 127.0.0.1'
                         ]):
-                            logger.info(f"发现可能的孤立进程: PID={proc.info['pid']}, PPID={proc.info['ppid']}, CMD={cmdline_str}")
+                            logger.info(f"Found a potential orphaned process: PID={proc.info['pid']}, PPID={proc.info['ppid']}, CMD={cmdline_str}")
                             
                             # 先尝试优雅终止，等待2秒
                             try:
                                 proc.terminate()
                                 proc.wait(timeout=2)
                                 count += 1
-                                logger.info(f"优雅终止进程 {proc.info['pid']} 成功")
+                                logger.info(f"Gracefully terminated process {proc.info['pid']} successfully")
                             except psutil.TimeoutExpired:
                                 # 如果优雅终止超时，强制终止
                                 try:
                                     proc.kill()
                                     count += 1
-                                    logger.info(f"强制终止进程 {proc.info['pid']} 成功")
+                                    logger.info(f"Successfully forcefully terminated process {proc.info['pid']}")
                                 except Exception as kill_err:
                                     logger.error(f"无法强制终止进程 {proc.info['pid']}: {str(kill_err)}")
                             except psutil.NoSuchProcess:
@@ -249,9 +249,9 @@ def kill_orphaned_processes(process_name, function_name=None):
                 pass
         
         if count > 0:
-            logger.info(f"已终止 {count} 个可能的孤立 {process_name} 进程")
+            logger.info(f"Terminated {count} potential orphaned {process_name} processes")
         else:
-            logger.info(f"未发现孤立的 {process_name} 进程")
+            logger.info(f"No orphaned {process_name} processes found")
             
     except Exception as e:
         logger.error(f"查找孤立进程时出错: {str(e)}", exc_info=True)
@@ -259,19 +259,19 @@ def kill_orphaned_processes(process_name, function_name=None):
 def monitor_parent():
     """Monitor the parent process and exit if it's gone"""
     parent_pid = os.getppid()
-    logger.info(f"开始监控父进程 PID: {parent_pid}")
+    logger.info(f"Starting to monitor parent process PID: {parent_pid}")
     
     while True:
         try:
             # Check if parent process still exists
             parent = psutil.Process(parent_pid)
             if not parent.is_running():
-                logger.info(f"父进程 {parent_pid} 已终止，开始优雅关闭...")
+                logger.info(f"Parent process {parent_pid} has terminated, initiating graceful shutdown...")
                 # 使用 SIGTERM 信号优雅关闭，让 lifespan 的 finally 块执行清理
                 os.kill(os.getpid(), signal.SIGTERM)
                 break
         except psutil.NoSuchProcess:
-            logger.info(f"父进程 {parent_pid} 不存在，开始优雅关闭...")
+            logger.info(f"Parent process {parent_pid} does not exist, initiating graceful shutdown...")
             # 使用 SIGTERM 信号优雅关闭，让 lifespan 的 finally 块执行清理
             os.kill(os.getpid(), signal.SIGTERM)
             break
@@ -280,7 +280,7 @@ def monitor_parent():
         
         time.sleep(5)  # 降低监控频率到5秒，减少资源消耗
     
-    logger.info("父进程监控线程已退出")
+    logger.info("Parent process monitoring thread has exited")
 
 # copy & paste from https://github.com/openai/openai-cookbook/blob/main/examples/How_to_count_tokens_with_tiktoken.ipynb
 def num_tokens_from_string(string: str, encoding_name: str = "o200k_base") -> int:
@@ -555,7 +555,7 @@ def compress_image_to_binary(image_path: str, max_size: int = 1920, quality: int
                 new_width = int(width * max_size / height)
             
             img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            logger.info(f"图片缩放: {original_dimensions} -> {img.size}")
+            logger.info(f"Image resized: {original_dimensions} -> {img.size}")
         
         # 转换为 RGB（去除 alpha 通道）
         if img.mode in ("RGBA", "LA", "P"):

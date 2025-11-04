@@ -94,7 +94,7 @@ class UserManager:
             
             if user:
                 # 用户存在，更新信息和token
-                logger.info(f"用户已存在，更新信息: {email}")
+                logger.info(f"User already exists, updating information: {email}")
                 user.email = email
                 user.name = name
                 user.avatar_url = avatar_url
@@ -109,10 +109,10 @@ class UserManager:
                 session.commit()
                 session.refresh(user)
                 
-                logger.info(f"用户信息已更新: {email}, User ID: {user.id}")
+                logger.info(f"User information updated: {email}, User ID: {user.id}")
             else:
                 # 用户不存在，创建新用户
-                logger.info(f"创建新用户: {email}")
+                logger.info(f"Creating new user: {email}")
                 
                 # 生成初始token
                 # 注意：此时user.id还不存在，需要先插入数据库获取ID后再生成token
@@ -139,7 +139,7 @@ class UserManager:
                 session.commit()
                 session.refresh(user)
                 
-                logger.info(f"新用户创建成功: {email}, User ID: {user.id}")
+                logger.info(f"New user created successfully: {email}, User ID: {user.id}")
             
             return user
     
@@ -198,7 +198,7 @@ class UserManager:
             session.add(user)
             session.commit()
             
-            logger.info(f"用户已退出登录: {user.email}, User ID: {user_id}")
+            logger.info(f"User has logged out: {user.email}, User ID: {user_id}")
             return True
     
     def validate_token(self, token: str) -> Dict[str, Any]:

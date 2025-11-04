@@ -300,7 +300,7 @@ class CoReadingNode(BaseNode[CoReadingState, int, str]):
         2. 如果窗口正常，等待用户交互
         3. 如果窗口关闭/最小化，转到暂停状态
         """
-        logger.info(f"进入共读状态，PDF: {ctx.state.pdf_path}")
+        logger.info(f"Entering CoReading: {ctx.state.pdf_path}")
         
         # 检查PDF窗口状态
         try:
@@ -310,7 +310,7 @@ class CoReadingNode(BaseNode[CoReadingState, int, str]):
             )
             
             if not pdf_status.get("exists", False) or pdf_status.get("isMiniaturized", False):
-                logger.info("PDF窗口不存在或已最小化，转入暂停状态")
+                logger.info("PDF window does not exist or is minimized, transitioning to paused state")
                 return PausedNode(reason="pdf_window_unavailable")
             
             # PDF窗口正常，发送状态事件到前端
@@ -323,13 +323,13 @@ class CoReadingNode(BaseNode[CoReadingState, int, str]):
             
             # 在这里等待用户交互或定时器触发
             # 目前先实现简单的被动回复模式
-            logger.info("共读状态激活，等待用户交互")
+            logger.info("Co-reading state activated, waiting for user interaction")
             
             # 暂时返回End，后续会改为等待用户输入的逻辑
             return End("co_reading_active")
             
         except Exception as e:
-            logger.error(f"共读状态检查失败: {e}")
+            logger.error(f"Failed to check co-reading state: {e}")
             return PausedNode(reason="error")
 
 @dataclass  
@@ -343,7 +343,7 @@ class PausedNode(BaseNode[CoReadingState, int, str]):
         1. 发送暂停事件到前端（触发Widget显示）
         2. 等待前端用户操作（继续阅读 or 停止阅读）
         """
-        logger.info(f"进入暂停状态，原因: {self.reason}")
+        logger.info(f"Entering paused state, reason: {self.reason}")
         
         # 发送暂停状态事件到前端
         from bridge_events import BridgeEventSender
@@ -356,7 +356,7 @@ class PausedNode(BaseNode[CoReadingState, int, str]):
         
         # 这里需要等待前端用户操作
         # 目前先返回End，后续实现真正的等待逻辑
-        logger.info("暂停状态激活，等待用户选择")
+        logger.info("Paused state activated, waiting for user selection")
         return End("co_reading_paused")
 
 # 创建共读状态机Graph
@@ -387,7 +387,7 @@ async def stream_co_reading_chat_v5_compatible(
         persistence_dir: 持久化目录
     """
     try:
-        logger.info(f"开始共读模式流处理，session_id: {session_id}, pdf: {pdf_path}")
+        logger.info(f"Starting co-reading mode stream processing, session_id: {session_id}, pdf: {pdf_path}")
         
         # 设置持久化文件路径
         persistence_file = persistence_dir / f"co_reading_{session_id}.json"
@@ -396,11 +396,11 @@ async def stream_co_reading_chat_v5_compatible(
         
         # 检查是否有之前的状态需要恢复
         if snapshot := await persistence.load_next():
-            logger.info("恢复之前的共读状态")
+            logger.info("Restoring previous co-reading state")
             state = snapshot.state
             next_node = snapshot.node
         else:
-            logger.info("开始新的共读会话")
+            logger.info("Starting a new co-reading session")
             # 创建新的共读状态
             state = CoReadingState(
                 pdf_path=pdf_path,
@@ -416,7 +416,7 @@ async def stream_co_reading_chat_v5_compatible(
             deps=session_id
         ) as run:
             async for node in run:
-                logger.info(f"执行Graph节点: {type(node).__name__}")
+                logger.info(f"Executing Graph node: {type(node).__name__}")
                 
                 
         
@@ -425,7 +425,7 @@ async def stream_co_reading_chat_v5_compatible(
         yield 'data: [DONE]\n\n'
         
     except Exception as e:
-        logger.error(f"共读流处理失败: {e}")
+        logger.error(f"Failed to process co-reading stream: {e}")
         yield f'data: {json.dumps({"type": "error", "errorText": str(e)})}\n\n'
 
 # Test the functions  

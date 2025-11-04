@@ -130,16 +130,16 @@ async def lifespan(app: FastAPI):
         setup_logging(logging_dir=db_directory)
     
     # 在应用启动时执行初始化操作
-    logger.info("应用正在启动...")
+    logger.info("Application is starting...")
     
     try:
-        logger.info(f"调试信息: Python版本 {sys.version}")
-        logger.info(f"调试信息: 当前工作目录 {os.getcwd()}")
+        logger.info(f"Debug Info: Python version {sys.version}")
+        logger.info(f"Debug Info: Current working directory {os.getcwd()}")
         
         # 初始化数据库引擎
         if hasattr(app.state, "db_path"):
             sqlite_url = f"sqlite:///{app.state.db_path}"
-            logger.info(f"初始化数据库引擎，URL: {sqlite_url}")
+            logger.info(f"Initializing database engine, URL: {sqlite_url}")
             # 保存数据库目录路径供其他组件使用
             app.state.db_directory = os.path.dirname(app.state.db_path)
             try:
@@ -151,15 +151,15 @@ async def lifespan(app: FastAPI):
                     pool_timeout=30,   # 获取连接的超时时间
                     pool_recycle=1800  # 30分钟回收一次连接
                 )
-                logger.info("SQLite WAL模式和优化参数已设置")
-                logger.info(f"数据库引擎已初始化，路径: {app.state.db_path}")
+                logger.info("SQLite WAL mode and optimization parameters have been set")
+                logger.info(f"Database engine initialized, path: {app.state.db_path}")
                 
-                # 初始化数据库结构 - 使用单连接方法避免连接竞争
+                # Initialize database structure - use single connection method to avoid connection contention
                 try:
-                    logger.info("开始数据库结构初始化...")
-                    # 使用单个连接完成所有数据库初始化操作
+                    logger.info("Starting database structure initialization...")
+                    # Use a single connection to complete all database initialization operations
                     with app.state.engine.connect() as conn:
-                        logger.info("设置WAL模式和优化参数...")
+                        logger.info("Setting WAL mode and optimization parameters...")
                         # 显式设置WAL模式和优化参数（确保在生产环境中也正确设置）
                         conn.execute(text("PRAGMA journal_mode=WAL"))
                         conn.execute(text("PRAGMA synchronous=NORMAL"))
@@ -171,16 +171,16 @@ async def lifespan(app: FastAPI):
                         # 验证WAL模式设置
                         journal_mode = conn.execute(text("PRAGMA journal_mode")).fetchone()[0]
                         if journal_mode.upper() != 'WAL':
-                            logger.warning(f"WAL模式设置可能失败，当前模式: {journal_mode}")
+                            logger.warning(f"WAL mode setup might have failed, current mode: {journal_mode}")
                         else:
-                            logger.info("WAL模式设置成功")
+                            logger.info("WAL mode successfully set")
 
                         # 最终提交连接级别的事务
                         conn.commit()
                     
                     db_mgr = DBManager(app.state.engine)
                     db_mgr.init_db()
-                    logger.info("数据库结构初始化完成")
+                    logger.info("Database structure initialization completed")
                             
                         
                 except Exception as init_err:
@@ -195,7 +195,7 @@ async def lifespan(app: FastAPI):
         
         # 先清理可能存在的孤立子进程
         try:
-            logger.info("清理可能存在的孤立子进程...")
+            logger.info("Cleaning up potentially orphaned subprocesses...")
             kill_orphaned_processes("python", "task_processor")
             kill_orphaned_processes("Python", "task_processor")
             kill_orphaned_processes("python", "high_priority_task_processor")
@@ -205,7 +205,7 @@ async def lifespan(app: FastAPI):
         
         # 初始化后台任务处理线程（使用共享引擎）
         try:
-            logger.info("初始化后台任务处理线程...")
+            logger.info("Initializing background task processing thread...")
             # 创建一个事件来优雅地停止线程
             app.state.task_processor_stop_event = threading.Event()
             app.state.task_processor_thread = threading.Thread(
@@ -214,14 +214,14 @@ async def lifespan(app: FastAPI):
                 daemon=True
             )
             app.state.task_processor_thread.start()
-            logger.info("后台任务处理线程已启动")
+            logger.info("Background task processing thread has started")
         except Exception as e:
             logger.error(f"初始化后台任务处理线程失败: {e}", exc_info=True)
             raise
         
         # 初始化高优先级任务处理线程（使用共享引擎）
         try:
-            logger.info("初始化高优先级任务处理线程...")
+            logger.info("Initializing high-priority task processing thread...")
             # 创建一个事件来优雅地停止线程
             app.state.high_priority_task_processor_stop_event = threading.Event()
             app.state.high_priority_task_processor_thread = threading.Thread(
@@ -230,30 +230,30 @@ async def lifespan(app: FastAPI):
                 daemon=True
             )
             app.state.high_priority_task_processor_thread.start()
-            logger.info("高优先级任务处理线程已启动")
+            logger.info("High-priority task processing thread has started")
         except Exception as e:
             logger.error(f"初始化高优先级任务处理线程失败: {e}", exc_info=True)
             raise
         
         # Start monitor can kill self process if parent process is dead or exit
         try:
-            logger.info("启动父进程监控线程...")
+            logger.info("Starting parent process monitoring thread...")
             monitor_thread = threading.Thread(target=monitor_parent, daemon=True)
             monitor_thread.start()
-            logger.info("父进程监控线程已启动")
+            logger.info("Parent process monitoring thread has started")
         except Exception as monitor_err:
             logger.error(f"启动父进程监控线程失败: {str(monitor_err)}", exc_info=True)
 
         # 配置解析库的警告和日志级别
         try:
             configure_parsing_warnings()
-            logger.info("解析库日志配置已应用")
+            logger.info("Parsing library log configuration has been applied")
         except Exception as parsing_config_err:
             logger.error(f"配置解析库日志失败: {str(parsing_config_err)}", exc_info=True)
 
         # 注册API路由（在数据库初始化完成后）
         try:
-            logger.info("注册API路由...")
+            logger.info("Registering API routes...")
             
             # 动态导入API路由
             from models_api import get_router as get_models_router
@@ -295,7 +295,7 @@ async def lifespan(app: FastAPI):
             user_router = get_user_router(get_engine=get_engine)
             app.include_router(user_router, prefix="", tags=["user", "auth"])
             
-            logger.info("所有API路由注册完成")
+            logger.info("All API routes have been successfully registered")
         except Exception as router_err:
             logger.error(f"注册API路由失败: {str(router_err)}", exc_info=True)
             raise
@@ -303,19 +303,19 @@ async def lifespan(app: FastAPI):
         # 启动 MLX 服务进程（如果需要）
         try:
             from models_builtin import ModelsBuiltin
-            logger.info("检查是否需要启动 MLX 服务...")
+            logger.info("Checking if MLX service needs to be started...")
             builtin_mgr = ModelsBuiltin(engine=app.state.engine, base_dir=app.state.db_directory)
             is_running = builtin_mgr.ensure_mlx_service_running()
             if is_running:
-                logger.info("MLX 服务已确保运行在端口 60316")
+                logger.info("MLX service is confirmed to be running on port 60316")
             else:
-                logger.info("MLX 服务无需运行或已停止")
+                logger.info("MLX service is not required to run or has been stopped")
         except Exception as mlx_err:
             logger.error(f"MLX 服务启动检查失败: {str(mlx_err)}", exc_info=True)
             # 不中断启动流程
 
         # 正式开始服务
-        logger.info("应用初始化完成，开始提供服务...")
+        logger.info("Application initialization completed, starting to provide services...")
         yield
 
     except Exception as e:
@@ -324,35 +324,35 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         # 退出前的清理工作
-        logger.info("应用开始关闭...")
+        logger.info("Application is starting to shut down...")
         
         try:
             if hasattr(app.state, "task_processor_thread") and app.state.task_processor_thread.is_alive():
-                logger.info("正在停止后台任务处理线程...")
+                logger.info("Stopping background task processing thread...")
                 app.state.task_processor_stop_event.set()
                 app.state.task_processor_thread.join(timeout=5) # 等待5秒
                 if app.state.task_processor_thread.is_alive():
                     logger.warning("后台任务处理线程在5秒内未停止")
                 else:
-                    logger.info("后台任务处理线程已停止")
+                    logger.info("Background task processing thread has stopped")
         except Exception as e:
             logger.error(f"停止后台任务处理线程失败: {e}", exc_info=True)
         
         try:
             if hasattr(app.state, "high_priority_task_processor_thread") and app.state.high_priority_task_processor_thread.is_alive():
-                logger.info("正在停止高优先级任务处理线程...")
+                logger.info("Stopping high-priority task processing thread...")
                 app.state.high_priority_task_processor_stop_event.set()
                 app.state.high_priority_task_processor_thread.join(timeout=5) # 等待5秒
                 if app.state.high_priority_task_processor_thread.is_alive():
                     logger.warning("高优先级任务处理线程在5秒内未停止")
                 else:
-                    logger.info("高优先级任务处理线程已停止")
+                    logger.info("High-priority task processing thread has stopped")
         except Exception as e:
             logger.error(f"停止高优先级任务处理线程失败: {e}", exc_info=True)
         
         # 清理可能残留的子进程
         try:
-            logger.info("清理可能残留的子进程...")
+            logger.info("Cleaning up potentially remaining subprocesses...")
             kill_orphaned_processes("python", "task_processor")
             kill_orphaned_processes("Python", "task_processor")
             kill_orphaned_processes("python", "high_priority_task_processor")
@@ -365,10 +365,10 @@ async def lifespan(app: FastAPI):
             from utils import is_port_in_use, kill_process_on_port
             MLX_SERVICE_PORT = 60316
             if is_port_in_use(MLX_SERVICE_PORT):
-                logger.info(f"停止 MLX 服务进程（端口 {MLX_SERVICE_PORT}）...")
+                logger.info(f"Stopping MLX service process (port {MLX_SERVICE_PORT})...")
                 success = kill_process_on_port(MLX_SERVICE_PORT)
                 if success:
-                    logger.info("MLX 服务进程已停止")
+                    logger.info("MLX service process has stopped")
                 else:
                     logger.warning("MLX 服务进程停止失败")
         except Exception as mlx_cleanup_err:
@@ -377,13 +377,13 @@ async def lifespan(app: FastAPI):
         # 在应用关闭时执行清理操作
         try:
             if hasattr(app.state, "engine") and app.state.engine is not None:
-                logger.info("释放数据库连接池...")
-                app.state.engine.dispose()  # 释放数据库连接池
-                logger.info("数据库连接池已释放")
+                logger.info("Releasing database connection pool...")
+                app.state.engine.dispose()  # Release the database connection pool
+                logger.info("Database connection pool has been released")
         except Exception as db_close_err:
             logger.error(f"关闭数据库连接失败: {str(db_close_err)}", exc_info=True)
         
-        logger.info("应用已完全关闭")
+        logger.info("Application has been fully shut down")
 
 app = FastAPI(lifespan=lifespan)
 origins = [
@@ -429,7 +429,7 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
         
         # 高优先级任务: 单个文件处理
         if task.priority == TaskPriority.HIGH.value and task.extra_data and 'screening_result_id' in task.extra_data:
-            logger.info(f"开始处理高优先级文件打标签任务 (Task ID: {task.id})")
+            logger.info(f"Starting high-priority file tagging task (Task ID: {task.id})")
             success = file_tagging_mgr.process_single_file_task(task.extra_data['screening_result_id'])
             if success:
                 task_mgr.update_task_status(task.id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
@@ -441,7 +441,7 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
                 task_mgr.update_task_status(task.id, TaskStatus.FAILED, result=TaskResult.FAILURE)
         # 中低优先级任务: 批量处理
         else:
-            logger.info(f"开始批量文件打标签任务 (Task ID: {task.id})")
+            logger.info(f"Starting batch file tagging task (Task ID: {task.id})")
             result_data = file_tagging_mgr.process_pending_batch(task_id=task.id)
             
             # 无论批量任务处理了多少文件，都将触发任务文件打标签为完成
@@ -449,7 +449,7 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
                 task.id, 
                 TaskStatus.COMPLETED, 
                 result=TaskResult.SUCCESS, 
-                message=f"批量处理完成: 处理了 {result_data.get('processed', 0)} 个文件。"
+                message=f"Batch processing completed: Processed {result_data.get('processed', 0)} files."
             )
     
     elif task.task_type == TaskType.MULTIVECTOR.value:
@@ -462,7 +462,7 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
         # 高优先级任务: 单文件处理（用户pin操作或文件变化衔接）
         if task.priority == TaskPriority.HIGH.value and task.extra_data and 'file_path' in task.extra_data:
             file_path = task.extra_data['file_path']
-            logger.info(f"开始处理高优先级多模态向量化任务 (Task ID: {task.id}): {file_path}")
+            logger.info(f"Starting high-priority multimodal vectorization task (Task ID: {task.id}): {file_path}")
             
             try:
                 # 传递task_id以便事件追踪
@@ -472,17 +472,17 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
                         task.id, 
                         TaskStatus.COMPLETED, 
                         result=TaskResult.SUCCESS,
-                        message=f"多模态向量化完成: {file_path}"
+                        message=f"Multimodal vectorization completed: {file_path}"
                     )
-                    logger.info(f"多模态向量化成功完成: {file_path}")
+                    logger.info(f"Multimodal vectorization successfully completed: {file_path}")
                 else:
                     task_mgr.update_task_status(
                         task.id, 
                         TaskStatus.FAILED, 
                         result=TaskResult.FAILURE,
-                        message=f"多模态向量化失败: {file_path}"
+                        message=f"Multimodal vectorization failed: {file_path}"
                     )
-                    logger.error(f"多模态向量化失败: {file_path}")
+                    logger.error(f"Multimodal vectorization failed: {file_path}")
             except Exception as e:
                 error_msg = f"多模态向量化异常: {file_path} - {str(e)}"
                 task_mgr.update_task_status(
@@ -494,7 +494,7 @@ def _process_task(task: Task, lancedb_mgr, task_mgr: TaskManager, engine: Engine
                 logger.error(error_msg, exc_info=True)
         else:
             # TODO 中低优先级任务: 批量处理（未来支持）
-            logger.info(f"其他任务类型暂未实现 (Task ID: {task.id})")
+            logger.info(f"Other task types are not yet implemented (Task ID: {task.id})")
             task_mgr.update_task_status(
                 task.id, 
                 TaskStatus.COMPLETED, 
@@ -518,7 +518,7 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
         task_getter_func: TaskManager中获取任务的方法名
         sleep_duration: 没有任务时的等待时间（秒）
     """
-    logger.info(f"{processor_name}已启动")
+    logger.info(f"{processor_name} has started")
     
     lancedb_mgr = LanceDBMgr(base_dir=db_directory)
 
@@ -544,7 +544,7 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
                         "priority": locked_task.priority,
                         "extra_data": locked_task.extra_data,
                     }
-                    logger.info(f"{processor_name}已锁定任务: ID={task_id}")
+                    logger.info(f"{processor_name} has locked the task: ID={task_id}")
                 else:
                     # 没有任务，直接结束本次循环
                     pass
@@ -557,7 +557,7 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
                 continue
 
             # --- 执行耗时操作 ---
-            logger.info(f"{processor_name}开始处理任务: ID={task_id}, Name='{task_to_process['task_name']}'")
+            logger.info(f"{processor_name} started processing task: ID={task_id}, Name='{task_to_process['task_name']}'")
             try:
                 task_mgr_for_processing = TaskManager(engine=engine)
                 
@@ -575,7 +575,7 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
                 # 任务成功完成
                 task_mgr_final = TaskManager(engine=engine)
                 task_mgr_final.update_task_status(task_id, TaskStatus.COMPLETED, result=TaskResult.SUCCESS)
-                logger.info(f"{processor_name}成功完成任务: ID={task_id}")
+                logger.info(f"{processor_name} successfully completed the task: ID={task_id}")
 
             except Exception as task_error:
                 logger.error(f"{processor_name}处理任务 {task_id} 时发生错误: {task_error}", exc_info=True)
@@ -595,7 +595,7 @@ def _generic_task_processor(engine, db_directory: str, stop_event: threading.Eve
                     logger.error(f"尝试标记任务 {task_id} 失败时再次出错: {final_update_error}", exc_info=True)
             time.sleep(30) # 发生严重错误时等待更长时间
 
-    logger.info(f"{processor_name}已停止")
+    logger.info(f"{processor_name} is stopping as requested")
 
 
 def task_processor(engine, db_directory: str, stop_event: threading.Event):
@@ -604,7 +604,7 @@ def task_processor(engine, db_directory: str, stop_event: threading.Event):
         engine=engine,
         db_directory=db_directory,
         stop_event=stop_event,
-        processor_name="普通任务处理线程",
+        processor_name="General Task Processing Thread",
         task_getter_func="get_and_lock_next_task",
         sleep_duration=5
     )
@@ -616,7 +616,7 @@ def high_priority_task_processor(engine, db_directory: str, stop_event: threadin
         engine=engine,
         db_directory=db_directory,
         stop_event=stop_event,
-        processor_name="高优先级任务处理线程",
+        processor_name="High-Priority Task Processing Thread",
         task_getter_func="get_and_lock_next_high_priority_task",
         sleep_duration=2
     )
@@ -647,16 +647,16 @@ def _check_and_create_multivector_task(engine: Engine, task_mgr: TaskManager, sc
             is_recently_pinned = _check_file_pin_status(file_path, task_mgr)
             
             if is_recently_pinned:
-                logger.info(f"文件 {file_path} 在最近24小时内被pin过，创建MULTIVECTOR任务")
+                logger.info(f"File {file_path} has been pinned in the last 24 hours, creating MULTIVECTOR task")
                 task_mgr.add_task(
-                    task_name=f"多模态向量化: {Path(file_path).name}",
+                    task_name=f"Multimodal Vectorization: {Path(file_path).name}",
                     task_type=TaskType.MULTIVECTOR,
                     priority=TaskPriority.HIGH,
                     extra_data={"file_path": file_path},
-                    target_file_path=file_path  # 设置冗余字段便于查询
+                    target_file_path=file_path  # Set redundant field for easier querying
                 )
             else:
-                logger.info(f"文件 {file_path} 在最近8小时内未被pin过，跳过MULTIVECTOR任务")
+                logger.info(f"File {file_path} has not been pinned in the last 8 hours, skipping MULTIVECTOR task")
             
     except Exception as e:
         logger.error(f"检查和创建MULTIVECTOR任务时发生错误: {e}", exc_info=True)
@@ -787,7 +787,7 @@ def update_system_config(
         with Session(bind=engine) as session:
             config = session.exec(select(SystemConfig).where(SystemConfig.key == config_key)).first()
             if not config:
-                return {"success": False, "error": f"配置项 '{config_key}' 不存在"}
+                return {"success": False, "error": f"Configuration item '{config_key}' does not exist"}
             
             # 更新配置值和时间戳
             config.value = new_value
@@ -796,11 +796,11 @@ def update_system_config(
             session.add(config)
             session.commit()
             
-            logger.info(f"系统配置 '{config_key}' 已更新为: {new_value}")
+            logger.info(f"System configuration '{config_key}' has been updated to: {new_value}")
             
             return {
                 "success": True,
-                "message": f"配置项 '{config_key}' 更新成功",
+                "message": f"Configuration item '{config_key}' updated successfully",
                 "config": {
                     "key": config.key,
                     "value": config.value,
@@ -867,7 +867,7 @@ async def pin_file(
             return {
                 "success": False,
                 "task_id": None,
-                "message": f"不支持的文件类型: {file_ext}，支持的类型: {SUPPORTED_FORMATS}"
+                "message": f"Unsupported file type: {file_ext}. Supported types: {SUPPORTED_FORMATS}"
             }
 
         # 在创建任务前检查多模态向量化所需的模型配置
@@ -882,8 +882,8 @@ async def pin_file(
                 "success": False,
                 "task_id": None,
                 "error_type": "model_missing",
-                "message": "多模态向量化需要配置文本模型、视觉模型，请前往设置页面进行配置",
-                "missing_models": ["文本模型", "视觉模型"]
+                "message": "Multimodal vectorization requires configuration of text and vision models. Please go to the settings page to configure them.",
+                "missing_models": ["text", "vision"]
             }
 
         # 创建HIGH优先级MULTIVECTOR任务
@@ -894,12 +894,12 @@ async def pin_file(
             extra_data={"file_path": file_path}
         )
         
-        logger.info(f"成功创建Pin文件的多模态向量化任务: {file_path} (Task ID: {task.id})")
+        logger.info(f"Successfully created a multimodal vectorization task for the pinned file: {file_path} (Task ID: {task.id})")
         
         return {
             "success": True,
             "task_id": task.id,
-            "message": f"已创建多模态向量化任务，Task ID: {task.id}"
+            "message": f"Multimodal vectorization task created successfully, Task ID: {task.id}"
         }
         
     except Exception as e:

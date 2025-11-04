@@ -64,7 +64,7 @@ class BackendToolCaller:
             self._start_cleanup_task()
             self._cleanup_task_started = True
         
-        logger.info(f"正在调用前端工具: {tool_name} (call_id: {call_id})")
+        logger.info(f"Calling frontend tool: {tool_name} (call_id: {call_id})")
         
         # 创建等待事件
         event = asyncio.Event()
@@ -96,7 +96,7 @@ class BackendToolCaller:
             
             if result_data.get("success", False):
                 duration = time.time() - start_time
-                logger.info(f"前端工具调用成功: {tool_name} (耗时: {duration:.2f}s)")
+                logger.info(f"Frontend tool call succeeded: {tool_name} (duration: {duration:.2f}s)")
                 return result_data.get("result")
             else:
                 error_msg = result_data.get("error", "Unknown error")
@@ -135,9 +135,9 @@ class BackendToolCaller:
         error_msg = payload.get("error")
         
         if success:
-            logger.info(f"收到成功的工具响应 (call_id: {call_id})")
+            logger.info(f"Received successful tool response (call_id: {call_id})")
         else:
-            logger.error(f"收到失败的工具响应 (call_id: {call_id}): {error_msg}")
+            logger.error(f"Received failed tool response (call_id: {call_id}): {error_msg}")
     
     def _start_cleanup_task(self):
         """启动定期清理任务，清理超时的调用"""

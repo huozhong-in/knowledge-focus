@@ -38,7 +38,7 @@ def configure_parsing_warnings():
     logging.getLogger('pdfminer').setLevel(logging.ERROR)
     logging.getLogger('markitdown').setLevel(logging.ERROR)
     
-    logger.info("解析库的警告和日志级别配置已应用")
+    logger.info("Parsing library warnings and log level configuration applied")
 
 # 可被markitdown解析的文件扩展名
 # * 可以生成图像描述（目前仅支持pptx和图像文件） https://github.com/microsoft/markitdown#python-api

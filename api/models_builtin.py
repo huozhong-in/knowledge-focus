@@ -167,7 +167,7 @@ class ModelsBuiltin:
         model_config = BUILTIN_MODELS[model_id]
         hf_model_id = model_config["hf_model_id"]  # HuggingFace 的完整模型ID
         
-        logger.info(f"开始下载模型: {model_id} (HF: {hf_model_id})")
+        logger.info(f"Starting model download: {model_id} (HF: {hf_model_id})")
         
         # 使用统一桥接器发送事件到前端
         from bridge_events import BridgeEventSender
@@ -228,13 +228,13 @@ class ModelsBuiltin:
         endpoint = os.environ.get('HF_ENDPOINT', 'https://huggingface.co')
         
         try:
-            logger.info(f"从 {endpoint} 下载模型")
+            logger.info(f"Downloading model from {endpoint}")
             
             bridge_events.model_download_progress(
                 model_name=model_id,
                 current=0,
                 total=100,
-                message=f"连接到 {endpoint}...",
+                message=f"Connecting to {endpoint}...",
                 stage="connecting"
             )
             
@@ -242,7 +242,7 @@ class ModelsBuiltin:
                 progress_callback({
                     "progress": 0,
                     "status": "connecting",
-                    "message": f"连接到 {endpoint}..."
+                    "message": f"Connecting to {endpoint}..."
                 })
             
             # 使用 snapshot_download 下载模型
@@ -254,7 +254,7 @@ class ModelsBuiltin:
                 endpoint=endpoint,
             )
             
-            logger.info(f"模型下载成功: {local_path}")
+            logger.info(f"Model downloaded successfully: {local_path}")
             
             # 保存实际路径到缓存
             self.downloaded_models_paths[model_id] = str(local_path)
@@ -265,7 +265,7 @@ class ModelsBuiltin:
             bridge_events.model_download_completed(
                 model_name=model_id,
                 local_path=str(local_path),
-                message=f"模型 {model_config['display_name']} 下载完成"
+                message=f"Model {model_config['display_name']} download completed"
             )
             
             # 发送完成事件(回调)
@@ -273,7 +273,7 @@ class ModelsBuiltin:
                 progress_callback({
                     "progress": 100,
                     "status": "completed",
-                    "message": f"模型 {model_config['display_name']} 下载完成",
+                    "message": f"Model {model_config['display_name']} download completed",
                     "path": local_path
                 })
             
@@ -331,12 +331,12 @@ class ModelsBuiltin:
         
         # 验证模型ID
         if model_id not in BUILTIN_MODELS:
-            raise ValueError(f"不支持的模型ID: {model_id}")
+            raise ValueError(f"Unsupported model ID: {model_id}")
         
         model_config = BUILTIN_MODELS[model_id]
         hf_model_id = model_config["hf_model_id"]
         
-        logger.info(f"开始异步下载模型: {model_id} (镜像: {mirror})")
+        logger.info(f"Starting asynchronous model download: {model_id} (mirror: {mirror})")
         
         from bridge_events import BridgeEventSender
         bridge_events = BridgeEventSender(source="models_builtin")
@@ -346,7 +346,7 @@ class ModelsBuiltin:
         import os
         endpoint = os.environ.get('HF_ENDPOINT', 'https://huggingface.co')
         
-        logger.info(f"异步下载模型: {model_id} (镜像: {endpoint})")
+        logger.info(f"Downloading model asynchronously: {model_id} (mirror: {endpoint})")
         
         # 节流状态（每秒最多发送1次进度事件）
         last_progress_time = [0.0]  # 使用列表以便在闭包中修改
@@ -374,7 +374,7 @@ class ModelsBuiltin:
                         model_name=self.model_id,
                         current=self.n,
                         total=self.total,
-                        message=f"下载中: {progress_pct}%",
+                        message=f"Downloading: {progress_pct}%",
                         stage="downloading"
                     )
                     
@@ -382,7 +382,7 @@ class ModelsBuiltin:
                         self.callback({
                             "progress": progress_pct,
                             "status": "downloading",
-                            "message": f"下载中: {progress_pct}%"
+                            "message": f"Downloading: {progress_pct}%"
                         })
         
         # 发送开始下载事件
@@ -390,7 +390,7 @@ class ModelsBuiltin:
             model_name=model_id,
             current=0,
             total=100,
-            message=f"准备下载模型 {model_config['display_name']}...",
+            message=f"Preparing to download model {model_config['display_name']}...",
             stage="starting"
         )
         
@@ -400,7 +400,7 @@ class ModelsBuiltin:
             
             def _download_sync():
                 """同步下载函数（在线程池中执行）"""
-                logger.info(f"使用镜像 {endpoint} 下载模型")
+                logger.info(f"Downloading model using mirror {endpoint}")
                 
                 local_path = snapshot_download(
                     repo_id=hf_model_id,
@@ -414,9 +414,9 @@ class ModelsBuiltin:
             
             # 异步执行下载
             local_path = await loop.run_in_executor(None, _download_sync)
-            
-            logger.info(f"模型下载成功: {local_path}")
-            
+
+            logger.info(f"Model downloaded successfully: {local_path}")
+
             # 保存路径到缓存
             self.downloaded_models_paths[model_id] = str(local_path)
             self._save_downloaded_models_cache()
@@ -425,14 +425,14 @@ class ModelsBuiltin:
             bridge_events.model_download_completed(
                 model_name=model_id,
                 local_path=str(local_path),
-                message=f"模型 {model_config['display_name']} 下载完成"
+                message=f"Model {model_config['display_name']} download completed"
             )
             
             if progress_callback:
                 progress_callback({
                     "progress": 100,
                     "status": "completed",
-                    "message": "下载完成",
+                    "message": "Download completed",
                     "path": local_path
                 })
             
@@ -444,10 +444,10 @@ class ModelsBuiltin:
             # HuggingFace 错误通常以 "(huggingface):" 开头，去掉这个前缀
             if raw_error.startswith("(huggingface):"):
                 raw_error = raw_error[15:].strip()
-            
-            error_msg = f"下载模型失败: {raw_error}"
-            logger.error(f"模型 {model_id} 下载失败 (端点: {endpoint}): {raw_error}", exc_info=True)
-            
+
+            error_msg = f"Model download failed: {raw_error}"
+            logger.error(f"Model {model_id} download failed (endpoint: {endpoint}): {raw_error}", exc_info=True)
+
             # 发送失败事件
             bridge_events.model_download_failed(
                 model_name=model_id,
@@ -476,7 +476,7 @@ class ModelsBuiltin:
             True 如果删除成功
         """
         if model_id not in BUILTIN_MODELS:
-            raise ValueError(f"不支持的模型ID: {model_id}")
+            raise ValueError(f"Unsupported model ID: {model_id}")
         
         model_path = self.get_model_path(model_id)
         if not model_path:
@@ -536,7 +536,7 @@ class ModelsBuiltin:
             
             return True
         except Exception as e:
-            logger.error(f"删除模型失败: {e}", exc_info=True)
+            logger.error(f"Model deletion failed: {e}", exc_info=True)
             return False
     
     def should_auto_load(self, base_dir: str) -> tuple[bool, Optional[str]]:
@@ -638,28 +638,28 @@ class ModelsBuiltin:
         if should_load:
             # 需要 MLX 服务
             if not is_port_in_use(MLX_SERVICE_PORT):
-                logger.info(f"启动 MLX 服务进程（模型: {model_id}, 端口: {MLX_SERVICE_PORT}）")
+                logger.info(f"Starting MLX service process (model: {model_id}, port: {MLX_SERVICE_PORT})")
                 success = self._start_mlx_service_process()
                 if success:
-                    logger.info(f"MLX 服务进程已启动在端口 {MLX_SERVICE_PORT}")
+                    logger.info(f"MLX service process started on port {MLX_SERVICE_PORT}")
                 else:
-                    logger.error("MLX 服务进程启动失败")
+                    logger.error("MLX service process failed to start")
                 return success
             else:
-                logger.debug(f"MLX 服务已在端口 {MLX_SERVICE_PORT} 运行")
+                logger.debug(f"MLX service is already running on port {MLX_SERVICE_PORT}")
                 return True
         else:
             # 不需要 MLX 服务
             if is_port_in_use(MLX_SERVICE_PORT):
-                logger.info(f"停止 MLX 服务进程（所有能力已切换到其他模型，端口: {MLX_SERVICE_PORT}）")
+                logger.info(f"Stopping MLX service process (all capabilities have switched to other models, port: {MLX_SERVICE_PORT})")
                 success = kill_process_on_port(MLX_SERVICE_PORT)
                 if success:
-                    logger.info("MLX 服务进程已停止")
+                    logger.info("MLX service process stopped successfully")
                 else:
-                    logger.warning("MLX 服务进程停止失败")
+                    logger.warning("MLX service process failed to stop")
                 return False
             else:
-                logger.debug("MLX 服务无需运行")
+                logger.debug("MLX service does not need to run")
                 return False
     
     def _start_mlx_service_process(self) -> bool:
@@ -679,7 +679,7 @@ class ModelsBuiltin:
             mlx_service_script = current_dir / "mlx_service.py"
             
             if not mlx_service_script.exists():
-                logger.error(f"MLX 服务脚本不存在: {mlx_service_script}")
+                logger.error(f"MLX service script does not exist: {mlx_service_script}")
                 return False
             
             # 准备日志文件（与主服务日志在同一目录）
@@ -690,7 +690,7 @@ class ModelsBuiltin:
             timestamp = datetime.now().strftime("%Y%m%d")
             mlx_log_file = log_dir / f"mlx_service_{timestamp}.log"
             
-            logger.info(f"MLX 服务日志将写入: {mlx_log_file}")
+            logger.info(f"MLX service log will be written to: {mlx_log_file}")
             
             # 构建启动命令（使用当前 Python 环境）
             cmd = [
@@ -711,10 +711,10 @@ class ModelsBuiltin:
                 stderr=subprocess.STDOUT,  # 合并 stderr 到 stdout
                 start_new_session=True  # 创建新会话，避免信号传播
             )
-            
-            logger.info(f"MLX 服务进程已启动，PID: {process.pid}")
-            logger.info(f"查看 MLX 服务日志: tail -f {mlx_log_file}")
-            
+
+            logger.info(f"MLX service process started, PID: {process.pid}")
+            logger.info(f"View MLX service log: tail -f {mlx_log_file}")
+
             # 等待短暂时间确保服务启动
             time.sleep(3)
             
@@ -724,14 +724,14 @@ class ModelsBuiltin:
                 log_file_handle.close()
                 with open(mlx_log_file, 'r') as f:
                     log_content = f.read()
-                logger.error(f"MLX 服务进程启动后立即退出，日志:\n{log_content}")
+                logger.error(f"MLX service process exited immediately after startup, log:\n{log_content}")
                 return False
             
             # 注意：不关闭 log_file_handle，让子进程继续写入
             return True
             
         except Exception as e:
-            logger.error(f"启动 MLX 服务进程失败: {e}", exc_info=True)
+            logger.error(f"Starting MLX service process failed: {e}", exc_info=True)
             return False
     
     

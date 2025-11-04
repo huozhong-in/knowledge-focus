@@ -23,7 +23,7 @@ async def search_pdf_files(ctx: RunContext[int], description: str, limit: int = 
     """
     try:
         session_id = ctx.deps
-        logger.info(f"Session {session_id}: 搜索PDF文件，描述: {description}")
+        logger.info(f"Session {session_id}: Searching for PDF files, description: {description}")
         
         # 调用前端工具进行文件搜索
         result = await g_backend_tool_caller.call_frontend_tool(
@@ -35,17 +35,17 @@ async def search_pdf_files(ctx: RunContext[int], description: str, limit: int = 
         
         if isinstance(result, dict) and result.get("success"):
             files = result.get("files", [])
-            logger.info(f"找到 {len(files)} 个匹配的PDF文件")
+            logger.info(f"Found {len(files)} matching PDF files")
             return {
                 "success": True,
                 "files": files,
-                "message": f"找到 {len(files)} 个匹配的PDF文件"
+                "message": f"Found {len(files)} matching PDF files"
             }
         else:
             return {
                 "success": False,
                 "files": [],
-                "message": "没有找到匹配的PDF文件"
+                "message": "No matching PDF files found"
             }
             
     except Exception as e:
@@ -69,7 +69,7 @@ async def get_recent_pdf_files(ctx: RunContext[int], limit: int = 10) -> Dict:
     """
     try:
         session_id = ctx.deps
-        logger.info(f"Session {session_id}: 获取最近的PDF文件")
+        logger.info(f"Session {session_id}: Retrieving recent PDF files")
         
         result = await g_backend_tool_caller.call_frontend_tool(
             "get_recent_pdf_files",
@@ -112,7 +112,7 @@ async def browse_folder_for_pdfs(ctx: RunContext[int], folder_path: str = "") ->
     """
     try:
         session_id = ctx.deps
-        logger.info(f"Session {session_id}: 浏览文件夹 {folder_path} 中的PDF文件")
+        logger.info(f"Session {session_id}: Browsing folder {folder_path} for PDF files")
         
         result = await g_backend_tool_caller.call_frontend_tool(
             "browse_folder_for_pdfs",

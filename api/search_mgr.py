@@ -378,7 +378,7 @@ if __name__ == "__main__":
     
     # 1. testing SearchManager
     search_mgr = SearchManager(engine, lancedb_mgr, models_mgr)
-    logger.info("SearchManager 核心功能模块已创建完成")
+    logger.info("SearchManager core functionality module has been successfully created")
     results = search_mgr.search_documents(
         query="人工智能", top_k=5,
         document_ids=[3, 2],  # 假设我们只关心文档ID为3和2的结果

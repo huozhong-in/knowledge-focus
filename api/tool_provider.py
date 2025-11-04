@@ -88,7 +88,7 @@ class ToolProvider:
                         if tool_func:
                             tools.append(tool_func)
                 
-                    logger.info(f"为场景 {scenario_id} 加载了 {len(tools)} 个工具")
+                    logger.info(f"Loaded {len(tools)} tools for scenario {scenario_id}")
 
         except Exception as e:
             logger.error(f"加载场景工具失败: {e}")
@@ -111,7 +111,7 @@ class ToolProvider:
             if tool_func:
                 tools.append(tool_func)
         
-        logger.info(f"加载了 {len(tools)} 个默认工具")
+        logger.info(f"Loaded {len(tools)} default tools")
         return tools
     
     def _load_tool_function(self, tool_name: str) -> Optional[Callable]:
@@ -350,7 +350,7 @@ class ToolProvider:
                     # 验证结果
                     saved_api_key = tool.metadata_json.get('api_key', '') if tool.metadata_json else ''
                     if saved_api_key == api_key:
-                        logger.info(f"设置MCP工具 {tool_name} 的api_key成功")
+                        logger.info(f"Successfully set the api_key for MCP tool {tool_name}")
                         return True
                     else:
                         logger.error(f"设置MCP工具 {tool_name} 的api_key失败: 保存值不匹配")

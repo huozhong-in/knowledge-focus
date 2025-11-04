@@ -46,11 +46,11 @@ def get_router(get_engine: Engine) -> APIRouter:
                     logger.info(f"[CONFIG] Full disk access status: {full_disk_access}")
                 
                 elapsed = time.time() - start_time
-                logger.info(f"[CONFIG] 获取所有配置耗时 {elapsed:.3f}s (从数据库)")
+                logger.info(f"[CONFIG] Retrieved all configurations in {elapsed:.3f}s (from database)")
                 
                 # 获取 bundle 扩展名列表（直接从数据库获取，不使用正则规则）
                 bundle_extensions = myfolders_mgr.get_bundle_extensions_for_rust()
-                logger.info(f"[CONFIG] 获取到 {len(bundle_extensions)} 个 bundle 扩展名")
+                logger.info(f"[CONFIG] Retrieved {len(bundle_extensions)} bundle extensions")
                 # from file_tagging_mgr import MARKITDOWN_EXTENSIONS, OTHER_PARSEABLE_EXTENSIONS  # 确保解析器扩展名已加载
                 return {
                     "file_categories": file_categories,
@@ -173,12 +173,12 @@ def get_router(get_engine: Engine) -> APIRouter:
             is_blacklist = data.get("is_blacklist", False)
             
             if not path: # 修正：之前是 if name或not path:
-                return {"status": "error", "message": "路径不能为空"}
+                return {"status": "error", "message": "Path cannot be empty"}
             
             success, message_or_dir = myfolders_mgr.add_directory(path, alias, is_blacklist)
             
             if success:
-                logger.info(f"添加了新文件夹: {path}")
+                logger.info(f"Added new directory: {path}")
 
                 # 检查返回值是否是字符串或MyFolders对象
                 if isinstance(message_or_dir, str):
@@ -188,14 +188,14 @@ def get_router(get_engine: Engine) -> APIRouter:
                     if not is_blacklist:
                         # 添加Rust监控的触发信号
                         # 此处日志记录即可，实际监控由前端Tauri通过fetch_and_store_all_config获取最新配置
-                        logger.info(f"[MONITOR] 新文件夹已添加，需要立即启动监控: {path}")
-                        
-                    return {"status": "success", "data": message_or_dir.model_dump(), "message": "文件夹添加成功"}
+                        logger.info(f"[MONITOR] New directory added, need to start monitoring immediately: {path}")
+
+                    return {"status": "success", "data": message_or_dir.model_dump(), "message": "Directory added successfully"}
             else:
                 return {"status": "error", "message": message_or_dir}
         except Exception as e:
-            logger.error(f"添加文件夹失败: {str(e)}")
-            return {"status": "error", "message": f"添加文件夹失败: {str(e)}"}
+            logger.error(f"Failed to add directory: {str(e)}")
+            return {"status": "error", "message": f"Failed to add directory: {str(e)}"}
 
     @router.put("/directories/{directory_id}", tags=["myfolders"])
     def update_directory(
@@ -225,13 +225,13 @@ def get_router(get_engine: Engine) -> APIRouter:
 
             success, message_or_dir = myfolders_mgr.toggle_blacklist(directory_id, is_blacklist)
             if success:
-                logger.info(f"切换了文件夹 {directory_id} 的黑名单状态为 {is_blacklist}")
-                return {"status": "success", "data": message_or_dir.model_dump(), "message": "黑名单状态更新成功"}
+                logger.info(f"Switched folder {directory_id} blacklist status to {is_blacklist}")
+                return {"status": "success", "data": message_or_dir.model_dump(), "message": "Blacklist status updated successfully"}
             else:
                 return {"status": "error", "message": message_or_dir}
         except Exception as e:
-            logger.error(f"切换文件夹黑名单状态失败: {directory_id}, {str(e)}")
-            return {"status": "error", "message": f"切换文件夹黑名单状态失败: {str(e)}"}
+            logger.error(f"Failed to toggle folder blacklist status: {directory_id}, {str(e)}")
+            return {"status": "error", "message": f"Failed to toggle folder blacklist status: {str(e)}"}
 
     @router.delete("/directories/{directory_id}", tags=["myfolders"])
     def delete_directory(
@@ -242,13 +242,13 @@ def get_router(get_engine: Engine) -> APIRouter:
         try:
             success, message = myfolders_mgr.remove_directory(directory_id)
             if success:
-                logger.info(f"删除了文件夹 {directory_id}")
-                return {"status": "success", "message": "文件夹删除成功"}
+                logger.info(f"Deleted folder {directory_id}")
+                return {"status": "success", "message": "Folder deleted successfully"}
             else:
                 return {"status": "error", "message": message}
         except Exception as e:
-            logger.error(f"删除文件夹失败: {directory_id}, {str(e)}")
-            return {"status": "error", "message": f"删除文件夹失败: {str(e)}"}
+            logger.error(f"Failed to delete folder: {directory_id}, {str(e)}")
+            return {"status": "error", "message": f"Failed to delete folder: {str(e)}"}
 
     @router.put("/directories/{directory_id}/alias", tags=["myfolders"])
     def update_directory_alias(
@@ -260,16 +260,16 @@ def get_router(get_engine: Engine) -> APIRouter:
         try:
             alias = data.get("alias")
             if alias is None: # 允许空字符串作为别名，但不允许None
-                return {"status": "error", "message": "别名不能为空"}
+                return {"status": "error", "message": "Alias cannot be empty"}
 
             success, message_or_dir = myfolders_mgr.update_alias(directory_id, alias)
             if success:
-                return {"status": "success", "data": message_or_dir.model_dump(), "message": "别名更新成功"}
+                return {"status": "success", "data": message_or_dir.model_dump(), "message": "Alias updated successfully"}
             else:
                 return {"status": "error", "message": message_or_dir}
         except Exception as e:
-            logger.error(f"更新文件夹别名失败: {directory_id}, {str(e)}")
-            return {"status": "error", "message": f"更新文件夹别名失败: {str(e)}"}
+            logger.error(f"Failed to update folder alias: {directory_id}, {str(e)}")
+            return {"status": "error", "message": f"Failed to update folder alias: {str(e)}"}
 
     # 在文件末尾添加以下端点，用于初始化默认文件夹和获取权限提示
     @router.get("/directories/default")
@@ -436,7 +436,7 @@ def get_router(get_engine: Engine) -> APIRouter:
             success, result = myfolders_mgr.add_blacklist_folder(parent_id, folder_path, folder_alias)
             
             if success:
-                logger.info(f"添加了黑名单文件夹: {folder_path}")
+                logger.info(f"Added blacklist folder: {folder_path}")
                 
                 # 当文件夹变为黑名单时，清理相关的粗筛结果数据
                 deleted_count = screening_mgr.delete_screening_results_by_folder(folder_path)
@@ -452,14 +452,14 @@ def get_router(get_engine: Engine) -> APIRouter:
                         "created_at": result.created_at.isoformat() if result.created_at else None,
                         "updated_at": result.updated_at.isoformat() if result.updated_at else None,
                     },
-                    "message": f"成功添加黑名单文件夹: {result.path}，清理了 {deleted_count} 条相关粗筛结果"
+                    "message": f"Successfully added blacklist folder: {result.path}, cleaned up {deleted_count} related screening results"
                 }
             else:
                 return {"status": "error", "message": result}
                 
         except Exception as e:
-            logger.error(f"添加黑名单文件夹失败: {str(e)}")
-            return {"status": "error", "message": f"添加黑名单文件夹失败: {str(e)}"}
+            logger.error(f"Failed to add blacklist folder: {str(e)}")
+            return {"status": "error", "message": f"Failed to add blacklist folder: {str(e)}"}
 
     @router.get("/folders/hierarchy", tags=["myfolders"])
     def get_folder_hierarchy(
@@ -470,7 +470,7 @@ def get_router(get_engine: Engine) -> APIRouter:
             start_time = time.time()
             hierarchy = myfolders_mgr.get_folder_hierarchy()
             elapsed = time.time() - start_time
-            logger.info(f"[FOLDERS] 获取文件夹层级关系耗时 {elapsed:.3f}s (从数据库)")
+            logger.info(f"[FOLDERS] Retrieved folder hierarchy in {elapsed:.3f}s (from database)")
             
             return {
                 "status": "success",

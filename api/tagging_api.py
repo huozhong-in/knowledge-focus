@@ -78,7 +78,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
         try:
             # 内置模型已配置，直接获取标签云数据
             # 如果模型正在加载中，标签可能为空，但不是错误状态
-            logger.info(f"获取标签云数据，limit: {limit}, min_weight: {min_weight}")
+            logger.info(f"Fetching tag cloud data, limit: {limit}, min_weight: {min_weight}")
             tag_cloud_data = tagging_mgr.get_tag_cloud_data(limit=limit, min_weight=min_weight)
             return {
                 "success": True,

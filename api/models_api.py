@@ -211,9 +211,9 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
             try:
                 is_running = builtin_mgr.ensure_mlx_service_running()
                 if is_running:
-                    logger.info("MLX 服务进程已确保运行")
+                    logger.info("MLX service process is ensured to be running")
                 else:
-                    logger.info("MLX 服务进程已停止或无需运行")
+                    logger.info("MLX service process has stopped or does not need to run")
             except Exception as e:
                 # 进程管理失败不应影响能力分配的成功
                 logger.error(f"MLX 服务进程管理失败: {e}", exc_info=True)
@@ -384,12 +384,12 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 # 检查是否为共读场景
                 chat_session = chat_mgr.get_session(request.session_id)
                 if chat_session and chat_session.scenario_id:
-                    logger.info(f"检测到场景模式，scenario_id: {chat_session.scenario_id}")
+                    logger.info(f"Detected scenario mode, scenario_id: {chat_session.scenario_id}")
                     # 获取场景信息  
                     with Session(engine) as session:
                         scenario = session.get(Scenario, chat_session.scenario_id)
                         if scenario and scenario.name == "co_reading":
-                            logger.info("启动PDF共读模式")
+                            logger.info("Starting PDF co-reading mode")
                             # 调用共读流协议处理函数
                             async for sse_chunk in models_mgr.coreading_v5_compatible(
                                 messages=[last_user_message],
@@ -497,7 +497,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 )
                 
                 if updated_session:
-                    logger.info(f"会话 {session_id} 已切换到共读模式，PDF: {pdf_path}")
+                    logger.info(f"Session {session_id} has switched to co-reading mode, PDF: {pdf_path}")
                     # 手动处理metadata字段映射，确保返回解析后的对象而不是JSON字符串
                     session_data = updated_session.model_dump()
                     # metadata_json已经是Dict对象，直接赋值
@@ -515,7 +515,7 @@ def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
                 )
                 
                 if updated_session:
-                    logger.info(f"会话 {session_id} 已退出共读模式")
+                    logger.info(f"Session {session_id} has exited co-reading mode")
                     # 手动处理metadata字段映射，确保返回解析后的对象而不是JSON字符串
                     session_data = updated_session.model_dump()
                     # metadata_json已经是Dict对象，直接赋值

@@ -50,13 +50,12 @@ def get_router(get_engine) -> APIRouter:
             name = params.get('name')
             avatar_url = params.get('avatar_url')
             
-            logger.info(f"收到OAuth成功回调: provider={provider}, email={email}")
+            logger.info(f"Received OAuth success callback: provider={provider}, email={email}")
             
             # 验证所有必需参数
             if not all([provider, oauth_id, email, name]):
-                logger.error(f"缺少必要参数: {params}")
-                raise HTTPException(status_code=400, detail="缺少必要的用户信息参数(provider, oauth_id, email, name)")
-            
+                logger.error(f"Missing required parameters: {params}")
+                raise HTTPException(status_code=400, detail="Missing required user information parameters (provider, oauth_id, email, name)")
             # 保存或更新用户信息
             user = user_mgr.get_or_create_user(
                 oauth_provider=provider,
@@ -83,7 +82,7 @@ def get_router(get_engine) -> APIRouter:
             # 通过Bridge事件发送给Rust进程
             bridge_emitter.send_event('oauth-login-success', user_data)
             
-            logger.info(f"OAuth登录成功事件已发送: user_id={user.id}, email={user.email}")
+            logger.info(f"OAuth login success event sent: user_id={user.id}, email={user.email}")
             
             # 返回成功页面
             html_content = f"""
