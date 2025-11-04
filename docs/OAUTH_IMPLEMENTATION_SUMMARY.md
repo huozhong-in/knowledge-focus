@@ -79,7 +79,7 @@ app.get('/api/auth/callback-success', async (c) => {
 
 // 需要调整为：
 // 1. 直接构建Better-Auth的登录URL
-// 2. URL应该指向: https://kf.huozhong.in/api/auth/sign-in/google
+// 2. URL应该指向: https://api.huozhong.in/api/auth/sign-in/google
 // 3. 打开浏览器
 // 4. 等待Bridge事件 'oauth-login-success'
 // 5. 从事件中获取用户信息和token

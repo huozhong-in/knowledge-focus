@@ -460,7 +460,7 @@ Give a concise summary of the image that is well optimized for retrieval.
             
             # 发送失败事件
             error_msg = f"文档处理失败: {str(e)}"
-            help_link = "https://kf.huozhong.in/"
+            help_link = "https://kf.huozhong.in/docs"
             if task_id:
                 self.bridge_events.multivector_failed(file_path, task_id, error_msg, help_link, type(e).__name__)
             else:

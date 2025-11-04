@@ -150,7 +150,7 @@ login: async (provider: string) => {
     const isDev = import.meta.env.DEV;
     const authUrl = isDev 
       ? `http://127.0.0.1:60325/api/auth/sign-in/${provider}`
-      : `https://kf.huozhong.in/api/auth/sign-in/${provider}`;
+      : `https://api.huozhong.in/api/auth/sign-in/${provider}`;
     
     // 打开外部浏览器
     const { openUrl } = await import("@tauri-apps/plugin-opener");

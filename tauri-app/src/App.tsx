@@ -31,7 +31,7 @@ import { useTranslation } from "react-i18next"
 const isDevelopment = import.meta.env.MODE === 'development';
 const AUTH_BASE_URL = isDevelopment 
   ? 'http://127.0.0.1:60325'  // 开发环境：本地 auth 服务器
-  : 'https://kf.huozhong.in'; // 生产环境：Cloudflare Pages 部署地址
+  : 'https://api.huozhong.in'; // 生产环境：Cloudflare Pages 部署地址
 
 const API_BASE_URL = 'http://127.0.0.1:60315'
 

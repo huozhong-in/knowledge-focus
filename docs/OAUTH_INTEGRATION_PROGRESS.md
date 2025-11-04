@@ -10,11 +10,11 @@
 ```
 用户点击登录 (Tauri App)
   ↓
-打开浏览器 → https://kf.huozhong.in/sign-in/google
+打开浏览器 → https://api.huozhong.in/sign-in/google
   ↓
 Google OAuth 授权
   ↓
-Google 回调 → https://kf.huozhong.in/api/auth/callback/google
+Google 回调 → https://api.huozhong.in/api/auth/callback/google
   ↓
 Better-Auth Server 完成 token exchange，创建 session
   ↓
@@ -53,8 +53,8 @@ Rust → IPC 通知前端
 - `http://127.0.0.1:60315/api/auth/success` (开发环境)
 
 ### 现有配置
-- 授权 JavaScript 来源：`http://127.0.0.1:60325`, `https://kf.huozhong.in`
-- 授权重定向 URI：`http://127.0.0.1:60325/api/auth/callback/google`, `https://kf.huozhong.in/api/auth/callback/google`
+- 授权 JavaScript 来源：`http://127.0.0.1:60325`, `https://api.huozhong.in`
+- 授权重定向 URI：`http://127.0.0.1:60325/api/auth/callback/google`, `https://api.huozhong.in/api/auth/callback/google`
 
 ## 开发任务清单
 

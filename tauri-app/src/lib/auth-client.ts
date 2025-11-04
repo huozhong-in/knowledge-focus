@@ -8,7 +8,7 @@ import { genericOAuthClient } from "better-auth/client/plugins";
 export const authClient = createAuthClient({
   baseURL: import.meta.env.MODE === 'development' 
     ? "http://127.0.0.1:60325"  // 开发环境：本地 auth 服务器
-    : "https://kf.huozhong.in", // 生产环境：Cloudflare Pages 部署地址
+    : "https://api.huozhong.in", // 生产环境：Cloudflare Pages 部署地址
   plugins: [
     genericOAuthClient()
   ],

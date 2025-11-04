@@ -9,17 +9,17 @@
 #### 1. 已获授权的 JavaScript 来源 (Authorized JavaScript origins)
 
 * `http://127.0.0.1:60325` (开发环境)
-* `https://kf.huozhong.in` (生产环境)
+* `https://api.huozhong.in` (生产环境)
 
 **为什么正确？**
 这个配置项告诉Google：“只允许来自这两个源（origin）的网页前端代码，发起使用此客户端ID的认证请求。”
 
-在您的场景里，当Tauri App打开浏览器时，用户首先看到的是您部署的`better-auth`服务的登录页面。这个页面的源在开发时就是`http://127.0.0.1:60325`，在生产环境就是`https://kf.huozhong.in`。所以，这个配置是**完全正确**的，它确保了只有您的`better-auth`前端页面有权启动Google登录流程。
+在您的场景里，当Tauri App打开浏览器时，用户首先看到的是您部署的`better-auth`服务的登录页面。这个页面的源在开发时就是`http://127.0.0.1:60325`，在生产环境就是`https://api.huozhong.in`。所以，这个配置是**完全正确**的，它确保了只有您的`better-auth`前端页面有权启动Google登录流程。
 
 #### 2. 已获授权的重定向 URI (Authorized redirect URIs)
 
 * `http://127.0.0.1:60325/api/auth/callback/google` (开发环境)
-* `https://kf.huozhong.in/api/auth/callback/google` (生产环境)
+* `https://api.huozhong.in/api/auth/callback/google` (生产环境)
 
 **为什么正确？**
 这是整个流程中最关键的安全配置。它告诉Google：“当用户在我这里成功授权后，你**必须**将用户连同授权码（`code`）一起重定向回这个指定的URL，任何其他URL都是无效且不允许的。”
@@ -109,7 +109,7 @@ function getAuthUrl() {
     : 'knowledge-focus://auth/callback';
   const betterAuthUrl = isDev
     ? 'http://127.0.0.1:60325/auth'
-    : 'https://kf.huozhong.in/auth';
+    : 'https://api.huozhong.in/auth';
 
   const url = new URL(betterAuthUrl);
   url.searchParams.set('client_id', 'YOUR_CLIENT_ID');

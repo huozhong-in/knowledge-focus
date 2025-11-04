@@ -136,7 +136,7 @@ export function SettingsDialog({ children }: SettingsDialogProps) {
     {
       label: t('SETTINGS.online-documents.name'),
       icon: Globe,
-      url: "https://kf.huozhong.in",
+      url: "https://kf.huozhong.in/docs",
       group: "help",
     },
     {

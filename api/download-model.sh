@@ -105,7 +105,7 @@ else
     echo "请尝试："
     echo "1. 检查网络连接"
     echo "2. 使用 VPN（如果在中国大陆）"
-    echo "3. 查看文档: https://kf.huozhong.in/doc"
+    echo "3. 查看文档: https://kf.huozhong.in/docs"
     echo "4. 报告问题: https://github.com/huozhong-in/knowledge-focus/issues"
     echo "================================"
     exit 1

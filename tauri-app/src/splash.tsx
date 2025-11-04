@@ -680,7 +680,7 @@ const ErrorRecoveryPanel: React.FC<{
                 <Button
                   onClick={() => {
                     invoke('open_url', {
-                      url: 'https://kf.huozhong.in/doc'
+                      url: 'https://kf.huozhong.in/docs'
                     });
                   }}
                   variant="outline"
