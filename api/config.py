@@ -15,6 +15,11 @@ VLM_MODEL = "mlx-community/Qwen3-VL-4B-Instruct-3bit"
 # 测试用本地SQLite数据库路径
 TEST_DB_PATH = (Path.home() / "Library/Application Support/knowledge-focus.huozhong.in/knowledge-focus.db").as_posix()
 
+# 重试配置
+RETRY_TIMES = 3
+WAIT_MIN_SECONDS = 1
+WAIT_MAX_SECONDS = 5
+
 # 单例
 def singleton(cls):
     instances = {}    

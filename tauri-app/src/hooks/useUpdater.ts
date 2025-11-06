@@ -64,7 +64,7 @@ export const useUpdater = () => {
         setUpdateAvailable(true, update.version, update.body);
         
         if (manual) {
-          toast.success(`发现新版本 ${update.version}！`);
+            toast.success(`New version ${update.version} found!`);
         }
         
         return update;
@@ -73,7 +73,7 @@ export const useUpdater = () => {
         setUpdateAvailable(false);
         
         if (manual) {
-          toast.success('当前已是最新版本');
+            toast.success('You are already on the latest version');
         }
         
         return null;
@@ -152,14 +152,14 @@ export const useUpdater = () => {
       console.log('[更新安装] 更新安装完成');
       setIsDownloading(false);
       setIsReadyToInstall(true);
-      toast.success('更新下载完成！点击重启应用以完成更新。');
+      toast.success('Update downloaded successfully! Click restart to complete the update.');
       
     } catch (error) {
       console.error('[更新下载] 下载更新失败:', error);
       const errorMessage = error instanceof Error ? error.message : '下载更新失败';
       setUpdateError(errorMessage);
       setIsDownloading(false);
-      toast.error(`下载更新失败: ${errorMessage}`);
+      toast.error(`Failed to download update: ${errorMessage}`);
     }
   }, [setIsDownloading, setDownloadProgress, setIsReadyToInstall, setUpdateError]);
 
@@ -170,7 +170,7 @@ export const useUpdater = () => {
       await relaunch();
     } catch (error) {
       console.error('[应用重启] 重启失败:', error);
-      toast.error('重启失败，请手动重启应用');
+      toast.error('Restart failed, please restart the application manually');
     }
   }, []);
 

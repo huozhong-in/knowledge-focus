@@ -9,7 +9,7 @@ import gc
 import time
 import json
 import uuid
-from config import singleton
+from config import singleton, RETRY_TIMES, WAIT_MIN_SECONDS, WAIT_MAX_SECONDS
 from utils import preprocess_image
 from enum import IntEnum
 from typing import Optional, List, Dict, Any, Literal
@@ -19,9 +19,13 @@ import mlx.core as mx
 from mlx_vlm.generate import stream_generate, generate
 from mlx_vlm.prompt_utils import apply_chat_template
 from mlx_vlm.utils import load
-
-# � 移除Metal锁导入：内置MLX服务通过优先级队列保证串行化，无需Metal锁
-# 如果使用Metal锁，会导致Multivector任务调用HTTP API时死锁
+from tenacity import (
+    retry, 
+    wait_random_exponential, 
+    stop_after_attempt, 
+    retry_if_not_exception_type,
+    retry_if_exception_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -351,6 +355,10 @@ class MLXVLMModelManager:
         response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_at = int(time.time())
         
+        @retry(
+            wait=wait_random_exponential(min=WAIT_MIN_SECONDS, max=WAIT_MAX_SECONDS),
+            stop=stop_after_attempt(RETRY_TIMES),
+        )
         async def stream_generator():
             try:
                 # logger.info("Starting streaming generation")
@@ -410,6 +418,18 @@ class MLXVLMModelManager:
             media_type="text/event-stream"
         )
     
+    @retry(
+        wait=wait_random_exponential(min=WAIT_MIN_SECONDS, max=WAIT_MAX_SECONDS),
+        stop=stop_after_attempt(RETRY_TIMES),
+        # reraise=True,
+        # retry=retry_if_exception_type((
+            # openai.BadRequestError, 
+            # openai.APIConnectionError, 
+            # openai.RateLimitError, 
+            # openai.APIStatusError,
+            # openai.APIResponseValidationError,
+        # )),
+    )
     async def _generate_non_streaming_response(
         self,
         request: "OpenAIChatCompletionRequest",
@@ -441,8 +461,9 @@ class MLXVLMModelManager:
             
             result_text = result.text if hasattr(result, 'text') else str(result)
             # logger.info(f"Generation completed: {len(result_text)} chars")
-        finally:
-            pass
+        except Exception as e:
+            logger.error(f"Generation error: {e}", exc_info=True)
+            raise
         
         # 构造 OpenAI 格式响应
         response = OpenAIChatCompletionResponse(
