@@ -23,8 +23,8 @@ from tenacity import (
     retry, 
     wait_random_exponential, 
     stop_after_attempt, 
-    retry_if_not_exception_type,
-    retry_if_exception_type,
+    # retry_if_not_exception_type,
+    # retry_if_exception_type,
 )
 
 logger = logging.getLogger(__name__)
