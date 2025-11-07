@@ -5,6 +5,7 @@ import logging
 import time
 import threading
 import signal
+import asyncio
 from datetime import datetime
 from typing import Dict, Any
 from pathlib import Path
@@ -313,6 +314,23 @@ async def lifespan(app: FastAPI):
         except Exception as mlx_err:
             logger.error(f"MLX 服务启动检查失败: {str(mlx_err)}", exc_info=True)
             # 不中断启动流程
+        
+        # 启动 MLX 服务监控任务（自动重启崩溃的服务）
+        try:
+            import asyncio
+            logger.info("Starting MLX service monitor task...")
+            app.state.mlx_monitor_stop_event = asyncio.Event()
+            app.state.mlx_monitor_task = asyncio.create_task(
+                mlx_service_monitor(
+                    engine=app.state.engine,
+                    base_dir=app.state.db_directory,
+                    stop_event=app.state.mlx_monitor_stop_event
+                )
+            )
+            logger.info("MLX service monitor task has been started")
+        except Exception as monitor_err:
+            logger.error(f"启动 MLX 服务监控任务失败: {str(monitor_err)}", exc_info=True)
+            # 不中断启动流程（监控是可选的）
 
         # 正式开始服务
         logger.info("Application initialization completed, starting to provide services...")
@@ -325,6 +343,21 @@ async def lifespan(app: FastAPI):
     finally:
         # 退出前的清理工作
         logger.info("Application is starting to shut down...")
+        
+        # 停止 MLX 服务监控任务
+        try:
+            if hasattr(app.state, "mlx_monitor_task") and not app.state.mlx_monitor_task.done():
+                logger.info("Stopping MLX service monitor task...")
+                app.state.mlx_monitor_stop_event.set()
+                # 等待任务完成（最多 5 秒）
+                try:
+                    await asyncio.wait_for(app.state.mlx_monitor_task, timeout=5.0)
+                    logger.info("MLX service monitor task has stopped")
+                except asyncio.TimeoutError:
+                    logger.warning("MLX 服务监控任务在 5 秒内未停止，强制取消")
+                    app.state.mlx_monitor_task.cancel()
+        except Exception as e:
+            logger.error(f"停止 MLX 服务监控任务失败: {e}", exc_info=True)
         
         try:
             if hasattr(app.state, "task_processor_thread") and app.state.task_processor_thread.is_alive():
@@ -620,6 +653,133 @@ def high_priority_task_processor(engine, db_directory: str, stop_event: threadin
         task_getter_func="get_and_lock_next_high_priority_task",
         sleep_duration=2
     )
+
+async def mlx_service_monitor(engine: Engine, base_dir: str, stop_event: asyncio.Event):
+    """
+    MLX 服务监控任务（supervisord 式的进程管理）
+    
+    功能：
+    - 定期检查 MLX 服务（60316 端口）是否在运行
+    - 如果配置需要但服务崩溃，自动重启
+    - 实现指数退避策略，防止频繁重启导致的启动风暴
+    
+    Args:
+        engine: 数据库引擎
+        base_dir: 应用数据目录
+        stop_event: 停止信号事件
+    """
+    import asyncio
+    from utils import is_port_in_use
+    from models_builtin import ModelsBuiltin
+    
+    logger.info("🔍 MLX service monitor started")
+    
+    # 重启统计
+    restart_count = 0
+    last_restart_time = 0.0
+    total_restarts = 0
+    
+    # 监控配置
+    CHECK_INTERVAL = 10  # 检查间隔（秒）
+    RESTART_COOLDOWN = 60  # 重启冷却时间（秒）
+    MAX_RESTART_ATTEMPTS = 5  # 单位时间内最大重启次数
+    
+    builtin_mgr = ModelsBuiltin(engine=engine, base_dir=base_dir)
+    
+    while not stop_event.is_set():
+        try:
+            # 等待检查间隔或停止信号
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=CHECK_INTERVAL)
+                # 如果等待成功，说明收到停止信号
+                break
+            except asyncio.TimeoutError:
+                # 超时是正常的，继续检查
+                pass
+            
+            # 检查是否需要 MLX 服务
+            should_run, model_id = builtin_mgr.should_auto_load(base_dir=base_dir)
+            
+            if not should_run:
+                # 不需要运行，跳过检查
+                # logger.debug("MLX service not required, skipping check")
+                continue
+            
+            # 检查端口是否在使用
+            if not is_port_in_use(60316):
+                # 服务崩溃了！
+                logger.warning(f"⚠️  MLX service is DOWN (port 60316 not in use), model: {model_id}")
+                
+                # 检查重启频率
+                current_time = time.time()
+                time_since_last_restart = current_time - last_restart_time
+                
+                if time_since_last_restart < RESTART_COOLDOWN:
+                    # 在冷却时间内，增加重启计数
+                    restart_count += 1
+                    
+                    if restart_count >= MAX_RESTART_ATTEMPTS:
+                        # 重启次数过多，使用更长的退避时间
+                        backoff_time = min(2 ** (restart_count - MAX_RESTART_ATTEMPTS + 1), 300)
+                        logger.error(
+                            f"🚨 MLX service crashed {restart_count} times in {RESTART_COOLDOWN}s! "
+                            f"Backing off for {backoff_time}s before retry."
+                        )
+                        await asyncio.sleep(backoff_time)
+                    else:
+                        # 短暂等待后重试
+                        logger.info(f"⏳ Waiting 5s before restart attempt #{restart_count}...")
+                        await asyncio.sleep(5)
+                else:
+                    # 超过冷却时间，重置计数器
+                    restart_count = 1
+                
+                # 尝试重启服务
+                logger.info(f"🔄 Attempting to restart MLX service (model: {model_id}, attempt #{restart_count})...")
+                
+                try:
+                    success = builtin_mgr._start_mlx_service_process()
+                    
+                    if success:
+                        total_restarts += 1
+                        last_restart_time = current_time
+                        logger.info(
+                            f"✅ MLX service restarted successfully (total restarts: {total_restarts})"
+                        )
+                        
+                        # 重启成功后，等待一段时间再检查，给服务启动时间
+                        await asyncio.sleep(10)
+                        
+                        # 验证服务是否真的起来了
+                        if is_port_in_use(60316):
+                            logger.info("✅ MLX service confirmed running after restart")
+                            # 成功重启后，可以部分重置计数器（但不完全清零）
+                            restart_count = max(0, restart_count - 1)
+                        else:
+                            logger.error("❌ MLX service failed to start (port still not in use)")
+                    else:
+                        logger.error("❌ Failed to restart MLX service (startup function returned False)")
+                        
+                except Exception as restart_err:
+                    logger.error(f"❌ Exception during MLX service restart: {restart_err}", exc_info=True)
+            else:
+                # 服务正常运行
+                # logger.debug("✅ MLX service is running normally")
+                
+                # 如果之前有重启过，重置计数器（服务已稳定运行）
+                if restart_count > 0:
+                    current_time = time.time()
+                    if current_time - last_restart_time > RESTART_COOLDOWN * 2:
+                        # 服务已稳定运行超过2倍冷却时间，重置计数器
+                        restart_count = 0
+                        logger.info("✅ MLX service stabilized, reset restart counter")
+        
+        except Exception as e:
+            logger.error(f"❌ Error in MLX service monitor: {e}", exc_info=True)
+            # 发生错误后等待一段时间再继续
+            await asyncio.sleep(30)
+    
+    logger.info(f"🔍 MLX service monitor stopped (total restarts during session: {total_restarts})")
 
 def _check_and_create_multivector_task(engine: Engine, task_mgr: TaskManager, screening_result_id: int):
     """

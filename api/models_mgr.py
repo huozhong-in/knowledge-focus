@@ -381,11 +381,11 @@ Do not include ANY explanatory text before or after the JSON.
 Please create a concise and meaningful title for a chat session based on the user's first message.
 
 **Requirements:**
-1. **Length:** Maximum 20 characters (including Chinese characters, English letters, numbers, and symbols)
-2. **Language:** Use the same language as the user's message (Chinese for Chinese input, English for English input)
+1. **Length:** Maximum 20 characters (including English letters, numbers, and symbols)
+2. **Language:** Use English as first priority; other languages only if the user's message is entirely in that language
 3. **Content:** Capture the main topic or intent of the user's question/request
 4. **Style:** Clear, descriptive, and professional
-5. **Special Cases:** For simple greetings like "你好", "hello", use generic titles like "新对话", "New chat"
+5. **Special Cases:** For simple greetings like "hi", "hello", use generic titles like "New conversation", "New chat"
 
 **User's First Message:**
 ---

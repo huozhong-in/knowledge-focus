@@ -27,11 +27,11 @@ print(us_timezones)
 
 def get_current_time(ctx: RunContext, timezone: str = "UTC") -> str:
     """
-    获取当前时间的字符串表示，格式为 "YYYY-MM-DD HH:MM:SS"
+    get current time string in specified timezone, format "YYYY-MM-DD HH:MM:SS"
     Args:
-        timezone (str): 时区名称，默认为 "UTC"
+        timezone (str): timezone name, default is "UTC"
     Returns:
-        str: 当前时间的字符串表示
+        str: current time string
     """
     try:
         tz = pytz.timezone(timezone)

@@ -350,16 +350,30 @@ class MLXVLMModelManager:
         request: "OpenAIChatCompletionRequest",
         model, processor, prompt, images
     ):
-        """生成流式响应"""
+        """生成流式响应（带超时保护）"""
         
         response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_at = int(time.time())
+        
+        # 计算超时时间（流式响应允许更长时间）
+        max_tokens = request.max_tokens or 512
+        base_timeout = 60.0  # 流式响应基础超时更长
+        token_timeout = max_tokens * 0.3  # 流式每个token允许0.3秒
+        image_timeout = 30.0 if images else 0.0
+        total_timeout = base_timeout + token_timeout + image_timeout
+        timeout_seconds = min(total_timeout, 300.0)  # 最大5分钟
+        
+        logger.info(f"Streaming timeout set to {timeout_seconds:.1f}s (max_tokens={max_tokens}, has_images={bool(images)})")
         
         @retry(
             wait=wait_random_exponential(min=WAIT_MIN_SECONDS, max=WAIT_MAX_SECONDS),
             stop=stop_after_attempt(RETRY_TIMES),
         )
         async def stream_generator():
+            start_time = time.time()
+            last_chunk_time = start_time
+            chunk_timeout = 30.0  # 单个 chunk 的超时时间
+            
             try:
                 # logger.info("Starting streaming generation")
                 token_iterator = stream_generate(
@@ -368,17 +382,44 @@ class MLXVLMModelManager:
                     prompt=prompt,
                     image=images if images else None,
                     temperature=request.temperature,
-                    max_tokens=request.max_tokens,
+                    max_tokens=max_tokens,
                     top_p=request.top_p
                 )
                 
                 chunk_count = 0
                 for chunk in token_iterator:
+                    # 检查总超时
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout_seconds:
+                        logger.error(f"⚠️ Streaming total timeout after {elapsed:.1f}s")
+                        error_chunk = {
+                            "error": {
+                                "message": f"Streaming timeout after {elapsed:.1f} seconds",
+                                "type": "timeout_error"
+                            }
+                        }
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        break
+                    
+                    # 检查单个 chunk 超时（防止卡在某个 token）
+                    chunk_elapsed = time.time() - last_chunk_time
+                    if chunk_elapsed > chunk_timeout:
+                        logger.error(f"⚠️ Streaming chunk timeout after {chunk_elapsed:.1f}s without new token")
+                        error_chunk = {
+                            "error": {
+                                "message": f"No new token for {chunk_elapsed:.1f} seconds",
+                                "type": "chunk_timeout_error"
+                            }
+                        }
+                        yield f"data: {json.dumps(error_chunk)}\n\n"
+                        break
+                    
                     chunk_count += 1
                     if chunk is None or not hasattr(chunk, "text"):
                         continue
                     
                     if chunk.text:
+                        last_chunk_time = time.time()  # 更新最后一个 chunk 的时间
                         chunk_data = ChatCompletionChunk(
                             id=response_id,
                             created=created_at,
@@ -392,7 +433,7 @@ class MLXVLMModelManager:
                         yield f"data: {chunk_data.model_dump_json()}\n\n"
                         await asyncio.sleep(0.01)
                 
-                # logger.info(f"Streaming completed: {chunk_count} chunks")
+                # logger.info(f"Streaming completed: {chunk_count} chunks in {time.time() - start_time:.1f}s")
                 
                 # 发送结束标记
                 final_chunk = ChatCompletionChunk(
@@ -435,12 +476,27 @@ class MLXVLMModelManager:
         request: "OpenAIChatCompletionRequest",
         model, processor, prompt, images
     ):
-        """生成非流式响应"""
+        """生成非流式响应（带超时保护）"""
         
         response_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_at = int(time.time())
         
         # logger.info("Starting non-streaming generation")
+        
+        # 根据 max_tokens 动态计算超时时间
+        # 估算: 每个 token 约 0.1-0.2 秒 (4B 模型在 M1/M2 上)
+        max_tokens = request.max_tokens or 512
+        # 基础超时: 30秒 + token相关时间
+        # 有图片时额外增加30秒（图片处理时间）
+        base_timeout = 30.0
+        token_timeout = max_tokens * 0.2  # 每个token 0.2秒
+        image_timeout = 30.0 if images else 0.0
+        total_timeout = base_timeout + token_timeout + image_timeout
+        
+        # 限制最大超时时间为 180 秒（3分钟）
+        timeout_seconds = min(total_timeout, 180.0)
+        
+        logger.info(f"Generation timeout set to {timeout_seconds:.1f}s (max_tokens={max_tokens}, has_images={bool(images)})")
         
         try:
             # 构造参数字典,只在有图片时传递 image 参数
@@ -449,18 +505,41 @@ class MLXVLMModelManager:
                 "processor": processor,
                 "prompt": prompt,
                 "temperature": request.temperature,
-                "max_tokens": request.max_tokens or 512,
+                "max_tokens": max_tokens,
                 "top_p": request.top_p,
                 "verbose": False
             }
             if images:
                 generate_kwargs["image"] = images
             
-            # 使用 generate 函数进行非流式推理
-            result = generate(**generate_kwargs)
+            # 在线程池中执行同步的 generate 操作（带超时保护）
+            loop = asyncio.get_event_loop()
+            generate_task = loop.run_in_executor(
+                None,
+                lambda: generate(**generate_kwargs)
+            )
             
-            result_text = result.text if hasattr(result, 'text') else str(result)
-            # logger.info(f"Generation completed: {len(result_text)} chars")
+            # 等待结果，带超时
+            try:
+                result = await asyncio.wait_for(generate_task, timeout=timeout_seconds)
+                result_text = result.text if hasattr(result, 'text') else str(result)
+                # logger.info(f"Generation completed: {len(result_text)} chars")
+            except asyncio.TimeoutError:
+                # 超时了
+                logger.error(
+                    f"⚠️ Generation timeout after {timeout_seconds:.1f}s - possible GPU overload or hang. "
+                    f"Request params: max_tokens={max_tokens}, has_images={bool(images)}, temperature={request.temperature}"
+                )
+                # 注意：虽然 Python 任务被取消，但 MLX 的 C++ 层可能仍在运行
+                # 这只是防止 Python 层面永久卡死
+                raise Exception(
+                    f"Model generation timeout after {timeout_seconds:.1f} seconds. "
+                    "This may indicate GPU overload. The MLX service might need to be restarted."
+                )
+                
+        except asyncio.TimeoutError:
+            # 已在内部处理，重新抛出
+            raise
         except Exception as e:
             logger.error(f"Generation error: {e}", exc_info=True)
             raise

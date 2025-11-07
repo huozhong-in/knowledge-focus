@@ -45,7 +45,7 @@ def get_router(get_engine: Engine) -> APIRouter:
                 data_list = request
                 
             if not data_list:
-                return {"success": True, "processed_count": 0, "failed_count": 0, "message": "没有需要处理的文件"}
+                return {"success": True, "processed_count": 0, "failed_count": 0, "message": "No files to process"}
 
             # 预处理每个文件记录中的时间戳，转换为Python datetime对象
             for data in data_list:
@@ -67,14 +67,14 @@ def get_router(get_engine: Engine) -> APIRouter:
                         try:
                             data[time_field] = datetime.fromisoformat(data[time_field].replace("Z", "+00:00"))
                         except Exception as e:
-                            logger.warning(f"转换字符串时间字段 {time_field} 失败: {str(e)}")
+                            logger.warning(f"Failed to convert string time field {time_field}: {str(e)}")
                             # 如果是修改时间字段转换失败，设置为当前时间
                             if time_field == "modified_time":
                                 data[time_field] = datetime.now()
                     
                     # 确保每个时间字段都有值，对于必填字段
                     if time_field == "modified_time" and (time_field not in data or data[time_field] is None):
-                        logger.warning(f"缺少必填时间字段 {time_field}，使用当前时间")
+                        logger.warning(f"Missing required time field {time_field}, using current time")
                         data[time_field] = datetime.now()
                                 
                 # Ensure 'extra_metadata' is used, but allow 'metadata' for backward compatibility from client
@@ -82,7 +82,7 @@ def get_router(get_engine: Engine) -> APIRouter:
                     data["extra_metadata"] = data.pop("metadata")
 
             # 1. 先创建任务，获取 task_id
-            task_name = f"批量处理文件: {len(data_list)} 个文件"
+            task_name = f"batch processing files: {len(data_list)} files"
             task: Task = task_mgr.add_task(
                 task_name=task_name,
                 task_type=TaskType.TAGGING,
@@ -96,9 +96,9 @@ def get_router(get_engine: Engine) -> APIRouter:
             
             # 3. 返回结果
             if result["success"] > 0:
-                message = f"已为 {result['success']} 个文件创建处理任务，失败 {result['failed']} 个"
+                message = f"Created processing tasks for {result['success']} files, failed {result['failed']} files"
             else:
-                message = f"未能处理任何文件，失败 {result['failed']} 个"
+                message = f"Failed to process any files, failed {result['failed']} files"
 
             return {
                 "success": result["success"] > 0,
@@ -110,10 +110,10 @@ def get_router(get_engine: Engine) -> APIRouter:
             }
             
         except Exception as e:
-            logger.error(f"批量处理文件粗筛结果失败: {str(e)}")
+            logger.error(f"batch processing files failed: {str(e)}")
             return {
                 "success": False,
-                "message": f"批量处理失败: {str(e)}"
+                "message": f"batch processing failed: {str(e)}"
             }
 
     @router.get("/file-screening/results")

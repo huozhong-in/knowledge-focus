@@ -12,6 +12,7 @@
 import logging
 import sys
 import argparse
+from asyncio import Semaphore
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -49,6 +50,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🔒 并发限制信号量（确保严格单线程处理）
+# 虽然 VLM manager 内部有队列，但这里再加一层保险
+MAX_CONCURRENT_REQUESTS = 1
+request_semaphore = Semaphore(MAX_CONCURRENT_REQUESTS)
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: OpenAIChatCompletionRequest):
     """
@@ -66,82 +72,84 @@ async def chat_completions(request: OpenAIChatCompletionRequest):
     
     重要：为了支持离线使用，会尝试解析为本地路径
     """
-    logger.info(f"Received chat completion request: model={request.model}, stream={request.stream}")
-    
-    # 获取 VLM 管理器
-    manager = get_vlm_manager()
-    
-    # 解析模型路径（优先使用本地路径以支持离线）
-    model_id = request.model
-    model_path = None
-    
-    # 尝试从 ModelsBuiltin 获取本地路径
-    try:
-        from models_builtin import ModelsBuiltin, BUILTIN_MODELS
-        from sqlmodel import create_engine
-        import os
+    # 🔒 使用信号量确保严格单线程处理（防止 GPU 过载）
+    async with request_semaphore:
+        logger.info(f"Received chat completion request: model={request.model}, stream={request.stream}")
         
-        # 获取 base_dir
-        base_dir = app.state.base_dir
+        # 获取 VLM 管理器
+        manager = get_vlm_manager()
         
-        # 创建临时 engine（只用于查询）
-        db_path = os.path.join(base_dir, 'knowledge-focus.db')
-        engine = create_engine(f'sqlite:///{db_path}')
+        # 解析模型路径（优先使用本地路径以支持离线）
+        model_id = request.model
+        model_path = None
         
-        # 获取 ModelsBuiltin 实例
-        models_builtin = ModelsBuiltin(engine=engine, base_dir=base_dir)
-        
-        # 支持两种模型标识符:
-        # 1. model_id (如 "qwen3-vl-4b")
-        if model_id in BUILTIN_MODELS:
-            # 尝试获取本地路径
-            local_path = models_builtin.get_model_path(model_id)
-            if local_path:
-                model_path = local_path
-                logger.info(f"✅ Using local model path for '{model_id}': {model_path}")
-            else:
-                # 本地未下载，使用 HuggingFace ID（会尝试联网下载）
-                model_path = BUILTIN_MODELS[model_id]["hf_model_id"]
-                logger.warning(f"⚠️  Model '{model_id}' not downloaded locally, using HF ID: {model_path}")
-        
-        # 2. hf_model_id (如 "mlx-community/Qwen3-VL-4B-Instruct-3bit")
-        else:
-            # 尝试通过 hf_model_id 查找对应的 model_id
-            found = False
-            for mid, config in BUILTIN_MODELS.items():
-                if config["hf_model_id"] == model_id:
-                    # 找到对应的 model_id，尝试获取本地路径
-                    local_path = models_builtin.get_model_path(mid)
-                    if local_path:
-                        model_path = local_path
-                        logger.info(f"✅ Found local model by HF ID '{model_id}' -> alias: {mid}, path: {model_path}")
-                    else:
-                        model_path = model_id  # 使用 HF ID
-                        logger.warning(f"⚠️  Model '{mid}' not downloaded locally, using HF ID: {model_path}")
-                    found = True
-                    break
+        # 尝试从 ModelsBuiltin 获取本地路径
+        try:
+            from models_builtin import ModelsBuiltin, BUILTIN_MODELS
+            from sqlmodel import create_engine
+            import os
             
-            if not found:
-                # 未找到，直接使用（可能是完整路径或 HF ID）
-                model_path = model_id
-                logger.warning(f"Model '{model_id}' not found in BUILTIN_MODELS, using as-is")
-    
-    except Exception as e:
-        # 如果解析失败，回退到使用原始 model_id
-        logger.error(f"Failed to resolve model path: {e}, using model_id as-is")
-        model_path = model_id
-    
-    # 确定优先级
-    # 默认为 LOW 优先级，会话界面可以设置为 HIGH
-    # TODO: 可以通过请求头或参数传递优先级
-    priority = RequestPriority.LOW
-    
-    # 将请求加入队列
-    logger.info(f"Enqueueing request with priority: {priority.name}, model_path: {model_path}")
-    result = await manager.enqueue_request(request, model_path, priority)
-    
-    logger.info("Request completed successfully")
-    return result
+            # 获取 base_dir
+            base_dir = app.state.base_dir
+            
+            # 创建临时 engine（只用于查询）
+            db_path = os.path.join(base_dir, 'knowledge-focus.db')
+            engine = create_engine(f'sqlite:///{db_path}')
+            
+            # 获取 ModelsBuiltin 实例
+            models_builtin = ModelsBuiltin(engine=engine, base_dir=base_dir)
+            
+            # 支持两种模型标识符:
+            # 1. model_id (如 "qwen3-vl-4b")
+            if model_id in BUILTIN_MODELS:
+                # 尝试获取本地路径
+                local_path = models_builtin.get_model_path(model_id)
+                if local_path:
+                    model_path = local_path
+                    logger.info(f"✅ Using local model path for '{model_id}': {model_path}")
+                else:
+                    # 本地未下载，使用 HuggingFace ID（会尝试联网下载）
+                    model_path = BUILTIN_MODELS[model_id]["hf_model_id"]
+                    logger.warning(f"⚠️  Model '{model_id}' not downloaded locally, using HF ID: {model_path}")
+            
+            # 2. hf_model_id (如 "mlx-community/Qwen3-VL-4B-Instruct-3bit")
+            else:
+                # 尝试通过 hf_model_id 查找对应的 model_id
+                found = False
+                for mid, config in BUILTIN_MODELS.items():
+                    if config["hf_model_id"] == model_id:
+                        # 找到对应的 model_id，尝试获取本地路径
+                        local_path = models_builtin.get_model_path(mid)
+                        if local_path:
+                            model_path = local_path
+                            logger.info(f"✅ Found local model by HF ID '{model_id}' -> alias: {mid}, path: {model_path}")
+                        else:
+                            model_path = model_id  # 使用 HF ID
+                            logger.warning(f"⚠️  Model '{mid}' not downloaded locally, using HF ID: {model_path}")
+                        found = True
+                        break
+                
+                if not found:
+                    # 未找到，直接使用（可能是完整路径或 HF ID）
+                    model_path = model_id
+                    logger.warning(f"Model '{model_id}' not found in BUILTIN_MODELS, using as-is")
+        
+        except Exception as e:
+            # 如果解析失败，回退到使用原始 model_id
+            logger.error(f"Failed to resolve model path: {e}, using model_id as-is")
+            model_path = model_id
+        
+        # 确定优先级
+        # 默认为 LOW 优先级，会话界面可以设置为 HIGH
+        # TODO: 可以通过请求头或参数传递优先级
+        priority = RequestPriority.LOW
+        
+        # 将请求加入队列
+        logger.info(f"Enqueueing request with priority: {priority.name}, model_path: {model_path}")
+        result = await manager.enqueue_request(request, model_path, priority)
+        
+        logger.info("Request completed successfully")
+        return result
 
 @app.get("/health")
 async def health_check():

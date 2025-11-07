@@ -578,7 +578,7 @@ class ModelsBuiltin:
                 model_identifier = cap_config.model_identifier
                 for model_id, config in BUILTIN_MODELS.items():
                     if config["hf_model_id"] == model_identifier or model_id == model_identifier:
-                        logger.info(f"Should auto-load builtin model: {model_id}")
+                        # logger.info(f"Should auto-load builtin model: {model_id}")
                         return True, model_id
     
         return False, None
