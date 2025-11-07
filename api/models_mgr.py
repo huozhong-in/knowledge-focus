@@ -235,7 +235,7 @@ Assemble the final list of tags from Step 2 and Step 3. Before outputting, ensur
 * **Formatting**:
     * All multi-word English tags MUST use a single underscore `_` as a separator (e.g., `Project_Management`).
     * Hyphens `-` that are part of a word must be preserved (e.g., `Man-in-the-Loop`).
-    * Absolutely NO generic tags like "File", "Document", "Text", "资料", "文档".
+    * Absolutely NO generic tags like "File", "Document", "Text", "File", "archive".
     * Ensure there are no leading/trailing spaces or punctuation around the tags.
 
 # OUTPUT FORMAT
@@ -245,17 +245,17 @@ Do not wrap your output in ```json or ```.
 Do not include ANY explanatory text before or after the JSON.
 
 **Example Input (User Prompt):**
-* File Path: `/Users/Admin/Work/Project_KF/specs/2025-09-02_后端API设计草案.md`
-* Content Summary: `# KF 后端 API 规范 (草案)... 主要实体是文件(Files), 标签(Tags)... 我们将使用 FastAPI...`
-* Candidate Tags: `["API", "Knowledge-Focus", "Database", "草稿"]`
+* File Path: `/Users/Admin/Work/Project_KF/specs/2025-09-02_backend_API_design_draft.md`
+* Content Summary: `# KF backend API specification (draft)... main entities are files (Files), tags (Tags)... We will use FastAPI...`
+* Candidate Tags: `["API", "Knowledge-Focus", "Database", "draft", "backend", "specification"]`
 
 **Your Correct and ONLY Output (RAW JSON, NO MARKDOWN):**
 {
   "tags": [
-    "API设计",
+    "API Design",
     "Knowledge-Focus",
-    "后端",
-    "草稿"
+    "Backend",
+    "Draft"
   ]
 }
 """.strip()

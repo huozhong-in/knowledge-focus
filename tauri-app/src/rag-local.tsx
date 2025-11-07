@@ -197,19 +197,19 @@ export function RagLocal({
   const getEventLabel = (type: string) => {
     switch (type) {
       case 'rag-retrieval':
-        return '检索完成';
+        return 'rag retrieval';
       case 'rag-progress':
-        return '处理中';
+        return 'rag progress';
       case 'rag-error':
-        return 'RAG错误';
+        return 'rag error';
       case 'api-log':
-        return 'API日志';
+        return 'API log';
       case 'api-error':
-        return 'API错误';
+        return 'API error';
       case 'model-download':
-        return '模型下载';
+        return 'model download';
       default:
-        return '事件';
+        return 'event';
     }
   };
 
@@ -228,7 +228,7 @@ export function RagLocal({
             </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline" className="text-xs">
-                {filteredEvents.length} {mode === 'startup-only' ? '条日志' : t('RAGLOCAL.x-tensor-records')}
+                {filteredEvents.length} {mode === 'startup-only' ? ' logs' : t('RAGLOCAL.x-tensor-records')}
               </Badge>
               {!isAutoScroll && (
                 <Badge 
@@ -236,7 +236,7 @@ export function RagLocal({
                   className="text-xs cursor-pointer"
                   onClick={() => setIsAutoScroll(true)}
                 >
-                  返回底部
+                  return to bottom
                 </Badge>
               )}
             </div>
@@ -353,7 +353,7 @@ export function RagLocal({
                           {event.progress !== undefined && (
                             <div className="mb-1">
                               <div className="flex justify-between text-xs text-gray-600 mb-1">
-                                <span>下载进度</span>
+                                <span>download progress</span>
                                 <span>{event.progress}%</span>
                               </div>
                               <div className="w-full bg-gray-200 rounded-full h-1.5">

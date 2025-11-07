@@ -42,7 +42,7 @@ def configure_parsing_warnings():
 
 # 可被markitdown解析的文件扩展名
 # * 可以生成图像描述（目前仅支持pptx和图像文件） https://github.com/microsoft/markitdown#python-api
-MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls']
+MARKITDOWN_EXTENSIONS = ['pdf', 'pptx', 'docx', 'xlsx', 'xls', 'epub']
 # 其他可解析的纯文本类型文件扩展名
 OTHER_PARSEABLE_EXTENSIONS = ['md', 'markdown', 'txt']  # json/xml/csv也能，但意义不大
 # 本业务场景所需模型能力的组合
@@ -332,7 +332,7 @@ if __name__ == "__main__":
     # 测试文件路径
     import pathlib
     user_home = pathlib.Path.home()
-    test_file_path = user_home / "Documents" / "纯CSS实现太极动态效果.pdf"
+    test_file_path = user_home / "ebooks" / "Normal People (Sally Rooney) (Z-Library).epub"
     if not test_file_path.exists():
         test_logger.error(f"测试文件不存在: {test_file_path}")
         raise FileNotFoundError(f"测试文件不存在: {test_file_path}")
