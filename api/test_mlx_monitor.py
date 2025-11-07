@@ -7,7 +7,6 @@
 3. 指数退避策略生效
 """
 import asyncio
-import time
 from utils import is_port_in_use, kill_process_on_port
 
 MLX_SERVICE_PORT = 60316
@@ -128,7 +127,6 @@ async def test_monitor_logs():
     print("测试 4: 查看监控日志")
     print("="*60)
     
-    import os
     from pathlib import Path
     
     # 查找日志文件
