@@ -39,8 +39,8 @@ echo ""
 
 # 定义镜像列表
 declare -a MIRRORS=(
-    "https://huggingface.co|HuggingFace 官方"
     "https://hf-mirror.com|HF-Mirror 国内镜像"
+    "https://huggingface.co|HuggingFace 官方"
 )
 
 # 定义下载函数

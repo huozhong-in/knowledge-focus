@@ -447,7 +447,7 @@ const Splash: React.FC<SplashProps> = ({ setShowSplash }) => {
               "w-4 h-4 transition-transform",
               showLogs && "rotate-180"
             )} />
-            {showLogs ? t('INTRO.log-hide') : t('INTRO.log-show')}{t('INTRO.log-details')}
+            {showLogs ? t('INTRO.log-hide') : t('INTRO.log-show')} {t('INTRO.log-details')}
           </span>
           <Badge variant="secondary">{logs.length}</Badge>
         </Button>

@@ -52,7 +52,7 @@ class MemoryMgr:
                     formatted_messages.append(formatted_msg)
                 
                 current_tokens = num_tokens_from_messages(formatted_messages)
-                print(f"当前消息数: {len(messages)}, 当前token数: {current_tokens}, 限制token数: {max_tokens}")
+                # print(f"当前消息数: {len(messages)}, 当前token数: {current_tokens}, 限制token数: {max_tokens}")
                 if current_tokens > max_tokens:
                     # 从最早开始裁剪消息
                     messages.pop(0)
