@@ -23,11 +23,11 @@ class ModelCapabilityConfirm:
         self.engine = engine
         self.base_dir = base_dir
         self.model_config_mgr = ModelConfigMgr(engine)
-        proxy = self.model_config_mgr.get_proxy_value()
-        if proxy is not None and proxy.value is not None and proxy.value != "":
-            self.system_proxy = proxy.value
-        else:
-            self.system_proxy = None
+        # proxy = self.model_config_mgr.get_proxy_value()
+        # if proxy is not None and proxy.value is not None and proxy.value != "":
+        #     self.system_proxy = proxy.value
+        # else:
+        #     self.system_proxy = None
 
     def get_sorted_capability_names(self) -> List[str]:
         """

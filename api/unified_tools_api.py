@@ -10,14 +10,14 @@
 from sqlalchemy import Engine
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 import logging
 from tool_provider import ToolProvider
 from backend_tool_caller import g_backend_tool_caller
 
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine]) -> APIRouter:
     """获取统一的工具API路由器"""
     router = APIRouter()
 

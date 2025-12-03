@@ -573,10 +573,115 @@ const getPdfReaderName = async (pdfPath:string): Promise<string> => {
   return result
 }
 
+/**
+ * 获取PDF当前页码信息
+ * 通过JXA读取Preview.app窗口标题，解析"页码：4/8"格式
+ * @param pdfPath PDF文件路径
+ * @returns 页码信息对象 {currentPage, totalPages} 或 undefined
+ */
+export async function getPdfPageInfo(pdfPath: string): Promise<{
+  currentPage: number
+  totalPages: number
+} | undefined> {
+  try {
+    const hasPermission = await checkScreenRecordingPermission()
+    if (!hasPermission) {
+      // 如果没有屏幕录制权限，尝试请求权限
+      const permissionGranted = await requestScreenRecordingPermission()
+      if (!permissionGranted) {
+        return undefined
+      }
+    }
+
+    const pdfFileName = pdfPath.split("/").pop() || ""
+    if (pdfFileName === "") {
+      console.error("无法获取PDF文件名")
+      return undefined
+    }    
+
+    const defaultPDFReaderName = await getPdfReaderName(pdfPath)
+    
+    const appleScript = `
+'use strict';
+
+function getPdfPageInfo() {
+  ObjC.import('Cocoa');
+  ObjC.import('Quartz');
+    try {
+        const systemEvents = Application('System Events');
+        const previewProcess = systemEvents.processes["${defaultPDFReaderName}"];
+        
+        // Preview 的页码通常显示在窗口标题或工具栏中
+        const targetWindow = previewProcess.windows().find(win => {
+          const winName = win.name();
+          // console.log(winName);
+          return winName.includes("${pdfFileName}");  // 返回布尔值，不是字符串
+        });
+        
+        if (!targetWindow) {
+            return JSON.stringify({ error: "未找到包含 '${pdfFileName}' 的窗口。" });
+        }
+
+        return JSON.stringify({ windowTitle: targetWindow.name() });
+
+    } catch (e) {
+        return JSON.stringify({ error: e.message });
+    }
+}
+
+getPdfPageInfo();
+`
+
+    const command = Command.create("run-applescript", [
+      "-l",
+      "JavaScript",
+      "-e",
+      appleScript,
+    ])
+    
+    const output = await command.execute()
+    
+    if (output.code !== 0) {
+      console.error("getPdfPageInfo() 执行失败:", output.stderr)
+      return undefined
+    }
+
+    const result = JSON.parse(output.stdout.trim())
+    
+    if (result.error) {
+      console.error("getPdfPageInfo() 错误:", result.error)
+      return undefined
+    }
+
+    // 尝试从窗口标题解析当前页码和总页数
+    const title: string = result.windowTitle
+    // 标题类似“AI代理的上下文工程：构建Manus的经验教训.pdf – 页码：6/8”
+    const pageInfoMatch_chinese = title.match(/页码[:：]\s*(\d+)\s*\/\s*(\d+)/)
+    // 标题类似“AI代理的上下文工程：构建Manus的经验教训.pdf – Page 6 of 8”
+    const pageInfoMatch_english = title.match(/Page\s+(\d+)\s+of\s+(\d+)/i)
+    const pageInfoMatch = pageInfoMatch_chinese || pageInfoMatch_english
+    if (!pageInfoMatch) {
+      console.error("未能从窗口标题解析页码信息")
+      // TODO: 对于无法处理其他语言的情况，最好的方法是用本地小模型解析后输出结构化数据
+      return undefined
+    }
+
+    return {
+      currentPage: parseInt(pageInfoMatch[1], 10),
+      totalPages: parseInt(pageInfoMatch[2], 10)
+    }
+
+  } catch (error) {
+    console.error("getPdfPageInfo() 发生异常:", error)
+    return undefined
+  }
+}
+
 // 导出所有工具函数，用于注册到工具通道
 export const pdfCoReadingTools = {
   ensure_accessibility_permission: ensureAccessibilityPermission,
   handle_pdf_reading: handlePdfReading,
   handle_activate_pdf_reader: handleActivatePdfReader,
   handle_pdf_reader_screenshot: handlePdfReaderScreenshot,
+  get_pdf_page_info: getPdfPageInfo,
 }

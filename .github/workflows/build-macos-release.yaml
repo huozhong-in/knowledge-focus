@@ -69,11 +69,12 @@ jobs:
             ## 🚀 KnowledgeFocus v__VERSION__
             
             ### 🆕 Updates
-            - <!-- Please fill in the release notes here -->
+            - We don't currently generate release notes for auto-updates. You can view the complete changelog and release notes at https://github.com/huozhong-in/knowledge-focus/releases/tag/v__VERSION__.
 
             ### 📦 Download Instructions
             - **Intel chip Mac**: DO NOT support.
             - **Apple Silicon Mac (M series chip)**: Download `KnowledgeFocus_x.x.x_aarch64.dmg`
+            - **Other files**: These are internal files used for auto-update functionality and code signing. You typically don't need to download them manually.
 
           releaseDraft: true
           prerelease: false

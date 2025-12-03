@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy import Engine
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable
 import logging
 from tagging_mgr import TaggingMgr
 from lancedb_mgr import LanceDBMgr
@@ -9,7 +9,7 @@ from file_tagging_mgr import FileTaggingMgr
 
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine], base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_tagging_manager(engine: Engine = Depends(get_engine)) -> TaggingMgr:

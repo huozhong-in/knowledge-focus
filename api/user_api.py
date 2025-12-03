@@ -3,7 +3,7 @@
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 from fastapi import APIRouter, Request, HTTPException, Header, Depends, Body
 from fastapi.responses import HTMLResponse
 from sqlalchemy import Engine
@@ -13,7 +13,7 @@ from bridge_events import BridgeEventSender
 logger = logging.getLogger(__name__)
 
 
-def get_router(get_engine) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine]) -> APIRouter:
     """创建并返回用户API路由"""
     router = APIRouter()
     bridge_emitter = BridgeEventSender()

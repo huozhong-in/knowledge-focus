@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy import Engine
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 from lancedb_mgr import LanceDBMgr
 from models_mgr import ModelsMgr
 from search_mgr import SearchManager
 import logging
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine], base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_lancedb_manager() -> LanceDBMgr:

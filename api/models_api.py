@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Body
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 from sqlalchemy import Engine
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Callable
 import json
 import uuid
 import logging
@@ -17,7 +17,7 @@ from models_builtin import ModelsBuiltin
 
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine], base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_model_config_manager(engine: Engine = Depends(get_engine)) -> ModelConfigMgr:

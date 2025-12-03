@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, Body
 from sqlmodel import Session, select
 from sqlalchemy import Engine
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 import time
 import sys
 from db_mgr import MyFolders, FileCategory, FileFilterRule, FileExtensionMap, BundleExtension
@@ -10,7 +10,7 @@ from screening_mgr import ScreeningManager
 import logging
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine]) -> APIRouter:
     router = APIRouter()
 
     def get_myfolders_manager(engine: Engine = Depends(get_engine)) -> MyFoldersManager:

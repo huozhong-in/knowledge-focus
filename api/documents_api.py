@@ -8,6 +8,7 @@ import os
 import json
 from pathlib import Path
 from PIL import Image
+from typing import Callable
 from sqlmodel import Session, select
 from sqlalchemy import Engine
 from db_mgr import ParentChunk
@@ -17,7 +18,7 @@ import logging
 
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine], base_dir: str) -> APIRouter:
     router = APIRouter()
 
     @router.get("/images/{image_filename}")

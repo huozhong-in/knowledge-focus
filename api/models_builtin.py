@@ -583,23 +583,23 @@ class ModelsBuiltin:
     
         return False, None
     
-    def auto_load_on_startup(self, base_dir: str) -> bool:
-        """
-        应用启动时自动加载模型（如果配置了使用内置模型）
+    # def auto_load_on_startup(self, base_dir: str) -> bool:
+    #     """
+    #     应用启动时自动加载模型（如果配置了使用内置模型）
         
-        Returns:
-            True 如果成功加载或无需加载
-        """
-        should_load, model_id = self.should_auto_load(base_dir=base_dir)
+    #     Returns:
+    #         True 如果成功加载或无需加载
+    #     """
+    #     should_load, model_id = self.should_auto_load(base_dir=base_dir)
         
-        if not should_load:
-            logger.info("No builtin model configured for auto-load")
-            return True
+    #     if not should_load:
+    #         logger.info("No builtin model configured for auto-load")
+    #         return True
         
-        # 检查模型是否已下载
-        if not self.is_model_downloaded(model_id):
-            logger.warning(f"Builtin model {model_id} is configured but not downloaded")
-            return False
+    #     # 检查模型是否已下载
+    #     if not self.is_model_downloaded(model_id):
+    #         logger.warning(f"Builtin model {model_id} is configured but not downloaded")
+    #         return False
         
         
     

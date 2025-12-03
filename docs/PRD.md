@@ -11,7 +11,7 @@
 
 本产品设计目标是帮助用户发现和利用电脑中保存在各类文档中的知识，名字叫作“知识焦点”(Knowledge Focus)，是全平台桌面客户端App。
 
-功能概述：在用户的授权下读取保存有用户有感知的、作为知识载体的文件，所谓有感知的文件是指用户知道这些文件的存在和价值，通常是在各类软件的明确要求下保存的文件。全面扫描加后续监控，结合共读和对话的交互行为，帮助用户积累知识库。
+功能概述：在用户的授权下读取保存有用户有感知的、作为知识载体的文件，所谓有感知的文件是指用户知道这些文件的存在和价值，通常是在各类软件的明确要求下保存的文件。全面扫描加后续监控，结合共读和对话的交互行为，帮助用户积累知识库。内嵌全能小模型(文本、视觉、结构化数据输出、工具使用)，使用MLX框架充分利用本地算力，结合在线商业大模型，帮助用户挖掘和利用文件中的知识。
 
 ## 文件扫描和文件变化感知系统
 
@@ -82,7 +82,7 @@
 
 - `tauri-app/dev.sh`: Start the development server
 - `tauri-app/build.sh`: Build the application (TypeScript compilation + Vite build)
-- `api/`: Python backend for file and database management. `api_standalone.sh` for standalone mode, need activate conda env first by `conda activate ./.venv`
+- `api/`: Python backend for file and database management. `api_standalone.sh` for standalone mode
 - `~/Library/Application\ Support/knowledge-focus.huozhong.in`: Default data directory on macOS, where the application stores its data files `knowledge-focus.db`, MCP tool 'SQLite' can be used to access it.
 - `~/Library/Application\ Support/knowledge-focus.huozhong.in/logs/*.log`: Log files for the Python API, useful for debugging and monitoring
 

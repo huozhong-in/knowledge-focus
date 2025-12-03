@@ -291,7 +291,7 @@ class FileScreeningResult(SQLModel, table=True):
 class Document(SQLModel, table=True):
     __tablename__ = "t_documents"
     id: int = Field(default=None, primary_key=True)
-    file_path: str = Field(index=True, unique=True) # 文件的绝对路径，唯一且索引
+    file_path: str = Field(index=True, unique=True) # 文件的绝对路径，唯一且索引。可扩展为支持URL等其他来源，供“数据归集”使用
     file_hash: str # 文件内容的哈希值，用于检测文件是否变更
     docling_json_path: str # Docling解析后存储的JSON文件路径，便于复用
     status: str = Field(default="pending") # 处理状态: pending, processing, done, error

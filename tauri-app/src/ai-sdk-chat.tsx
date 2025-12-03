@@ -660,10 +660,12 @@ export function AiSdkChat({
             </div>
           ) : (
             <>
-              {messages.map((message) => (
-                <Message key={message.id} from={message.role}>
-                  <MessageContent>
-                    {message.parts.map((part: any, index: number) => {
+              {messages.map((message) => {
+                return (
+                  <Message key={message.id} from={message.role}>
+                    <MessageContent>
+                      
+                      {message.parts.map((part: any, index: number) => {
                       switch (part.type) {
                         case "text":
                           return message.role === "assistant" ? (
@@ -780,7 +782,8 @@ export function AiSdkChat({
                   className="size-6"
                 />
               </Message>
-            ))}
+            )
+              })}
             
             {/* AI回复占位符 - 当正在等待AI回复时显示 */}
             </>

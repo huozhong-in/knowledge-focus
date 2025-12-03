@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Body
 from sqlalchemy import Engine
-from typing import Dict, Any
+from typing import Dict, Any, Callable
 from datetime import datetime
 import os
 from screening_mgr import ScreeningManager
@@ -11,7 +11,7 @@ from db_mgr import (
 import logging
 logger = logging.getLogger()
 
-def get_router(get_engine: Engine) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine]) -> APIRouter:
     router = APIRouter()
 
     def get_screening_manager(engine: Engine = Depends(get_engine)) -> ScreeningManager:

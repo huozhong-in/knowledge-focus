@@ -6,7 +6,7 @@
 from fastapi import APIRouter, Depends, Body, HTTPException, Query
 from sqlmodel import Session, select
 from sqlalchemy import Engine
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 import logging
 from chatsession_mgr import ChatSessionMgr
 from models_mgr import ModelsMgr
@@ -15,7 +15,7 @@ from db_mgr import Tool
 logger = logging.getLogger()
 
 
-def get_router(get_engine: Engine, base_dir: str) -> APIRouter:
+def get_router(get_engine: Callable[[], Engine], base_dir: str) -> APIRouter:
     router = APIRouter()
 
     def get_chat_session_manager(engine: Engine = Depends(get_engine)) -> ChatSessionMgr:

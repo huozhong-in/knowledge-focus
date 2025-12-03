@@ -27,6 +27,7 @@ from db_mgr import (
 )
 from screening_mgr import FileScreeningResult
 from models_mgr import ModelsMgr
+from models_builtin import ModelsBuiltin
 from lancedb_mgr import LanceDBMgr
 from file_tagging_mgr import FileTaggingMgr, configure_parsing_warnings
 from multivector_mgr import MultiVectorMgr
@@ -303,7 +304,6 @@ async def lifespan(app: FastAPI):
 
         # 启动 MLX 服务进程（如果需要）
         try:
-            from models_builtin import ModelsBuiltin
             logger.info("Checking if MLX service needs to be started...")
             builtin_mgr = ModelsBuiltin(engine=app.state.engine, base_dir=app.state.db_directory)
             is_running = builtin_mgr.ensure_mlx_service_running()
@@ -670,7 +670,6 @@ async def mlx_service_monitor(engine: Engine, base_dir: str, stop_event: asyncio
     """
     import asyncio
     from utils import is_port_in_use
-    from models_builtin import ModelsBuiltin
     
     logger.info("🔍 MLX service monitor started")
     
