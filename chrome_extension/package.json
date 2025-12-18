@@ -1,0 +1,33 @@
+{
+  "name": "bun-chrome-extension",
+  "module": "index.ts",
+  "scripts": {
+    "build": "bun run config/build.ts",
+    "dev": "bun run config/watch.ts --dir=src,public",
+    "pack": "bun run config/pack.ts",
+    "css": "postcss"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.10",
+    "@types/adm-zip": "^0.5.5",
+    "@types/bun": "latest",
+    "@types/chrome": "^0.1.32",
+    "@types/react-dom": "^19.2.3",
+    "adm-zip": "^0.5.15",
+    "autoprefixer": "^10.4.20",
+    "chalk": "^5.3.0",
+    "lefthook": "^2.0.12",
+    "postcss": "^8.4.41",
+    "postcss-cli": "^11.0.0",
+    "postcss-import": "^16.1.0",
+    "tailwindcss": "^4.1.18"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "element-ready": "^9.0.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  }
+}
